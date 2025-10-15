@@ -1,6 +1,7 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # ai_determinism_engine.py
-# Author: orionight
+# Author: orionrayy
+
 from __future__ import annotations
 
 import argparse
