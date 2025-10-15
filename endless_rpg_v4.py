@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-# endless_rpg_v4.py
+#!/usr/bin/python3
+# ai_determinism_engine.py
 # Author: orionight
 from __future__ import annotations
 
