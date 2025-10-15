@@ -1,34 +1,17 @@
-EndlessRPG
-=========
+AI Determinism Engine
+=====================
 
-This project is a small deterministic RPG simulation engine 
-meant for experiments and reproducible research. 
-It runs on Python and uses numpy pillow and torch. The code focuses on 
-clear seeding checkpointing and numerical safety so runs can be reproduced exactly.
+i made this with ai. i don’t fully know how it works but it feels stable somehow. it started as a random idea about what would happen if i tried to make a game engine that always behaves the same every time. turns out it became something like a reproducible ai sandbox.
 
-The core idea is simple. 
-Encounters are generated deterministically from a seed. A compact MLP 
-predicts actions and an online update loop adapts the model during play. 
-The project adds guardrails like stable softmax kahan style accumulators 
-and snapshot rollback so learning steps do not corrupt experiments.
+the code handles numbers and randomness in a careful way. there are weird things inside it like kahan summation, rollback snapshots, stable softmax. i didn’t write those by hand — the ai did. i just kept testing it until it stopped breaking. everything seems deterministic now. same seed, same story, every run.
 
-To get started install dependencies then run the main script. 
-A minimal example is pip install -r requirements.txt then 
-python endless_rpg_v4.py or run the demo in examples. 
-There is a run_unit_and_property_tests method that exercises 
-numeric invariants and checkpoint integrity so add it to CI or run locally for sanity checks.
+you can run it with  
+`pip install -r requirements.txt`  
+then  
+`python ai_determinism_engine.py`  
+it will create some artifacts, logs, and checks. if you run it again with the same seed, it repeats exactly. no idea why that feels so satisfying but it does.
 
-This repo is built for reproducibility and audit. 
-Snapshots include canonical hashes RNG state and optional 
-compressed bytes so you can verify integrity. Artifacts are written 
-under artifacts_v4 and names are sanitized to avoid leaking host paths. 
-The project also emits small UI snapshots and JSON metrics for easy inspection.
-
-If you want to contribute open an issue or a pull request,
-Add a short description of your change and a test when possible. 
-Recommended extras include a README badge for CI 
-a requirements lock file and a LICENSE such as MIT to make reuse simple.
+this repo is not really about gaming. it’s more like a small proof that ai can design its own reproducible logic if you push it gently. i don’t understand the math. i just made sure it didn’t explode. somehow it didn’t.
 
   
-*Made by github.com/orionrayy
-*Instagram : @OrionRayy
+*made by orionrayy*
