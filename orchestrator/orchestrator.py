@@ -65,7 +65,7 @@ TRANSITIONS = {
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
-    "failed": {"replanning", "reconciling", "cancelled"},
+    "failed": {"replanning", "reconciling", "ready", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
     "reconciling": {"completed", "ready", "failed", "cancelled"},
     "completed": set(),
@@ -1368,6 +1368,38 @@ def replan_after_failure(
     return True
 
 
+def recover_barrier_failed_side_effects(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> bool:
+    """Rearm side effects whose durability barrier failed before the effect ran.
+
+    The barrier invokes no external side effect itself. A barrier failure leaves the
+    node safe to retry, but execution should resume on a fresh worker.
+    """
+    recovered = False
+    for node in nodes:
+        if node.status != "failed" or not side_effecting(node, registry):
+            continue
+        execution_id = execution_key(workflow, node)
+        record = workflow.setdefault("executions", {}).get(execution_id)
+        if not isinstance(record, dict) or record.get("status") != "barrier_failed":
+            continue
+        record["status"] = "prepared"
+        record.pop("barrier_error", None)
+        record["rearmed_at"] = utc_now()
+        node.error = {}
+        transition(node, "ready")
+        workflow["status"] = "running"
+        append_event("node.barrier_failure_rearmed", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+            "execution_id": execution_id,
+        })
+        recovered = True
+    return recovered
+
 def recover_inflight_side_effects(
     workflow: dict[str, Any],
     nodes: list[Node],
@@ -1546,6 +1578,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
 
+    if recover_barrier_failed_side_effects(workflow, nodes, registry):
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return 'rearmed_pre_side_effect'
     recover_inflight_side_effects(workflow, nodes, registry)
     reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
     if reconciliation is not None:
@@ -1773,6 +1809,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         if safety > 200:
             raise RuntimeError("orchestration safety limit reached")
 
+        if recover_barrier_failed_side_effects(workflow, nodes, registry):
+            workflow['nodes'] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            return
         recover_inflight_side_effects(workflow, nodes, registry)
         reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
         if reconciliation == "failed":
@@ -2044,6 +2084,16 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
     candidates = []
     for workflow in state.get("workflows", {}).values():
         status = workflow.get("status")
+        executions = workflow.get("executions", {})
+        barrier_failed = any(
+            isinstance(node, dict)
+            and node.get("status") == "failed"
+            and isinstance(executions, dict)
+            and isinstance(node.get("id"), str)
+            and isinstance(executions.get(hashlib.sha256(f"{workflow.get('id')}:{node['id']}".encode("utf-8")).hexdigest()), dict)
+            and executions[hashlib.sha256(f"{workflow.get('id')}:{node['id']}".encode("utf-8")).hexdigest()].get("status") == "barrier_failed"
+            for node in workflow.get("nodes", [])
+        )
         uncertain = any(
             isinstance(node, dict)
             and node.get("status") == "failed"
@@ -2052,7 +2102,7 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
             and node.get("tool") == "connector_bridge"
             for node in workflow.get("nodes", [])
         )
-        if status in {"waiting_approval", "running"} or (status == "failed" and uncertain):
+        if status in {"waiting_approval", "running"} or (status == "failed" and (uncertain or barrier_failed)):
             candidates.append(workflow)
     candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
     for workflow in candidates:
