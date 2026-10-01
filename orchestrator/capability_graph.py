@@ -112,6 +112,8 @@ def route_capability(
         free_ok = _free_allowed(tool, registry)
         env_ok = _env_available(tool, registry, live)
         status = effective_health(health, tool, now=now)
+        if status == QUARANTINED:
+            continue
         risk = _risk(spec)
         # Higher-priority dimensions come first. Lexical order is the final
         # deterministic tie-breaker, so identical health/config always routes
