@@ -8,6 +8,20 @@ import orchestrator as o
 
 
 class OrchestratorTests(unittest.TestCase):
+    def test_credential_free_research_prefers_wikipedia(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = {
+                "capability:research": {
+                    "default_tool": "firecrawl",
+                    "fallback_tools": ["wikipedia"],
+                },
+                "firecrawl": {"required_env": "FIRECRAWL_API_KEY"},
+                "wikipedia": {"required_env": None},
+            }
+            with patch.dict(o.os.environ, {}, clear=True):
+                nodes = o.deterministic_plan("research AI safety", registry)
+        self.assertEqual(nodes[0].tool, "wikipedia")
+
     def test_plan_is_acyclic(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
@@ -36,7 +50,8 @@ class OrchestratorTests(unittest.TestCase):
             with patch.object(o, "STATE_DIR", Path(tmp)), \
                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
-                 patch.object(o, "load_registry", return_value={}):
+                 patch.object(o, "load_registry", return_value={}), \
+                 patch.dict(o.os.environ, {"ORCHESTRATOR_LIVE": "true"}, clear=False):
                 o.run_workflow(workflow, approve_high_risk=False)
         self.assertEqual(workflow["status"], "waiting_approval")
         self.assertEqual(workflow["nodes"][0]["status"], "waiting_approval")
