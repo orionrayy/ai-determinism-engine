@@ -20,7 +20,15 @@ class handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.split("?", 1)[0] == "/api/bridge":
+        route = self.path.split("?", 1)[0]
+        if route == "/api/bridge/capabilities":
+            self._send(200, {
+                "ok": True,
+                "protocol": "ai-orchestrator.connector/v1",
+                "connectors": describe_routes(),
+            })
+            return
+        if route == "/api/bridge":
             self._send(200, {
                 "ok": True,
                 "service": "ai-orchestrator-connector-bridge",
