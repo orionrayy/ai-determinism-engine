@@ -141,6 +141,45 @@ class OrchestratorTests(unittest.TestCase):
         )
 
 
+
+    def test_completed_checkpoint_drift_fails_closed_before_execution(self):
+        node = o.Node(
+            "n01",
+            "execute",
+            "noop",
+            [],
+            status="completed",
+            output={
+                "message": "done",
+                "checkpoint": {
+                    "path": ".orchestrator/checkpoints/wf-drift-n01.json",
+                    "sha256": "0" * 64,
+                },
+            },
+        )
+        workflow = {
+            "id": "wf-drift",
+            "goal": "continue",
+            "live": False,
+            "status": "running",
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkpoint = root / ".orchestrator" / "checkpoints" / "wf-drift-n01.json"
+            checkpoint.parent.mkdir(parents=True, exist_ok=True)
+            checkpoint.write_text(
+                json.dumps({"workflow": "wf-drift", "node": {"id": "n01", "status": "completed"}}),
+                encoding="utf-8",
+            )
+            workflow["nodes"][0]["output"]["checkpoint"]["path"] = str(checkpoint)
+            workflow["nodes"][0]["output"]["checkpoint"]["sha256"] = "1" * 64
+            with patch.object(o, "ROOT", root),                  patch.object(o, "STATE_DIR", root / ".orchestrator"),                  patch.object(o, "EVENT_FILE", root / ".orchestrator" / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", root / ".orchestrator" / "checkpoints"),                  patch.object(o, "load_registry", return_value={}):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["checkpoint_integrity"], "failed")
+        self.assertIn("checkpoint_error", workflow)
+
     def test_plan_drift_fails_closed_before_execution(self):
         node = o.Node(
             "n01",
