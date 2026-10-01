@@ -1,0 +1,7 @@
+# GitHub Actions now supports concurrency.queue, while actionlint v1.7.12
+# does not yet recognize it. Keep the runtime-supported syntax and suppress
+# only that known linter mismatch for the orchestrator workflow.
+paths:
+  .github/workflows/orchestrator.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section.*'
