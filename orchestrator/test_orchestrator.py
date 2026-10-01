@@ -260,6 +260,52 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][0]["status"], "failed")
         self.assertEqual(workflow["status"], "failed")
 
+
+    def test_native_task_issue_is_recovered_without_duplicate_creation(self):
+        token = "secret-token-1234567890"
+        execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
+        task = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native",
+            "node_id": "n01-native",
+            "execution_id": execution_id,
+            "connector": "notion",
+            "action": "create_page",
+            "goal": "create",
+            "input": {"public_safe": True, "payload": {"title": "Hello"}},
+            "callback": "https://bridge.example/native-result",
+            "expires_at": 4102444800,
+            "token_hash": o.hashlib.sha256(token.encode()).hexdigest(),
+        }
+        issue_body = (
+            "TASK_JSON:\n"
+            + o.json.dumps(task, ensure_ascii=False)
+            + "\n\nCALLBACK_TOKEN:\n"
+            + token
+            + "\nCALLBACK_URL:\n"
+            + task["callback"]
+        )
+        node = o.Node(
+            "n01-native", "execute", "native_worker", [], input={
+                "connector": "notion", "action": "create_page", "public_safe": True
+            }, status="running",
+        )
+        workflow = {"id": "wf_native", "goal": "create", "live": True,
+                    "nodes": [o.asdict(node)]}
+        calls = []
+        def fake_http(url, method="GET", body=None, headers=None, timeout=60):
+            calls.append((url, method))
+            if "search/issues" in url:
+                return {"status_code": 200, "data": {
+                    "items": [{"number": 99, "body": issue_body}]
+                }}
+            raise AssertionError("duplicate issue creation attempted")
+        with patch.object(o, "http_json", side_effect=fake_http),              patch.object(o, "github_repository", return_value="owner/repo"),              patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}),              patch.object(o.native_worker, "create_task", side_effect=AssertionError("must recover existing task")):
+            task_result = o.queue_native_worker_task(workflow, node, {})
+        self.assertEqual(task_result["task_issue"], 99)
+        self.assertEqual(task_result["execution_id"], execution_id)
+        self.assertEqual(len(calls), 1)
+
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
