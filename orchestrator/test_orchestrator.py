@@ -170,6 +170,7 @@ class OrchestratorTests(unittest.TestCase):
             "action": "create_page",
             "public_safe": True,
             "callback_url": "https://bridge.example/native-result",
+            "approval_granted": True,
         })
         workflow = {
             "id": "wf_native", "goal": "create a page", "live": True,
