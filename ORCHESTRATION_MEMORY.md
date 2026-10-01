@@ -175,6 +175,15 @@ Never merge a control-plane change with a red CI result.
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
 
+## Execution fabric v5
+
+- `orchestrator/capability_graph.py` is the central capability router. Candidate tools are selected using live availability, free-only policy, credential requirements, health state, risk, and deterministic lexical tie-breaking.
+- Tool health is persisted as non-secret state in `.orchestrator/tool_health.json`.
+- Read-only tools enter a degraded state after one terminal failure and an excluded state after the second; they may become probe candidates after cooldown.
+- Side-effecting tool failures enter the excluded state immediately with a longer cooldown and remain subject to existing approval and fail-closed semantics.
+- Replanning excludes the failed tool and routes through the same capability graph.
+- Connector bridges expose sanitized capability discovery without returning route secrets.
+
 ## Evidence and repair layer
 
 - Completed nodes produce deterministic SHA-256 evidence records stored in workflow state and checkpoints.
