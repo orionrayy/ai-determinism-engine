@@ -356,7 +356,6 @@ class OrchestratorTests(unittest.TestCase):
         self.assertNotIn("RAW-CALLBACK-TOKEN", observed["body"]["body"])
 
     def test_native_task_issue_is_recovered_without_duplicate_creation(self):
-        token = "secret-token-1234567890"
         execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
         task = {
             "protocol": "ai-orchestrator.native-worker/v1",
