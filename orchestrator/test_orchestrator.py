@@ -445,6 +445,64 @@ class OrchestratorTests(unittest.TestCase):
             "executions": {},
         }
 
+    def test_interrupted_started_connector_enters_reconciliation(self):
+        node = o.Node(
+            "n01-connector", "publish", "connector_bridge", [],
+            risk="high", status="running",
+            input={"connector": "notion", "action": "create_page", "payload": {"title": "Hello"}},
+        )
+        workflow_id = "wf_inflight_connector"
+        execution_id = o.execution_key({"id": workflow_id}, node)
+        workflow = {
+            "id": workflow_id, "goal": "publish", "live": True, "status": "running",
+            "executions": {execution_id: {"node_id": node.id, "status": "started"}},
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "capability:publish": {"default_tool": "connector_bridge", "fallback_tools": []},
+            "connector_bridge": {"free_tier": True, "side_effects": ["external_request"]},
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
+             patch.object(o, "load_registry", return_value=registry), \
+             patch.object(o, "reconcile_connector_execution", return_value={"state": "applied"}), \
+             patch.object(o, "execute_node") as execute:
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"):
+                    result = o.run_one_step(workflow)
+        self.assertEqual(result, "reconciled")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertTrue(workflow["nodes"][0]["error"]["inflight_recovered"])
+        execute.assert_not_called()
+
+    def test_interrupted_started_opaque_side_effect_fails_closed(self):
+        node = o.Node(
+            "n01-webhook", "publish", "webhook", [],
+            risk="high", status="running",
+            input={"approval_granted": True},
+        )
+        workflow_id = "wf_inflight_webhook"
+        execution_id = o.execution_key({"id": workflow_id}, node)
+        workflow = {
+            "id": workflow_id, "goal": "publish", "live": True, "status": "running",
+            "executions": {execution_id: {"node_id": node.id, "status": "started"}},
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
+             patch.object(o, "load_registry", return_value=registry), \
+             patch.object(o, "execute_node") as execute:
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"):
+                    result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["nodes"][0]["status"], "failed")
+        self.assertTrue(workflow["nodes"][0]["error"]["inflight_recovered"])
+        self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
+        execute.assert_not_called()
     def test_uncertain_connector_reconciliation_applied_completes_without_replay(self):
         workflow = self._uncertain_connector_workflow({
             "type": "execution_uncertain",
