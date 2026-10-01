@@ -33,6 +33,15 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('workflow_run.id', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
 
+
+    def test_native_result_triggers_worker(self):
+        self.assertIn('orchestrator.native_result', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_NATIVE_RESULT', self.orchestrator)
+
+    def test_native_result_targets_exact_workflow(self):
+        self.assertIn('ORCHESTRATOR_EVENT_WORKFLOW_ID', self.orchestrator)
+        self.assertIn('--native-result', self.orchestrator)
+
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
 
