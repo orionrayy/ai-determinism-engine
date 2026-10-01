@@ -89,6 +89,29 @@ def classify_risk(capability: str) -> str:
         return "medium"
     return "low"
 
+RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+BUILTIN_TOOLS = {
+    "gemini", "openai", "firecrawl", "research_bundle",
+    "wikipedia", "webhook", "github", "noop",
+}
+
+def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
+    floor = classify_risk(node.capability)
+    side_effects = set(registry.get(node.tool, {}).get("side_effects", []))
+    if "external_request" in side_effects:
+        floor = "high"
+    if node.tool == "github" and node.input.get("action") == "create_issue":
+        floor = "high"
+    return floor
+
+def enforce_node_policy(nodes: list[Node], registry: dict[str, dict[str, Any]]) -> None:
+    for node in nodes:
+        if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
+            raise ValueError(f"unregistered tool for {node.id}: {node.tool}")
+        floor = required_risk(node, registry)
+        if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
+            node.risk = floor
+
 def load_registry() -> dict[str, dict[str, Any]]:
     if REGISTRY_FILE.exists():
         return json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
@@ -539,6 +562,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get('live'))
+    enforce_node_policy(nodes, registry)
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
@@ -665,6 +689,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get("live"))
+    enforce_node_policy(nodes, registry)
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
@@ -833,6 +858,7 @@ def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> 
         "execution_mode": "dry-run",
         "replan_count": 0,
         "trigger_issue": trigger_issue,
+        "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
         "nodes": [asdict(node) for node in nodes],
     }
 
