@@ -28,6 +28,19 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
+    def test_one_step_advances_dag_incrementally(self):
+        workflow = o.create_workflow('build a website', live=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, 'STATE_DIR', Path(tmp)), \
+                 patch.object(o, 'EVENT_FILE', Path(tmp) / 'events.jsonl'), \
+                 patch.object(o, 'CHECKPOINT_DIR', Path(tmp) / 'checkpoints'), \
+                 patch.object(o, 'load_registry', return_value={}):
+                statuses = []
+                for _ in range(len(workflow['nodes'])):
+                    statuses.append(o.run_one_step(workflow, approve_high_risk=False))
+                self.assertEqual(statuses[-1], 'completed')
+                self.assertEqual(workflow['status'], 'completed')
+                self.assertTrue(all(node['status'] == 'completed' for node in workflow['nodes']))
     def test_free_only_rejects_paid_node_at_execution_time(self):
         node = o.Node("n01", "analyze", "openai")
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
