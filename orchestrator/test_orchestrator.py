@@ -305,6 +305,25 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(evidence["evidence_sha256"]), 64)
         self.assertEqual(workflow["evidence"]["n01"]["evidence_sha256"], evidence["evidence_sha256"])
 
+    def test_artifact_verifier_checks_local_file(self):
+        node = o.Node(
+            "n01-artifacts", "artifact_verify", "artifact_verifier", [],
+            input={"artifacts": [{"type": "local_file", "path": "README.md"}]},
+        )
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            result = o.execute_artifact_verifier(node, "verify")
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["verified_count"], 1)
+
+    def test_artifact_verifier_checks_url_status(self):
+        node = o.Node(
+            "n01-artifacts", "artifact_verify", "artifact_verifier", [],
+            input={"artifacts": [{"type": "url", "url": "https://example.test"}]},
+        )
+        with patch.object(o, "http_json", return_value={"status_code": 200, "data": {"ok": True}}):
+            result = o.execute_artifact_verifier(node, "verify")
+        self.assertTrue(result["checks"][0]["passed"])
+
     def test_contract_required_field_is_enforced(self):
         node = o.Node(
             "n01", "execute", "noop", [],
