@@ -1284,7 +1284,12 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
     except Exception:
         return
 
-def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> dict[str, Any]:
+def create_workflow(
+    goal: str,
+    live: bool,
+    trigger_issue: int | None = None,
+    event_id: str | None = None,
+) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
@@ -1307,6 +1312,7 @@ def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> 
         "replan_count": 0,
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
+        "event_id": event_id,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
         "nodes": [asdict(node) for node in nodes],
     }
@@ -1394,7 +1400,24 @@ def main() -> int:
     live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
     trigger_issue_raw = os.environ.get('ORCHESTRATOR_TRIGGER_ISSUE', '').strip()
     trigger_issue = int(trigger_issue_raw) if trigger_issue_raw.isdigit() else None
-    workflow = create_workflow(args.goal, live=live, trigger_issue=trigger_issue)
+    event_id = os.environ.get("ORCHESTRATOR_EVENT_ID", "").strip() or None
+    if event_id:
+        existing = next(
+            (
+                item for item in state.get("workflows", {}).values()
+                if item.get("event_id") == event_id
+            ),
+            None,
+        )
+        if existing:
+            print_summary(existing)
+            return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
+    workflow = create_workflow(
+        args.goal,
+        live=live,
+        trigger_issue=trigger_issue,
+        event_id=event_id,
+    )
     workflow['status'] = 'ready'
     state['workflows'][workflow['id']] = workflow
     state['last_workflow_id'] = workflow['id']
