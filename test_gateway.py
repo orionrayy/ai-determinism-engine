@@ -60,6 +60,13 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(result["github_status"], 204)
         dispatch.assert_called_once_with("orchestrator.native_result", payload)
 
+
+    def test_native_result_handler_has_no_legacy_inline_dispatch_block(self):
+        import inspect
+        source = inspect.getsource(gateway.handle_native_result)
+        self.assertNotIn("GITHUB_GATEWAY_TOKEN", source)
+        self.assertNotIn("urllib.request.Request", source)
+
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()) - 301)
