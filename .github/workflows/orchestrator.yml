@@ -92,7 +92,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
             case "$ISSUE_TITLE" in
               "[ORCHESTRATOR APPROVAL]"*)
-                meta="${ISSUE_TITLE#\"[ORCHESTRATOR APPROVAL] \"}"
+                meta="${ISSUE_TITLE#"[ORCHESTRATOR APPROVAL] "}"
                 workflow_id="${meta%% / *}"
                 if [ "$ISSUE_ACTION" = "labeled" ]; then
                   case "$ISSUE_LABEL" in
