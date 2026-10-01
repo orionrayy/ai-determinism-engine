@@ -29,6 +29,18 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {"free_tier": False}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
+
+    def test_atomic_json_write_replaces_existing_file_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            o.write_json(path, {"version": 1, "value": "before"})
+            o.write_json(path, {"version": 2, "value": "after"})
+            self.assertEqual(
+                json.loads(path.read_text(encoding="utf-8")),
+                {"version": 2, "value": "after"},
+            )
+            self.assertFalse(list(Path(tmp).glob(".state.json.*.tmp")))
+
     def test_one_step_does_not_require_github_token(self):
         workflow = {
             "id": "wf_no_token",
