@@ -529,25 +529,20 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
 
-def parse_native_task_issue(body: str) -> tuple[dict[str, Any], str]:
+def parse_native_task_issue(body: str) -> dict[str, Any]:
     task_marker = "TASK_JSON:\n"
-    token_marker = "\n\nCALLBACK_TOKEN:\n"
-    callback_marker = "\nCALLBACK_URL:\n"
+    callback_marker = "\n\nCALLBACK_MODE: github_issue_comment\n"
     start = body.find(task_marker)
-    token_start = body.find(token_marker, start + len(task_marker))
-    callback_start = body.find(callback_marker, token_start + len(token_marker))
-    if start < 0 or token_start < 0 or callback_start < 0:
+    callback_start = body.find(callback_marker, start + len(task_marker))
+    if start < 0 or callback_start < 0:
         raise ValueError("native task issue format is invalid")
-    task_text = body[start + len(task_marker):token_start]
-    token = body[token_start + len(token_marker):callback_start].strip()
+    task_text = body[start + len(task_marker):callback_start]
     task = json.loads(task_text)
     if not isinstance(task, dict):
         raise ValueError("native task JSON must be an object")
     if task.get("protocol") != native_worker.PROTOCOL:
         raise ValueError("unsupported native task protocol")
-    if not native_worker.verify_token(token, str(task.get("token_hash") or "")):
-        raise ValueError("native task token verification failed")
-    return task, token
+    return task
 
 
 def find_native_worker_task_issue(workflow: dict[str, Any], node: Node) -> tuple[dict[str, Any], int] | None:
@@ -614,15 +609,15 @@ def queue_native_worker_task(
     mark_execution_prepared(workflow, node)
     mark_execution_started(workflow, node, execution_id)
 
+    task.pop("token_hash", None)
+    task["callback_mode"] = "github_issue_comment"
     issue_body = (
         "Native worker task; public-safe payload only.\n\n"
         "Execute exactly the declared connector/action.\n\n"
         "TASK_JSON:\n"
         + json.dumps(task, ensure_ascii=False, indent=2)
-        + "\n\nCALLBACK_TOKEN:\n"
-        + token
-        + "\nCALLBACK_URL:\n"
-        + callback_url
+        + "\n\nCALLBACK_MODE: github_issue_comment\n"
+        + "Reply with NATIVE_RESULT_JSON: followed by exactly one JSON result or error object."
     )
     result = http_json(
         f"https://api.github.com/repos/{github_repository()}/issues",
@@ -659,12 +654,26 @@ def apply_native_result(workflow: dict[str, Any], payload: dict[str, Any]) -> st
     execution = str(payload.get("execution_id") or "")
     if execution != expected_execution:
         return "rejected"
-    if int(task.get("expires_at", 0) or 0) <= int(time.time()):
-        return "rejected"
-    if not native_worker.verify_token(
-        str(payload.get("token") or ""), str(task.get("token_hash") or "")
-    ):
-        return "rejected"
+
+    source_issue = payload.get("source_issue")
+    actor_association = str(payload.get("actor_association") or "").upper()
+    if source_issue is not None:
+        try:
+            if int(source_issue) != int(task.get("task_issue")):
+                return "rejected"
+        except (TypeError, ValueError):
+            return "rejected"
+        if actor_association not in {"OWNER", "MEMBER", "COLLABORATOR"}:
+            return "rejected"
+        if int(task.get("expires_at", 0) or 0) <= int(time.time()):
+            return "rejected"
+    else:
+        if int(task.get("expires_at", 0) or 0) <= int(time.time()):
+            return "rejected"
+        if not native_worker.verify_token(
+            str(payload.get("token") or ""), str(task.get("token_hash") or "")
+        ):
+            return "rejected"
 
     record = workflow.setdefault("executions", {}).get(execution)
     if record and record.get("status") == "completed":
