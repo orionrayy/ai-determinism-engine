@@ -62,6 +62,23 @@ class OrchestratorTests(unittest.TestCase):
                     result = o.run_one_step(workflow, approve_high_risk=False)
         self.assertEqual(result, "completed")
         self.assertEqual(workflow["status"], "completed")
+    def test_resume_scheduler_prioritizes_oldest_updated_workflow(self):
+        older = {
+            "id": "wf_old", "goal": "old", "live": False,
+            "status": "running", "updated_at": "2026-10-01T00:00:00+00:00",
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        newer = {
+            "id": "wf_new", "goal": "new", "live": False,
+            "status": "running", "updated_at": "2026-10-01T01:00:00+00:00",
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        state = {"version": 2, "workflows": {"wf_new": newer, "wf_old": older}, "last_workflow_id": "wf_new"}
+        with patch.object(o, "run_one_step", side_effect=lambda wf, approve_high_risk=False: (wf.update({"status":"completed"}) or "completed")):
+            with patch.object(o, "save_state"):
+                count = o.resume_pending_workflows(state, step=True)
+        self.assertEqual(count, 1)
+        self.assertEqual(state["last_workflow_id"], "wf_old")
     def test_one_step_advances_dag_incrementally(self):
         workflow = o.create_workflow('build a website', live=False)
         with tempfile.TemporaryDirectory() as tmp:
