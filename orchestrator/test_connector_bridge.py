@@ -191,6 +191,38 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertTrue(ctx.exception.uncertain)
         self.assertFalse(ctx.exception.retry_allowed)
 
+
+    def test_reconciliation_result_does_not_persist_upstream_payload(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "reconciliation": True,
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(
+            cb, "post_reconciliation",
+            return_value={
+                "ok": True,
+                "state": "applied",
+                "upstream": {"private_token": "should-not-persist"},
+            },
+        ):
+            result = cb.reconcile_connector_execution(
+                self.node(),
+                "reconcile it",
+                dry_run=False,
+            )
+        encoded = cb.canonical_json(result).decode("utf-8")
+        self.assertEqual(result["state"], "applied")
+        self.assertNotIn("private_token", encoded)
+        self.assertNotIn("should-not-persist", encoded)
+
     def test_live_rejects_invalid_payload_before_post(self):
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
