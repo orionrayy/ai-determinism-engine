@@ -67,36 +67,44 @@
     "side_effects": [
       "repository_write",
       "issue_write"
-    ]
+    ],
+    "free_tier": true
   },
   "openai": {
     "required_env": "OPENAI_API_KEY",
-    "side_effects": []
+    "side_effects": [],
+    "free_tier": false
   },
   "webhook": {
     "required_env": "ORCHESTRATOR_WEBHOOK_URL",
     "side_effects": [
       "external_request"
-    ]
+    ],
+    "free_tier": false
   },
   "firecrawl": {
     "required_env": "FIRECRAWL_API_KEY",
-    "side_effects": []
+    "side_effects": [],
+    "free_tier": false
   },
   "noop": {
     "required_env": null,
-    "side_effects": []
+    "side_effects": [],
+    "free_tier": true
   },
   "wikipedia": {
     "required_env": null,
-    "side_effects": []
+    "side_effects": [],
+    "free_tier": true
   },
   "gemini": {
     "required_env": "GEMINI_API_KEY",
-    "side_effects": []
+    "side_effects": [],
+    "free_tier": true
   },
   "research_bundle": {
     "required_env": null,
-    "side_effects": []
+    "side_effects": [],
+    "free_tier": true
   }
 }

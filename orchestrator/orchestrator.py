@@ -94,6 +94,7 @@ BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
     "wikipedia", "webhook", "github", "noop",
 }
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
@@ -120,14 +121,25 @@ def load_registry() -> dict[str, dict[str, Any]]:
 def free_only() -> bool:
     return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
 
-def tool_available(tool_name: str, registry: dict[str, dict[str, Any]]) -> bool:
-    if free_only() and tool_name in {"openai", "firecrawl", "webhook"}:
-        return False
+def tool_available(
+    tool_name: str,
+    registry: dict[str, dict[str, Any]],
+    require_env: bool = True,
+    enforce_free: bool = True,
+) -> bool:
     spec = registry.get(tool_name, {})
+    if enforce_free and free_only():
+        is_free = bool(spec.get("free_tier", False))
+        if not spec and tool_name in BUILTIN_FREE_TOOLS:
+            is_free = True
+        if not is_free:
+            return False
+    if not require_env:
+        return True
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
 
-def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[Node]:
+def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
     if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
         sequence = [
@@ -170,23 +182,30 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
         candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
         candidates = [item for item in candidates if item]
         preferred = next(
-            (item for item in candidates if tool_available(item, registry)),
+            (item for item in candidates if tool_available(item, registry, require_env=live, enforce_free=True)),
             None,
         )
         if preferred is None:
-            preferred = {
-                "research": "research_bundle",
-                "analyze": "gemini",
-                "draft": "gemini",
-                "spec": "gemini",
-                "build": "github",
-                "test": "github",
-                "deploy": "webhook",
-                "validate": "webhook",
-                "publish": "webhook",
-                "notify": "webhook",
-                "execute": "webhook",
-            }.get(capability, "noop")
+            if cap_spec and not live:
+                preferred = candidates[0]
+            elif cap_spec:
+                raise ValueError(
+                    f"no available tool for capability {capability} under current policy"
+                )
+            else:
+                preferred = {
+                    "research": "research_bundle",
+                    "analyze": "gemini",
+                    "draft": "gemini",
+                    "spec": "gemini",
+                    "build": "github",
+                    "test": "github",
+                    "deploy": "webhook",
+                    "validate": "webhook",
+                    "publish": "webhook",
+                    "notify": "webhook",
+                    "execute": "webhook",
+                }.get(capability, "noop")
         node = Node(
             id=f"n{index:02d}-{capability}",
             capability=capability,
@@ -474,10 +493,16 @@ def execute_github(node: Node) -> dict[str, Any]:
     raise RuntimeError(f"GitHub action not allowlisted: {action}")
 
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
-    if free_only() and node.tool in {"openai", "firecrawl", "webhook"} and not dry_run:
-        raise RuntimeError(
-            f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
-        )
+    registry = load_registry()
+    spec = registry.get(node.tool, {})
+    if free_only() and not dry_run:
+        is_free = bool(spec.get("free_tier", False))
+        if not spec and node.tool in BUILTIN_FREE_TOOLS:
+            is_free = True
+        if not is_free:
+            raise RuntimeError(
+                f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+            )
     if dry_run:
         return {
             "simulated": True,
@@ -668,6 +693,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 })
                 time.sleep(min(2 ** attempts, 8))
                 transition(node, 'ready')
+                transition(node, 'running')
                 continue
             transition(node, 'failed')
             append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
@@ -810,6 +836,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         )
                         time.sleep(min(2 ** attempts, 8))
                         transition(node, "ready")
+                        transition(node, "running")
                         continue
 
                     transition(node, "failed")
@@ -847,7 +874,7 @@ def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> 
         except Exception as planner_exc:
             append_event("planner.fallback", {"goal": goal, "error": str(planner_exc)})
     if nodes is None:
-        nodes = deterministic_plan(goal, registry)
+        nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
     return {
         "id": new_id("wf"),

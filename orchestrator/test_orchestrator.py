@@ -15,8 +15,8 @@ class OrchestratorTests(unittest.TestCase):
                     "default_tool": "firecrawl",
                     "fallback_tools": ["wikipedia"],
                 },
-                "firecrawl": {"required_env": "FIRECRAWL_API_KEY"},
-                "wikipedia": {"required_env": None},
+                "firecrawl": {"required_env": "FIRECRAWL_API_KEY", "free_tier": False},
+                "wikipedia": {"required_env": None, "free_tier": True},
             }
             with patch.dict(o.os.environ, {}, clear=True):
                 nodes = o.deterministic_plan("research AI safety", registry)
@@ -24,10 +24,10 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_free_only_blocks_external_paid_adapters(self):
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
-            self.assertFalse(o.tool_available("openai", {"openai": {}}))
-            self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
-            self.assertFalse(o.tool_available("webhook", {"webhook": {}}))
-            self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
+            self.assertFalse(o.tool_available("openai", {"openai": {"free_tier": False}}))
+            self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {"free_tier": False}}))
+            self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
+            self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
     def test_one_step_does_not_require_github_token(self):
         workflow = {
             "id": "wf_no_token",
@@ -44,6 +44,15 @@ class OrchestratorTests(unittest.TestCase):
                          patch.object(o, "load_registry", return_value={}):
                         result = o.run_one_step(workflow, approve_high_risk=False)
         self.assertEqual(result, "completed")
+    def test_free_only_is_registry_driven(self):
+        registry = {
+            "future_paid": {"free_tier": False},
+            "future_free": {"free_tier": True},
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertFalse(o.tool_available("future_paid", registry))
+            self.assertTrue(o.tool_available("future_free", registry))
+
     def test_policy_raises_risk_for_deploy_even_if_planner_says_low(self):
         node = o.Node("n01-deploy", "deploy", "noop", [], risk="low")
         o.enforce_node_policy([node], {"noop": {"side_effects": []}})
@@ -61,6 +70,28 @@ class OrchestratorTests(unittest.TestCase):
         node = o.Node("n01", "execute", "unknown_tool")
         with self.assertRaises(ValueError):
             o.enforce_node_policy([node], {"noop": {"side_effects": []}})
+
+    def test_one_step_retry_reenters_running_state(self):
+        workflow = {
+            "id": "wf_retry",
+            "goal": "retry",
+            "live": False,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop", [], max_retries=2))],
+        }
+        calls = {"n": 0}
+
+        def flaky_execute(node, goal, dry_run):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=flaky_execute):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "completed")
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(workflow["nodes"][0]["retry_count"], 1)
 
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
