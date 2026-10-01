@@ -182,7 +182,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
         candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
         candidates = [item for item in candidates if item]
         preferred = next(
-            (item for item in candidates if tool_available(item, registry, require_env=live, enforce_free=live)),
+            (item for item in candidates if tool_available(item, registry, require_env=live, enforce_free=True)),
             None,
         )
         if preferred is None:
