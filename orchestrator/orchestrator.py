@@ -65,6 +65,48 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     with EVENT_FILE.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+def execution_key(workflow: dict[str, Any], node: Node) -> str:
+    raw = f"{workflow['id']}:{node.id}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
+    return bool(registry.get(node.tool, {}).get("side_effects")) or node.capability in {
+        "deploy", "publish", "delete", "external_write", "send"
+    }
+
+def mark_execution_prepared(workflow: dict[str, Any], node: Node) -> str:
+    key = execution_key(workflow, node)
+    history = workflow.setdefault("executions", {})
+    record = history.get(key)
+    if record:
+        return key
+    history[key] = {
+        "node_id": node.id,
+        "status": "prepared",
+        "prepared_at": utc_now(),
+    }
+    return key
+
+def mark_execution_started(workflow: dict[str, Any], node: Node, key: str) -> None:
+    record = workflow.setdefault("executions", {}).setdefault(key, {})
+    record.update({
+        "node_id": node.id,
+        "status": "started",
+        "started_at": utc_now(),
+    })
+
+def mark_execution_completed(
+    workflow: dict[str, Any], key: str, output: dict[str, Any] | None = None
+) -> None:
+    record = workflow.setdefault("executions", {}).setdefault(key, {})
+    record.update({
+        "status": "completed",
+        "completed_at": utc_now(),
+    })
+    if output is not None:
+        record["output"] = output
+
+
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
         return {"version": 2, "workflows": {}, "last_workflow_id": None}
@@ -724,6 +766,32 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return 'waiting_approval'
 
     transition(node, 'running')
+    execution_id = execution_key(workflow, node)
+    if side_effecting(node, registry):
+        record = workflow.setdefault('executions', {}).get(execution_id)
+        if record and record.get('status') == 'started':
+            node.error = {
+                'type': 'execution_uncertain',
+                'message': 'A prior run may have completed an external side effect before state persistence.',
+                'execution_id': execution_id,
+            }
+            transition(node, 'failed')
+            workflow['status'] = 'failed'
+            workflow['failed_node'] = node.id
+            append_event('node.execution_uncertain', {
+                'workflow_id': workflow['id'],
+                'node_id': node.id,
+                'execution_id': execution_id,
+            })
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return 'failed'
+        mark_execution_prepared(workflow, node)
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        mark_execution_started(workflow, node, execution_id)
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
     attempts = node.retry_count
     while True:
@@ -732,6 +800,8 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             transition(node, 'validating')
             node.output['validation'] = {'passed': True, 'checked_at': utc_now()}
             transition(node, 'completed')
+            if side_effecting(node, registry):
+                mark_execution_completed(workflow, execution_id, node.output)
             append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
             notify_issue(
                 workflow,
@@ -862,6 +932,31 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 continue
 
             transition(node, "running")
+            execution_id = execution_key(workflow, node)
+            if side_effecting(node, registry):
+                record = workflow.setdefault("executions", {}).get(execution_id)
+                if record and record.get("status") == "started":
+                    node.error = {
+                        "type": "execution_uncertain",
+                        "message": "A prior run may have completed an external side effect before state persistence.",
+                        "execution_id": execution_id,
+                    }
+                    transition(node, "failed")
+                    workflow["status"] = "failed"
+                    workflow["failed_node"] = node.id
+                    append_event(
+                        "node.execution_uncertain",
+                        {"workflow_id": workflow["id"], "node_id": node.id, "execution_id": execution_id},
+                    )
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    return
+                mark_execution_prepared(workflow, node)
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                mark_execution_started(workflow, node, execution_id)
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
             append_event(
                 "node.started",
                 {"workflow_id": workflow["id"], "node_id": node.id, "tool": node.tool},
@@ -877,6 +972,8 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         "checked_at": utc_now(),
                     }
                     transition(node, "completed")
+                    if side_effecting(node, registry):
+                        mark_execution_completed(workflow, execution_id, node.output)
                     append_event(
                         "node.completed",
                         {"workflow_id": workflow["id"], "node_id": node.id, "tool": node.tool},
