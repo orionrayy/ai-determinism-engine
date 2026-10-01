@@ -22,6 +22,13 @@ class OrchestratorTests(unittest.TestCase):
                 nodes = o.deterministic_plan("research AI safety", registry)
         self.assertEqual(nodes[0].tool, "wikipedia")
 
+    def test_workflow_creation_is_persistable(self):
+        workflow = o.create_workflow("build a small website", live=False)
+        self.assertTrue(workflow["id"].startswith("wf_"))
+        self.assertEqual(workflow["status"], "planning")
+        self.assertEqual(workflow["execution_mode"], "dry-run")
+        self.assertGreaterEqual(len(workflow["nodes"]), 4)
+
     def test_plan_is_acyclic(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
