@@ -659,7 +659,16 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
 def create_workflow(goal: str, live: bool) -> dict[str, Any]:
     registry = load_registry()
-    nodes = deterministic_plan(goal, registry)
+    nodes = None
+    if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
+        try:
+            from llm_planner import plan_goal
+            nodes = plan_goal(goal, registry, Node, validate_dag)
+            append_event("planner.llm", {"goal": goal, "nodes": len(nodes)})
+        except Exception as planner_exc:
+            append_event("planner.fallback", {"goal": goal, "error": str(planner_exc)})
+    if nodes is None:
+        nodes = deterministic_plan(goal, registry)
     validate_dag(nodes)
     return {
         "id": new_id("wf"),
