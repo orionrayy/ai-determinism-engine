@@ -39,6 +39,7 @@ def create_task(
         raise ValueError("expires_at must be positive")
 
     token = secrets.token_urlsafe(32)
+    safe_input = {key: node_input[key] for key in ("public_safe", "instruction", "query", "payload") if key in node_input}
     task = {
         "protocol": PROTOCOL,
         "workflow_id": workflow_id,
@@ -47,7 +48,7 @@ def create_task(
         "connector": str(connector).strip().lower(),
         "action": str(action).strip().lower(),
         "goal": str(goal)[:4000],
-        "input": node_input,
+        "input": safe_input,
         "callback": callback_url,
         "expires_at": int(expires_at),
         "token_hash": hash_token(token),
