@@ -147,9 +147,9 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
         if preferred is None:
             preferred = {
                 "research": "wikipedia",
-                "analyze": "openai",
-                "draft": "openai",
-                "spec": "openai",
+                "analyze": "gemini",
+                "draft": "gemini",
+                "spec": "gemini",
                 "build": "github",
                 "test": "github",
                 "deploy": "webhook",
@@ -233,6 +233,34 @@ def http_json(
         except json.JSONDecodeError:
             value = {"text": raw}
         return {"status_code": response.status, "data": value}
+
+def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
+    payload = {
+        "contents": [{
+            "parts": [{
+                "text": (
+                    "Act as a conservative workflow worker. Return JSON with "
+                    "result, risks, next_action.\n"
+                    f"GOAL: {goal}\n"
+                    f"INSTRUCTION: {node.input.get('instruction', '')}"
+                )
+            }]
+        }],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+        },
+    }
+    return http_json(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        method="POST",
+        body=payload,
+        headers={"x-goog-api-key": key},
+        timeout=90,
+    )
 
 def execute_openai(node: Node, goal: str) -> dict[str, Any]:
     key = os.environ.get("OPENAI_API_KEY")
@@ -415,6 +443,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
             "capability": node.capability,
             "instruction": node.input.get("instruction"),
         }
+    if node.tool == "gemini":
+        return execute_gemini(node, goal)
     if node.tool == "openai":
         return execute_openai(node, goal)
     if node.tool == "firecrawl":
@@ -487,7 +517,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
     registry = load_registry()
-    live = bool(workflow.get("live")) and os.environ.get("ORCHESTRATOR_LIVE", "").lower() == "true"
+    live = bool(workflow.get("live"))
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
