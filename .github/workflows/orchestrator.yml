@@ -1,0 +1,115 @@
+name: AI Orchestrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      goal:
+        description: "Goal for the orchestrator"
+        required: true
+        type: string
+      live:
+        description: "Enable live tool execution"
+        required: false
+        default: false
+        type: boolean
+      approve_high_risk:
+        description: "Approve high-risk actions for this run"
+        required: false
+        default: false
+        type: boolean
+  repository_dispatch:
+    types: [orchestrator.event]
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: ai-orchestrator
+  cancel-in-progress: false
+
+jobs:
+  orchestrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Resolve goal
+        id: goal
+        shell: bash
+        env:
+          INPUT_GOAL: ${{ inputs.goal }}
+          EVENT_GOAL: ${{ github.event.client_payload.goal }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          goal="$INPUT_GOAL"
+          if [ -z "$goal" ]; then goal="$EVENT_GOAL"; fi
+          if [ -z "$goal" ] && [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            goal='Run the orchestration health check and report current state.'
+          fi
+          printf '%s' "$goal" > /tmp/orchestrator_goal.txt
+          echo "goal=$goal" >> "$GITHUB_OUTPUT"
+
+      - name: Run orchestrator
+        env:
+          ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
+          ORCHESTRATOR_LIVE: ${{ inputs.live && 'true' || 'false' }}
+          ORCHESTRATOR_APPROVE_HIGH_RISK: ${{ inputs.approve_high_risk && 'true' || 'false' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          ORCHESTRATOR_WEBHOOK_URL: ${{ secrets.ORCHESTRATOR_WEBHOOK_URL }}
+          ORCHESTRATOR_WEBHOOK_SECRET: ${{ secrets.ORCHESTRATOR_WEBHOOK_SECRET }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          ORCHESTRATOR_RESEARCH_URL: ${{ secrets.ORCHESTRATOR_RESEARCH_URL }}
+          GITHUB_TOKEN: ${{ github.token }}
+          ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+        run: |
+          if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
+            args=(--resume)
+          else
+            args=(--goal "$ORCHESTRATOR_GOAL")
+          fi
+          if [ "$ORCHESTRATOR_LIVE" = "true" ]; then args+=(--live); fi
+          if [ "$ORCHESTRATOR_APPROVE_HIGH_RISK" = "true" ]; then args+=(--approve-high-risk); fi
+          python3 orchestrator/orchestrator.py "${args[@]}"
+
+      - name: Persist state
+        if: always()
+        shell: bash
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .orchestrator
+          git diff --cached --quiet || git commit -m "chore(orchestrator): persist workflow state"
+          git push
+
+      - name: Job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## AI Orchestrator" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Goal: `$(cat /tmp/orchestrator_goal.txt)`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Repository: `$GITHUB_REPOSITORY`" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f .orchestrator/state.json ]; then
+            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+import json
+s=json.load(open(".orchestrator/state.json"))
+wf=s.get("workflows",{}).get(s.get("last_workflow_id"))
+print(f"- Workflow: `{wf['id']}`" if wf else "- Workflow: n/a")
+print(f"- Status: **{wf['status']}**" if wf else "- Status: n/a")
+PY
+          fi
