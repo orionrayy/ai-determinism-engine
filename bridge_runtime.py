@@ -49,6 +49,9 @@ def verify_signature(headers: dict[str, str], body: bytes, secret: str, now: int
     return hmac.compare_digest(signature, expected)
 
 
+ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
+
+
 def load_routes() -> dict[str, dict[str, Any]]:
     raw = os.environ.get("ORCHESTRATOR_CONNECTOR_ROUTES", "{}")
     try:
@@ -58,6 +61,68 @@ def load_routes() -> dict[str, dict[str, Any]]:
     if not isinstance(routes, dict):
         raise BridgeRuntimeError("connector routes must be an object")
     return routes
+
+
+def _normalize_action_spec(raw: Any) -> dict[str, Any]:
+    raw = raw if isinstance(raw, dict) else {}
+    required = raw.get("required", [])
+    if not isinstance(required, list):
+        required = []
+    normalized_required = sorted({str(item).strip() for item in required if str(item).strip()})
+    types = raw.get("types", {})
+    if not isinstance(types, dict):
+        types = {}
+    normalized_types = {}
+    for key in sorted(types):
+        value = str(types[key] or "").strip().lower()
+        if str(key).strip() and value in ACTION_TYPE_NAMES:
+            normalized_types[str(key).strip()] = value
+    return {
+        "required": normalized_required,
+        "types": normalized_types,
+        "idempotent": bool(raw.get("idempotent", False)),
+    }
+
+
+def _resolve_payload_path(payload: Any, path: str) -> tuple[bool, Any]:
+    current = payload
+    for part in str(path).split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
+
+
+def _matches_payload_type(value: Any, type_name: str) -> bool:
+    if type_name == "string":
+        return isinstance(value, str)
+    if type_name == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if type_name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if type_name == "boolean":
+        return isinstance(value, bool)
+    if type_name == "object":
+        return isinstance(value, dict)
+    if type_name == "array":
+        return isinstance(value, list)
+    return False
+
+
+def validate_action_input(route: dict[str, Any], action: str, value: Any) -> None:
+    action_specs = route.get("action_specs", {})
+    raw_spec = action_specs.get(action, {}) if isinstance(action_specs, dict) else {}
+    spec = _normalize_action_spec(raw_spec)
+    if not isinstance(value, dict):
+        raise BridgeRuntimeError("connector input must be an object")
+    for field_name in spec["required"]:
+        found, _ = _resolve_payload_path(value, field_name)
+        if not found:
+            raise BridgeRuntimeError(f"connector input missing required field: {field_name}")
+    for field_name, type_name in spec["types"].items():
+        found, field_value = _resolve_payload_path(value, field_name)
+        if found and not _matches_payload_type(field_value, type_name):
+            raise BridgeRuntimeError(f"connector input field {field_name} must be {type_name}")
 
 
 def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
@@ -79,9 +144,17 @@ def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str
             configured = configured and bool(os.environ.get(secret_env))
         elif route.get("secret"):
             configured = configured and True
+        normalized_actions = sorted(str(item) for item in actions)
+        raw_specs = route.get("action_specs", {})
         described[connector] = {
-            "actions": sorted(str(item) for item in actions),
+            "actions": normalized_actions,
             "capabilities": sorted(str(item) for item in capabilities),
+            "action_specs": {
+                action: _normalize_action_spec(
+                    raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {}
+                )
+                for action in normalized_actions
+            },
             "risk": str(route.get("risk") or "high"),
             "free_tier": bool(route.get("free_tier", False)),
             "configured": configured,
@@ -177,6 +250,7 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
         return {**cached, "idempotent_replay": True}
 
     route = routes[connector]
+    validate_action_input(route, action, payload.get("input"))
     result = dispatch_upstream(route, payload)
     response = {
         "ok": True,
