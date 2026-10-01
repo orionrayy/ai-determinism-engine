@@ -403,6 +403,7 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
             continue
         labels = get_issue_labels(int(issue_number))
         if "orchestrator-rejected" in labels:
+            node.input["approval_granted"] = False
             transition(node, "failed")
             node.error = {"type": "approval_rejected", "issue": issue_number}
             workflow["status"] = "failed"
@@ -412,6 +413,7 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
         elif "orchestrator-approved" in labels:
+            node.input["approval_granted"] = True
             transition(node, "ready")
             workflow["status"] = "running"
             append_event(
@@ -710,7 +712,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             return
 
         for node in ready:
-            if live and node.risk in {"high", "critical"} and not approve_high_risk:
+            if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
                 transition(node, "waiting_approval")
                 workflow["status"] = "waiting_approval"
                 try:
