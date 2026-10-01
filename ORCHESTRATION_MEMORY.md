@@ -8,10 +8,10 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Base main code commit for v4 branch: `daf19744f9fe61e119e6e00c25ceab117e9ddf4b`
+Current main code commit after v6: `407017b3e6ca1997d4f1af43cab03bc4d3453dfa`
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
-Current execution-fabric branch: `upgrade/execution-fabric-v5`
+Current execution-fabric branch: `upgrade/connector-contracts-v7` (active development)
 
 ## Architecture
 
@@ -66,6 +66,9 @@ Free-tier declarations currently include:
 - wikipedia
 - research_bundle
 - noop
+- local_validator
+- artifact_verifier
+- connector_bridge
 
 Non-free declarations currently include:
 - openai
@@ -169,11 +172,20 @@ Never merge a control-plane change with a red CI result.
 4. Connector bridge v1 is vendor-neutral; a real Notion/Figma/Canva/ClickUp/etc. bridge service must implement the protocol and its own vendor OAuth/API policy.
 5. Semantic validation now has deterministic output contracts plus an optional Gemini validation worker; domain-specific validators for deployments, published artifacts, and vendor objects remain to be added.
 6. Connector bridge v1 is still an execution boundary rather than direct access to the ChatGPT-installed connector catalog.
-7. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
+7. Connector action contracts are schema-aware but intentionally bounded to required fields, primitive types, and an idempotency declaration; vendor-specific OAuth semantics and richer JSON Schema are still outside the core.
+8. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
 
 ## Deployment targets
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
+
+## Execution fabric v7
+
+- Connector discovery now includes sanitized action contracts: required fields, primitive input types, and an idempotency declaration.
+- Live planning and live execution validate connector payloads against the discovered action contract before the upstream POST.
+- The bridge runtime enforces the same action contract server-side for defense in depth.
+- Action schemas are optional for backward compatibility; missing schemas do not fabricate constraints.
+- Secret values and unknown/free-form route fields are not propagated into the planner inventory.
 
 ## Execution fabric v6
 
@@ -216,7 +228,7 @@ Before changing runtime behavior:
 1. Read this file.
 2. Inspect current `main`.
 3. Identify the exact invariant being changed.
-5. Add a regression test before or with the change.
+4. Add a regression test before or with the change.
 6. Run CI.
 7. Merge only after green.
 8. Update this memory file when architecture, policy, or a known limitation changes.

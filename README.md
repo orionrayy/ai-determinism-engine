@@ -4,6 +4,10 @@ Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
 Free execution path: GitHub Actions + stdlib Python control plane.
 
+## Connector contract-aware execution fabric v7
+
+Connector discovery now carries a sanitized contract per advertised action: required fields, primitive input types, and an idempotency declaration. In live mode, both the planner and executor validate connector payloads against the discovered contract before the upstream request; the bridge runtime repeats the check server-side. Schemas are optional to preserve compatibility with existing routes, and secret/free-form route data is not exposed.
+
 ## Connector-aware execution fabric v6
 
 The live planner can consume the bridge's sanitized capability inventory and emit connector-bridge nodes with an explicit connector, action, and payload. Live execution performs a second preflight against the current bridge inventory before sending the request, so stale or unconfigured connector actions fail before upstream side effects. Discovery results are bounded, normalized, cached briefly, and included in successful connector evidence.

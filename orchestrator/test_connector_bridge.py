@@ -90,6 +90,30 @@ class ConnectorBridgeTests(unittest.TestCase):
         discovery.assert_called_once_with("https://bridge.example.test/api/bridge", force_refresh=True)
         post.assert_called_once()
 
+    def test_live_rejects_invalid_payload_before_post(self):
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True):
+            inventory = {
+                "notion": {
+                    "actions": ["create_page"],
+                    "configured": True,
+                    "action_specs": {
+                        "create_page": {
+                            "required": ["title", "properties.name"],
+                            "types": {"title": "string", "properties.name": "string"},
+                            "idempotent": True,
+                        }
+                    },
+                }
+            }
+            with patch.object(cb, "discover_capabilities", return_value=inventory), patch.object(cb, "post_request") as post:
+                invalid = self.node({"title": "Hello", "properties": {}})
+                with self.assertRaises(cb.ConnectorBridgeError):
+                    cb.execute_connector_bridge(invalid, "bridge it", dry_run=False)
+                post.assert_not_called()
+
     def test_live_rejects_connector_not_in_live_inventory(self):
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",

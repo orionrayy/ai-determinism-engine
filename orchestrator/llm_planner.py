@@ -6,9 +6,17 @@ import urllib.parse
 import urllib.request
 
 try:
-    from .connector_bridge import ConnectorBridgeError, discover_capabilities
+    from .connector_bridge import (
+        ConnectorBridgeError,
+        discover_capabilities,
+        validate_discovered_payload,
+    )
 except ImportError:
-    from connector_bridge import ConnectorBridgeError, discover_capabilities
+    from connector_bridge import (
+        ConnectorBridgeError,
+        discover_capabilities,
+        validate_discovered_payload,
+    )
 
 
 def _post(url: str, payload: dict, api_key: str) -> dict:
@@ -78,7 +86,9 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         'Use low/medium/high/critical risk and mark external side effects high or critical. '
         'Prefer tools that require no credentials. Include a final validate node whose dependencies cover the outputs it must verify. For validation nodes, define contract.required_fields and/or contract.min_sources when deterministically checkable; declare artifacts as a list of expected deliverables. '
         'Live connector inventory (sanitized; empty means unavailable): ' + inventory_text + '. '
-        'Only use connector/action pairs present in that live inventory when tool=connector_bridge. Goal: ' + goal
+        'Only use connector/action pairs present in that live inventory when tool=connector_bridge. '
+        'For action_specs, honor required fields and declared primitive types exactly; do not invent connector fields. '
+        'Goal: ' + goal
     )
     model = os.environ.get('GEMINI_PLANNER_MODEL', os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash'))
     endpoint = (
@@ -148,6 +158,10 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
                     raise ValueError('planner connector is not available in live inventory')
                 if action not in spec.get('actions', []):
                     raise ValueError('planner connector action is not available in live inventory')
+                try:
+                    validate_discovered_payload(connector, action, payload, bridge_inventory)
+                except ConnectorBridgeError as exc:
+                    raise ValueError(str(exc)) from exc
         if risk not in {'low', 'medium', 'high', 'critical'}:
             raise ValueError('planner produced invalid risk')
         nodes.append(Node(
