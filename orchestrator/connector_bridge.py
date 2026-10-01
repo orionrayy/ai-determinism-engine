@@ -252,7 +252,7 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         }
 
     url, secret = bridge_config()
-    inventory = discover_capabilities(url)
+    inventory = discover_capabilities(url, force_refresh=True)
     validate_discovered_action(request.connector, request.action, inventory)
     return {
         "simulated": False,
