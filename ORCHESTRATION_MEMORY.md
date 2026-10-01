@@ -11,6 +11,7 @@ Primary branch: `main`
 Base main code commit for v4 branch: `daf19744f9fe61e119e6e00c25ceab117e9ddf4b`
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
+Current execution-fabric branch: `upgrade/execution-fabric-v5`
 
 ## Architecture
 
