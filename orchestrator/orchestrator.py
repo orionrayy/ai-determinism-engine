@@ -186,6 +186,9 @@ def enforce_node_policy(
                 live=live,
                 preferred=node.tool,
             )
+            floor = required_risk(node, registry)
+            if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
+                node.risk = floor
 
 def load_registry() -> dict[str, dict[str, Any]]:
     if REGISTRY_FILE.exists():
