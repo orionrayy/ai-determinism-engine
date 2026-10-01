@@ -978,6 +978,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 node.input['approval_issue'] = create_approval_issue(workflow, node)
         except Exception as exc:
             node.error = {'type': type(exc).__name__, 'message': str(exc)}
+            transition(node, 'failed')
+            workflow['status'] = 'failed'
+            workflow['failed_node'] = node.id
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return 'failed'
         append_event('approval.required', {
             'workflow_id': workflow['id'],
             'node_id': node.id,
