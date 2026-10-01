@@ -4,6 +4,10 @@ Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
 Free execution path: GitHub Actions + stdlib Python control plane.
 
+## Evidence-driven v4 layer
+
+Nodes can declare output contracts and expected artifacts. Successful nodes emit SHA-256 evidence records. The free `artifact_verifier` can verify HTTPS URLs, repository files, or files inside the checked-out repository. Validation failures retain bounded repair feedback for fallback tools.
+
 ## Orchestration v3
 
 The control plane now supports bounded parallel execution of independent low-risk DAG nodes, deterministic dependency-context propagation, semantic output contracts, free local validation, and ingress idempotency keys.
