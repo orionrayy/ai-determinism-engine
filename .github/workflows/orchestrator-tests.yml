@@ -40,5 +40,20 @@ jobs:
           python-version: "3.12"
       - name: Compile
         run: python -m py_compile orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
+      - name: Actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="1.7.12"
+          archive="actionlint_${version}_linux_amd64.tar.gz"
+          expected_sha256="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          curl --fail --silent --show-error --location \
+            "https://github.com/rhysd/actionlint/releases/download/v${version}/${archive}" \
+            --output "/tmp/${archive}"
+          actual_sha256="$(sha256sum "/tmp/${archive}" | awk '{print $1}')"
+          test "$actual_sha256" = "$expected_sha256"
+          tar -xzf "/tmp/${archive}" -C /tmp
+          /tmp/actionlint -color
+
       - name: Unit tests
         run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config -v
