@@ -44,6 +44,15 @@ class OrchestratorTests(unittest.TestCase):
                          patch.object(o, "load_registry", return_value={}):
                         result = o.run_one_step(workflow, approve_high_risk=False)
         self.assertEqual(result, "completed")
+    def test_free_only_is_registry_driven(self):
+        registry = {
+            "future_paid": {"free_tier": False},
+            "future_free": {"free_tier": True},
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertFalse(o.tool_available("future_paid", registry))
+            self.assertTrue(o.tool_available("future_free", registry))
+
     def test_policy_raises_risk_for_deploy_even_if_planner_says_low(self):
         node = o.Node("n01-deploy", "deploy", "noop", [], risk="low")
         o.enforce_node_policy([node], {"noop": {"side_effects": []}})
