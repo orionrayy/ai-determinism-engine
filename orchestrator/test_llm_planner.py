@@ -3,12 +3,28 @@ import os
 import unittest
 from unittest.mock import patch
 
-from llm_planner import _object_from_text
+import llm_planner as lp
+
+
+class FakeNode:
+    def __init__(self, id, capability, tool, depends_on=None, risk="low", input=None, contract=None):
+        self.id = id
+        self.capability = capability
+        self.tool = tool
+        self.depends_on = depends_on or []
+        self.risk = risk
+        self.input = input or {}
+        self.contract = contract or {}
+
+
+def fake_validate(nodes):
+    if not nodes:
+        raise ValueError("empty")
 
 
 class PlannerTests(unittest.TestCase):
     def test_extracts_plain_json(self):
-        value = _object_from_text('{"nodes": []}')
+        value = lp._object_from_text('{"nodes": []}')
         self.assertEqual(value, {"nodes": []})
 
     def test_extracts_fenced_json(self):
