@@ -104,6 +104,10 @@ Persisted workflows carry a deterministic plan fingerprint. On resume, the contr
 
 The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
 
+## Approval intent binding v23
+
+High-risk approval issues now bind to a SHA-256 fingerprint of the exact node definition at approval creation. A labeled approval is accepted only when the current node fingerprint still matches. The approval actor and approval timestamp are recorded for auditability; stale approvals are revoked locally and the node returns to the approval flow.
+
 ## Durability barrier recovery v22
 
 A failed pre-side-effect durability barrier is safe to rearm because the barrier invokes no external effect. The worker records the execution as prepared and leaves the node ready for a fresh worker checkout before another live side-effect attempt. This restores liveness without weakening the v19/v20 replay fences.
