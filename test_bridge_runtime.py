@@ -1,4 +1,5 @@
 import hashlib
+import os
 import hmac
 import json
 import time
@@ -38,6 +39,46 @@ class BridgeRuntimeTests(unittest.TestCase):
         routes = {"notion": {"actions": ["read_page"]}}
         with self.assertRaises(br.BridgeRuntimeError):
             br.validate_envelope(self.payload(), routes)
+
+    def test_capability_discovery_is_sanitized_and_sorted(self):
+        routes = {
+            "clickup": {
+                "url": "https://upstream.example/clickup",
+                "secret_env": "CLICKUP_SECRET",
+                "actions": ["update_task", "create_task"],
+                "capabilities": ["execute", "publish"],
+                "risk": "high",
+                "free_tier": False,
+            },
+            "notion": {
+                "url": "https://upstream.example/notion",
+                "secret_env": "NOTION_SECRET",
+                "actions": ["append_block", "create_page"],
+                "capabilities": ["publish"],
+                "risk": "high",
+                "free_tier": True,
+            },
+        }
+        with patch.dict(os.environ, {}, clear=True):
+            discovered = br.describe_routes(routes)
+        self.assertEqual(list(discovered), ["clickup", "notion"])
+        self.assertEqual(discovered["clickup"]["actions"], ["create_task", "update_task"])
+        self.assertEqual(discovered["notion"]["capabilities"], ["publish"])
+        self.assertFalse(discovered["notion"]["configured"])
+        self.assertNotIn("NOTION_SECRET", json.dumps(discovered))
+
+    def test_capability_discovery_reports_configured_secret_without_exposing_it(self):
+        routes = {
+            "notion": {
+                "url": "https://upstream.example/notion",
+                "secret_env": "NOTION_SECRET",
+                "actions": ["create_page"],
+            }
+        }
+        with patch.dict(os.environ, {"NOTION_SECRET": "do-not-leak"}, clear=True):
+            discovered = br.describe_routes(routes)
+        self.assertTrue(discovered["notion"]["configured"])
+        self.assertNotIn("do-not-leak", json.dumps(discovered))
 
     def test_idempotent_response_is_replayed(self):
         payload = self.payload()

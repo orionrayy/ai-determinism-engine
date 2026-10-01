@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .capability_graph import load_health, record_tool_result, route_capability, save_health
     from .connector_bridge import execute_connector_bridge
     from .evidence import build_evidence
 except ImportError:
+    from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import execute_connector_bridge
     from evidence import build_evidence
 
@@ -166,13 +168,27 @@ def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
         floor = "high"
     return floor
 
-def enforce_node_policy(nodes: list[Node], registry: dict[str, dict[str, Any]]) -> None:
+def enforce_node_policy(
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    live: bool = False,
+) -> None:
     for node in nodes:
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
             raise ValueError(f"unregistered tool for {node.id}: {node.tool}")
         floor = required_risk(node, registry)
         if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
             node.risk = floor
+        if registry.get(f"capability:{node.capability}"):
+            node.tool = route_tool(
+                node.capability,
+                registry,
+                live=live,
+                preferred=node.tool,
+            )
+            floor = required_risk(node, registry)
+            if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
+                node.risk = floor
 
 def load_registry() -> dict[str, dict[str, Any]]:
     if REGISTRY_FILE.exists():
@@ -199,6 +215,49 @@ def tool_available(
         return True
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
+
+def tool_health_path() -> Path:
+    return STATE_DIR / "tool_health.json"
+
+
+def load_tool_health() -> dict[str, Any]:
+    return load_health(tool_health_path())
+
+
+def update_tool_health(node: Node, success: bool, registry: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    health = load_tool_health()
+    updated = record_tool_result(
+        health,
+        node.tool,
+        success=success,
+        side_effecting=side_effecting(node, registry),
+    )
+    save_health(tool_health_path(), health)
+    append_event("tool.health", {
+        "tool": node.tool,
+        "status": updated.get("status"),
+        "failure_streak": updated.get("failure_streak", 0),
+    })
+    return updated
+
+
+def route_tool(
+    capability: str,
+    registry: dict[str, dict[str, Any]],
+    *,
+    live: bool,
+    preferred: str | None = None,
+    exclude: set[str] | None = None,
+) -> str:
+    return route_capability(
+        capability,
+        registry,
+        load_tool_health(),
+        live=live,
+        preferred=preferred,
+        exclude=exclude,
+    )
+
 
 def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
@@ -240,33 +299,22 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
     previous: list[str] = []
     for index, (capability, instruction) in enumerate(sequence, start=1):
         cap_spec = registry.get(f"capability:{capability}", {})
-        candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
-        candidates = [item for item in candidates if item]
-        preferred = next(
-            (item for item in candidates if tool_available(item, registry, require_env=live, enforce_free=True)),
-            None,
-        )
-        if preferred is None:
-            if cap_spec and not live:
-                preferred = candidates[0]
-            elif cap_spec:
-                raise ValueError(
-                    f"no available tool for capability {capability} under current policy"
-                )
-            else:
-                preferred = {
-                    "research": "research_bundle",
-                    "analyze": "gemini",
-                    "draft": "gemini",
-                    "spec": "gemini",
-                    "build": "github",
-                    "test": "github",
-                    "deploy": "webhook",
-                    "validate": "local_validator",
-                    "publish": "webhook",
-                    "notify": "webhook",
-                    "execute": "webhook",
-                }.get(capability, "noop")
+        if cap_spec:
+            preferred = route_tool(capability, registry, live=live)
+        else:
+            preferred = {
+                "research": "research_bundle",
+                "analyze": "gemini",
+                "draft": "gemini",
+                "spec": "gemini",
+                "build": "github",
+                "test": "github",
+                "deploy": "webhook",
+                "validate": "local_validator",
+                "publish": "webhook",
+                "notify": "webhook",
+                "execute": "webhook",
+            }.get(capability, "noop")
         node = Node(
             id=f"n{index:02d}-{capability}",
             capability=capability,
@@ -1079,57 +1127,65 @@ def replan_after_failure(
     if replans >= MAX_REPLANS:
         return False
 
-    fallback_tools = registry.get(f"capability:{failed_node.capability}", {}).get("fallback_tools", [])
-    for candidate in fallback_tools:
-        old_tool = failed_node.tool
-        if candidate == old_tool:
-            continue
-        if not tool_available(candidate, registry, require_env=bool(workflow.get("live"))):
-            continue
-        transition(failed_node, "replanning")
-        old_error = dict(failed_node.error)
-        old_output = dict(failed_node.output)
-        old_next_action = (
-            old_output.get("next_action") if isinstance(old_output, dict) else None
+    old_tool = failed_node.tool
+    try:
+        candidate = route_tool(
+            failed_node.capability,
+            registry,
+            live=bool(workflow.get("live")),
+            exclude={old_tool},
         )
-        failed_node.tool = candidate
-        failed_node.retry_count = 0
-        failed_node.error = {}
-        failed_node.output = {}
-        workflow["replan_count"] = replans + 1
-        append_event(
-            "node.replanned",
-            {
-                "workflow_id": workflow["id"],
-                "node_id": failed_node.id,
-                "from_tool": old_tool,
-                "to_tool": candidate,
-                "replan_count": workflow["replan_count"],
-            },
-        )
-        failed_node.input["previous_tool"] = old_tool
-        workflow.setdefault("repair_feedback", {})[failed_node.id] = {
-            "tool": old_tool,
-            "error": old_error,
-            "output": compact_json(old_output, limit=12 * 1024),
-            "next_action": old_next_action,
-        }
-        append_event("node.repair_feedback", {
+    except ValueError:
+        return False
+    if candidate == old_tool:
+        return False
+
+    transition(failed_node, "replanning")
+    old_error = dict(failed_node.error)
+    old_output = dict(failed_node.output)
+    old_next_action = (
+        old_output.get("next_action") if isinstance(old_output, dict) else None
+    )
+
+    failed_node.tool = candidate
+    failed_node.retry_count = 0
+    failed_node.error = {}
+    failed_node.output = {}
+    workflow["replan_count"] = replans + 1
+
+    append_event(
+        "node.replanned",
+        {
             "workflow_id": workflow["id"],
             "node_id": failed_node.id,
-            "previous_tool": old_tool,
-        })
-        transition(failed_node, "ready")
-        workflow["status"] = "running"
-        return True
-    return False
+            "from_tool": old_tool,
+            "to_tool": candidate,
+            "replan_count": workflow["replan_count"],
+        },
+    )
+    failed_node.input["previous_tool"] = old_tool
+    workflow.setdefault("repair_feedback", {})[failed_node.id] = {
+        "tool": old_tool,
+        "error": old_error,
+        "output": compact_json(old_output, limit=12 * 1024),
+        "next_action": old_next_action,
+    }
+    append_event("node.repair_feedback", {
+        "workflow_id": workflow["id"],
+        "node_id": failed_node.id,
+        "previous_tool": old_tool,
+    })
+    transition(failed_node, "ready")
+    workflow["status"] = "running"
+    return True
+
 
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get('live'))
-    enforce_node_policy(nodes, registry)
+    enforce_node_policy(nodes, registry, live=live)
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
@@ -1228,6 +1284,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             transition(node, 'completed')
             if side_effecting(node, registry):
                 mark_execution_completed(workflow, execution_id, node.output)
+            update_tool_health(node, True, registry)
             node_success_checkpoint(workflow, node)
             append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
             notify_issue(
@@ -1263,6 +1320,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 transition(node, 'running')
                 continue
             transition(node, 'failed')
+            update_tool_health(node, False, registry)
             append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
             notify_issue(
                 workflow,
@@ -1439,6 +1497,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             if success:
                 if side_effecting(node, registry):
                     mark_execution_completed(workflow, execution_id, node.output)
+                update_tool_health(node, True, registry)
                 node_success_checkpoint(workflow, node)
                 append_event("node.completed", {
                     "workflow_id": workflow["id"],
@@ -1450,6 +1509,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
                 )
             else:
+                update_tool_health(node, False, registry)
                 if replan_after_failure(workflow, nodes, node, registry):
                     replan_needed = True
                 else:

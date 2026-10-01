@@ -60,6 +60,35 @@ def load_routes() -> dict[str, dict[str, Any]]:
     return routes
 
 
+def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    routes = load_routes() if routes is None else routes
+    described: dict[str, dict[str, Any]] = {}
+    for connector in sorted(routes):
+        route = routes[connector]
+        if not isinstance(route, dict):
+            continue
+        actions = route.get("actions", [])
+        capabilities = route.get("capabilities", [])
+        if not isinstance(actions, list):
+            actions = []
+        if not isinstance(capabilities, list):
+            capabilities = []
+        secret_env = str(route.get("secret_env") or "").strip()
+        configured = bool(str(route.get("url") or "").strip())
+        if secret_env:
+            configured = configured and bool(os.environ.get(secret_env))
+        elif route.get("secret"):
+            configured = configured and True
+        described[connector] = {
+            "actions": sorted(str(item) for item in actions),
+            "capabilities": sorted(str(item) for item in capabilities),
+            "risk": str(route.get("risk") or "high"),
+            "free_tier": bool(route.get("free_tier", False)),
+            "configured": configured,
+        }
+    return described
+
+
 def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]) -> tuple[str, str, str]:
     if payload.get("protocol") != PROTOCOL:
         raise BridgeRuntimeError("unsupported connector protocol")
