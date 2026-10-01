@@ -1,7 +1,7 @@
 import hashlib
 import unittest
 
-from orchestrator import native_worker as nw
+import native_worker as nw
 
 
 class NativeWorkerTests(unittest.TestCase):
