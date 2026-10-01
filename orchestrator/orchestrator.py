@@ -606,13 +606,6 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 persist_workflow(workflow)
                 append_event('workflow.completed', {'workflow_id': workflow['id']})
                 return 'completed'
-            if not any(item.status == 'waiting_approval' for item in nodes):
-                try:
-                    dispatch_continuation(workflow['id'])
-                    append_event('workflow.continuation_dispatched', {'workflow_id': workflow['id']})
-                except Exception as dispatch_exc:
-                    append_event('workflow.continuation_failed', {'workflow_id': workflow['id'], 'error': str(dispatch_exc)})
-                    return 'continuation_failed'
             return 'completed_step'
         except Exception as exc:
             node.error = {
