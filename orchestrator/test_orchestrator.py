@@ -36,6 +36,10 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             o.validate_dag([a, b])
 
+    def test_http_requires_https(self):
+        with self.assertRaises(RuntimeError):
+            o.http_json("http://example.com")
+
     def test_live_state_does_not_require_process_env_on_resume(self):
         nodes = [o.Node("safe", "execute", "noop", [], risk="low")]
         workflow = {
@@ -52,6 +56,18 @@ class OrchestratorTests(unittest.TestCase):
                 o.run_workflow(workflow, approve_high_risk=False)
         self.assertEqual(workflow["execution_mode"], "live")
         self.assertEqual(workflow["status"], "completed")
+
+    def test_dry_run_end_to_end_completes_without_credentials(self):
+        workflow = o.create_workflow("research an offline technical topic", live=False)
+        self.assertEqual(workflow["status"], "planning")
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value={}):
+                o.run_workflow(workflow, approve_high_risk=False)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertTrue(all(node["status"] == "completed" for node in workflow["nodes"]))
 
     def test_high_risk_requires_approval_in_live_mode(self):
         nodes = [
