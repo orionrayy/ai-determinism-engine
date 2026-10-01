@@ -560,6 +560,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             workflow['nodes'] = [asdict(node) for node in nodes]
             append_event('workflow.completed', {'workflow_id': workflow['id']})
             persist_workflow(workflow)
+            notify_issue(workflow, 'Orchestrator: workflow ' + workflow['id'] + ' completed.')
             return 'completed'
         workflow['status'] = 'waiting_approval' if any(node.status == 'waiting_approval' for node in nodes) else 'failed'
         workflow['nodes'] = [asdict(node) for node in nodes]
@@ -581,6 +582,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             'risk': node.risk,
             'issue': node.input.get('approval_issue'),
         })
+        notify_issue(
+            workflow,
+            'Orchestrator: workflow ' + workflow['id'] + ' is waiting for approval on node ' + node.id + '.'
+        )
         workflow['nodes'] = [asdict(item) for item in nodes]
         persist_workflow(workflow)
         return 'waiting_approval'
@@ -595,6 +600,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             node.output['validation'] = {'passed': True, 'checked_at': utc_now()}
             transition(node, 'completed')
             append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
+            notify_issue(
+                workflow,
+                'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
+            )
             workflow['nodes'] = [asdict(item) for item in nodes]
             persist_workflow(workflow)
             checkpoint_payload = {
@@ -638,6 +647,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 continue
             transition(node, 'failed')
             append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
+            notify_issue(
+                workflow,
+                'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
+            )
             if replan_after_failure(workflow, nodes, node, registry):
                 workflow['nodes'] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
@@ -791,7 +804,14 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
 
-def create_workflow(goal: str, live: bool) -> dict[str, Any]:
+def notify_issue(workflow: dict[str, Any], message: str) -> None:
+    try:
+        from issue_notify import post_issue_status
+        post_issue_status(workflow, message, http_json)
+    except Exception:
+        return
+
+def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
@@ -812,6 +832,7 @@ def create_workflow(goal: str, live: bool) -> dict[str, Any]:
         "live": live,
         "execution_mode": "dry-run",
         "replan_count": 0,
+        "trigger_issue": trigger_issue,
         "nodes": [asdict(node) for node in nodes],
     }
 
@@ -896,7 +917,9 @@ def main() -> int:
         raise SystemExit('provide --goal or --workflow-id')
 
     live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
-    workflow = create_workflow(args.goal, live=live)
+    trigger_issue_raw = os.environ.get('ORCHESTRATOR_TRIGGER_ISSUE', '').strip()
+    trigger_issue = int(trigger_issue_raw) if trigger_issue_raw.isdigit() else None
+    workflow = create_workflow(args.goal, live=live, trigger_issue=trigger_issue)
     workflow['status'] = 'ready'
     state['workflows'][workflow['id']] = workflow
     state['last_workflow_id'] = workflow['id']

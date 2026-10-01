@@ -29,6 +29,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile
-        run: python -m py_compile orchestrator/orchestrator.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/test_orchestrator.py orchestrator/test_research_bundle.py gateway.py test_gateway.py
+        run: python -m py_compile orchestrator/orchestrator.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/test_orchestrator.py orchestrator/test_research_bundle.py orchestrator/issue_notify.py gateway.py test_gateway.py
       - name: Unit tests
         run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway -v
