@@ -136,10 +136,16 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
     nodes: list[Node] = []
     previous: list[str] = []
     for index, (capability, instruction) in enumerate(sequence, start=1):
-        preferred = registry.get(f"capability:{capability}", {}).get("default_tool")
-        if not preferred:
+        cap_spec = registry.get(f"capability:{capability}", {})
+        candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
+        candidates = [item for item in candidates if item]
+        preferred = next(
+            (item for item in candidates if tool_available(item, registry)),
+            None,
+        )
+        if preferred is None:
             preferred = {
-                "research": "firecrawl",
+                "research": "wikipedia",
                 "analyze": "openai",
                 "draft": "openai",
                 "spec": "openai",
@@ -157,7 +163,11 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
             tool=preferred,
             depends_on=list(previous),
             risk=classify_risk(capability),
-            input={"goal": goal, "instruction": instruction},
+            input={
+                "goal": goal,
+                "instruction": instruction,
+                "query": goal if capability == "research" else "",
+            },
         )
         nodes.append(node)
         previous = [node.id]
@@ -264,6 +274,24 @@ def execute_firecrawl(node: Node, goal: str) -> dict[str, Any]:
         timeout=120,
     )
 
+def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
+    query = str(node.input.get("query") or goal).strip()
+    if not query:
+        raise RuntimeError("Wikipedia research requires a query")
+    params = urllib.parse.urlencode({
+        "action": "query",
+        "list": "search",
+        "srsearch": query[:250],
+        "srlimit": "8",
+        "format": "json",
+        "utf8": "1",
+    })
+    return http_json(
+        f"https://en.wikipedia.org/w/api.php?{params}",
+        headers={"User-Agent": "ai-orchestrator-core/2.0 research"},
+        timeout=30,
+    )
+
 def execute_webhook(node: Node, goal: str) -> dict[str, Any]:
     url = node.input.get("url") or os.environ.get("ORCHESTRATOR_WEBHOOK_URL")
     if not url:
@@ -325,6 +353,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_openai(node, goal)
     if node.tool == "firecrawl":
         return execute_firecrawl(node, goal)
+    if node.tool == "wikipedia":
+        return execute_wikipedia(node, goal)
     if node.tool == "webhook":
         return execute_webhook(node, goal)
     if node.tool == "github":
@@ -360,7 +390,8 @@ def replan_after_failure(
 
     fallback_tools = registry.get(f"capability:{failed_node.capability}", {}).get("fallback_tools", [])
     for candidate in fallback_tools:
-        if candidate == failed_node.tool:
+        old_tool = failed_node.tool
+        if candidate == old_tool:
             continue
         if not tool_available(candidate, registry):
             continue
@@ -375,12 +406,12 @@ def replan_after_failure(
             {
                 "workflow_id": workflow["id"],
                 "node_id": failed_node.id,
-                "from_tool": failed_node.tool,
+                "from_tool": old_tool,
                 "to_tool": candidate,
                 "replan_count": workflow["replan_count"],
             },
         )
-        failed_node.input["previous_tool"] = failed_node.tool
+        failed_node.input["previous_tool"] = old_tool
         transition(failed_node, "ready")
         workflow["status"] = "running"
         return True
