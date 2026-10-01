@@ -529,6 +529,52 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
 
+def parse_native_task_issue(body: str) -> tuple[dict[str, Any], str]:
+    task_marker = "TASK_JSON:\n"
+    token_marker = "\n\nCALLBACK_TOKEN:\n"
+    callback_marker = "\nCALLBACK_URL:\n"
+    start = body.find(task_marker)
+    token_start = body.find(token_marker, start + len(task_marker))
+    callback_start = body.find(callback_marker, token_start + len(token_marker))
+    if start < 0 or token_start < 0 or callback_start < 0:
+        raise ValueError("native task issue format is invalid")
+    task_text = body[start + len(task_marker):token_start]
+    token = body[token_start + len(token_marker):callback_start].strip()
+    task = json.loads(task_text)
+    if not isinstance(task, dict):
+        raise ValueError("native task JSON must be an object")
+    if task.get("protocol") != native_worker.PROTOCOL:
+        raise ValueError("unsupported native task protocol")
+    if not native_worker.verify_token(token, str(task.get("token_hash") or "")):
+        raise ValueError("native task token verification failed")
+    return task, token
+
+
+def find_native_worker_task_issue(workflow: dict[str, Any], node: Node) -> tuple[dict[str, Any], int] | None:
+    query = (
+        f"repo:{github_repository()} is:issue "
+        f"\"[ORCHESTRATOR NATIVE] {workflow['id']} / {node.id}\" in:title"
+    )
+    result = http_json(
+        "https://api.github.com/search/issues?q=" + urllib.parse.quote(query),
+        headers=github_headers(),
+    )
+    items = result.get("data", {}).get("items", [])
+    if not isinstance(items, list):
+        return None
+    expected_title = f"[ORCHESTRATOR NATIVE] {workflow['id']} / {node.id}"
+    for item in items:
+        if not isinstance(item, dict) or item.get("title") != expected_title:
+            continue
+        body = item.get("body")
+        number = item.get("number")
+        if not isinstance(body, str) or not isinstance(number, int):
+            continue
+        task, _token = parse_native_task_issue(body)
+        return task, number
+    return None
+
+
 def queue_native_worker_task(
     workflow: dict[str, Any],
     node: Node,
@@ -543,6 +589,17 @@ def queue_native_worker_task(
         or os.environ.get("ORCHESTRATOR_NATIVE_CALLBACK_URL", "")
     ).strip()
     expires_at = int(node.input.get("expires_at") or (int(time.time()) + 1800))
+    recovered = find_native_worker_task_issue(workflow, node)
+    if recovered is not None:
+        recovered_task, issue_number = recovered
+        if recovered_task.get("execution_id") != execution_key(workflow, node):
+            raise RuntimeError("existing native task execution does not match node")
+        mark_execution_prepared(workflow, node)
+        mark_execution_started(workflow, node, recovered_task["execution_id"])
+        stored = {**recovered_task, "task_issue": issue_number}
+        node.input["native_task"] = stored
+        return stored
+
     task, token = native_worker.create_task(
         workflow["id"],
         node.id,
