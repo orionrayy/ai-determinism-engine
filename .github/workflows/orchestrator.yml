@@ -160,6 +160,7 @@ jobs:
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
+          ORCHESTRATOR_EVENT_ID: ${{ github.event.client_payload.event_id }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
