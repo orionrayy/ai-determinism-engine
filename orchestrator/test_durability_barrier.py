@@ -30,6 +30,7 @@ class DurabilityBarrierTests(unittest.TestCase):
         responses = iter([
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "local\n", ""),
             subprocess.CompletedProcess([], 0, "remote\n", ""),
         ])
@@ -45,6 +46,7 @@ class DurabilityBarrierTests(unittest.TestCase):
 
     def test_success_commits_and_pushes_main(self):
         responses = iter([
+            subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "same\n", ""),
