@@ -56,5 +56,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn('vercel@latest', self.bridge_deploy)
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
+
+    def test_worker_enables_durability_barrier(self):
+        self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
+
 if __name__ == '__main__':
     unittest.main()
