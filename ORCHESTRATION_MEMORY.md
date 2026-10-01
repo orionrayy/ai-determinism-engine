@@ -181,6 +181,7 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - Validation nodes evaluate dependency evidence rather than their own validator envelope.
 - Failed nodes preserve bounded error/output/next-action feedback for fallback execution.
 - Evidence is advisory for orchestration state and is never treated as a substitute for explicit approval of side effects.
+- The artifact verifier supports HTTPS URLs, GitHub repository files, and local checked-out files without side effects.
 
 ## Orchestration v3 execution policy
 
