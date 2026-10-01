@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: execution-fabric v8 connector uncertainty/idempotency recovery is merged; always verify the current `main` ref before modifying.
+Current main baseline: execution-fabric v10 reconciliation support is merged; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -179,12 +179,19 @@ Never merge a control-plane change with a red CI result.
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
 
+## Execution fabric v10
+
+- Connector bridges may advertise a read-only reconciliation capability via a sanitized `reconciliation` flag and route-level `reconciliation_url`.
+- Uncertain connector failures can be reconciled before resume; `applied` completes the node without replaying the side effect, `not_applied` returns the node to `ready`, and `unknown` remains fail-closed.
+- Reconciliation requests are signed and carry the deterministic request id as their idempotency key; the upstream reconciliation endpoint is HTTPS-only and must return one of the three explicit states.
+- Scheduled resume handles failed uncertain connector workflows through the reconciliation path before any retry.
+
 ## Execution fabric v8
 
 - Connector transport failures and HTTP 5xx responses are represented as potentially uncertain request failures.
 - The discovered action's `idempotent` declaration controls automatic retry of an uncertain connector request.
 - Uncertain non-idempotent connector failures fail closed and are not automatically replanned to another provider.
-- An uncertain failure is persisted as requiring reconciliation so an external-state inspection can precede any later manual resume.
+- An uncertain failure is persisted as requiring reconciliation; live connector recovery can query the bridge for `applied`, `not_applied`, or `unknown` before continuing.
 
 ## Execution fabric v7
 
@@ -236,7 +243,7 @@ Before changing runtime behavior:
 2. Inspect current `main`.
 3. Identify the exact invariant being changed.
 4. Add a regression test before or with the change.
-6. Run CI.
+5. Run CI.
 7. Merge only after green.
 8. Update this memory file when architecture, policy, or a known limitation changes.
 

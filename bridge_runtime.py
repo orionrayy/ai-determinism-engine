@@ -158,6 +158,7 @@ def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str
             "risk": str(route.get("risk") or "high"),
             "free_tier": bool(route.get("free_tier", False)),
             "configured": configured,
+            "reconciliation": bool(str(route.get("reconciliation_url") or "").strip()),
         }
     return described
 
@@ -199,6 +200,71 @@ def cache_result(request_id: str, result: dict[str, Any], ttl: int = 900) -> Non
         _COMPLETED[request_id] = (time.time() + ttl, result)
 
 
+def reconciliation_url(route: dict[str, Any]) -> str:
+    value = str(route.get("reconciliation_url") or "").strip()
+    parsed = urllib.parse.urlparse(value)
+    if parsed.scheme != "https":
+        raise BridgeRuntimeError("reconciliation upstream URL must use HTTPS")
+    return value
+
+
+def reconciliation_secret(route: dict[str, Any]) -> str:
+    env_name = str(
+        route.get("reconciliation_secret_env")
+        or route.get("secret_env")
+        or ""
+    ).strip()
+    if env_name:
+        return os.environ.get(env_name, "")
+    return str(route.get("secret") or "")
+
+
+def dispatch_reconciliation(
+    route: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    url = reconciliation_url(route)
+    parsed = urllib.parse.urlparse(url)
+    query = dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    query.update({
+        "request_id": str(payload["request_id"]),
+        "connector": str(payload["connector"]),
+        "action": str(payload["action"]),
+    })
+    url = urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, "", urllib.parse.urlencode(query), "")
+    )
+    secret = reconciliation_secret(route)
+    timestamp = int(time.time())
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "ai-orchestrator-bridge-reconciliation/1.0",
+        "X-Orchestrator-Protocol": PROTOCOL,
+        "X-Orchestrator-Timestamp": str(timestamp),
+        "X-Orchestrator-Signature": sign(timestamp, b"", secret) if secret else "",
+        "Idempotency-Key": str(payload["request_id"]),
+    }
+    request = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            raw = response.read().decode("utf-8", "replace")
+            status = response.status
+    except Exception as exc:
+        raise BridgeRuntimeError(f"reconciliation upstream call failed: {exc}") from exc
+    if not (200 <= status < 300):
+        raise BridgeRuntimeError(f"reconciliation upstream returned HTTP {status}")
+    try:
+        data = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise BridgeRuntimeError("reconciliation upstream returned invalid JSON") from exc
+    if not isinstance(data, dict):
+        raise BridgeRuntimeError("reconciliation upstream response must be an object")
+    state = str(data.get("state") or "").strip().lower()
+    if state not in {"applied", "not_applied", "unknown"}:
+        raise BridgeRuntimeError("reconciliation upstream returned invalid state")
+    return {"status_code": status, "state": state, "data": data}
+
+
 def upstream_secret(route: dict[str, Any]) -> str:
     env_name = str(route.get("secret_env") or "").strip()
     if env_name:
@@ -235,6 +301,41 @@ def dispatch_upstream(route: dict[str, Any], payload: dict[str, Any]) -> dict[st
     except json.JSONDecodeError:
         data = {"raw": raw}
     return {"status_code": status, "data": data}
+
+
+def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
+    routes = load_routes()
+    if payload.get("protocol") != PROTOCOL:
+        raise BridgeRuntimeError("unsupported connector protocol")
+    request_id = str(payload.get("request_id") or "").strip()
+    connector = str(payload.get("connector") or "").strip().lower()
+    action = str(payload.get("action") or "").strip().lower()
+    if len(request_id) != 64 or any(ch not in "0123456789abcdef" for ch in request_id):
+        raise BridgeRuntimeError("invalid request_id")
+    route = routes.get(connector)
+    if not isinstance(route, dict):
+        raise BridgeRuntimeError("connector is not allowlisted")
+    if not str(route.get("reconciliation_url") or "").strip():
+        raise BridgeRuntimeError("connector reconciliation is not configured")
+    if action not in route.get("actions", []):
+        raise BridgeRuntimeError("connector action is not allowlisted")
+    result = dispatch_reconciliation(
+        route,
+        {
+            "request_id": request_id,
+            "connector": connector,
+            "action": action,
+        },
+    )
+    return {
+        "ok": True,
+        "protocol": PROTOCOL,
+        "request_id": request_id,
+        "connector": connector,
+        "action": action,
+        "state": result["state"],
+        "upstream": result,
+    }
 
 
 def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any]:

@@ -73,6 +73,61 @@ class ConnectorBridgeTests(unittest.TestCase):
             with self.assertRaises(cb.ConnectorBridgeError):
                 cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
 
+
+    def test_reconciliation_url_respects_bridge_path(self):
+        self.assertEqual(
+            cb.reconciliation_url("https://bridge.example.test/api/bridge"),
+            "https://bridge.example.test/api/bridge/reconcile",
+        )
+        self.assertEqual(
+            cb.reconciliation_url("https://bridge.example.test/bridge"),
+            "https://bridge.example.test/bridge/reconcile",
+        )
+
+    def test_reconciliation_requires_advertised_support(self):
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True):
+            inventory = {
+                "notion": {
+                    "actions": ["create_page"],
+                    "configured": True,
+                    "reconciliation": False,
+                }
+            }
+            with patch.object(cb, "discover_capabilities", return_value=inventory):
+                with self.assertRaises(cb.ConnectorReconciliationError):
+                    cb.reconcile_connector_execution(
+                        self.node(),
+                        "reconcile it",
+                        dry_run=False,
+                    )
+
+    def test_reconciliation_returns_explicit_state(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "reconciliation": True,
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(
+            cb, "post_reconciliation",
+            return_value={"ok": True, "state": "not_applied"},
+        ) as reconcile:
+            result = cb.reconcile_connector_execution(
+                self.node(),
+                "reconcile it",
+                dry_run=False,
+            )
+        self.assertEqual(result["state"], "not_applied")
+        reconcile.assert_called_once()
     def test_live_preflights_discovered_connector_before_post(self):
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",

@@ -120,6 +120,60 @@ class BridgeRuntimeTests(unittest.TestCase):
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_request(bad, "secret")
 
+
+    def test_reconciliation_capability_is_discovered(self):
+        routes = {
+            "notion": {
+                "url": "https://upstream.example/notion",
+                "reconciliation_url": "https://upstream.example/notion/reconcile",
+                "actions": ["create_page"],
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertTrue(discovered["notion"]["reconciliation"])
+
+    def test_reconciliation_returns_explicit_state(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "reconciliation_url": "https://upstream.example.test/reconcile",
+            }
+        }
+        payload = self.payload()
+        captured = {}
+
+        def fake_urlopen(request, timeout=45):
+            captured["url"] = request.full_url
+            class Response:
+                status = 200
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+                def read(self): return b'{"state":"applied","external_id":"p1"}'
+            return Response()
+
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen", side_effect=fake_urlopen):
+            result = br.handle_reconciliation(payload)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["state"], "applied")
+        self.assertIn("request_id=", captured["url"])
+
+    def test_reconciliation_rejects_invalid_state(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "reconciliation_url": "https://upstream.example.test/reconcile",
+            }
+        }
+        payload = self.payload(request_id=hashlib.sha256(b"wf:invalid-state").hexdigest())
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen") as urlopen:
+            class Response:
+                status = 200
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+                def read(self): return b'{"state":"maybe"}'
+            urlopen.return_value = Response()
+            with self.assertRaises(br.BridgeRuntimeError):
+                br.handle_reconciliation(payload)
     def test_idempotent_response_is_replayed(self):
         payload = self.payload()
         routes = {"notion": {
