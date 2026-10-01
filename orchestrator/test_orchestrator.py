@@ -22,6 +22,12 @@ class OrchestratorTests(unittest.TestCase):
                 nodes = o.deterministic_plan("research AI safety", registry)
         self.assertEqual(nodes[0].tool, "wikipedia")
 
+    def test_workflow_creation_falls_back_without_gemini_key(self):
+        with patch.dict(o.os.environ, {}, clear=True):
+            workflow = o.create_workflow("build a small website", live=False)
+        self.assertGreaterEqual(len(workflow["nodes"]), 4)
+        self.assertEqual(workflow["status"], "planning")
+
     def test_workflow_creation_is_persistable(self):
         workflow = o.create_workflow("build a small website", live=False)
         self.assertTrue(workflow["id"].startswith("wf_"))
