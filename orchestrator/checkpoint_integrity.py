@@ -11,12 +11,22 @@ class CheckpointIntegrityError(RuntimeError):
     pass
 
 
-def _safe_path(root: Path, value: str) -> Path:
-    candidate = (root / value).resolve()
-    try:
-        candidate.relative_to(root.resolve())
-    except ValueError as exc:
-        raise CheckpointIntegrityError("checkpoint path escapes repository root") from exc
+def _safe_path(
+    root: Path,
+    value: str,
+    *,
+    allowed_dir: Path | None = None,
+) -> Path:
+    raw = Path(value)
+    candidate = raw.resolve() if raw.is_absolute() else (root / value).resolve()
+    roots = [root.resolve()]
+    if allowed_dir is not None:
+        roots.append(allowed_dir.resolve())
+    if not any(
+        str(candidate) == str(base) or str(candidate).startswith(str(base) + "/")
+        for base in roots
+    ):
+        raise CheckpointIntegrityError("checkpoint path escapes allowed storage roots")
     return candidate
 
 
@@ -25,6 +35,7 @@ def verify_checkpoint(
     node: dict[str, Any],
     *,
     expected_workflow_id: str | None = None,
+    allowed_dir: Path | None = None,
 ) -> dict[str, Any]:
     output = node.get("output")
     checkpoint = output.get("checkpoint") if isinstance(output, dict) else None
@@ -40,7 +51,11 @@ def verify_checkpoint(
     if not path_value or len(expected_hash) != 64:
         raise CheckpointIntegrityError("checkpoint metadata is incomplete")
 
-    path = _safe_path(root, path_value.lstrip("/"))
+    path = _safe_path(
+        root,
+        path_value,
+        allowed_dir=allowed_dir,
+    )
     if not path.is_file():
         raise CheckpointIntegrityError("checkpoint file is missing")
 
