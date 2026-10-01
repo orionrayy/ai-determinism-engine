@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: reconciliation-rearm v16 adds safe rearming after authoritative `not_applied` outcomes on top of state-durability v15; always verify the current `main` ref before modifying.
+Current main baseline: deployment-supply-chain v18 adds an exact Vercel CLI pin and Node.js 24 deployment tooling on top of Actions runtime hardening v17; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -195,7 +195,7 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 
 - GitHub Actions core dependencies are pinned to immutable commit SHAs for the current Node 24-based releases: checkout v6, setup-python v7, and setup-node v7.
 - Workflow configuration tests enforce the expected action references so future tag drift is detected by CI.
-- The deployment workflow keeps its application-level Node.js 20 setting; only the action runtime was modernized.
+- The deployment workflow uses Node.js 24 for the deployment CLI environment; this does not alter the Python function runtime declared in `vercel.json`.
 
 ## Reconciliation rearm v16
 
