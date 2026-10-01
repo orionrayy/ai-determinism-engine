@@ -1,9 +1,8 @@
 {
   "capability:research": {
-    "default_tool": "firecrawl",
+    "default_tool": "research_bundle",
     "fallback_tools": [
-      "wikipedia",
-      "webhook"
+      "wikipedia"
     ],
     "description": "Evidence and web research"
   },
@@ -94,6 +93,10 @@
   },
   "gemini": {
     "required_env": "GEMINI_API_KEY",
+    "side_effects": []
+  },
+  "research_bundle": {
+    "required_env": null,
     "side_effects": []
   }
 }
