@@ -45,7 +45,7 @@ class CapabilityGraphTests(unittest.TestCase):
         }, clear=True):
             self.assertEqual(
                 cg.route_capability("analyze", self.registry, live=True),
-                "free_keyed",
+                "free",
             )
 
     def test_quarantined_tool_is_skipped_during_cooldown(self):
