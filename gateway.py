@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import secrets
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 import urllib.request
@@ -36,13 +39,32 @@ def github_dispatch(goal: str, metadata: dict) -> dict:
     with urllib.request.urlopen(request, timeout=30) as response:
         return {"github_status": response.status}
 
-def authorized(headers: dict[str, str]) -> bool:
+def authorized(headers: dict[str, str], raw_body: bytes | None = None) -> bool:
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
     if not configured:
         return False
     supplied = headers.get("Authorization", "")
     expected = "Bearer " + configured
-    return secrets.compare_digest(supplied, expected)
+    if secrets.compare_digest(supplied, expected):
+        return True
+
+    if raw_body is None:
+        return False
+    timestamp = headers.get("X-Orchestrator-Timestamp", "")
+    signature = headers.get("X-Orchestrator-Signature", "")
+    try:
+        ts = int(timestamp)
+    except ValueError:
+        return False
+    if abs(int(time.time()) - ts) > 300:
+        return False
+    signed = timestamp.encode("utf-8") + b"\n" + raw_body
+    expected_sig = hmac.new(
+        configured.encode("utf-8"),
+        signed,
+        hashlib.sha256,
+    ).hexdigest()
+    return secrets.compare_digest(signature, "sha256=" + expected_sig)
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AIOrchestratorGateway/1.0"
@@ -79,19 +101,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"ok": False, "error": "not_found"})
             return
 
-        if not authorized({k: v for k, v in self.headers.items()}):
-            self._send(401, {"ok": False, "error": "unauthorized"})
-            return
-
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if length > 128 * 1024:
                 raise ValueError("payload too large")
             raw = self.rfile.read(length)
+            if not authorized({k: v for k, v in self.headers.items()}, raw):
+                self._send(401, {"ok": False, "error": "unauthorized"})
+                return
             payload = json.loads(raw.decode("utf-8") if raw else "{}")
             goal = str(payload.get("goal", "")).strip()
             if not goal:
                 raise ValueError("goal is required")
+            if len(goal) > 4000:
+                raise ValueError("goal too long")
             metadata = payload.get("metadata", {})
             if not isinstance(metadata, dict):
                 metadata = {"value": str(metadata)}
