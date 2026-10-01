@@ -1001,6 +1001,11 @@ def replan_after_failure(
         if not tool_available(candidate, registry, require_env=bool(workflow.get("live"))):
             continue
         transition(failed_node, "replanning")
+        old_error = dict(failed_node.error)
+        old_output = dict(failed_node.output)
+        old_next_action = (
+            old_output.get("next_action") if isinstance(old_output, dict) else None
+        )
         failed_node.tool = candidate
         failed_node.retry_count = 0
         failed_node.error = {}
@@ -1019,12 +1024,9 @@ def replan_after_failure(
         failed_node.input["previous_tool"] = old_tool
         workflow.setdefault("repair_feedback", {})[failed_node.id] = {
             "tool": old_tool,
-            "error": failed_node.error,
-            "output": compact_json(failed_node.output, limit=12 * 1024),
-            "next_action": (
-                failed_node.output.get("next_action")
-                if isinstance(failed_node.output, dict) else None
-            ),
+            "error": old_error,
+            "output": compact_json(old_output, limit=12 * 1024),
+            "next_action": old_next_action,
         }
         append_event("node.repair_feedback", {
             "workflow_id": workflow["id"],
