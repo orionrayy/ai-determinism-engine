@@ -7,6 +7,7 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -23,6 +24,13 @@ _DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 class ConnectorBridgeError(RuntimeError):
     pass
+
+
+class ConnectorRequestError(ConnectorBridgeError):
+    def __init__(self, message: str, *, uncertain: bool = False, retry_allowed: bool = False) -> None:
+        super().__init__(message)
+        self.uncertain = uncertain
+        self.retry_allowed = retry_allowed
 
 
 @dataclass(frozen=True)
@@ -300,8 +308,22 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
     try:
         with urllib.request.urlopen(http, timeout=60) as response:
             raw = response.read().decode("utf-8", "replace")
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        raise ConnectorRequestError(
+            f"connector bridge request failed: HTTP {exc.code}",
+            uncertain=exc.code >= 500,
+        ) from exc
     except Exception as exc:
-        raise ConnectorBridgeError(f"connector bridge request failed: {exc}") from exc
+        raise ConnectorRequestError(
+            f"connector bridge request failed: {exc}",
+            uncertain=True,
+        ) from exc
+    if not (200 <= status < 300):
+        raise ConnectorRequestError(
+            f"connector bridge request returned HTTP {status}",
+            uncertain=status >= 500,
+        )
 
     try:
         result = json.loads(raw) if raw else {}
@@ -337,6 +359,11 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         request.input,
         inventory,
     )
+    try:
+        response = post_request(url, secret, request)
+    except ConnectorRequestError as exc:
+        exc.retry_allowed = bool(action_spec.get("idempotent"))
+        raise
     return {
         "simulated": False,
         "protocol": PROTOCOL,
@@ -344,5 +371,5 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "bridge_url": url,
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
-        "response": post_request(url, secret, request),
+        "response": response,
     }
