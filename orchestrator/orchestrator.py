@@ -1384,7 +1384,18 @@ def recover_inflight_side_effects(
             continue
         execution_id = execution_key(workflow, node)
         record = workflow.setdefault("executions", {}).get(execution_id)
-        if not isinstance(record, dict) or record.get("status") != "started":
+        if not isinstance(record, dict):
+            continue
+        if record.get("status") == "prepared":
+            transition(node, "ready")
+            workflow["status"] = "running"
+            append_event("node.pre_start_execution_rearmed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "execution_id": execution_id,
+            })
+            continue
+        if record.get("status") != "started":
             continue
         node.error = {
             "type": "execution_uncertain",
