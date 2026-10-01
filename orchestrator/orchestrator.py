@@ -557,7 +557,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return workflow['status']
 
     node = sorted(eligible, key=lambda item: item.id)[0]
-    if live and node.risk in {'high', 'critical'} and not approve_high_risk:
+    if live and node.risk in {'high', 'critical'} and not approve_high_risk and not node.input.get('approval_granted'):
         transition(node, 'waiting_approval')
         workflow['status'] = 'waiting_approval'
         try:
@@ -845,70 +845,74 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--goal", default=os.environ.get("ORCHESTRATOR_GOAL", ""))
-    parser.add_argument("--workflow-id")
-    parser.add_argument("--live", action="store_true")
-    parser.add_argument("--approve-high-risk", action="store_true")
-    parser.add_argument("--list", action="store_true")
-    parser.add_argument("--resume", action="store_true")
-    parser.add_argument("--step", action="store_true")
+    parser.add_argument('--goal', default=os.environ.get('ORCHESTRATOR_GOAL', ''))
+    parser.add_argument('--workflow-id')
+    parser.add_argument('--live', action='store_true')
+    parser.add_argument('--approve-high-risk', action='store_true')
+    parser.add_argument('--list', action='store_true')
+    parser.add_argument('--resume', action='store_true')
+    parser.add_argument('--step', action='store_true')
     args = parser.parse_args()
 
     state = load_state()
 
     if args.list:
-        for workflow in state.get("workflows", {}).values():
+        for workflow in state.get('workflows', {}).values():
             print_summary(workflow)
         return 0
 
     if args.resume:
-        count = resume_pending_workflows(state, approve_high_risk=args.approve_high_risk, step=args.step)
-        print(json.dumps({"resumed_workflows": count}, indent=2))
+        count = resume_pending_workflows(
+            state, approve_high_risk=args.approve_high_risk, step=args.step
+        )
+        print(json.dumps({'resumed_workflows': count}, indent=2))
         return 0
 
     if args.workflow_id:
-        workflow = state.get("workflows", {}).get(args.workflow_id)
+        workflow = state.get('workflows', {}).get(args.workflow_id)
         if not workflow:
-            raise SystemExit(f"workflow not found: {args.workflow_id}")
+            raise SystemExit(f'workflow not found: {args.workflow_id}')
         if args.step:
             result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-            state["workflows"][workflow["id"]] = workflow
-            state["last_workflow_id"] = workflow["id"]
+            state['workflows'][workflow['id']] = workflow
+            state['last_workflow_id'] = workflow['id']
             save_state(state)
             print_summary(workflow)
-            return 0 if result not in {"failed", "continuation_failed"} else 2
-        if args.step:
-        result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-        state["workflows"][workflow["id"]] = workflow
-        state["last_workflow_id"] = workflow["id"]
+            return 0 if result not in {'failed', 'continuation_failed'} else 2
+        run_workflow(workflow, approve_high_risk=args.approve_high_risk)
+        state['workflows'][workflow['id']] = workflow
+        state['last_workflow_id'] = workflow['id']
         save_state(state)
         print_summary(workflow)
-        return 0 if result not in {"failed", "continuation_failed"} else 2
-    run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-        state["workflows"][workflow["id"]] = workflow
-        state["last_workflow_id"] = workflow["id"]
-        save_state(state)
-        print_summary(workflow)
-        return 0 if workflow["status"] in {"completed", "waiting_approval"} else 2
+        return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
     if not args.goal:
-        raise SystemExit("provide --goal or --workflow-id")
+        raise SystemExit('provide --goal or --workflow-id')
 
-    live = args.live or os.environ.get("ORCHESTRATOR_LIVE", "").lower() == "true"
+    live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
     workflow = create_workflow(args.goal, live=live)
-    workflow["status"] = "ready"
-    state["workflows"][workflow["id"]] = workflow
-    state["last_workflow_id"] = workflow["id"]
+    workflow['status'] = 'ready'
+    state['workflows'][workflow['id']] = workflow
+    state['last_workflow_id'] = workflow['id']
     append_event(
-        "workflow.created",
-        {"workflow_id": workflow["id"], "goal": workflow["goal"], "live": live},
+        'workflow.created',
+        {'workflow_id': workflow['id'], 'goal': workflow['goal'], 'live': live},
     )
+
+    if args.step:
+        result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
+        state['workflows'][workflow['id']] = workflow
+        state['last_workflow_id'] = workflow['id']
+        save_state(state)
+        print_summary(workflow)
+        return 0 if result not in {'failed', 'continuation_failed'} else 2
+
     run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-    state["workflows"][workflow["id"]] = workflow
-    state["last_workflow_id"] = workflow["id"]
+    state['workflows'][workflow['id']] = workflow
+    state['last_workflow_id'] = workflow['id']
     save_state(state)
     print_summary(workflow)
-    return 0 if workflow["status"] in {"completed", "waiting_approval"} else 2
+    return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     raise SystemExit(main())

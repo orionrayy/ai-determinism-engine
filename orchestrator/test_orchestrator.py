@@ -28,6 +28,22 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
+    def test_one_step_does_not_require_github_token(self):
+        workflow = {
+            "id": "wf_no_token",
+            "goal": "research without network",
+            "live": False,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            with patch.dict(o.os.environ, {"GITHUB_TOKEN": ""}, clear=False):
+                with tempfile.TemporaryDirectory() as tmp:
+                    with patch.object(o, "STATE_DIR", Path(tmp)), \
+                         patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                         patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                         patch.object(o, "load_registry", return_value={}):
+                        result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "completed")
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
