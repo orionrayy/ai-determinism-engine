@@ -1684,7 +1684,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 workflow,
                 'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
             )
-            if not uncertain and replan_after_failure(workflow, nodes, node, registry):
+            if not uncertain and not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
                 workflow['nodes'] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
                 return 'replanned'
@@ -1915,7 +1915,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 )
             else:
                 update_tool_health(node, False, registry)
-                if replan_after_failure(workflow, nodes, node, registry):
+                if not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
                     replan_needed = True
                 else:
                     workflow["status"] = "failed"
