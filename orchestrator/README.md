@@ -4,13 +4,14 @@ This is a no-builder-quota control plane.
 
 Architecture: **goal → DAG planner → state machine → execution adapters → validation → retry → checkpoint → persistent state**
 
-The GitHub Actions runner is the execution worker. State is kept in `.orchestrator/state.json`, so a separate workflow SaaS is not required.
+The GitHub Actions runner is the execution worker. State is kept in `.orchestrator/state.json`, so a separate workflow SaaS is not required. Long DAGs run one node per worker run; `.github/workflows/orchestrator-continuation.yml` dispatches the next node only after the previous worker has completed and pushed state.
 
 ## Modes
 
 - Dry-run is the default and has no external side effects.
 - Live execution is persisted in the workflow state; scheduled runs can therefore resume a previously-live workflow.
 - `ORCHESTRATOR_FREE_ONLY=true` is the default safety mode. It blocks OpenAI, Firecrawl, and generic webhook adapters during live execution so the runner cannot create an unexpected API bill.
+- Free live execution can use Gemini (Free Tier), Wikipedia, GitHub Actions, and GitHub APIs. Deployment/publishing that requires an external paid API remains blocked until a free-compatible adapter is configured.
 - High-risk nodes (for example deploy/publish) pause for explicit approval unless the run is invoked with `approve_high_risk=true`.
 
 ## LLM backends
@@ -26,7 +27,7 @@ A ChatGPT subscription does not itself provide an OpenAI API key or API billing.
 
 - Manual: Actions → AI Orchestrator → Run workflow.
 - Event-driven: `repository_dispatch` type `orchestrator.event` with payload `{ "goal": "..." }`.
-- Scheduled: hourly health/continuation check.
+- Scheduled: every 15 minutes for recovery of stalled/running workflows.
 
 ## Connector boundary
 
