@@ -15,8 +15,8 @@ class OrchestratorTests(unittest.TestCase):
                     "default_tool": "firecrawl",
                     "fallback_tools": ["wikipedia"],
                 },
-                "firecrawl": {"required_env": "FIRECRAWL_API_KEY"},
-                "wikipedia": {"required_env": None},
+                "firecrawl": {"required_env": "FIRECRAWL_API_KEY", "free_tier": False},
+                "wikipedia": {"required_env": None, "free_tier": True},
             }
             with patch.dict(o.os.environ, {}, clear=True):
                 nodes = o.deterministic_plan("research AI safety", registry)
@@ -25,7 +25,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_free_only_blocks_external_paid_adapters(self):
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
             self.assertFalse(o.tool_available("openai", {"openai": {"free_tier": False}}))
-            self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
+            self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {"free_tier": False}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
     def test_one_step_does_not_require_github_token(self):
