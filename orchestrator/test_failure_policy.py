@@ -10,6 +10,7 @@ from failure_policy import (
 
 class FailurePolicyTests(unittest.TestCase):
     def test_transient_and_intermittent_are_retryable(self):
+        self.assertEqual(classify_failure(RuntimeError("transient")), "transient")
         self.assertEqual(classify_failure(TimeoutError("timed out")), "transient")
         self.assertEqual(classify_failure(RuntimeError("rate limit 429")), "intermittent")
         self.assertTrue(retry_allowed("transient"))
