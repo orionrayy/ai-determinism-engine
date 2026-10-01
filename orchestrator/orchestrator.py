@@ -171,6 +171,16 @@ def mark_execution_completed(
         record["output"] = output
 
 
+def mark_execution_not_applied(
+    workflow: dict[str, Any], key: str
+) -> None:
+    record = workflow.setdefault("executions", {}).setdefault(key, {})
+    record.update({
+        "status": "not_applied",
+        "reconciled_at": utc_now(),
+    })
+
+
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
         return migrate_state({"version": 3, "workflows": {}, "last_workflow_id": None})
@@ -1400,6 +1410,7 @@ def reconcile_first_uncertain(
         )
         return "reconciled"
     if state == "not_applied":
+        mark_execution_not_applied(workflow, execution_id)
         node.error = {
             **node.error,
             "reconciled": True,
