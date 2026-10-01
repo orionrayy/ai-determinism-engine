@@ -18,6 +18,7 @@ FAILURE_CLASSES = {
 
 _NON_RETRYABLE_CLASSES = {"contract", "semantic", "policy", "permanent", "uncertain"}
 _TRANSIENT_TEXT = (
+    "transient",
     "timeout",
     "timed out",
     "temporarily",
