@@ -61,7 +61,7 @@ MAX_CONTEXT_BYTES = 48 * 1024
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
     "ready": {"running", "waiting_approval", "cancelled"},
-    "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled"},
+    "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled", "ready"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
