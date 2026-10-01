@@ -153,9 +153,9 @@ def classify_risk(capability: str) -> str:
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
-    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "noop",
+    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "artifact_verifier", "noop",
 }
-BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "noop"}
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "artifact_verifier", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
@@ -445,6 +445,90 @@ def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
         headers={"User-Agent": "ai-orchestrator-core/2.0 research"},
         timeout=30,
     )
+
+def execute_artifact_verifier(node: Node, goal: str) -> dict[str, Any]:
+    artifacts = node.input.get("artifacts") or []
+    if not isinstance(artifacts, list):
+        raise RuntimeError("artifacts must be an array")
+    checks = []
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, dict):
+            raise RuntimeError(f"artifact {index} must be an object")
+        kind = str(artifact.get("type") or "").strip().lower()
+        if kind == "url":
+            url = str(artifact.get("url") or "").strip()
+            if not url:
+                raise RuntimeError(f"artifact {index} url is required")
+            result = http_json(url, timeout=30)
+            status = result.get("status_code")
+            ok = isinstance(status, int) and 200 <= status < 300
+            contains = artifact.get("contains")
+            if ok and contains:
+                data = result.get("data")
+                text_blob = compact_json(data, limit=24 * 1024)
+                ok = str(contains) in text_blob
+            checks.append({
+                "index": index,
+                "type": kind,
+                "status_code": status,
+                "passed": ok,
+            })
+            if not ok:
+                raise RuntimeError(f"artifact {index} URL verification failed")
+        elif kind == "github_file":
+            path = _github_path(artifact.get("path"))
+            read_node = Node(
+                id=f"{node.id}-artifact-{index}",
+                capability="execute",
+                tool="github",
+                input={
+                    "action": "read_file",
+                    "path": path,
+                    "branch": str(artifact.get("branch") or "main"),
+                },
+            )
+            result = execute_github(read_node)
+            status = result.get("status_code")
+            ok = isinstance(status, int) and 200 <= status < 300
+            checks.append({
+                "index": index,
+                "type": kind,
+                "path": path,
+                "status_code": status,
+                "passed": ok,
+            })
+            if not ok:
+                raise RuntimeError(f"artifact {index} GitHub file verification failed")
+        elif kind == "local_file":
+            path = _safe_local_path(str(artifact.get("path") or ""))
+            ok = path.is_file()
+            checks.append({
+                "index": index,
+                "type": kind,
+                "path": str(path.relative_to(ROOT)),
+                "passed": ok,
+            })
+            if not ok:
+                raise RuntimeError(f"artifact {index} local file does not exist")
+        else:
+            raise RuntimeError(f"unsupported artifact type: {kind or 'missing'}")
+    return {
+        "passed": True,
+        "checks": checks,
+        "verified_count": len(checks),
+        "goal": goal,
+        "verifier": "artifact_verifier",
+    }
+
+
+def _safe_local_path(value: str) -> Path:
+    candidate = (ROOT / value.lstrip("/")).resolve()
+    try:
+        candidate.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise RuntimeError("invalid local artifact path") from exc
+    return candidate
+
 
 def execute_webhook(node: Node, goal: str) -> dict[str, Any]:
     url = node.input.get("url") or os.environ.get("ORCHESTRATOR_WEBHOOK_URL")
@@ -938,7 +1022,7 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
             raise RuntimeError(
                 f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
             )
-    if dry_run and node.tool != "local_validator":
+    if dry_run and node.tool not in {"local_validator"}:
         return {
             "simulated": True,
             "tool": node.tool,
@@ -961,6 +1045,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_github(node)
     if node.tool == "connector_bridge":
         return execute_connector_bridge(node, goal, dry_run)
+    if node.tool == "artifact_verifier":
+        return execute_artifact_verifier(node, goal)
     if node.tool == "local_validator":
         return execute_local_validator(node, goal)
     if node.tool == "noop":
