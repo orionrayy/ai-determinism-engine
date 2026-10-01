@@ -1543,7 +1543,7 @@ def create_workflow(
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
         try:
             from llm_planner import plan_goal
-            nodes = plan_goal(goal, registry, Node, validate_dag)
+            nodes = plan_goal(goal, registry, Node, validate_dag, live=live)
             append_event("planner.llm", {"goal": goal, "nodes": len(nodes)})
         except Exception as planner_exc:
             append_event("planner.fallback", {"goal": goal, "error": str(planner_exc)})
