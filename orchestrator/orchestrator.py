@@ -120,14 +120,20 @@ def load_registry() -> dict[str, dict[str, Any]]:
 def free_only() -> bool:
     return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
 
-def tool_available(tool_name: str, registry: dict[str, dict[str, Any]]) -> bool:
+def tool_available(
+    tool_name: str,
+    registry: dict[str, dict[str, Any]],
+    require_env: bool = True,
+) -> bool:
     spec = registry.get(tool_name, {})
     if free_only() and not bool(spec.get("free_tier", False)):
         return False
+    if not require_env:
+        return True
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
 
-def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[Node]:
+def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
     if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
         sequence = [
@@ -170,7 +176,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
         candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
         candidates = [item for item in candidates if item]
         preferred = next(
-            (item for item in candidates if tool_available(item, registry)),
+            (item for item in candidates if tool_available(item, registry, require_env=live)),
             None,
         )
         if preferred is None:
@@ -851,7 +857,7 @@ def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> 
         except Exception as planner_exc:
             append_event("planner.fallback", {"goal": goal, "error": str(planner_exc)})
     if nodes is None:
-        nodes = deterministic_plan(goal, registry)
+        nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
     return {
         "id": new_id("wf"),
