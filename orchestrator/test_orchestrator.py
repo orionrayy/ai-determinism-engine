@@ -916,6 +916,37 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "failed")
         self.assertEqual(workflow["nodes"][0]["status"], "failed")
 
+    def test_approval_accepts_only_matching_node_fingerprint(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {"id": "wf_approval_bind", "status": "waiting_approval", "nodes": [o.asdict(node)]}
+        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer"}, clear=False), \
+             patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
+            o.refresh_approvals(workflow, [node])
+        self.assertTrue(node.input["approval_granted"])
+        self.assertEqual(node.input["approval_actor"], "reviewer")
+        self.assertTrue(node.input["approval_approved_at"])
+        self.assertEqual(node.status, "ready")
+        self.assertEqual(workflow["status"], "running")
+
+    def test_stale_approval_is_rearmed_instead_of_accepted(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        node.input["instruction"] = "changed after approval request"
+        workflow = {"id": "wf_stale_approval", "status": "waiting_approval", "nodes": [o.asdict(node)]}
+        with patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertIsNone(node.input["approval_issue"])
+        self.assertIsNone(node.input["approval_fingerprint"])
+        self.assertEqual(node.status, "ready")
+        self.assertEqual(workflow["status"], "running")
     def test_high_risk_requires_approval_in_live_mode(self):
         nodes = [
             o.Node("deploy", "deploy", "noop", [], risk="high"),
