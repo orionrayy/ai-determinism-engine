@@ -9,12 +9,13 @@ The GitHub Actions runner is the execution worker. State is kept in `.orchestrat
 ## Modes
 
 - Dry-run is the default and has no external side effects.
-- Live execution requires the workflow input `live=true` plus `ORCHESTRATOR_LIVE=true`.
+- Live execution is persisted in the workflow state; scheduled runs can therefore resume a previously-live workflow.
 - High-risk nodes (for example deploy/publish) pause for explicit approval unless the run is invoked with `approve_high_risk=true`.
 
-## Optional secrets
+## LLM backends
 
-- `OPENAI_API_KEY` for OpenAI execution.
+- `GEMINI_API_KEY` enables the primary Gemini adapter. Google currently lists Gemini 3.7 Flash as free-of-charge at the standard API tier.
+- `OPENAI_API_KEY` is an optional fallback.
 - `ORCHESTRATOR_WEBHOOK_URL` for a generic HTTPS tool gateway.
 - `ORCHESTRATOR_WEBHOOK_SECRET` for bearer authentication to that gateway.
 
