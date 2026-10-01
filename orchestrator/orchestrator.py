@@ -557,7 +557,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return workflow['status']
 
     node = sorted(eligible, key=lambda item: item.id)[0]
-    if live and node.risk in {'high', 'critical'} and not approve_high_risk:
+    if live and node.risk in {'high', 'critical'} and not approve_high_risk and not node.input.get('approval_granted'):
         transition(node, 'waiting_approval')
         workflow['status'] = 'waiting_approval'
         try:
