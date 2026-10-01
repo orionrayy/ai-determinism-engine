@@ -64,9 +64,11 @@ jobs:
         env:
           INPUT_GOAL: ${{ inputs.goal }}
           EVENT_GOAL: ${{ github.event.client_payload.goal }}
+          EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
           set -euo pipefail
           goal="$INPUT_GOAL"
@@ -77,6 +79,7 @@ jobs:
             esac
           fi
           if [ -z "$goal" ]; then goal="$EVENT_GOAL"; fi
+          if [ -z "$goal" ] && [ -n "$GITHUB_EVENT_WORKFLOW_ID" ]; then goal="Continuing workflow $GITHUB_EVENT_WORKFLOW_ID"; fi
           if [ -z "$goal" ] && [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
             goal='Run the orchestration health check and report current state.'
           fi
@@ -106,12 +109,15 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
+          ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_FREE_ONLY: "true"
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
-            args=(--resume)
+            args=(--resume --step)
+          elif [ -n "$ORCHESTRATOR_EVENT_WORKFLOW_ID" ]; then
+            args=(--workflow-id "$ORCHESTRATOR_EVENT_WORKFLOW_ID" --step)
           else
-            args=(--goal "$ORCHESTRATOR_GOAL")
+            args=(--goal "$ORCHESTRATOR_GOAL" --step)
           fi
           if [ "$ORCHESTRATOR_LIVE" = "true" ]; then args+=(--live); fi
           if [ "$ORCHESTRATOR_APPROVE_HIGH_RISK" = "true" ]; then args+=(--approve-high-risk); fi
