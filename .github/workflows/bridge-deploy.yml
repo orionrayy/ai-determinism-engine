@@ -1,0 +1,73 @@
+name: Connector Bridge Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "api/bridge.py"
+      - "bridge_runtime.py"
+      - "vercel.json"
+      - ".github/workflows/bridge-deploy.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$VERCEL_TOKEN" || { echo "VERCEL_TOKEN is not configured"; exit 1; }
+          test -n "$VERCEL_ORG_ID" || { echo "VERCEL_ORG_ID is not configured"; exit 1; }
+          test -n "$VERCEL_PROJECT_ID" || { echo "VERCEL_PROJECT_ID is not configured"; exit 1; }
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build and deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx --yes vercel@latest build --prod
+          npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1 | tee /tmp/vercel-deploy.txt
+          url="$(grep -Eo 'https://[^[:space:]]+' /tmp/vercel-deploy.txt | tail -n 1 | sed 's/[[:punct:]]*$//' || true)"
+          test -n "$url" || { echo "Unable to determine deployment URL"; exit 1; }
+          echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
+        id: deploy
+
+      - name: Health check
+        shell: bash
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --max-time 30 "$DEPLOYMENT_URL/api/bridge")"
+          echo "$body"
+          python - <<'PY' "$body"
+import json, sys
+data=json.loads(sys.argv[1])
+assert data.get("ok") is True
+assert data.get("protocol") == "ai-orchestrator.connector/v1"
+PY
+
+      - name: Summary
+        if: always()
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
+        run: |
+          echo "## Connector Bridge Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: `$DEPLOYMENT_URL`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Endpoint: `$DEPLOYMENT_URL/api/bridge`" >> "$GITHUB_STEP_SUMMARY"
