@@ -174,6 +174,10 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
             None,
         )
         if preferred is None:
+            if cap_spec:
+                raise ValueError(
+                    f"no available tool for capability {capability} under current policy"
+                )
             preferred = {
                 "research": "research_bundle",
                 "analyze": "gemini",
