@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from . import native_worker
+except ImportError:
+    import native_worker
+
+try:
     from .connector_bridge import execute_connector_bridge
 except ImportError:
     from connector_bridge import execute_connector_bridge
@@ -32,10 +37,11 @@ MAX_REPLANS = 2
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
-    "ready": {"running", "waiting_approval", "cancelled"},
-    "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled"},
+    "ready": {"running", "waiting_approval", "waiting_native_worker", "cancelled"},
+    "running": {"validating", "waiting_approval", "waiting_native_worker", "retrying", "failed", "cancelled"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
+    "waiting_native_worker": {"ready", "completed", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
     "failed": {"replanning", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
@@ -75,7 +81,7 @@ def execution_key(workflow: dict[str, Any], node: Node) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
-    return bool(registry.get(node.tool, {}).get("side_effects")) or node.capability in {
+    return bool(registry.get(node.tool, {}).get("side_effects")) or node.tool == "native_worker" or node.capability in {
         "deploy", "publish", "delete", "external_write", "send"
     }
 
@@ -151,6 +157,10 @@ def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
         floor = "high"
     if node.tool == "github" and node.input.get("action") in {"create_issue", "create_or_update_file", "delete_file", "dispatch_workflow"}:
         floor = "high"
+    if node.tool == "native_worker":
+        action = str(node.input.get("action") or "").lower()
+        if any(word in action for word in ("create", "update", "delete", "publish", "send", "write", "append")):
+            floor = "high"
     return floor
 
 def enforce_node_policy(nodes: list[Node], registry: dict[str, dict[str, Any]]) -> None:
@@ -518,6 +528,119 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 "approval.approved",
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
+
+def queue_native_worker_task(
+    workflow: dict[str, Any],
+    node: Node,
+    registry: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    existing = node.input.get("native_task")
+    if existing:
+        return dict(existing)
+
+    callback_url = str(
+        node.input.get("callback_url")
+        or os.environ.get("ORCHESTRATOR_NATIVE_CALLBACK_URL", "")
+    ).strip()
+    expires_at = int(node.input.get("expires_at") or (int(time.time()) + 1800))
+    task, token = native_worker.create_task(
+        workflow["id"],
+        node.id,
+        node.input.get("connector", ""),
+        node.input.get("action", ""),
+        workflow["goal"],
+        node.input,
+        callback_url,
+        expires_at,
+    )
+    execution_id = task["execution_id"]
+    mark_execution_prepared(workflow, node)
+    mark_execution_started(workflow, node, execution_id)
+
+    issue_body = (
+        "Native worker task; public-safe payload only.\n\n"
+        "Execute exactly the declared connector/action.\n\n"
+        "TASK_JSON:\n"
+        + json.dumps(task, ensure_ascii=False, indent=2)
+        + "\n\nCALLBACK_TOKEN:\n"
+        + token
+        + "\nCALLBACK_URL:\n"
+        + callback_url
+    )
+    result = http_json(
+        f"https://api.github.com/repos/{github_repository()}/issues",
+        method="POST",
+        body={
+            "title": f"[ORCHESTRATOR NATIVE] {workflow['id']} / {node.id}",
+            "body": issue_body,
+        },
+        headers=github_headers(),
+    )
+    issue_number = result.get("data", {}).get("number")
+    if not isinstance(issue_number, int):
+        raise RuntimeError("GitHub did not return a native task issue number")
+
+    stored = {**task, "task_issue": issue_number, "queued_at": utc_now()}
+    node.input["native_task"] = stored
+    return stored
+
+
+def apply_native_result(workflow: dict[str, Any], payload: dict[str, Any]) -> str:
+    if payload.get("protocol") != native_worker.PROTOCOL:
+        return "rejected"
+    if str(payload.get("workflow_id") or "") != str(workflow.get("id") or ""):
+        return "rejected"
+
+    nodes = [Node(**node) for node in workflow.get("nodes", [])]
+    node_id = str(payload.get("node_id") or "")
+    node = next((item for item in nodes if item.id == node_id), None)
+    if node is None or node.status != "waiting_native_worker":
+        return "rejected"
+
+    task = node.input.get("native_task") or {}
+    expected_execution = str(task.get("execution_id") or execution_key(workflow, node))
+    execution = str(payload.get("execution_id") or "")
+    if execution != expected_execution:
+        return "rejected"
+    if int(task.get("expires_at", 0) or 0) <= int(time.time()):
+        return "rejected"
+    if not native_worker.verify_token(
+        str(payload.get("token") or ""), str(task.get("token_hash") or "")
+    ):
+        return "rejected"
+
+    record = workflow.setdefault("executions", {}).get(execution)
+    if record and record.get("status") == "completed":
+        return "rejected"
+
+    error = payload.get("error")
+    if error is not None:
+        node.error = error if isinstance(error, dict) else {"message": str(error)}
+        transition(node, "failed")
+        workflow["status"] = "failed"
+        workflow["failed_node"] = node.id
+        workflow["nodes"] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        append_event("native_worker.failed", {
+            "workflow_id": workflow["id"], "node_id": node.id, "execution_id": execution
+        })
+        return "failed"
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return "rejected"
+    node.output = dict(result)
+    node.output["validation"] = {"passed": True, "checked_at": utc_now()}
+    transition(node, "completed")
+    mark_execution_completed(workflow, execution, node.output)
+    workflow["status"] = "running"
+    workflow["nodes"] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
+    append_event("native_worker.completed", {
+        "workflow_id": workflow["id"], "node_id": node.id, "execution_id": execution
+    })
+    return "completed"
+
 
 def _github_path(path: str) -> str:
     value = str(path or "").strip().lstrip("/")
