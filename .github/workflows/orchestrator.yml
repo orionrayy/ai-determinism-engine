@@ -67,6 +67,7 @@ jobs:
           EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
