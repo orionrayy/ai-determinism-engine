@@ -241,6 +241,65 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(o.apply_native_result(workflow, payload), "rejected")
         self.assertEqual(workflow["nodes"][0]["output"], {"value": "original"})
 
+
+    def test_authorized_native_issue_comment_can_complete_node(self):
+        execution_id = o.hashlib.sha256(b"wf_native_comment:n01-native").hexdigest()
+        node = o.Node(
+            "n01-native", "execute", "native_worker", [], input={
+                "native_task": {
+                    "execution_id": execution_id,
+                    "task_issue": 123,
+                    "expires_at": 4102444800,
+                }
+            }, status="waiting_native_worker",
+        )
+        workflow = {
+            "id": "wf_native_comment",
+            "status": "waiting_native_worker",
+            "nodes": [o.asdict(node)],
+        }
+        payload = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native_comment",
+            "node_id": "n01-native",
+            "execution_id": execution_id,
+            "source_issue": 123,
+            "comment_id": 999,
+            "actor_association": "OWNER",
+            "result": {"page_id": "p1"},
+        }
+        self.assertEqual(o.apply_native_result(workflow, payload), "completed")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(workflow["nodes"][0]["output"]["page_id"], "p1")
+
+    def test_native_issue_comment_wrong_source_issue_is_rejected(self):
+        execution_id = o.hashlib.sha256(b"wf_native_comment:n01-native").hexdigest()
+        node = o.Node(
+            "n01-native", "execute", "native_worker", [], input={
+                "native_task": {
+                    "execution_id": execution_id,
+                    "task_issue": 123,
+                    "expires_at": 4102444800,
+                }
+            }, status="waiting_native_worker",
+        )
+        workflow = {
+            "id": "wf_native_comment", "status": "waiting_native_worker",
+            "nodes": [o.asdict(node)],
+        }
+        payload = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native_comment",
+            "node_id": "n01-native",
+            "execution_id": execution_id,
+            "source_issue": 124,
+            "comment_id": 999,
+            "actor_association": "OWNER",
+            "result": {"page_id": "p1"},
+        }
+        self.assertEqual(o.apply_native_result(workflow, payload), "rejected")
+        self.assertEqual(workflow["nodes"][0]["status"], "waiting_native_worker")
+
     def test_native_worker_error_becomes_failed_node(self):
         token_hash = o.hashlib.sha256(b"secret").hexdigest()
         execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
