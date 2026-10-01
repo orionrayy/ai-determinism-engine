@@ -21,6 +21,8 @@ jobs:
       - name: Decide continuation
         id: decision
         shell: bash
+        env:
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
           if [ ! -f .orchestrator/state.json ]; then
@@ -44,7 +46,6 @@ PY
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
-          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           python3 - <<'PY'
 import json, os, subprocess
