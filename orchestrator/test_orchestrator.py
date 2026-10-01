@@ -138,7 +138,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_side_effect_execution_uncertainty_fails_closed(self):
         node = o.Node(
             "n01-write", "build", "github", [], risk="high",
-            input={"action": "create_issue"},
+            input={"action": "create_issue", "approval_granted": True},
         )
         execution_id = o.hashlib.sha256(b"wf_uncertain:n01-write").hexdigest()
         workflow = {
