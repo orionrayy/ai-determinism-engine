@@ -2084,12 +2084,14 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
     candidates = []
     for workflow in state.get("workflows", {}).values():
         status = workflow.get("status")
+        executions = workflow.get("executions", {})
         barrier_failed = any(
             isinstance(node, dict)
             and node.get("status") == "failed"
-            and isinstance(workflow.get("executions"), dict)
-            and isinstance(workflow["executions"].get(execution_key(workflow, Node(**node))), dict)
-            and workflow["executions"][execution_key(workflow, Node(**node))].get("status") == "barrier_failed"
+            and isinstance(executions, dict)
+            and isinstance(node.get("id"), str)
+            and isinstance(executions.get(hashlib.sha256(f"{workflow.get('id')}:{node['id']}".encode("utf-8")).hexdigest()), dict)
+            and executions[hashlib.sha256(f"{workflow.get('id')}:{node['id']}".encode("utf-8")).hexdigest()].get("status") == "barrier_failed"
             for node in workflow.get("nodes", [])
         )
         uncertain = any(
