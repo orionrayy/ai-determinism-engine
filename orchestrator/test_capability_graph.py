@@ -38,7 +38,7 @@ class CapabilityGraphTests(unittest.TestCase):
                 "free",
             )
 
-    def test_live_requires_credentials(self):
+    def test_live_prefers_available_credential_free_tool(self):
         with patch.dict(os.environ, {
             "ORCHESTRATOR_FREE_ONLY": "true",
             "FREE_KEY": "x",
