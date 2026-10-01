@@ -24,11 +24,11 @@ def fake_validate(nodes):
 
 class PlannerTests(unittest.TestCase):
     def test_extracts_plain_json(self):
-        value = lp.lp._object_from_text('{"nodes": []}')
+        value = lp._object_from_text('{"nodes": []}')
         self.assertEqual(value, {"nodes": []})
 
     def test_extracts_fenced_json(self):
-        value = _object_from_text('```json\n{"nodes": [{"id": "n01"}]}\n```')
+        value = lp._object_from_text('```json\n{"nodes": [{"id": "n01"}]}\n```')
         self.assertEqual(value["nodes"][0]["id"], "n01")
 
 
@@ -46,7 +46,7 @@ class PlannerTests(unittest.TestCase):
 
     def test_rejects_non_json(self):
         with self.assertRaises(ValueError):
-            _object_from_text('no json here')
+            lp._object_from_text('no json here')
 
 
 if __name__ == '__main__':
