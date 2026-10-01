@@ -4,7 +4,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from bridge_runtime import BridgeRuntimeError, handle_request, verify_signature
+from bridge_runtime import BridgeRuntimeError, describe_routes, handle_request, verify_signature
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "10000"))
@@ -23,7 +23,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path.split("?", 1)[0] == "/health":
+        route = self.path.split("?", 1)[0]
+        if route == "/capabilities":
+            self._send(200, {
+                "ok": True,
+                "protocol": "ai-orchestrator.connector/v1",
+                "connectors": describe_routes(),
+            })
+            return
+        if route == "/health":
             self._send(200, {
                 "ok": True,
                 "service": "ai-orchestrator-connector-bridge",
