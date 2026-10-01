@@ -134,7 +134,17 @@ def route_capability(
         raise ValueError(
             f"no available tool for capability {capability} under current policy"
         )
-    return sorted(scored, key=lambda item: item[0], reverse=True)[0][1]
+    return min(
+        scored,
+        key=lambda item: (
+            -item[0][0],
+            -item[0][1],
+            -item[0][2],
+            item[0][3] * -1,
+            item[0][4] * -1,
+            item[1],
+        ),
+    )[1]
 
 
 def record_tool_result(
