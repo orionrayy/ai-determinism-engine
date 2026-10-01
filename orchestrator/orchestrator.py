@@ -524,25 +524,6 @@ def replan_after_failure(
         return True
     return False
 
-def dispatch_continuation(workflow_id: str) -> dict[str, Any]:
-    token = os.environ.get('GITHUB_TOKEN')
-    repository = os.environ.get('GITHUB_REPOSITORY')
-    if not token or not repository:
-        raise RuntimeError('GITHUB_TOKEN/GITHUB_REPOSITORY unavailable for continuation')
-    return http_json(
-        f'https://api.github.com/repos/{repository}/dispatches',
-        method='POST',
-        body={
-            'event_type': 'orchestrator.continue',
-            'client_payload': {'workflow_id': workflow_id},
-        },
-        headers={
-            'Authorization': f'Bearer {token}',
-            'X-GitHub-Api-Version': '2022-11-28',
-            'Accept': 'application/vnd.github+json',
-        },
-        timeout=30,
-    )
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
@@ -657,11 +638,6 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             if replan_after_failure(workflow, nodes, node, registry):
                 workflow['nodes'] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
-                try:
-                    dispatch_continuation(workflow['id'])
-                    append_event('workflow.continuation_dispatched', {'workflow_id': workflow['id'], 'reason': 'replan'})
-                except Exception as dispatch_exc:
-                    append_event('workflow.continuation_failed', {'workflow_id': workflow['id'], 'error': str(dispatch_exc)})
                 return 'replanned'
             workflow['status'] = 'failed'
             workflow['failed_node'] = node.id
