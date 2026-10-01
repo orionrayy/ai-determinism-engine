@@ -8,7 +8,7 @@ on:
       - "test_gateway.py"
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/workflows/orchestrator-continuation.yml"
-      - ".github/workflows/orchestrator-continuation.yml"
+      - ".github/workflows/orchestrator.yml"
   pull_request:
     paths:
       - "orchestrator/**"
