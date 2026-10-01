@@ -1,5 +1,7 @@
 # AI Orchestrator Core
 
+Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
+
 Free execution path: GitHub Actions + stdlib Python control plane.
 
 ## Components
