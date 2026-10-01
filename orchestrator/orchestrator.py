@@ -983,7 +983,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     attempts = node.retry_count
     while True:
         try:
-            if node.tool == "native_worker":
+            if node.tool == "native_worker" and live:
                 task = queue_native_worker_task(workflow, node, registry)
                 node.output = {
                     "queued": True,
@@ -1168,7 +1168,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             attempts = node.retry_count
             while True:
                 try:
-                    if node.tool == "native_worker":
+                    if node.tool == "native_worker" and live:
                         task = queue_native_worker_task(workflow, node, registry)
                         node.output = {
                             "queued": True,
