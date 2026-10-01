@@ -522,6 +522,150 @@ def replan_after_failure(
         return True
     return False
 
+def dispatch_continuation(workflow_id: str) -> dict[str, Any]:
+    token = os.environ.get('GITHUB_TOKEN')
+    repository = os.environ.get('GITHUB_REPOSITORY')
+    if not token or not repository:
+        raise RuntimeError('GITHUB_TOKEN/GITHUB_REPOSITORY unavailable for continuation')
+    return http_json(
+        f'https://api.github.com/repos/{repository}/dispatches',
+        method='POST',
+        body={
+            'event_type': 'orchestrator.continue',
+            'client_payload': {'workflow_id': workflow_id},
+        },
+        headers={
+            'Authorization': f'Bearer {token}',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Accept': 'application/vnd.github+json',
+        },
+        timeout=30,
+    )
+def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+    nodes = [Node(**node) for node in workflow['nodes']]
+    validate_dag(nodes)
+    registry = load_registry()
+    live = bool(workflow.get('live'))
+    workflow['status'] = 'running'
+    workflow['execution_mode'] = 'live' if live else 'dry-run'
+    workflow.setdefault('replan_count', 0)
+    for node in nodes:
+        node.input['workflow_id'] = workflow['id']
+
+    refresh_approvals(workflow, nodes)
+    if workflow.get('status') == 'failed':
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return 'failed'
+
+    eligible = ready_nodes(nodes)
+    for node in eligible:
+        transition(node, 'ready')
+    if not eligible:
+        if all(node.status == 'completed' for node in nodes):
+            workflow['status'] = 'completed'
+            workflow['nodes'] = [asdict(node) for node in nodes]
+            append_event('workflow.completed', {'workflow_id': workflow['id']})
+            persist_workflow(workflow)
+            return 'completed'
+        workflow['status'] = 'waiting_approval' if any(node.status == 'waiting_approval' for node in nodes) else 'failed'
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return workflow['status']
+
+    node = sorted(eligible, key=lambda item: item.id)[0]
+    if live and node.risk in {'high', 'critical'} and not approve_high_risk:
+        transition(node, 'waiting_approval')
+        workflow['status'] = 'waiting_approval'
+        try:
+            if not node.input.get('approval_issue'):
+                node.input['approval_issue'] = create_approval_issue(workflow, node)
+        except Exception as exc:
+            node.error = {'type': type(exc).__name__, 'message': str(exc)}
+        append_event('approval.required', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'risk': node.risk,
+            'issue': node.input.get('approval_issue'),
+        })
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'waiting_approval'
+
+    transition(node, 'running')
+    append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
+    attempts = node.retry_count
+    while True:
+        try:
+            node.output = execute_node(node, workflow['goal'], dry_run=not live)
+            transition(node, 'validating')
+            node.output['validation'] = {'passed': True, 'checked_at': utc_now()}
+            transition(node, 'completed')
+            append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            checkpoint_payload = {
+                'workflow': workflow['id'],
+                'node': asdict(node),
+                'ts': utc_now(),
+            }
+            CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+            checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
+            write_json(checkpoint_path, checkpoint_payload)
+            node.output['checkpoint'] = {
+                'path': str(checkpoint_path.relative_to(ROOT)) if checkpoint_path.is_relative_to(ROOT) else str(checkpoint_path),
+                'sha256': hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
+            }
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            if all(item.status == 'completed' for item in nodes):
+                workflow['status'] = 'completed'
+                persist_workflow(workflow)
+                append_event('workflow.completed', {'workflow_id': workflow['id']})
+                return 'completed'
+            if not any(item.status == 'waiting_approval' for item in nodes):
+                try:
+                    dispatch_continuation(workflow['id'])
+                    append_event('workflow.continuation_dispatched', {'workflow_id': workflow['id']})
+                except Exception as dispatch_exc:
+                    append_event('workflow.continuation_failed', {'workflow_id': workflow['id'], 'error': str(dispatch_exc)})
+                    return 'continuation_failed'
+            return 'completed_step'
+        except Exception as exc:
+            node.error = {
+                'type': type(exc).__name__,
+                'message': str(exc),
+                'trace': traceback.format_exc(limit=4),
+            }
+            if attempts < node.max_retries:
+                attempts += 1
+                node.retry_count = attempts
+                transition(node, 'retrying')
+                append_event('node.retrying', {
+                    'workflow_id': workflow['id'],
+                    'node_id': node.id,
+                    'attempt': attempts,
+                    'error': str(exc),
+                })
+                time.sleep(min(2 ** attempts, 8))
+                transition(node, 'ready')
+                continue
+            transition(node, 'failed')
+            append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
+            if replan_after_failure(workflow, nodes, node, registry):
+                workflow['nodes'] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                try:
+                    dispatch_continuation(workflow['id'])
+                    append_event('workflow.continuation_dispatched', {'workflow_id': workflow['id'], 'reason': 'replan'})
+                except Exception as dispatch_exc:
+                    append_event('workflow.continuation_failed', {'workflow_id': workflow['id'], 'error': str(dispatch_exc)})
+                return 'replanned'
+            workflow['status'] = 'failed'
+            workflow['failed_node'] = node.id
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return 'failed'
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
     nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
