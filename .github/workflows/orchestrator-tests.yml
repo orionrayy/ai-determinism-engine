@@ -18,6 +18,7 @@ on:
   pull_request:
     paths:
       - "orchestrator/**"
+      - ".github/workflows/bridge-deploy.yml"
       - "gateway.py"
       - "test_gateway.py"
       - "ORCHESTRATION_MEMORY.md"
