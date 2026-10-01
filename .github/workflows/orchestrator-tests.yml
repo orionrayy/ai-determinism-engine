@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "orchestrator/**"
+      - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
       - "test_gateway.py"
       - ".github/workflows/orchestrator-tests.yml"
