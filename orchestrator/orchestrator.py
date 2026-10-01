@@ -94,6 +94,7 @@ BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
     "wikipedia", "webhook", "github", "noop",
 }
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
@@ -127,8 +128,12 @@ def tool_available(
     enforce_free: bool = True,
 ) -> bool:
     spec = registry.get(tool_name, {})
-    if enforce_free and free_only() and not bool(spec.get("free_tier", False)):
-        return False
+    if enforce_free and free_only():
+        is_free = bool(spec.get("free_tier", False))
+        if not spec and tool_name in BUILTIN_FREE_TOOLS:
+            is_free = True
+        if not is_free:
+            return False
     if not require_env:
         return True
     env_var = spec.get("required_env")
@@ -181,11 +186,14 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
             None,
         )
         if preferred is None:
-            if cap_spec:
+            if cap_spec and not live:
+                preferred = candidates[0]
+            elif cap_spec:
                 raise ValueError(
                     f"no available tool for capability {capability} under current policy"
                 )
-            preferred = {
+            else:
+                preferred = {
                 "research": "research_bundle",
                 "analyze": "gemini",
                 "draft": "gemini",
@@ -196,8 +204,8 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                 "validate": "webhook",
                 "publish": "webhook",
                 "notify": "webhook",
-                "execute": "webhook",
-            }.get(capability, "noop")
+                    "execute": "webhook",
+                }.get(capability, "noop")
         node = Node(
             id=f"n{index:02d}-{capability}",
             capability=capability,
@@ -487,10 +495,14 @@ def execute_github(node: Node) -> dict[str, Any]:
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     registry = load_registry()
     spec = registry.get(node.tool, {})
-    if free_only() and not dry_run and not bool(spec.get("free_tier", False)):
-        raise RuntimeError(
-            f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
-        )
+    if free_only() and not dry_run:
+        is_free = bool(spec.get("free_tier", False))
+        if not spec and node.tool in BUILTIN_FREE_TOOLS:
+            is_free = True
+        if not is_free:
+            raise RuntimeError(
+                f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+            )
     if dry_run:
         return {
             "simulated": True,
@@ -823,6 +835,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         )
                         time.sleep(min(2 ** attempts, 8))
                         transition(node, "ready")
+                        transition(node, "running")
                         continue
 
                     transition(node, "failed")
