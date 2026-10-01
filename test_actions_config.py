@@ -11,6 +11,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.orchestrator = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
+        cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
 
     def test_approval_labels_trigger_worker(self):
         self.assertIn('types: [opened, edited, labeled]', self.orchestrator)
@@ -43,7 +44,7 @@ class ActionsConfigTests(unittest.TestCase):
             "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
             "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
         }
-        combined = "\n".join((self.orchestrator, self.continuation, self.tests))
+        combined = "\n".join((self.orchestrator, self.continuation, self.tests, self.bridge_deploy))
         for ref in expected:
             self.assertIn(ref, combined)
 
