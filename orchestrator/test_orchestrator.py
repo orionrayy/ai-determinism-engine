@@ -324,7 +324,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][0]["status"], "completed")
         self.assertTrue(workflow["nodes"][0]["output"]["reconciled"])
 
-    def test_uncertain_connector_reconciliation_not_applied_returns_ready(self):
+    def test_uncertain_connector_reconciliation_not_applied_allows_new_attempt(self):
         workflow = self._uncertain_connector_workflow({
             "type": "execution_uncertain",
             "message": "timeout",
@@ -349,11 +349,28 @@ class OrchestratorTests(unittest.TestCase):
             o, "load_registry", return_value=registry
         ), patch.object(
             o, "reconcile_connector_execution", return_value={"state": "not_applied"}
+        ), patch.object(
+            o, "execute_node", return_value={"result": "executed"}
         ):
-            result = o.run_one_step(workflow)
-        self.assertEqual(result, "reconciled_ready")
-        self.assertEqual(workflow["nodes"][0]["status"], "ready")
-        self.assertEqual(workflow["status"], "running")
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)),                      patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                      patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"):
+                    first = o.run_one_step(workflow)
+                    self.assertEqual(first, "reconciled_ready")
+                    self.assertEqual(workflow["nodes"][0]["status"], "ready")
+                    self.assertEqual(workflow["status"], "running")
+                    execution_id = o.execution_key(workflow, o.Node(**workflow["nodes"][0]))
+                    self.assertEqual(
+                        workflow["executions"][execution_id]["status"],
+                        "not_applied",
+                    )
+                    second = o.run_one_step(workflow, approve_high_risk=True)
+
+        self.assertEqual(second, "completed")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(
+            workflow["executions"][execution_id]["status"],
+            "completed",
+        )
 
     def test_uncertain_connector_reconciliation_unknown_fails_closed(self):
         workflow = self._uncertain_connector_workflow({
