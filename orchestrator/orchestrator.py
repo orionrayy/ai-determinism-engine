@@ -1279,6 +1279,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             transition(node, 'completed')
             if side_effecting(node, registry):
                 mark_execution_completed(workflow, execution_id, node.output)
+            update_tool_health(node, True, registry)
             node_success_checkpoint(workflow, node)
             append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
             notify_issue(
@@ -1314,6 +1315,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 transition(node, 'running')
                 continue
             transition(node, 'failed')
+            update_tool_health(node, False, registry)
             append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
             notify_issue(
                 workflow,
@@ -1490,6 +1492,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             if success:
                 if side_effecting(node, registry):
                     mark_execution_completed(workflow, execution_id, node.output)
+                update_tool_health(node, True, registry)
                 node_success_checkpoint(workflow, node)
                 append_event("node.completed", {
                     "workflow_id": workflow["id"],
@@ -1501,6 +1504,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
                 )
             else:
+                update_tool_health(node, False, registry)
                 if replan_after_failure(workflow, nodes, node, registry):
                     replan_needed = True
                 else:
