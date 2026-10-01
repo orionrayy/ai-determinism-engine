@@ -30,7 +30,7 @@ class OrchestratorTests(unittest.TestCase):
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
     def test_free_only_rejects_paid_node_at_execution_time(self):
         node = o.Node("n01", "analyze", "openai")
-        with __import__('unittest').mock.patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
             with self.assertRaises(RuntimeError):
                 o.execute_node(node, "test", dry_run=False)
 
