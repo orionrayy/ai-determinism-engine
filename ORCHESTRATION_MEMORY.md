@@ -184,6 +184,13 @@ Never merge a control-plane change with a red CI result.
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
 
+## Deployment supply-chain hardening v18
+
+- The connector bridge deployment workflow uses Node.js 24 for the CLI execution environment instead of Node.js 20.
+- Vercel CLI invocations are pinned to the exact audited package version `59.19.1` instead of mutable `latest`.
+- Deployment configuration tests fail if the mutable Vercel CLI tag or the old Node.js 20 CLI runtime reappears.
+- This change does not alter the Python function runtime declared in `vercel.json`.
+
 ## Actions runtime maintenance v17
 
 - GitHub Actions core dependencies are pinned to immutable commit SHAs for the current Node 24-based releases: checkout v6, setup-python v7, and setup-node v7.

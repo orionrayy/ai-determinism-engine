@@ -49,5 +49,12 @@ class ActionsConfigTests(unittest.TestCase):
             self.assertIn(ref, combined)
 
 
+    def test_bridge_deploy_uses_pinned_vercel_cli_and_node24(self):
+        self.assertIn('node-version: "24"', self.bridge_deploy)
+        self.assertNotIn('node-version: "20"', self.bridge_deploy)
+        self.assertIn('vercel@59.19.1', self.bridge_deploy)
+        self.assertNotIn('vercel@latest', self.bridge_deploy)
+        self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
+
 if __name__ == '__main__':
     unittest.main()

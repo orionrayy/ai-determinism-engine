@@ -28,15 +28,15 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Build and deploy
         shell: bash
         run: |
           set -euo pipefail
-          npx --yes vercel@latest pull --yes --environment=production --token="$VERCEL_TOKEN"
-          npx --yes vercel@latest build --prod
-          npx --yes vercel@latest deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1 | tee /tmp/vercel-deploy.txt
+          npx --yes vercel@59.19.1 pull --yes --environment=production --token="$VERCEL_TOKEN"
+          npx --yes vercel@59.19.1 build --prod
+          npx --yes vercel@59.19.1 deploy --prebuilt --prod --token="$VERCEL_TOKEN" 2>&1 | tee /tmp/vercel-deploy.txt
           url="$(grep -Eo 'https://[^[:space:]]+' /tmp/vercel-deploy.txt | tail -n 1 | sed 's/[[:punct:]]*$//' || true)"
           test -n "$url" || { echo "Unable to determine deployment URL"; exit 1; }
           echo "deployment_url=$url" >> "$GITHUB_OUTPUT"
