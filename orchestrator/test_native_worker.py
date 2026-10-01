@@ -31,6 +31,25 @@ class NativeWorkerTests(unittest.TestCase):
         self.assertTrue(token)
         self.assertNotIn(token, task["token_hash"])
 
+
+    def test_create_task_does_not_copy_unlisted_input_fields(self):
+        task, _ = nw.create_task(
+            "wf1", "n1", "notion", "create_page", "goal",
+            {
+                "public_safe": True,
+                "instruction": "do this",
+                "query": "hello",
+                "payload": {"title": "Hello"},
+                "secret": "DO-NOT-EXPOSE",
+            },
+            "https://bridge.example/native-result",
+            2000000000,
+        )
+        self.assertNotIn("secret", task["input"])
+        self.assertEqual(task["input"]["instruction"], "do this")
+        self.assertEqual(task["input"]["query"], "hello")
+        self.assertEqual(task["input"]["payload"], {"title": "Hello"})
+
     def test_token_hash_verification(self):
         token = "secret-token"
         digest = nw.hash_token(token)
