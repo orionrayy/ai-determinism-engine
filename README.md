@@ -80,6 +80,10 @@ The bridge runtime is available at `api/bridge.py` and can run on Vercel Python 
 
 The bridge also exposes sanitized connector discovery at `/capabilities` (Render) or `/api/bridge/capabilities` (Vercel). Discovery reports allowlisted actions, declared capabilities, risk, free-tier status, and whether required route credentials are configured; it never returns secret values.
 
+## Reconciliation rearm v16
+
+A confirmed `not_applied` connector reconciliation now settles the prior execution-ledger record before returning the node to `ready`. This allows a fresh side-effect attempt only after an authoritative negative reconciliation; `unknown` remains fail-closed.
+
 ## Connector reconciliation v10
 
 When a live connector request becomes uncertain, the bridge can optionally expose a read-only reconciliation endpoint. The orchestrator sends a signed request containing the deterministic request id, connector, and action. The upstream returns `applied`, `not_applied`, or `unknown`. The first two states allow safe continuation without blindly replaying an uncertain side effect; `unknown` remains fail-closed.
