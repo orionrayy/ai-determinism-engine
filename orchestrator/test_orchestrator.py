@@ -71,6 +71,28 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             o.enforce_node_policy([node], {"noop": {"side_effects": []}})
 
+    def test_one_step_retry_reenters_running_state(self):
+        workflow = {
+            "id": "wf_retry",
+            "goal": "retry",
+            "live": False,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop", [], max_retries=2))],
+        }
+        calls = {"n": 0}
+
+        def flaky_execute(node, goal, dry_run):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=flaky_execute):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "completed")
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(workflow["nodes"][0]["retry_count"], 1)
+
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
