@@ -1,0 +1,63 @@
+name: Orchestrator Continuation
+
+on:
+  workflow_run:
+    workflows: ["AI Orchestrator"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  continue:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Decide continuation
+        id: decision
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f .orchestrator/state.json ]; then
+            echo "continue=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+import json
+state=json.load(open('.orchestrator/state.json'))
+wf=state.get('workflows',{}).get(state.get('last_workflow_id'))
+status=wf.get('status') if wf else 'missing'
+wid=wf.get('id') if wf else ''
+print(f'workflow_id={wid}')
+print('continue=' + ('true' if status == 'running' else 'false'))
+print(f'status={status}')
+PY
+
+      - name: Dispatch continuation
+        if: steps.decision.outputs.continue == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
+        run: |
+          python3 - <<'PY'
+import json, os, subprocess
+payload=json.dumps({
+  'event_type':'orchestrator.continue',
+  'client_payload':{'workflow_id':os.environ['WORKFLOW_ID']},
+})
+subprocess.run(
+  ['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/dispatches",'--input','-'],
+  input=payload, text=True, check=True
+)
+PY
+
+      - name: Summary
+        run: |
+          echo "Continuation decision: ${{ steps.decision.outputs.continue }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Workflow: ${{ steps.decision.outputs.workflow_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Status: ${{ steps.decision.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
