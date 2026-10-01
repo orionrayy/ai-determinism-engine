@@ -680,6 +680,10 @@ def github_repository() -> str:
     return repository
 
 def create_approval_issue(workflow: dict[str, Any], node: Node) -> int:
+    approval_fingerprint = fingerprint_nodes([node])
+    node.input["approval_fingerprint"] = approval_fingerprint
+    node.input["approval_actor"] = None
+    node.input["approval_approved_at"] = None
     result = http_json(
         f"https://api.github.com/repos/{github_repository()}/issues",
         method="POST",
@@ -689,7 +693,8 @@ def create_approval_issue(workflow: dict[str, Any], node: Node) -> int:
                 "High-risk orchestration action is waiting for explicit approval.\n\n"
                 f"Workflow: {workflow['id']}\nNode: {node.id}\n"
                 f"Capability: {node.capability}\nTool: {node.tool}\n"
-                f"Goal: {workflow['goal']}\n\n"
+                f"Goal: {workflow['goal']}\n"
+                f"Approval fingerprint: {approval_fingerprint}\n\n"
                 "Add label 'orchestrator-approved' to approve this action. "
                 "Add label 'orchestrator-rejected' to reject it."
             ),
@@ -728,12 +733,39 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
         elif "orchestrator-approved" in labels:
+            approved_fingerprint = str(node.input.get("approval_fingerprint") or "").strip()
+            current_fingerprint = fingerprint_nodes([node])
+            if not approved_fingerprint or approved_fingerprint != current_fingerprint:
+                node.input["approval_granted"] = False
+                node.input["approval_actor"] = None
+                node.input["approval_approved_at"] = None
+                node.input["approval_issue"] = None
+                node.input["approval_fingerprint"] = None
+                transition(node, "ready")
+                workflow["status"] = "running"
+                append_event(
+                    "approval.stale",
+                    {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "issue": issue_number,
+                    },
+                )
+                continue
             node.input["approval_granted"] = True
+            node.input["approval_actor"] = os.environ.get("GITHUB_ACTOR") or None
+            node.input["approval_approved_at"] = utc_now()
             transition(node, "ready")
             workflow["status"] = "running"
             append_event(
                 "approval.approved",
-                {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
+                {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "issue": issue_number,
+                    "approval_fingerprint": approved_fingerprint,
+                    "actor": node.input["approval_actor"],
+                },
             )
 
 def _github_path(path: str) -> str:
