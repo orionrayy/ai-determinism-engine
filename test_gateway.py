@@ -52,7 +52,7 @@ class GatewayTests(unittest.TestCase):
             "workflow_id": "wf",
             "node_id": "n1",
             "execution_id": "0" * 64,
-            "token": "secret-token",
+            "token": "secret-token-1234567890",
             "result": {"ok": True},
         }
         with patch.object(gateway, "github_repository_dispatch", return_value={"github_status": 204}) as dispatch:
