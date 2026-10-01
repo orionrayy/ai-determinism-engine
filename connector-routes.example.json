@@ -5,7 +5,8 @@
     "actions": ["create_page", "update_page", "append_block"],
     "capabilities": ["publish", "execute"],
     "risk": "high",
-    "free_tier": false
+    "free_tier": false,
+    "reconciliation_url": "https://YOUR-UPSTREAM.example/reconcile/notion"
   },
   "clickup": {
     "url": "https://YOUR-UPSTREAM.example/connector/clickup",
@@ -13,6 +14,7 @@
     "actions": ["create_task", "update_task"],
     "capabilities": ["execute"],
     "risk": "high",
-    "free_tier": false
+    "free_tier": false,
+    "reconciliation_url": "https://YOUR-UPSTREAM.example/reconcile/clickup"
   }
 }
