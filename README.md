@@ -4,6 +4,10 @@ Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
 Free execution path: GitHub Actions + stdlib Python control plane.
 
+## Connector idempotency-aware execution fabric v8
+
+Connector action contracts now affect runtime recovery: uncertain transport failures and HTTP 5xx responses are marked as potentially side-effecting. An action may be retried automatically only when its discovered contract declares `idempotent: true`. Uncertain non-idempotent failures fail closed and are not replanned to a different provider.
+
 ## Connector contract-aware execution fabric v7
 
 Connector discovery now carries a sanitized contract per advertised action: required fields, primitive input types, and an idempotency declaration. In live mode, both the planner and executor validate connector payloads against the discovered contract before the upstream request; the bridge runtime repeats the check server-side. Schemas are optional to preserve compatibility with existing routes, and secret/free-form route data is not exposed.
