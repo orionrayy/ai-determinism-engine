@@ -161,12 +161,12 @@ Never merge a control-plane change with a red CI result.
 
 ## Known remaining architectural limits
 
-1. GitHub Actions does not directly invoke the ChatGPT-installed connector catalog. External connector bridges still require their own API or gateway boundary.
+1. GitHub Actions does not directly invoke the ChatGPT-installed connector catalog. External connector bridges still require their own API or gateway boundary. `orchestrator/connector_bridge.py` now defines that vendor-neutral boundary as protocol v1.
 2. `.orchestrator/` is repository-backed persistence. Public-repository state is not suitable for secrets or private workflow payloads.
 3. Side-effect recovery is fail-closed, not automatically reconciled. An `execution_uncertain` workflow needs external-state inspection before it can safely be resumed.
-3. Side-effecting nodes now have stable execution records. If a worker finds a prior `started` execution without a completion record, it fails closed as `execution_uncertain` rather than automatically repeating the external effect.
-4. The current validation stage is structurally present but provider-specific semantic validation remains minimal.
-5. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
+4. Connector bridge v1 is vendor-neutral; a real Notion/Figma/Canva/ClickUp/etc. bridge service must implement the protocol and its own vendor OAuth/API policy.
+5. The current validation stage is structurally present but provider-specific semantic validation remains minimal.
+6. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
 
 ## Protocol for future changes
 
@@ -174,10 +174,10 @@ Before changing runtime behavior:
 1. Read this file.
 2. Inspect current `main`.
 3. Identify the exact invariant being changed.
-4. Add a regression test before or with the change.
-5. Run CI.
-6. Merge only after green.
-7. Update this memory file when architecture, policy, or a known limitation changes.
+5. Add a regression test before or with the change.
+6. Run CI.
+7. Merge only after green.
+8. Update this memory file when architecture, policy, or a known limitation changes.
 
 ## Design principle
 

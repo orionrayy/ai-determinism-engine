@@ -7,7 +7,6 @@ on:
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
       - "test_gateway.py"
-      - "ORCHESTRATION_MEMORY.md"
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/workflows/orchestrator-continuation.yml"
       - ".github/workflows/orchestrator.yml"
@@ -16,6 +15,7 @@ on:
       - "orchestrator/**"
       - "gateway.py"
       - "test_gateway.py"
+      - "ORCHESTRATION_MEMORY.md"
       - ".github/workflows/orchestrator-tests.yml"
   workflow_dispatch:
 
