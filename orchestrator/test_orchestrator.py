@@ -297,7 +297,7 @@ class OrchestratorTests(unittest.TestCase):
             calls.append((url, method))
             if "search/issues" in url:
                 return {"status_code": 200, "data": {
-                    "items": [{"number": 99, "body": issue_body}]
+                    "items": [{"number": 99, "title": "[ORCHESTRATOR NATIVE] wf_native / n01-native", "body": issue_body}]
                 }}
             raise AssertionError("duplicate issue creation attempted")
         with patch.object(o, "http_json", side_effect=fake_http),              patch.object(o, "github_repository", return_value="owner/repo"),              patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}),              patch.object(o.native_worker, "create_task", side_effect=AssertionError("must recover existing task")):
