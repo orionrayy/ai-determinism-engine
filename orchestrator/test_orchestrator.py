@@ -36,6 +36,23 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             o.validate_dag([a, b])
 
+    def test_live_state_does_not_require_process_env_on_resume(self):
+        nodes = [o.Node("safe", "execute", "noop", [], risk="low")]
+        workflow = {
+            "id": "wf_resume",
+            "goal": "resume",
+            "live": True,
+            "nodes": [o.asdict(nodes[0])],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value={}):
+                o.run_workflow(workflow, approve_high_risk=False)
+        self.assertEqual(workflow["execution_mode"], "live")
+        self.assertEqual(workflow["status"], "completed")
+
     def test_high_risk_requires_approval_in_live_mode(self):
         nodes = [
             o.Node("deploy", "deploy", "noop", [], risk="high"),
