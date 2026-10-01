@@ -74,6 +74,21 @@ class ConnectorBridgeTests(unittest.TestCase):
                 cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
 
 
+
+    def test_discovery_rejects_oversized_response(self):
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None):
+                return b'{' + b'x' * (cb.MAX_DISCOVERY_BYTES + 10)
+        with patch.object(cb.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaises(cb.ConnectorBridgeError):
+                cb.discover_capabilities(
+                    "https://bridge.example.test/api/bridge",
+                    force_refresh=True,
+                )
+
     def test_reconciliation_url_respects_bridge_path(self):
         self.assertEqual(
             cb.reconciliation_url("https://bridge.example.test/api/bridge"),
