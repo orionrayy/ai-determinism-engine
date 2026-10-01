@@ -41,6 +41,19 @@ class StateSchemaTests(unittest.TestCase):
                 "workflows": {},
             })
 
+
+    def test_future_workflow_schema_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "schema_version": 3,
+                        "nodes": [],
+                    }
+                },
+            })
+
     def test_malformed_workflow_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({

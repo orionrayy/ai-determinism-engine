@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: durable-state v14 adds explicit state migration and checkpoint integrity verification, on top of plan-integrity v13; always verify the current `main` ref before modifying.
+Current main baseline: state-durability v15 adds future-schema rejection and atomic JSON persistence on top of durable-state v14; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -178,6 +178,12 @@ Never merge a control-plane change with a red CI result.
 ## Deployment targets
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
+
+## State durability v15
+
+- Persisted workflow/state JSON is written to a same-directory temporary file, flushed and fsynced, then atomically replaced; temporary files are cleaned after success or failure.
+- Workflow schema versions newer than the supported version are rejected before migration so a newer writer cannot be silently interpreted by an older control plane.
+- Atomic persistence protects the state and checkpoint paths used by the control plane from partial JSON writes caused by process interruption.
 
 ## Durable state v14
 

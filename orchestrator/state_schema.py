@@ -39,7 +39,16 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(workflow, dict):
             raise StateSchemaError(f"workflow {workflow_id!r} must be an object")
 
-        workflow.setdefault("schema_version", CURRENT_WORKFLOW_SCHEMA_VERSION)
+        workflow_version = _as_int(
+            workflow.get("schema_version"),
+            1,
+        )
+        if workflow_version > CURRENT_WORKFLOW_SCHEMA_VERSION:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r} schema version {workflow_version} "
+                f"is newer than supported version {CURRENT_WORKFLOW_SCHEMA_VERSION}"
+            )
+        workflow["schema_version"] = CURRENT_WORKFLOW_SCHEMA_VERSION
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
