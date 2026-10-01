@@ -163,6 +163,102 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "failed")
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "execution_uncertain")
         execute.assert_not_called()
+
+    def test_native_worker_pauses_exact_node(self):
+        node = o.Node("n01-native", "execute", "native_worker", [], input={
+            "connector": "notion",
+            "action": "create_page",
+            "public_safe": True,
+            "callback_url": "https://bridge.example/native-result",
+        })
+        workflow = {
+            "id": "wf_native", "goal": "create a page", "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        task = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native", "node_id": "n01-native",
+            "execution_id": o.execution_key(workflow, node),
+            "connector": "notion", "action": "create_page",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={
+                     "native_worker": {"free_tier": True, "side_effects": []}
+                 }),                  patch.object(o, "queue_native_worker_task", return_value=task):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "waiting_native_worker")
+        self.assertEqual(workflow["nodes"][0]["status"], "waiting_native_worker")
+        self.assertEqual(workflow["status"], "waiting_native_worker")
+
+    def test_native_result_requires_exact_execution_binding(self):
+        token_hash = o.hashlib.sha256(b"secret").hexdigest()
+        node = o.Node("n01-native", "execute", "native_worker", [], input={
+            "native_task": {"token_hash": token_hash, "expires_at": 4102444800}
+        }, status="waiting_native_worker")
+        workflow = {"id": "wf_native", "status": "waiting_native_worker",
+                    "nodes": [o.asdict(node)]}
+        payload = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native", "node_id": "n01-native",
+            "execution_id": "0" * 64, "token": "secret", "result": {"ok": True},
+        }
+        self.assertEqual(o.apply_native_result(workflow, payload), "rejected")
+        self.assertEqual(workflow["nodes"][0]["status"], "waiting_native_worker")
+
+    def test_expired_native_result_is_rejected_without_mutation(self):
+        token_hash = o.hashlib.sha256(b"secret").hexdigest()
+        node = o.Node("n01-native", "execute", "native_worker", [], input={
+            "native_task": {"token_hash": token_hash, "expires_at": 1}
+        }, status="waiting_native_worker")
+        workflow = {"id": "wf_native", "status": "waiting_native_worker",
+                    "nodes": [o.asdict(node)]}
+        execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
+        payload = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native", "node_id": "n01-native",
+            "execution_id": execution_id, "token": "secret", "result": {"ok": True},
+        }
+        with patch.object(o.time, "time", return_value=100):
+            self.assertEqual(o.apply_native_result(workflow, payload), "rejected")
+        self.assertEqual(workflow["nodes"][0]["status"], "waiting_native_worker")
+
+    def test_native_result_replay_cannot_mutate_completed_node(self):
+        token_hash = o.hashlib.sha256(b"secret").hexdigest()
+        execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
+        node = o.Node("n01-native", "execute", "native_worker", [], input={
+            "native_task": {"token_hash": token_hash, "expires_at": 4102444800,
+                            "execution_id": execution_id}
+        }, status="completed", output={"value": "original"})
+        workflow = {"id": "wf_native", "status": "completed",
+                    "nodes": [o.asdict(node)]}
+        payload = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native", "node_id": "n01-native",
+            "execution_id": execution_id, "token": "secret",
+            "result": {"value": "tampered"},
+        }
+        self.assertEqual(o.apply_native_result(workflow, payload), "rejected")
+        self.assertEqual(workflow["nodes"][0]["output"], {"value": "original"})
+
+    def test_native_worker_error_becomes_failed_node(self):
+        token_hash = o.hashlib.sha256(b"secret").hexdigest()
+        execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
+        node = o.Node("n01-native", "execute", "native_worker", [], input={
+            "native_task": {"token_hash": token_hash, "expires_at": 4102444800,
+                            "execution_id": execution_id}
+        }, status="waiting_native_worker")
+        workflow = {"id": "wf_native", "status": "waiting_native_worker",
+                    "nodes": [o.asdict(node)]}
+        payload = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native", "node_id": "n01-native",
+            "execution_id": execution_id, "token": "secret",
+            "error": {"type": "worker_error", "message": "connector failed"},
+        }
+        self.assertEqual(o.apply_native_result(workflow, payload), "failed")
+        self.assertEqual(workflow["nodes"][0]["status"], "failed")
+        self.assertEqual(workflow["status"], "failed")
+
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
