@@ -69,6 +69,8 @@ jobs:
           ORCHESTRATOR_APPROVE_HIGH_RISK: ${{ inputs.approve_high_risk && 'true' || 'false' }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           ORCHESTRATOR_WEBHOOK_URL: ${{ secrets.ORCHESTRATOR_WEBHOOK_URL }}
           ORCHESTRATOR_WEBHOOK_SECRET: ${{ secrets.ORCHESTRATOR_WEBHOOK_SECRET }}
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
