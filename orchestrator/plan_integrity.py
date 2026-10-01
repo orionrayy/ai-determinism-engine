@@ -12,6 +12,8 @@ _VOLATILE_INPUT_KEYS = {
     "approval_issue",
     "approval_granted",
     "approval_fingerprint",
+    "approval_actor",
+    "approval_approved_at",
 }
 
 
