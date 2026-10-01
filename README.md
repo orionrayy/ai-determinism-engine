@@ -4,7 +4,7 @@ Free execution path: GitHub Actions + stdlib Python control plane.
 
 ## Components
 
-- `orchestrator/orchestrator.py`: DAG/state/retry/replan engine.
+- `orchestrator/orchestrator.py`: DAG/state/retry/replan engine plus controlled GitHub file/workflow operations.
 - `orchestrator/tools.json`: capability and tool registry.
 - `orchestrator/research_bundle.py`: credential-free Wikipedia/arXiv/Crossref research bundle.
 - `orchestrator/issue_notify.py`: fail-safe GitHub Issue status notifications.
@@ -15,6 +15,10 @@ Free execution path: GitHub Actions + stdlib Python control plane.
 ## LLM routing
 
 Gemini is the primary LLM adapter and OpenAI is an optional fallback. Google currently lists Gemini 3.8 Flash as free at the standard API tier. API-key authentication is still required.
+
+## Controlled GitHub operations
+
+The GitHub adapter allowlists metadata/read operations plus `create_issue`, `create_or_update_file`, `delete_file`, and `dispatch_workflow`. Write/dispatch actions are automatically escalated to high risk and require approval in live mode.
 
 ## Event / approval flow
 
