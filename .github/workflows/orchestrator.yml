@@ -51,6 +51,7 @@ jobs:
         env:
           INPUT_GOAL: ${{ inputs.goal }}
           EVENT_GOAL: ${{ github.event.client_payload.goal }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           goal="$INPUT_GOAL"
@@ -70,7 +71,10 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           ORCHESTRATOR_WEBHOOK_URL: ${{ secrets.ORCHESTRATOR_WEBHOOK_URL }}
           ORCHESTRATOR_WEBHOOK_SECRET: ${{ secrets.ORCHESTRATOR_WEBHOOK_SECRET }}
+          FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+          ORCHESTRATOR_RESEARCH_URL: ${{ secrets.ORCHESTRATOR_RESEARCH_URL }}
           GITHUB_TOKEN: ${{ github.token }}
+          ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
             args=(--resume)
