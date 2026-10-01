@@ -259,7 +259,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                     "build": "github",
                     "test": "github",
                     "deploy": "webhook",
-                    "validate": "webhook",
+                    "validate": "local_validator",
                     "publish": "webhook",
                     "notify": "webhook",
                     "execute": "webhook",
@@ -345,12 +345,19 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
     model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    if node.capability == "validate":
+        instruction = (
+            "Act as a strict workflow validator. Return only JSON with "
+            "passed (boolean), checks (array), findings (array), and next_action. "
+            "Set passed=true only when the dependency evidence satisfies the goal."
+        )
+    else:
+        instruction = "Act as a conservative workflow worker. Return JSON with result, risks, next_action."
     payload = {
         "contents": [{
             "parts": [{
                 "text": (
-                    "Act as a conservative workflow worker. Return JSON with "
-                    "result, risks, next_action.\n"
+                    instruction + "\n"
                     f"GOAL: {goal}\n"
                     f"INSTRUCTION: {node.input.get('instruction', '')}\n"
                     f"CONTEXT: {compact_json(node.input.get('context', {}), limit=24 * 1024)}"
@@ -692,6 +699,25 @@ def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
     }
 
 
+def extract_first_llm_json(output: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = output.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+    for candidate in candidates:
+        parts = candidate.get("content", {}).get("parts", []) if isinstance(candidate, dict) else []
+        for part in parts:
+            text_value = part.get("text") if isinstance(part, dict) else None
+            if not text_value:
+                continue
+            try:
+                value = json.loads(str(text_value))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                return value
+    return None
+
+
 def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("node output must be an object")
@@ -737,6 +763,14 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         checks.append({"check": "llm_payload", "passed": has_payload})
         if not has_payload:
             raise RuntimeError("LLM adapter returned no usable payload")
+        if node.capability == "validate" and node.tool == "gemini":
+            verdict = extract_first_llm_json(output)
+            if not isinstance(verdict, dict):
+                raise RuntimeError("semantic validator returned no JSON verdict")
+            passed = verdict.get("passed")
+            checks.append({"check": "semantic_verdict", "passed": passed is True})
+            if passed is not True:
+                raise RuntimeError("semantic validator rejected dependency evidence")
 
     if node.tool == "connector_bridge":
         bridge_response = output.get("response")
@@ -1134,6 +1168,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         "type": type(approval_exc).__name__,
                         "message": str(approval_exc),
                     }
+                    transition(node, "failed")
+                    workflow["status"] = "failed"
+                    workflow["failed_node"] = node.id
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    return
                 append_event("approval.required", {
                     "workflow_id": workflow["id"],
                     "node_id": node.id,
