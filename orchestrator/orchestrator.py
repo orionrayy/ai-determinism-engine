@@ -376,6 +376,8 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             raise RuntimeError("orchestration safety limit reached")
 
         ready = ready_nodes(nodes)
+        for node in ready:
+            transition(node, "ready")
         if not ready:
             if all(node.status == "completed" for node in nodes):
                 workflow["status"] = "completed"
