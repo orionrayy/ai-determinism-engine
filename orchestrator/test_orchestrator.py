@@ -66,6 +66,48 @@ class OrchestratorTests(unittest.TestCase):
         o.enforce_node_policy([node], {"github": {"side_effects": ["issue_write"]}})
         self.assertEqual(node.risk, "high")
 
+    def test_github_read_file_decodes_base64(self):
+        node = o.Node(
+            "n01-read", "execute", "github", [],
+            input={"action": "read_file", "path": "README.md", "branch": "main"},
+        )
+        def fake_http(url, method="GET", body=None, headers=None, timeout=60):
+            import base64
+            return {"status_code": 200, "data": {
+                "path": "README.md",
+                "sha": "abc",
+                "content": base64.b64encode(b"hello").decode(),
+            }}
+        with patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}),              patch.object(o, "github_repository", return_value="owner/repo"),              patch.object(o, "http_json", side_effect=fake_http):
+            result = o.execute_github(node)
+        self.assertEqual(result["data"]["decoded_content"], "hello")
+
+    def test_github_update_file_sends_existing_sha(self):
+        node = o.Node(
+            "n01-write", "build", "github", [],
+            input={"action": "create_or_update_file", "path": "src/app.py", "content": "print(1)", "branch": "main"},
+        )
+        calls = []
+        def fake_http(url, method="GET", body=None, headers=None, timeout=60):
+            calls.append((url, method, body))
+            if method == "GET":
+                return {"status_code": 200, "data": {"sha": "existing-sha"}}
+            return {"status_code": 201, "data": {"commit": {"sha": "new-sha"}}}
+        with patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}),              patch.object(o, "github_repository", return_value="owner/repo"),              patch.object(o, "http_json", side_effect=fake_http):
+            result = o.execute_github(node)
+        self.assertEqual(result["status_code"], 201)
+        self.assertEqual(calls[-1][1], "PUT")
+        self.assertEqual(calls[-1][2]["sha"], "existing-sha")
+
+    def test_github_path_rejects_traversal(self):
+        node = o.Node(
+            "n01-write", "build", "github", [],
+            input={"action": "create_or_update_file", "path": "../secret.txt", "content": "x"},
+        )
+        with patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}),              patch.object(o, "github_repository", return_value="owner/repo"):
+            with self.assertRaises(RuntimeError):
+                o.execute_github(node)
+
     def test_policy_rejects_unknown_tool(self):
         node = o.Node("n01", "execute", "unknown_tool")
         with self.assertRaises(ValueError):

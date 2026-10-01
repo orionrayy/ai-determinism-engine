@@ -68,7 +68,15 @@
       "repository_write",
       "issue_write"
     ],
-    "free_tier": true
+    "free_tier": true,
+    "allowed_actions": [
+      "metadata",
+      "read_file",
+      "create_issue",
+      "create_or_update_file",
+      "delete_file",
+      "dispatch_workflow"
+    ]
   },
   "openai": {
     "required_env": "OPENAI_API_KEY",
