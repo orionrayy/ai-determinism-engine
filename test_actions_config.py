@@ -37,5 +37,16 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.yml', self.tests)
 
 
+    def test_core_actions_are_pinned_to_node24_releases(self):
+        expected = {
+            "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803",
+            "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
+            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+        }
+        combined = "\n".join((self.orchestrator, self.continuation, self.tests))
+        for ref in expected:
+            self.assertIn(ref, combined)
+
+
 if __name__ == '__main__':
     unittest.main()
