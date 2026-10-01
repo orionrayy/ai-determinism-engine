@@ -45,9 +45,9 @@
     "description": "External deployment gateway"
   },
   "capability:validate": {
-    "default_tool": "local_validator",
+    "default_tool": "gemini",
     "fallback_tools": [
-      "gemini"
+      "local_validator"
     ],
     "description": "Deterministic evidence/contract validation"
   },
