@@ -18,8 +18,10 @@ from typing import Any
 
 try:
     from .connector_bridge import execute_connector_bridge
+    from .evidence import build_evidence
 except ImportError:
     from connector_bridge import execute_connector_bridge
+    from evidence import build_evidence
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -59,6 +61,7 @@ class Node:
     input: dict[str, Any] = field(default_factory=dict)
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
+    contract: dict[str, Any] = field(default_factory=dict)
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -655,16 +658,19 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
     dependencies: dict[str, Any] = {}
     for dep_id in node.depends_on:
         dep = by_id[dep_id]
+        evidence = dep.output.get("evidence", {}) if isinstance(dep.output, dict) else {}
         dependencies[dep_id] = {
             "capability": dep.capability,
             "tool": dep.tool,
             "status": dep.status,
             "output": compact_json(dep.output, limit=12 * 1024),
             "error": dep.error,
+            "evidence_sha256": evidence.get("evidence_sha256"),
         }
     return {
         "goal": node.input.get("goal", ""),
         "dependencies": dependencies,
+        "contract": node.contract,
     }
 
 
@@ -721,7 +727,8 @@ def extract_first_llm_json(output: dict[str, Any]) -> dict[str, Any] | None:
 def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("node output must be an object")
-    if output.get("simulated") is True:
+    contract = node.contract or {}
+    if output.get("simulated") is True and not contract:
         return {
             "passed": True,
             "checks": [{"check": "dry_run_simulation", "passed": True}],
@@ -729,6 +736,32 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         }
 
     checks = []
+    required_fields = contract.get("required_fields", [])
+    if required_fields:
+        if not isinstance(required_fields, list):
+            raise RuntimeError("contract.required_fields must be an array")
+        for field_name in required_fields:
+            current: Any = output
+            for part in str(field_name).split("."):
+                if isinstance(current, dict) and part in current:
+                    current = current[part]
+                else:
+                    current = None
+                    break
+            ok = current is not None
+            checks.append({"check": f"required:{field_name}", "passed": ok})
+            if not ok:
+                raise RuntimeError(f"contract field missing: {field_name}")
+
+    min_sources = contract.get("min_sources")
+    if min_sources is not None:
+        sources = output.get("sources")
+        count = len(sources) if isinstance(sources, dict) else 0
+        ok = count >= int(min_sources)
+        checks.append({"check": "min_sources", "actual": count, "required": int(min_sources), "passed": ok})
+        if not ok:
+            raise RuntimeError(f"contract requires at least {min_sources} sources")
+
     for key in ("status_code",):
         value = output.get(key)
         if isinstance(value, int):
@@ -787,6 +820,17 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
 
 
 def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
+    evidence = build_evidence(
+        workflow["id"],
+        node.id,
+        node.capability,
+        node.tool,
+        node.output,
+        node.output.get("validation", {}),
+        node.input.get("artifacts"),
+    )
+    workflow.setdefault("evidence", {})[node.id] = evidence
+    node.output["evidence"] = evidence
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     checkpoint = {
         "workflow": workflow["id"],
