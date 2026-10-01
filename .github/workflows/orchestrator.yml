@@ -201,10 +201,10 @@ jobs:
           echo "- Repository: `$GITHUB_REPOSITORY`" >> "$GITHUB_STEP_SUMMARY"
           if [ -f .orchestrator/state.json ]; then
             python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-import json
-s=json.load(open(".orchestrator/state.json"))
-wf=s.get("workflows",{}).get(s.get("last_workflow_id"))
-print(f"- Workflow: `{wf['id']}`" if wf else "- Workflow: n/a")
-print(f"- Status: **{wf['status']}**" if wf else "- Status: n/a")
-PY
+            import json
+            s=json.load(open(".orchestrator/state.json"))
+            wf=s.get("workflows",{}).get(s.get("last_workflow_id"))
+            print(f"- Workflow: `{wf['id']}`" if wf else "- Workflow: n/a")
+            print(f"- Status: **{wf['status']}**" if wf else "- Status: n/a")
+            PY
           fi
