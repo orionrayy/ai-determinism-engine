@@ -65,7 +65,7 @@ TRANSITIONS = {
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
-    "failed": {"replanning", "reconciling", "cancelled"},
+    "failed": {"replanning", "reconciling", "ready", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
     "reconciling": {"completed", "ready", "failed", "cancelled"},
     "completed": set(),
