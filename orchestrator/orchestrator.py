@@ -18,11 +18,21 @@ from typing import Any
 
 try:
     from .capability_graph import load_health, record_tool_result, route_capability, save_health
-    from .connector_bridge import ConnectorRequestError, execute_connector_bridge
+    from .connector_bridge import (
+        ConnectorReconciliationError,
+        ConnectorRequestError,
+        execute_connector_bridge,
+        reconcile_connector_execution,
+    )
     from .evidence import build_evidence
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
-    from connector_bridge import ConnectorRequestError, execute_connector_bridge
+    from connector_bridge import (
+        ConnectorReconciliationError,
+        ConnectorRequestError,
+        execute_connector_bridge,
+        reconcile_connector_execution,
+    )
     from evidence import build_evidence
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -44,8 +54,9 @@ TRANSITIONS = {
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
-    "failed": {"replanning", "cancelled"},
+    "failed": {"replanning", "reconciling", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
+    "reconciling": {"completed", "ready", "failed", "cancelled"},
     "completed": set(),
     "cancelled": set(),
 }
@@ -1190,6 +1201,113 @@ def replan_after_failure(
     return True
 
 
+def reconcile_first_uncertain(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> str | None:
+    if not workflow.get("live"):
+        return None
+    candidates = [
+        node for node in nodes
+        if node.status == "failed"
+        and node.error.get("execution_uncertain")
+        and node.tool == "connector_bridge"
+    ]
+    if not candidates:
+        return None
+    node = sorted(candidates, key=lambda item: item.id)[0]
+    transition(node, "reconciling")
+    execution_id = execution_key(workflow, node)
+    try:
+        result = reconcile_connector_execution(
+            node,
+            workflow["goal"],
+            dry_run=False,
+        )
+    except ConnectorReconciliationError as exc:
+        node.error = {
+            **node.error,
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "reconciliation_state": "unknown",
+            "reconciliation_required": True,
+        }
+        transition(node, "failed")
+        workflow["status"] = "failed"
+        workflow["failed_node"] = node.id
+        workflow.setdefault("reconciliations", {})[node.id] = {
+            "state": "unknown",
+            "error": str(exc),
+            "checked_at": utc_now(),
+        }
+        append_event("node.reconciliation_failed", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+            "execution_id": execution_id,
+            "error": str(exc),
+        })
+        return "failed"
+
+    state = str(result.get("state") or "unknown").lower()
+    workflow.setdefault("reconciliations", {})[node.id] = result
+    if state == "applied":
+        node.output = {
+            "reconciled": True,
+            "reconciliation": result,
+            "request_id": execution_id,
+        }
+        node.error["reconciled"] = True
+        node.error["reconciliation_state"] = "applied"
+        node.error.pop("reconciliation_required", None)
+        node.output["validation"] = {
+            "passed": True,
+            "checks": [{"check": "reconciliation_applied", "passed": True}],
+            "checked_at": utc_now(),
+        }
+        transition(node, "completed")
+        mark_execution_completed(workflow, execution_id, node.output)
+        node_success_checkpoint(workflow, node)
+        update_tool_health(node, True, registry)
+        append_event("node.reconciled", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+            "state": state,
+        })
+        workflow["status"] = (
+            "completed" if all(item.status == "completed" for item in nodes) else "running"
+        )
+        return "reconciled"
+    if state == "not_applied":
+        node.error = {
+            **node.error,
+            "reconciled": True,
+            "reconciliation_state": "not_applied",
+        }
+        node.error.pop("reconciliation_required", None)
+        node.retry_count = 0
+        transition(node, "ready")
+        workflow["status"] = "running"
+        append_event("node.reconciled", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+            "state": state,
+        })
+        return "reconciled_ready"
+
+    node.error["reconciliation_state"] = "unknown"
+    node.error["reconciliation_required"] = True
+    transition(node, "failed")
+    workflow["status"] = "failed"
+    workflow["failed_node"] = node.id
+    append_event("node.reconciliation_unknown", {
+        "workflow_id": workflow["id"],
+        "node_id": node.id,
+        "state": state,
+    })
+    return "failed"
+
+
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
@@ -1201,9 +1319,18 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow.setdefault('replan_count', 0)
     workflow.setdefault('repair_feedback', {})
     workflow.setdefault('evidence', {})
+    workflow.setdefault('reconciliations', {})
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
+
+    reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
+    if reconciliation is not None:
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        if reconciliation == 'failed':
+            return 'failed'
+        return reconciliation
 
     refresh_approvals(workflow, nodes)
     if workflow.get('status') == 'failed':
@@ -1367,6 +1494,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow.setdefault("replan_count", 0)
     workflow.setdefault("repair_feedback", {})
     workflow.setdefault("evidence", {})
+    workflow.setdefault("reconciliations", {})
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
@@ -1379,6 +1507,15 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         safety += 1
         if safety > 200:
             raise RuntimeError("orchestration safety limit reached")
+
+        reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
+        if reconciliation == "failed":
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            return
+        if reconciliation in {"reconciled", "reconciled_ready"}:
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
 
         refresh_approvals(workflow, nodes)
         if workflow.get("status") == "failed":
