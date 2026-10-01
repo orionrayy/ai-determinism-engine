@@ -20,7 +20,7 @@ on:
   repository_dispatch:
     types: [orchestrator.event, orchestrator.continue]
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
   schedule:
     - cron: "7,22,37,52 * * * *"
 
@@ -31,6 +31,7 @@ permissions:
 concurrency:
   group: ai-orchestrator
   cancel-in-progress: false
+  queue: max
 
 jobs:
   orchestrate:
@@ -68,6 +69,8 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_LABEL: ${{ github.event.label.name }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
@@ -84,9 +87,35 @@ jobs:
           if [ -z "$goal" ] && [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
             goal='Run the orchestration health check and report current state.'
           fi
+          workflow_id=""
+          trigger_issue=""
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            case "$ISSUE_TITLE" in
+              "[ORCHESTRATOR APPROVAL]"*)
+                meta="${ISSUE_TITLE#\"[ORCHESTRATOR APPROVAL] \"}"
+                workflow_id="${meta%% / *}"
+                if [ "$ISSUE_ACTION" = "labeled" ]; then
+                  case "$ISSUE_LABEL" in
+                    orchestrator-approved|orchestrator-rejected) ;;
+                    *) echo "Ignoring unrelated label"; exit 0 ;;
+                  esac
+                fi
+                goal="Resume workflow $workflow_id after approval state change."
+                ;;
+              "[ORCHESTRATOR]"*)
+                if [ "$ISSUE_ACTION" = "labeled" ]; then
+                  echo "Ignoring label on a source orchestration issue"; exit 0
+                fi
+                goal="$ISSUE_BODY"
+                trigger_issue="$ISSUE_NUMBER"
+                ;;
+              *) echo "Ignoring non-orchestrator issue"; exit 0 ;;
+            esac
+          fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
           echo "goal=$goal" >> "$GITHUB_OUTPUT"
-          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$trigger_issue" >> "$GITHUB_OUTPUT"
+          echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
 
       - name: Bootstrap approval labels
         env:
@@ -112,10 +141,15 @@ jobs:
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
+          ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
+          ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
+          ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_FREE_ONLY: "true"
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
             args=(--resume --step)
+          elif [ -n "$ORCHESTRATOR_TARGET_WORKFLOW_ID" ]; then
+            args=(--workflow-id "$ORCHESTRATOR_TARGET_WORKFLOW_ID" --step)
           elif [ -n "$ORCHESTRATOR_EVENT_WORKFLOW_ID" ]; then
             args=(--workflow-id "$ORCHESTRATOR_EVENT_WORKFLOW_ID" --step)
           else
