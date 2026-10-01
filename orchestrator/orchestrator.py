@@ -851,7 +851,8 @@ def ready_nodes(nodes: list[Node]) -> list[Node]:
     completed = {node.id for node in nodes if node.status == "completed"}
     return [
         node for node in nodes
-        if node.status == "pending" and all(dep in completed for dep in node.depends_on)
+        if node.status in {"pending", "ready"}
+        and all(dep in completed for dep in node.depends_on)
     ]
 
 def replan_after_failure(
@@ -950,6 +951,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return 'waiting_approval'
 
+    node.input["context"] = build_node_context(nodes, node)
     transition(node, 'running')
     execution_id = execution_key(workflow, node)
     if side_effecting(node, registry):
@@ -982,8 +984,8 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     while True:
         try:
             node.output = execute_node(node, workflow['goal'], dry_run=not live)
+            node.output['validation'] = validate_node_output(node, node.output)
             transition(node, 'validating')
-            node.output['validation'] = {'passed': True, 'checked_at': utc_now()}
             transition(node, 'completed')
             if side_effecting(node, registry):
                 mark_execution_completed(workflow, execution_id, node.output)
