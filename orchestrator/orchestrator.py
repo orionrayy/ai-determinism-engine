@@ -152,7 +152,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]]) -> list[N
         )
         if preferred is None:
             preferred = {
-                "research": "wikipedia",
+                "research": "research_bundle",
                 "analyze": "gemini",
                 "draft": "gemini",
                 "spec": "gemini",
@@ -309,6 +309,13 @@ def execute_firecrawl(node: Node, goal: str) -> dict[str, Any]:
         timeout=120,
     )
 
+def execute_research_bundle(node: Node, goal: str) -> dict[str, Any]:
+    from research_bundle import research_bundle
+    query = str(node.input.get("query") or goal).strip()
+    if not query:
+        raise RuntimeError("research bundle requires a query")
+    return research_bundle(query)
+
 def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
     query = str(node.input.get("query") or goal).strip()
     if not query:
@@ -461,6 +468,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_openai(node, goal)
     if node.tool == "firecrawl":
         return execute_firecrawl(node, goal)
+    if node.tool == "research_bundle":
+        return execute_research_bundle(node, goal)
     if node.tool == "wikipedia":
         return execute_wikipedia(node, goal)
     if node.tool == "webhook":
