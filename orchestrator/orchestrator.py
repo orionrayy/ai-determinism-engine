@@ -17,9 +17,11 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from .capability_graph import load_health, record_tool_result, route_capability, save_health
     from .connector_bridge import execute_connector_bridge
     from .evidence import build_evidence
 except ImportError:
+    from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import execute_connector_bridge
     from evidence import build_evidence
 
