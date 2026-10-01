@@ -33,6 +33,10 @@ class ConnectorRequestError(ConnectorBridgeError):
         self.retry_allowed = retry_allowed
 
 
+class ConnectorReconciliationError(ConnectorBridgeError):
+    pass
+
+
 @dataclass(frozen=True)
 class ConnectorRequest:
     protocol: str
@@ -44,6 +48,20 @@ class ConnectorRequest:
     goal: str
     input: dict[str, Any]
     sent_at: int
+
+
+@dataclass(frozen=True)
+class ReconciliationRequest:
+    protocol: str
+    request_id: str
+    workflow_id: str
+    node_id: str
+    connector: str
+    action: str
+    sent_at: int
+
+
+RECONCILIATION_STATES = {"applied", "not_applied", "unknown"}
 
 
 def canonical_json(value: Any) -> bytes:
@@ -191,6 +209,7 @@ def discover_capabilities(
             "risk": str(spec.get("risk") or "high"),
             "free_tier": bool(spec.get("free_tier", False)),
             "configured": bool(spec.get("configured", False)),
+            "reconciliation": bool(spec.get("reconciliation", False)),
         }
     _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
     return normalized
@@ -289,6 +308,127 @@ def build_discovery_snapshot(inventory: dict[str, dict[str, Any]]) -> dict[str, 
         "protocol": PROTOCOL,
         "connectors": inventory,
         "count": len(inventory),
+    }
+
+
+def reconciliation_url(bridge_url: str) -> str:
+    parsed = urllib.parse.urlparse(bridge_url)
+    if parsed.scheme != "https":
+        raise ConnectorBridgeError("connector reconciliation HTTPS is required")
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/bridge"
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, path + "/reconcile", "", "", "")
+    )
+
+
+def build_reconciliation_request(node: Any) -> ReconciliationRequest:
+    workflow_id = str(node.input.get("workflow_id") or "").strip()
+    node_id = str(node.id or "").strip()
+    connector = str(node.input.get("connector") or "").strip().lower()
+    action = str(node.input.get("action") or "").strip().lower()
+    if not workflow_id or not node_id:
+        raise ConnectorReconciliationError("workflow_id and node_id are required for reconciliation")
+    if not CONNECTOR_RE.fullmatch(connector):
+        raise ConnectorReconciliationError("invalid reconciliation connector name")
+    if not ACTION_RE.fullmatch(action):
+        raise ConnectorReconciliationError("invalid reconciliation action")
+    return ReconciliationRequest(
+        protocol=PROTOCOL,
+        request_id=execution_id(workflow_id, node_id),
+        workflow_id=workflow_id,
+        node_id=node_id,
+        connector=connector,
+        action=action,
+        sent_at=int(time.time()),
+    )
+
+
+def post_reconciliation(
+    url: str,
+    secret: str,
+    request: ReconciliationRequest,
+) -> dict[str, Any]:
+    body = canonical_json(asdict(request))
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": "ai-orchestrator-connector-reconciliation/1.0",
+        "X-Orchestrator-Protocol": PROTOCOL,
+        "X-Orchestrator-Timestamp": str(request.sent_at),
+        "X-Orchestrator-Signature": sign(request.sent_at, body, secret),
+        "Idempotency-Key": request.request_id,
+    }
+    http = urllib.request.Request(
+        reconciliation_url(url),
+        data=body,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(http, timeout=60) as response:
+            raw = response.read().decode("utf-8", "replace")
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        raise ConnectorReconciliationError(
+            f"connector reconciliation request failed: HTTP {exc.code}"
+        ) from exc
+    except Exception as exc:
+        raise ConnectorReconciliationError(
+            f"connector reconciliation request failed: {exc}"
+        ) from exc
+    if not (200 <= status < 300):
+        raise ConnectorReconciliationError(
+            f"connector reconciliation returned HTTP {status}"
+        )
+    try:
+        result = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise ConnectorReconciliationError(
+            "connector reconciliation returned invalid JSON"
+        ) from exc
+    if not isinstance(result, dict):
+        raise ConnectorReconciliationError(
+            "connector reconciliation response must be an object"
+        )
+    state = str(result.get("state") or "").strip().lower()
+    if state not in RECONCILIATION_STATES:
+        raise ConnectorReconciliationError(
+            "connector reconciliation returned invalid state"
+        )
+    return result
+
+
+def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[str, Any]:
+    request = build_reconciliation_request(node)
+    if dry_run:
+        return {
+            "simulated": True,
+            "protocol": PROTOCOL,
+            "request_id": request.request_id,
+            "connector": request.connector,
+            "action": request.action,
+            "state": "unknown",
+        }
+    url, secret = bridge_config()
+    inventory = discover_capabilities(url, force_refresh=True)
+    spec = inventory.get(request.connector)
+    if not isinstance(spec, dict) or not spec.get("reconciliation", False):
+        raise ConnectorReconciliationError(
+            f"connector {request.connector!r} does not advertise reconciliation"
+        )
+    result = post_reconciliation(url, secret, request)
+    return {
+        "simulated": False,
+        "protocol": PROTOCOL,
+        "request_id": request.request_id,
+        "bridge_url": url,
+        "connector": request.connector,
+        "action": request.action,
+        "discovery": build_discovery_snapshot(inventory),
+        "state": result["state"],
+        "response": result,
     }
 
 
