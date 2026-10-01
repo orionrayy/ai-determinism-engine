@@ -28,9 +28,10 @@ jobs:
             exit 0
           fi
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-import json
+import json, os
 state=json.load(open('.orchestrator/state.json'))
-wf=state.get('workflows',{}).get(state.get('last_workflow_id'))
+run_id=str(os.environ['WORKFLOW_RUN_ID'])
+wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
 status=wf.get('status') if wf else 'missing'
 wid=wf.get('id') if wf else ''
 print(f'workflow_id={wid}')
@@ -43,6 +44,7 @@ PY
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           python3 - <<'PY'
 import json, os, subprocess
