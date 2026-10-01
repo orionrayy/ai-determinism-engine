@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import time
@@ -314,15 +315,80 @@ def execute_webhook(node: Node, goal: str) -> dict[str, Any]:
         timeout=90,
     )
 
-def execute_github(node: Node) -> dict[str, Any]:
+
+def github_headers() -> dict[str, str]:
     token = os.environ.get("GITHUB_TOKEN")
-    repository = os.environ.get("GITHUB_REPOSITORY")
-    if not token or not repository:
-        raise RuntimeError("GitHub token/repository unavailable")
-    headers = {
+    if not token:
+        raise RuntimeError("GITHUB_TOKEN is required for GitHub operations")
+    return {
         "Authorization": f"Bearer {token}",
         "X-GitHub-Api-Version": "2022-11-28",
     }
+
+def github_repository() -> str:
+    repository = os.environ.get("GITHUB_REPOSITORY")
+    if not repository:
+        raise RuntimeError("GITHUB_REPOSITORY is not available")
+    return repository
+
+def create_approval_issue(workflow: dict[str, Any], node: Node) -> int:
+    result = http_json(
+        f"https://api.github.com/repos/{github_repository()}/issues",
+        method="POST",
+        body={
+            "title": f"[ORCHESTRATOR APPROVAL] {workflow['id']} / {node.id}",
+            "body": (
+                "High-risk orchestration action is waiting for explicit approval.\n\n"
+                f"Workflow: {workflow['id']}\nNode: {node.id}\n"
+                f"Capability: {node.capability}\nTool: {node.tool}\n"
+                f"Goal: {workflow['goal']}\n\n"
+                "Add label 'orchestrator-approved' to approve this action. "
+                "Add label 'orchestrator-rejected' to reject it."
+            ),
+        },
+        headers=github_headers(),
+    )
+    issue_number = result.get("data", {}).get("number")
+    if not isinstance(issue_number, int):
+        raise RuntimeError("GitHub did not return an approval issue number")
+    return issue_number
+
+def get_issue_labels(issue_number: int) -> set[str]:
+    result = http_json(
+        f"https://api.github.com/repos/{github_repository()}/issues/{issue_number}",
+        headers=github_headers(),
+    )
+    labels = result.get("data", {}).get("labels", [])
+    return {str(label.get("name")) for label in labels if isinstance(label, dict)}
+
+def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
+    for node in nodes:
+        if node.status != "waiting_approval":
+            continue
+        issue_number = node.input.get("approval_issue")
+        if not issue_number:
+            continue
+        labels = get_issue_labels(int(issue_number))
+        if "orchestrator-rejected" in labels:
+            transition(node, "failed")
+            node.error = {"type": "approval_rejected", "issue": issue_number}
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            append_event(
+                "approval.rejected",
+                {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
+            )
+        elif "orchestrator-approved" in labels:
+            transition(node, "ready")
+            workflow["status"] = "running"
+            append_event(
+                "approval.approved",
+                {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
+            )
+
+def execute_github(node: Node) -> dict[str, Any]:
+    headers = github_headers()
+    repository = github_repository()
     action = node.input.get("action", "metadata")
     if action == "metadata":
         return http_json(
@@ -435,6 +501,11 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         if safety > 100:
             raise RuntimeError("orchestration safety limit reached")
 
+        refresh_approvals(workflow, nodes)
+        if workflow.get("status") == "failed":
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            return
         ready = ready_nodes(nodes)
         for node in ready:
             transition(node, "ready")
@@ -459,9 +530,22 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             if live and node.risk in {"high", "critical"} and not approve_high_risk:
                 transition(node, "waiting_approval")
                 workflow["status"] = "waiting_approval"
+                try:
+                    if not node.input.get("approval_issue"):
+                        node.input["approval_issue"] = create_approval_issue(workflow, node)
+                except Exception as approval_exc:
+                    node.error = {
+                        "type": type(approval_exc).__name__,
+                        "message": str(approval_exc),
+                    }
                 append_event(
                     "approval.required",
-                    {"workflow_id": workflow["id"], "node_id": node.id, "risk": node.risk},
+                    {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "risk": node.risk,
+                        "issue": node.input.get("approval_issue"),
+                    },
                 )
                 continue
 
@@ -486,14 +570,18 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         {"workflow_id": workflow["id"], "node_id": node.id, "tool": node.tool},
                     )
                     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-                    write_json(
-                        CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json",
-                        {
-                            "workflow": workflow["id"],
-                            "node": asdict(node),
-                            "ts": utc_now(),
-                        },
-                    )
+                    checkpoint = {
+                        "workflow": workflow["id"],
+                        "node": asdict(node),
+                        "ts": utc_now(),
+                    }
+                    checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
+                    write_json(checkpoint_path, checkpoint)
+                    checkpoint_bytes = checkpoint_path.read_bytes()
+                    node.output["checkpoint"] = {
+                        "path": str(checkpoint_path.relative_to(ROOT)),
+                        "sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
+                    }
                     break
                 except Exception as exc:
                     node.error = {
@@ -563,6 +651,21 @@ def print_summary(workflow: dict[str, Any]) -> None:
         "failed_node": workflow.get("failed_node"),
     }, indent=2))
 
+
+def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False) -> int:
+    resumed = 0
+    for workflow in list(state.get("workflows", {}).values()):
+        if workflow.get("status") not in {"waiting_approval", "running"}:
+            continue
+        run_workflow(workflow, approve_high_risk=approve_high_risk)
+        state["workflows"][workflow["id"]] = workflow
+        state["last_workflow_id"] = workflow["id"]
+        resumed += 1
+        if workflow.get("status") == "failed":
+            break
+    save_state(state)
+    return resumed
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--goal", default=os.environ.get("ORCHESTRATOR_GOAL", ""))
@@ -570,6 +673,7 @@ def main() -> int:
     parser.add_argument("--live", action="store_true")
     parser.add_argument("--approve-high-risk", action="store_true")
     parser.add_argument("--list", action="store_true")
+    parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
 
     state = load_state()
@@ -577,6 +681,11 @@ def main() -> int:
     if args.list:
         for workflow in state.get("workflows", {}).values():
             print_summary(workflow)
+        return 0
+
+    if args.resume:
+        count = resume_pending_workflows(state, approve_high_risk=args.approve_high_risk)
+        print(json.dumps({"resumed_workflows": count}, indent=2))
         return 0
 
     if args.workflow_id:
