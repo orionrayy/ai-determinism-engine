@@ -104,6 +104,10 @@ Persisted workflows carry a deterministic plan fingerprint. On resume, the contr
 
 The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
 
+## Durability barrier recovery v22
+
+A failed pre-side-effect durability barrier is safe to rearm because the barrier invokes no external effect. The worker records the execution as prepared and leaves the node ready for a fresh worker checkout before another live side-effect attempt. This restores liveness without weakening the v19/v20 replay fences.
+
 ## Interrupted side-effect recovery v21
 
 On resume, a live side-effecting node is checked against its durable execution ledger. A running node with status prepared is safely rearmed because the external-effect barrier has not been crossed; a running node with status started is converted into an explicit in-doubt failure. Connector nodes then enter the existing reconciliation path; opaque side effects remain fail-closed and are not replayed.
