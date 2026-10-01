@@ -140,6 +140,50 @@ class OrchestratorTests(unittest.TestCase):
             "transient",
         )
 
+
+    def test_plan_drift_fails_closed_before_execution(self):
+        node = o.Node(
+            "n01",
+            "execute",
+            "noop",
+            [],
+            input={"instruction": "safe"},
+        )
+        workflow = {
+            "id": "wf_plan_drift",
+            "goal": "run",
+            "live": False,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": "not-the-current-plan",
+        }
+        with patch.object(o, "execute_node") as execute:
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["plan_integrity"], "drift_detected")
+        self.assertIn("plan_drift", workflow)
+        execute.assert_not_called()
+
+    def test_plan_fingerprint_is_initialized_for_new_workflow(self):
+        node = o.Node(
+            "n01",
+            "execute",
+            "noop",
+            [],
+            input={"instruction": "safe"},
+        )
+        workflow = {
+            "id": "wf_plan_init",
+            "goal": "run",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "completed")
+        self.assertTrue(workflow.get("plan_fingerprint"))
+        self.assertEqual(workflow.get("plan_integrity"), "initialized")
+
     def test_side_effect_execution_uncertainty_fails_closed(self):
         node = o.Node(
             "n01-write", "build", "github", [], risk="high",

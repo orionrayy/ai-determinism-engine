@@ -91,3 +91,7 @@ Connector reconciliation persists only a sanitized state record (`applied`, `not
 ## Reliability policy v12
 
 The control plane classifies failures before retrying, applies bounded deterministic jitter to backoff, and rejects oversized connector capability inventories before they enter planner or persisted evidence paths.
+
+## Plan integrity v13
+
+Persisted workflows carry a deterministic plan fingerprint. On resume, the control plane recomputes the fingerprint and fails closed on drift before executing a node. Replanning updates the fingerprint intentionally, while runtime-only fields are excluded.
