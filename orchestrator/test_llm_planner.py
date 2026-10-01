@@ -35,7 +35,7 @@ class PlannerTests(unittest.TestCase):
     def test_live_planner_passes_connector_inventory_and_node_fields(self):
         planner_response = {"candidates": [{"content": {"parts": [{"text": json.dumps({"nodes": [{"id": "n01", "capability": "publish", "tool": "connector_bridge", "depends_on": [], "risk": "high", "instruction": "publish", "contract": {}, "artifacts": [], "connector": "notion", "action": "create_page", "payload": {"title": "Hello"}}]})}]}}]}
         registry = {"capability:publish": {"default_tool": "connector_bridge", "fallback_tools": []}, "connector_bridge": {"free_tier": True}}
-        inventory = {"notion": {"actions": ["create_page"], "capabilities": ["publish"], "configured": True}}
+        inventory = {"notion": {"actions": ["create_page"], "capabilities": ["publish"], "configured": True, "action_specs": {"create_page": {"required": ["title"], "types": {"title": "string"}, "idempotent": True}}}}
         with patch.dict(os.environ, {"GEMINI_API_KEY": "planner-key", "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example/api/bridge"}, clear=True), patch.object(lp, "discover_capabilities", return_value=inventory), patch.object(lp, "_post", return_value=planner_response) as post:
             nodes = lp.plan_goal("publish a page", registry, FakeNode, fake_validate, live=True)
         self.assertEqual(nodes[0].input["connector"], "notion")
