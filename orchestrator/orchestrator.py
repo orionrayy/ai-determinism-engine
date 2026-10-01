@@ -870,6 +870,7 @@ def main() -> int:
     parser.add_argument("--approve-high-risk", action="store_true")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--step", action="store_true")
     args = parser.parse_args()
 
     state = load_state()
@@ -888,7 +889,21 @@ def main() -> int:
         workflow = state.get("workflows", {}).get(args.workflow_id)
         if not workflow:
             raise SystemExit(f"workflow not found: {args.workflow_id}")
-        run_workflow(workflow, approve_high_risk=args.approve_high_risk)
+        if args.step:
+            result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
+            state["workflows"][workflow["id"]] = workflow
+            state["last_workflow_id"] = workflow["id"]
+            save_state(state)
+            print_summary(workflow)
+            return 0 if result not in {"failed", "continuation_failed"} else 2
+        if args.step:
+        result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
+        state["workflows"][workflow["id"]] = workflow
+        state["last_workflow_id"] = workflow["id"]
+        save_state(state)
+        print_summary(workflow)
+        return 0 if result not in {"failed", "continuation_failed"} else 2
+    run_workflow(workflow, approve_high_risk=args.approve_high_risk)
         state["workflows"][workflow["id"]] = workflow
         state["last_workflow_id"] = workflow["id"]
         save_state(state)
