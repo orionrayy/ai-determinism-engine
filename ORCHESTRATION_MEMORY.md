@@ -40,6 +40,9 @@ pending -> ready -> running -> validating -> completed
                        +-> waiting_approval
                        |
                        +-> failed -> replanning -> ready
+                                    |
+                                    +-> reconciling -> completed
+                                                    \-> ready
 ```
 
 High-risk operations require explicit approval in live mode unless the workflow invocation explicitly supplies approval.
@@ -131,11 +134,14 @@ Multiple workflows are scheduled fairly by oldest `updated_at`.
 ## Recovery semantics
 
 A failed node:
-1. retries with bounded exponential backoff;
+1. retries with bounded exponential backoff when the typed failure policy permits it;
 2. returns to `running` before a second execution attempt;
-3. may use a registry fallback tool;
-4. may replan up to the global limit;
-5. otherwise fails the workflow.
+3. for uncertain connector side effects, reconciles before replay;
+4. `applied` completes the node without replay;
+5. `not_applied` marks the prior execution as settled-not-applied and rearms the node for a new attempt;
+6. `unknown` remains fail-closed and blocks replay/replan;
+7. known non-uncertain failures may use a registry fallback and replan up to the global limit;
+8. otherwise fails the workflow.
 
 Continuation dispatch occurs only after the worker's state persistence, preventing the former pre-persistence race.
 
@@ -171,13 +177,18 @@ Never merge a control-plane change with a red CI result.
 3. Side-effect recovery is fail-closed. Connector bridge executions can be reconciled when the provider advertises a safe read-only reconciliation endpoint; other opaque side effects still require external-state inspection before resume.
 4. Connector bridge v1 is vendor-neutral; a real Notion/Figma/Canva/ClickUp/etc. bridge service must implement the protocol and its own vendor OAuth/API policy.
 5. Semantic validation now has deterministic output contracts plus an optional Gemini validation worker; domain-specific validators for deployments, published artifacts, and vendor objects remain to be added.
-6. Connector bridge v1 is still an execution boundary rather than direct access to the ChatGPT-installed connector catalog.
 7. Connector action contracts are schema-aware but intentionally bounded to required fields, primitive types, and an idempotency declaration; vendor-specific OAuth semantics and richer JSON Schema are still outside the core.
 8. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
 
 ## Deployment targets
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
+
+## Reconciliation rearm v16
+
+- A confirmed `not_applied` reconciliation outcome now settles the prior execution-ledger record as `not_applied` before the node is returned to `ready`.
+- A subsequent side-effect attempt is therefore allowed only after an authoritative reconciliation says the prior attempt did not apply.
+- An `unknown` outcome still leaves the workflow fail-closed and does not rearm the effect.
 
 ## State durability v15
 
@@ -280,4 +291,4 @@ Before changing runtime behavior:
 
 ## Design principle
 
-The system should fail closed on unsafe tool selection, fail open on optional observability, remain deterministic under duplicate events, and preserve explicit human approval for irreversible external effects.
+The system should fail closed on unsafe tool selection and unknown side-effect outcomes, fail open on optional observability, remain deterministic under duplicate events, and preserve explicit human approval for irreversible external effects.
