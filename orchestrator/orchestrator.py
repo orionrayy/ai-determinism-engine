@@ -121,9 +121,9 @@ def free_only() -> bool:
     return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
 
 def tool_available(tool_name: str, registry: dict[str, dict[str, Any]]) -> bool:
-    if free_only() and tool_name in {"openai", "firecrawl", "webhook"}:
-        return False
     spec = registry.get(tool_name, {})
+    if free_only() and not bool(spec.get("free_tier", False)):
+        return False
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
 
