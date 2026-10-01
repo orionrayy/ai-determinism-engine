@@ -79,3 +79,7 @@ Render provides a Free web-service plan suitable for prototypes. Free services c
 The bridge runtime is available at `api/bridge.py` and can run on Vercel Python Functions. Configure `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` and `ORCHESTRATOR_CONNECTOR_ROUTES` as deployment secrets/environment variables. Routes are an explicit allowlist mapping connector names to HTTPS upstream endpoints and allowed actions. The bridge enforces protocol validation, HMAC replay protection, HTTPS upstreams, payload bounds, and best-effort idempotency.
 
 The bridge also exposes sanitized connector discovery at `/capabilities` (Render) or `/api/bridge/capabilities` (Vercel). Discovery reports allowlisted actions, declared capabilities, risk, free-tier status, and whether required route credentials are configured; it never returns secret values.
+
+## Connector reconciliation v10
+
+When a live connector request becomes uncertain, the bridge can optionally expose a read-only reconciliation endpoint. The orchestrator sends a signed request containing the deterministic request id, connector, and action. The upstream returns `applied`, `not_applied`, or `unknown`. The first two states allow safe continuation without blindly replaying an uncertain side effect; `unknown` remains fail-closed.
