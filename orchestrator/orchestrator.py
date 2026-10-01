@@ -578,8 +578,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
                     write_json(checkpoint_path, checkpoint)
                     checkpoint_bytes = checkpoint_path.read_bytes()
+                    try:
+                        checkpoint_ref = str(checkpoint_path.relative_to(ROOT))
+                    except ValueError:
+                        checkpoint_ref = str(checkpoint_path)
                     node.output["checkpoint"] = {
-                        "path": str(checkpoint_path.relative_to(ROOT)),
+                        "path": checkpoint_ref,
                         "sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
                     }
                     break
