@@ -1143,40 +1143,42 @@ def replan_after_failure(
     transition(failed_node, "replanning")
     old_error = dict(failed_node.error)
     old_output = dict(failed_node.output)
-        old_next_action = (
-            old_output.get("next_action") if isinstance(old_output, dict) else None
-        )
-        failed_node.tool = candidate
-        failed_node.retry_count = 0
-        failed_node.error = {}
-        failed_node.output = {}
-        workflow["replan_count"] = replans + 1
-        append_event(
-            "node.replanned",
-            {
-                "workflow_id": workflow["id"],
-                "node_id": failed_node.id,
-                "from_tool": old_tool,
-                "to_tool": candidate,
-                "replan_count": workflow["replan_count"],
-            },
-        )
-        failed_node.input["previous_tool"] = old_tool
-        workflow.setdefault("repair_feedback", {})[failed_node.id] = {
-            "tool": old_tool,
-            "error": old_error,
-            "output": compact_json(old_output, limit=12 * 1024),
-            "next_action": old_next_action,
-        }
-        append_event("node.repair_feedback", {
+    old_next_action = (
+        old_output.get("next_action") if isinstance(old_output, dict) else None
+    )
+
+    failed_node.tool = candidate
+    failed_node.retry_count = 0
+    failed_node.error = {}
+    failed_node.output = {}
+    workflow["replan_count"] = replans + 1
+
+    append_event(
+        "node.replanned",
+        {
             "workflow_id": workflow["id"],
             "node_id": failed_node.id,
-            "previous_tool": old_tool,
-        })
-        transition(failed_node, "ready")
-        workflow["status"] = "running"
-        return True
-    return False
+            "from_tool": old_tool,
+            "to_tool": candidate,
+            "replan_count": workflow["replan_count"],
+        },
+    )
+    failed_node.input["previous_tool"] = old_tool
+    workflow.setdefault("repair_feedback", {})[failed_node.id] = {
+        "tool": old_tool,
+        "error": old_error,
+        "output": compact_json(old_output, limit=12 * 1024),
+        "next_action": old_next_action,
+    }
+    append_event("node.repair_feedback", {
+        "workflow_id": workflow["id"],
+        "node_id": failed_node.id,
+        "previous_tool": old_tool,
+    })
+    transition(failed_node, "ready")
+    workflow["status"] = "running"
+    return True
+
 
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
     nodes = [Node(**node) for node in workflow['nodes']]
