@@ -114,5 +114,16 @@
     "required_env": null,
     "side_effects": [],
     "free_tier": true
+  },
+  "connector_bridge": {
+    "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+    "secret_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET",
+    "side_effects": [
+      "external_request"
+    ],
+    "free_tier": false,
+    "allowed_actions": [
+      "invoke"
+    ]
   }
 }

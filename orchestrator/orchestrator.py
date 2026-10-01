@@ -15,6 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from .connector_bridge import execute_connector_bridge
+except ImportError:
+    from connector_bridge import execute_connector_bridge
+
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
 STATE_FILE = STATE_DIR / "state.json"
@@ -650,6 +655,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_webhook(node, goal)
     if node.tool == "github":
         return execute_github(node)
+    if node.tool == "connector_bridge":
+        return execute_connector_bridge(node, goal, dry_run)
     if node.tool == "noop":
         return {"message": "noop"}
     raise RuntimeError(f"unknown tool adapter: {node.tool}")
