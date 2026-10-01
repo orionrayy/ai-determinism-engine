@@ -15,6 +15,8 @@ class ActionsConfigTests(unittest.TestCase):
     def test_approval_labels_trigger_worker(self):
         self.assertIn('types: [opened, edited, labeled]', self.orchestrator)
         self.assertIn('orchestrator-approved|orchestrator-rejected', self.orchestrator)
+        self.assertIn('Authorize approval actor', self.orchestrator)
+        self.assertIn('github.actor', self.orchestrator)
 
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
