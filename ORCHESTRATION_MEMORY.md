@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Latest verified main commit: `205dc1b72e442b5a63f7dbede9077395a362c3ab`
+Latest verified main commit: `f599632fd742ea7e5df5d2a2db7675f01ba9ff96`
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 
@@ -167,6 +167,10 @@ Never merge a control-plane change with a red CI result.
 4. Connector bridge v1 is vendor-neutral; a real Notion/Figma/Canva/ClickUp/etc. bridge service must implement the protocol and its own vendor OAuth/API policy.
 5. The current validation stage is structurally present but provider-specific semantic validation remains minimal.
 6. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
+
+## Native Worker Bridge
+
+The orchestrator can pause a node in `waiting_native_worker` and hand the task to a ChatGPT-native worker. Protocol: `ai-orchestrator.native-worker/v1`. The task is bound to the exact workflow/node/execution ID and uses a one-time expiry-bound token. Results return through `/native-result` and `repository_dispatch` as `orchestrator.native_result`. v1 is limited to `public_safe=true` tasks because the repository-backed transport is public. High-risk connector actions remain approval-gated.
 
 ## Deployment targets
 
