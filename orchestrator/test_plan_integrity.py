@@ -38,10 +38,12 @@ class PlanIntegrityTests(unittest.TestCase):
         second_node.input["context"] = {"different": "volatile"}
         self.assertEqual(first, fingerprint_nodes([second_node]))
 
-    def test_approval_fingerprint_is_runtime_metadata(self):
+    def test_approval_fingerprint_and_audit_metadata_are_runtime_fields(self):
         first = fingerprint_nodes([self.node()])
         second_node = self.node()
         second_node.input["approval_fingerprint"] = "different-digest"
+        second_node.input["approval_actor"] = "reviewer"
+        second_node.input["approval_approved_at"] = "2026-10-01T19:00:00+00:00"
         self.assertEqual(first, fingerprint_nodes([second_node]))
     def test_fingerprint_changes_when_plan_definition_changes(self):
         base = fingerprint_nodes([self.node()])
