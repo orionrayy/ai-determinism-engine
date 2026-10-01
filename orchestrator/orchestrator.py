@@ -1124,16 +1124,22 @@ def replan_after_failure(
     if replans >= MAX_REPLANS:
         return False
 
-    fallback_tools = registry.get(f"capability:{failed_node.capability}", {}).get("fallback_tools", [])
-    for candidate in fallback_tools:
-        old_tool = failed_node.tool
-        if candidate == old_tool:
-            continue
-        if not tool_available(candidate, registry, require_env=bool(workflow.get("live"))):
-            continue
-        transition(failed_node, "replanning")
-        old_error = dict(failed_node.error)
-        old_output = dict(failed_node.output)
+    old_tool = failed_node.tool
+    try:
+        candidate = route_tool(
+            failed_node.capability,
+            registry,
+            live=bool(workflow.get("live")),
+            exclude={old_tool},
+        )
+    except ValueError:
+        return False
+    if candidate == old_tool:
+        return False
+
+    transition(failed_node, "replanning")
+    old_error = dict(failed_node.error)
+    old_output = dict(failed_node.output)
         old_next_action = (
             old_output.get("next_action") if isinstance(old_output, dict) else None
         )
