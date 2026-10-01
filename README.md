@@ -95,3 +95,7 @@ The control plane classifies failures before retrying, applies bounded determini
 ## Plan integrity v13
 
 Persisted workflows carry a deterministic plan fingerprint. On resume, the control plane recomputes the fingerprint and fails closed on drift before executing a node. Replanning updates the fingerprint intentionally, while runtime-only fields are excluded.
+
+## Durable state v14
+
+The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
