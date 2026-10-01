@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
@@ -29,6 +30,8 @@ REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 
 MAX_NODES = 24
 MAX_REPLANS = 2
+DEFAULT_MAX_PARALLEL = 4
+MAX_CONTEXT_BYTES = 48 * 1024
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -75,6 +78,13 @@ def execution_key(workflow: dict[str, Any], node: Node) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
+    if node.tool == "github":
+        action = str(node.input.get("action") or "metadata")
+        return action in {
+            "create_issue", "create_or_update_file", "delete_file", "dispatch_workflow"
+        }
+    if node.tool == "local_validator":
+        return False
     return bool(registry.get(node.tool, {}).get("side_effects")) or node.capability in {
         "deploy", "publish", "delete", "external_write", "send"
     }
@@ -140,9 +150,9 @@ def classify_risk(capability: str) -> str:
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
-    "wikipedia", "webhook", "github", "noop",
+    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "noop",
 }
-BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "noop"}
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
@@ -249,7 +259,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                     "build": "github",
                     "test": "github",
                     "deploy": "webhook",
-                    "validate": "webhook",
+                    "validate": "local_validator",
                     "publish": "webhook",
                     "notify": "webhook",
                     "execute": "webhook",
@@ -335,14 +345,22 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
     model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    if node.capability == "validate":
+        instruction = (
+            "Act as a strict workflow validator. Return only JSON with "
+            "passed (boolean), checks (array), findings (array), and next_action. "
+            "Set passed=true only when the dependency evidence satisfies the goal."
+        )
+    else:
+        instruction = "Act as a conservative workflow worker. Return JSON with result, risks, next_action."
     payload = {
         "contents": [{
             "parts": [{
                 "text": (
-                    "Act as a conservative workflow worker. Return JSON with "
-                    "result, risks, next_action.\n"
+                    instruction + "\n"
                     f"GOAL: {goal}\n"
-                    f"INSTRUCTION: {node.input.get('instruction', '')}"
+                    f"INSTRUCTION: {node.input.get('instruction', '')}\n"
+                    f"CONTEXT: {compact_json(node.input.get('context', {}), limit=24 * 1024)}"
                 )
             }]
         }],
@@ -367,7 +385,8 @@ def execute_openai(node: Node, goal: str) -> dict[str, Any]:
         "input": (
             "Act as a conservative workflow worker. Return JSON with "
             "result, risks, next_action.\\n"
-            f"GOAL: {goal}\\nINSTRUCTION: {node.input.get('instruction', '')}"
+            f"GOAL: {goal}\\nINSTRUCTION: {node.input.get('instruction', '')}\\n"
+            f"CONTEXT: {compact_json(node.input.get('context', {}), limit=24 * 1024)}"
         ),
     }
     return http_json(
@@ -623,6 +642,204 @@ def execute_github(node: Node) -> dict[str, Any]:
         )
     raise RuntimeError(f"GitHub action not allowlisted: {action}")
 
+def compact_json(value: Any, limit: int = MAX_CONTEXT_BYTES) -> str:
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    if len(raw.encode("utf-8")) <= limit:
+        return raw
+    clipped = raw.encode("utf-8")[:limit].decode("utf-8", "ignore")
+    return clipped + "...[truncated]"
+
+
+def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
+    by_id = {item.id: item for item in nodes}
+    dependencies: dict[str, Any] = {}
+    for dep_id in node.depends_on:
+        dep = by_id[dep_id]
+        dependencies[dep_id] = {
+            "capability": dep.capability,
+            "tool": dep.tool,
+            "status": dep.status,
+            "output": compact_json(dep.output, limit=12 * 1024),
+            "error": dep.error,
+        }
+    return {
+        "goal": node.input.get("goal", ""),
+        "dependencies": dependencies,
+    }
+
+
+def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
+    context = node.input.get("context") or {}
+    dependencies = context.get("dependencies", {}) if isinstance(context, dict) else {}
+    checks = []
+    passed = True
+    for dep_id, dep in dependencies.items():
+        status = dep.get("status") if isinstance(dep, dict) else None
+        output = dep.get("output") if isinstance(dep, dict) else ""
+        ok = status == "completed" and bool(output)
+        checks.append({
+            "node": dep_id,
+            "completed": status == "completed",
+            "has_output": bool(output),
+            "passed": ok,
+        })
+        passed = passed and ok
+    if not dependencies:
+        checks.append({
+            "node": "workflow",
+            "completed": True,
+            "has_output": True,
+            "passed": True,
+        })
+    return {
+        "passed": passed,
+        "checks": checks,
+        "goal": goal,
+        "validator": "local_validator",
+    }
+
+
+def extract_first_llm_json(output: dict[str, Any]) -> dict[str, Any] | None:
+    candidates = output.get("candidates")
+    if not isinstance(candidates, list):
+        return None
+    for candidate in candidates:
+        parts = candidate.get("content", {}).get("parts", []) if isinstance(candidate, dict) else []
+        for part in parts:
+            text_value = part.get("text") if isinstance(part, dict) else None
+            if not text_value:
+                continue
+            try:
+                value = json.loads(str(text_value))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                return value
+    return None
+
+
+def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(output, dict):
+        raise RuntimeError("node output must be an object")
+    if output.get("simulated") is True:
+        return {
+            "passed": True,
+            "checks": [{"check": "dry_run_simulation", "passed": True}],
+            "checked_at": utc_now(),
+        }
+
+    checks = []
+    for key in ("status_code",):
+        value = output.get(key)
+        if isinstance(value, int):
+            ok = 200 <= value < 300
+            checks.append({"check": key, "value": value, "passed": ok})
+            if not ok:
+                raise RuntimeError(f"{key}={value} is not successful")
+
+    response = output.get("response")
+    if isinstance(response, dict):
+        nested = response.get("status_code")
+        if isinstance(nested, int):
+            ok = 200 <= nested < 300
+            checks.append({"check": "response.status_code", "value": nested, "passed": ok})
+            if not ok:
+                raise RuntimeError(f"response.status_code={nested} is not successful")
+
+    if node.tool == "research_bundle":
+        sources = output.get("sources")
+        ok = isinstance(sources, dict) and bool(sources)
+        checks.append({"check": "research_sources", "passed": ok})
+        if not ok:
+            raise RuntimeError("research bundle returned no sources")
+
+    if node.tool in {"gemini", "openai"}:
+        has_payload = bool(
+            output.get("candidates")
+            or output.get("output")
+            or output.get("data")
+            or output.get("text")
+        )
+        checks.append({"check": "llm_payload", "passed": has_payload})
+        if not has_payload:
+            raise RuntimeError("LLM adapter returned no usable payload")
+        if node.capability == "validate" and node.tool == "gemini":
+            verdict = extract_first_llm_json(output)
+            if not isinstance(verdict, dict):
+                raise RuntimeError("semantic validator returned no JSON verdict")
+            passed = verdict.get("passed")
+            checks.append({"check": "semantic_verdict", "passed": passed is True})
+            if passed is not True:
+                raise RuntimeError("semantic validator rejected dependency evidence")
+
+    if node.tool == "connector_bridge":
+        bridge_response = output.get("response")
+        if isinstance(bridge_response, dict) and bridge_response.get("ok") is False:
+            raise RuntimeError(str(bridge_response.get("error") or "connector bridge rejected request"))
+
+    if node.tool == "local_validator":
+        ok = output.get("passed") is True
+        checks.append({"check": "semantic_validation", "passed": ok})
+        if not ok:
+            raise RuntimeError("semantic validation failed")
+
+    return {"passed": True, "checks": checks, "checked_at": utc_now()}
+
+
+def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
+    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint = {
+        "workflow": workflow["id"],
+        "node": asdict(node),
+        "ts": utc_now(),
+    }
+    checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
+    write_json(checkpoint_path, checkpoint)
+    checkpoint_bytes = checkpoint_path.read_bytes()
+    try:
+        checkpoint_ref = str(checkpoint_path.relative_to(ROOT))
+    except ValueError:
+        checkpoint_ref = str(checkpoint_path)
+    node.output["checkpoint"] = {
+        "path": checkpoint_ref,
+        "sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
+    }
+
+
+def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, dict[str, Any] | None]:
+    attempts = node.retry_count
+    while True:
+        try:
+            output = execute_node(node, goal, dry_run=dry_run)
+            output["validation"] = validate_node_output(node, output)
+            node.output = output
+            transition(node, "validating")
+            transition(node, "completed")
+            return True, None
+        except Exception as exc:
+            node.error = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "trace": traceback.format_exc(limit=4),
+            }
+            if attempts < node.max_retries:
+                attempts += 1
+                node.retry_count = attempts
+                transition(node, "retrying")
+                append_event("node.retrying", {
+                    "workflow_id": node.input.get("workflow_id"),
+                    "node_id": node.id,
+                    "attempt": attempts,
+                    "error": str(exc),
+                })
+                time.sleep(min(2 ** attempts, 8))
+                transition(node, "ready")
+                transition(node, "running")
+                continue
+            transition(node, "failed")
+            return False, node.error
+
+
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     registry = load_registry()
     spec = registry.get(node.tool, {})
@@ -634,7 +851,7 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
             raise RuntimeError(
                 f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
             )
-    if dry_run:
+    if dry_run and node.tool != "local_validator":
         return {
             "simulated": True,
             "tool": node.tool,
@@ -657,6 +874,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_github(node)
     if node.tool == "connector_bridge":
         return execute_connector_bridge(node, goal, dry_run)
+    if node.tool == "local_validator":
+        return execute_local_validator(node, goal)
     if node.tool == "noop":
         return {"message": "noop"}
     raise RuntimeError(f"unknown tool adapter: {node.tool}")
@@ -673,7 +892,8 @@ def ready_nodes(nodes: list[Node]) -> list[Node]:
     completed = {node.id for node in nodes if node.status == "completed"}
     return [
         node for node in nodes
-        if node.status == "pending" and all(dep in completed for dep in node.depends_on)
+        if node.status in {"pending", "ready"}
+        and all(dep in completed for dep in node.depends_on)
     ]
 
 def replan_after_failure(
@@ -691,7 +911,7 @@ def replan_after_failure(
         old_tool = failed_node.tool
         if candidate == old_tool:
             continue
-        if not tool_available(candidate, registry):
+        if not tool_available(candidate, registry, require_env=bool(workflow.get("live"))):
             continue
         transition(failed_node, "replanning")
         failed_node.tool = candidate
@@ -758,6 +978,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 node.input['approval_issue'] = create_approval_issue(workflow, node)
         except Exception as exc:
             node.error = {'type': type(exc).__name__, 'message': str(exc)}
+            transition(node, 'failed')
+            workflow['status'] = 'failed'
+            workflow['failed_node'] = node.id
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return 'failed'
         append_event('approval.required', {
             'workflow_id': workflow['id'],
             'node_id': node.id,
@@ -772,6 +998,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return 'waiting_approval'
 
+    node.input["context"] = build_node_context(nodes, node)
     transition(node, 'running')
     execution_id = execution_key(workflow, node)
     if side_effecting(node, registry):
@@ -804,8 +1031,8 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     while True:
         try:
             node.output = execute_node(node, workflow['goal'], dry_run=not live)
+            node.output['validation'] = validate_node_output(node, node.output)
             transition(node, 'validating')
-            node.output['validation'] = {'passed': True, 'checked_at': utc_now()}
             transition(node, 'completed')
             if side_effecting(node, registry):
                 mark_execution_completed(workflow, execution_id, node.output)
@@ -880,6 +1107,8 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
+    workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
+    workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
     for node in nodes:
         node.input["workflow_id"] = workflow["id"]
@@ -887,7 +1116,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     safety = 0
     while True:
         safety += 1
-        if safety > 100:
+        if safety > 200:
             raise RuntimeError("orchestration safety limit reached")
 
         refresh_approvals(workflow, nodes)
@@ -895,27 +1124,45 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             workflow["nodes"] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
             return
+
         ready = ready_nodes(nodes)
         for node in ready:
-            transition(node, "ready")
+            if node.status == "pending":
+                transition(node, "ready")
+
         if not ready:
             if all(node.status == "completed" for node in nodes):
                 workflow["status"] = "completed"
                 workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
                 append_event("workflow.completed", {"workflow_id": workflow["id"]})
+                notify_issue(workflow, "Orchestrator: workflow " + workflow["id"] + " completed.")
                 return
 
-            waiting = [node for node in nodes if node.status in {"pending", "waiting_approval", "retrying"}]
-            if waiting and all(node.status == "waiting_approval" for node in waiting):
-                workflow["status"] = "waiting_approval"
-                workflow["nodes"] = [asdict(node) for node in nodes]
-                return
-
-            workflow["status"] = "failed"
+            waiting = [node for node in nodes if node.status in {"waiting_approval", "retrying", "pending"}]
+            workflow["status"] = (
+                "waiting_approval"
+                if waiting and all(node.status == "waiting_approval" for node in waiting)
+                else "failed"
+            )
             workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
             return
 
-        for node in ready:
+        # Side effects remain serialized; independent read/compute nodes may run in parallel.
+        safe_ready = [
+            node for node in ready
+            if not side_effecting(node, registry) and node.risk not in {"high", "critical"}
+        ]
+        unsafe_ready = [node for node in ready if node not in safe_ready]
+        batch = (
+            [sorted(unsafe_ready, key=lambda item: item.id)[0]]
+            if unsafe_ready
+            else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
+        )
+
+        executable = []
+        for node in batch:
             if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
                 transition(node, "waiting_approval")
                 workflow["status"] = "waiting_approval"
@@ -927,18 +1174,23 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         "type": type(approval_exc).__name__,
                         "message": str(approval_exc),
                     }
-                append_event(
-                    "approval.required",
-                    {
-                        "workflow_id": workflow["id"],
-                        "node_id": node.id,
-                        "risk": node.risk,
-                        "issue": node.input.get("approval_issue"),
-                    },
-                )
+                    transition(node, "failed")
+                    workflow["status"] = "failed"
+                    workflow["failed_node"] = node.id
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    return
+                append_event("approval.required", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "risk": node.risk,
+                    "issue": node.input.get("approval_issue"),
+                })
                 continue
 
+            node.input["context"] = build_node_context(nodes, node)
             transition(node, "running")
+
             execution_id = execution_key(workflow, node)
             if side_effecting(node, registry):
                 record = workflow.setdefault("executions", {}).get(execution_id)
@@ -951,98 +1203,85 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     transition(node, "failed")
                     workflow["status"] = "failed"
                     workflow["failed_node"] = node.id
-                    append_event(
-                        "node.execution_uncertain",
-                        {"workflow_id": workflow["id"], "node_id": node.id, "execution_id": execution_id},
-                    )
+                    append_event("node.execution_uncertain", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "execution_id": execution_id,
+                    })
                     workflow["nodes"] = [asdict(item) for item in nodes]
                     persist_workflow(workflow)
                     return
+
                 mark_execution_prepared(workflow, node)
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
                 mark_execution_started(workflow, node, execution_id)
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
-            append_event(
-                "node.started",
-                {"workflow_id": workflow["id"], "node_id": node.id, "tool": node.tool},
-            )
 
-            attempts = node.retry_count
-            while True:
-                try:
-                    node.output = execute_node(node, workflow["goal"], dry_run=not live)
-                    transition(node, "validating")
-                    node.output["validation"] = {
-                        "passed": True,
-                        "checked_at": utc_now(),
-                    }
-                    transition(node, "completed")
-                    if side_effecting(node, registry):
-                        mark_execution_completed(workflow, execution_id, node.output)
-                    append_event(
-                        "node.completed",
-                        {"workflow_id": workflow["id"], "node_id": node.id, "tool": node.tool},
-                    )
-                    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-                    checkpoint = {
-                        "workflow": workflow["id"],
-                        "node": asdict(node),
-                        "ts": utc_now(),
-                    }
-                    checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
-                    write_json(checkpoint_path, checkpoint)
-                    checkpoint_bytes = checkpoint_path.read_bytes()
-                    try:
-                        checkpoint_ref = str(checkpoint_path.relative_to(ROOT))
-                    except ValueError:
-                        checkpoint_ref = str(checkpoint_path)
-                    node.output["checkpoint"] = {
-                        "path": checkpoint_ref,
-                        "sha256": hashlib.sha256(checkpoint_bytes).hexdigest(),
-                    }
-                    break
-                except Exception as exc:
-                    node.error = {
-                        "type": type(exc).__name__,
-                        "message": str(exc),
-                        "trace": traceback.format_exc(limit=4),
-                    }
-                    if attempts < node.max_retries:
-                        attempts += 1
-                        node.retry_count = attempts
-                        transition(node, "retrying")
-                        append_event(
-                            "node.retrying",
-                            {
-                                "workflow_id": workflow["id"],
-                                "node_id": node.id,
-                                "attempt": attempts,
-                                "error": str(exc),
-                            },
-                        )
-                        time.sleep(min(2 ** attempts, 8))
-                        transition(node, "ready")
-                        transition(node, "running")
-                        continue
+            append_event("node.started", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "tool": node.tool,
+            })
+            executable.append((node, execution_id))
 
-                    transition(node, "failed")
-                    append_event(
-                        "node.failed",
-                        {"workflow_id": workflow["id"], "node_id": node.id, "error": node.error},
-                    )
+        if not executable:
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            continue
 
-                    if replan_after_failure(workflow, nodes, node, registry):
-                        break
+        dry_run = not live
+        results = []
 
+        if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
+            for node, execution_id in executable:
+                results.append((node, execution_id, *execute_with_retries(node, workflow["goal"], dry_run)))
+        else:
+            with ThreadPoolExecutor(
+                max_workers=min(workflow["max_parallel"], len(executable)),
+                thread_name_prefix="orchestrator-node",
+            ) as pool:
+                futures = {
+                    pool.submit(execute_with_retries, node, workflow["goal"], dry_run): (node, execution_id)
+                    for node, execution_id in executable
+                }
+                completed_futures = {}
+                for future in as_completed(futures):
+                    node, execution_id = futures[future]
+                    completed_futures[node.id] = (node, execution_id, *future.result())
+                results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
+
+        replan_needed = False
+        for node, execution_id, success, error in results:
+            if success:
+                if side_effecting(node, registry):
+                    mark_execution_completed(workflow, execution_id, node.output)
+                node_success_checkpoint(workflow, node)
+                append_event("node.completed", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                })
+                notify_issue(
+                    workflow,
+                    "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
+                )
+            else:
+                if replan_after_failure(workflow, nodes, node, registry):
+                    replan_needed = True
+                else:
                     workflow["status"] = "failed"
                     workflow["failed_node"] = node.id
                     workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
                     return
 
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
+
+        if replan_needed:
+            continue
 
 def notify_issue(workflow: dict[str, Any], message: str) -> None:
     try:
@@ -1051,7 +1290,12 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
     except Exception:
         return
 
-def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> dict[str, Any]:
+def create_workflow(
+    goal: str,
+    live: bool,
+    trigger_issue: int | None = None,
+    event_id: str | None = None,
+) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
@@ -1072,7 +1316,9 @@ def create_workflow(goal: str, live: bool, trigger_issue: int | None = None) -> 
         "live": live,
         "execution_mode": "dry-run",
         "replan_count": 0,
+        "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
+        "event_id": event_id,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
         "nodes": [asdict(node) for node in nodes],
     }
@@ -1160,7 +1406,24 @@ def main() -> int:
     live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
     trigger_issue_raw = os.environ.get('ORCHESTRATOR_TRIGGER_ISSUE', '').strip()
     trigger_issue = int(trigger_issue_raw) if trigger_issue_raw.isdigit() else None
-    workflow = create_workflow(args.goal, live=live, trigger_issue=trigger_issue)
+    event_id = os.environ.get("ORCHESTRATOR_EVENT_ID", "").strip() or None
+    if event_id:
+        existing = next(
+            (
+                item for item in state.get("workflows", {}).values()
+                if item.get("event_id") == event_id
+            ),
+            None,
+        )
+        if existing:
+            print_summary(existing)
+            return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
+    workflow = create_workflow(
+        args.goal,
+        live=live,
+        trigger_issue=trigger_issue,
+        event_id=event_id,
+    )
     workflow['status'] = 'ready'
     state['workflows'][workflow['id']] = workflow
     state['last_workflow_id'] = workflow['id']

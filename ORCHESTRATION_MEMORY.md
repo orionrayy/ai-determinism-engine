@@ -19,9 +19,10 @@ GOAL / EVENT
   -> planner (Gemini or deterministic fallback)
   -> validated DAG
   -> risk/policy enforcement
-  -> one-node-per-run executor
+  -> bounded parallel executor for independent safe nodes
+  -> serialized executor for side effects / high risk
   -> tool adapter
-  -> validation
+  -> contract + semantic validation
   -> retry / replan
   -> checkpoint + persisted state
   -> workflow_run continuation
@@ -165,12 +166,23 @@ Never merge a control-plane change with a red CI result.
 2. `.orchestrator/` is repository-backed persistence. Public-repository state is not suitable for secrets or private workflow payloads.
 3. Side-effect recovery is fail-closed, not automatically reconciled. An `execution_uncertain` workflow needs external-state inspection before it can safely be resumed.
 4. Connector bridge v1 is vendor-neutral; a real Notion/Figma/Canva/ClickUp/etc. bridge service must implement the protocol and its own vendor OAuth/API policy.
-5. The current validation stage is structurally present but provider-specific semantic validation remains minimal.
-6. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
+5. Semantic validation now has deterministic output contracts plus an optional Gemini validation worker; domain-specific validators for deployments, published artifacts, and vendor objects remain to be added.
+6. Connector bridge v1 is still an execution boundary rather than direct access to the ChatGPT-installed connector catalog.
+7. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
 
 ## Deployment targets
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
+
+## Orchestration v3 execution policy
+
+- Independent low-risk/non-side-effect nodes may execute concurrently, bounded to 1–8 workers and defaulting to 4.
+- Side-effecting and high/critical-risk nodes remain serialized and approval-gated in live mode.
+- Dependency outputs are passed forward as bounded context; oversized outputs are truncated.
+- Successful nodes receive contract validation and a checkpoint with SHA-256 evidence.
+- Replanning returns a failed node to the runnable queue and is bounded by MAX_REPLANS.
+- Gateway idempotency keys are propagated as event_id so duplicate ingress events can be suppressed at workflow creation.
+- Dry-run remains credential-free; local validation can still execute in dry-run while external adapters are simulated.
 
 ## Protocol for future changes
 

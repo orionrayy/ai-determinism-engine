@@ -4,6 +4,14 @@ Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
 Free execution path: GitHub Actions + stdlib Python control plane.
 
+## Orchestration v3
+
+The control plane now supports bounded parallel execution of independent low-risk DAG nodes, deterministic dependency-context propagation, semantic output contracts, free local validation, and ingress idempotency keys.
+
+Safety semantics remain conservative: high-risk and side-effecting nodes are serialized and approval-gated in live mode; uncertain side effects fail closed rather than being replayed automatically. Replanning can return a failed node to the runnable queue after a bounded fallback switch.
+
+Workflow dispatch accepts a `max_parallel` input (1–8). The default is 4. Dry-run remains credential-free and can exercise the complete state machine without executing external side effects.
+
 ## Components
 
 - `orchestrator/orchestrator.py`: DAG/state/retry/replan engine plus controlled GitHub file/workflow operations.

@@ -14,15 +14,18 @@ import urllib.request
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "10000"))
 
-def github_dispatch(goal: str, metadata: dict) -> dict:
+def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> dict:
     token = os.environ.get("GITHUB_GATEWAY_TOKEN")
     repository = os.environ.get("GITHUB_REPOSITORY", "orionrayy/ai-determinism-engine")
     if not token:
         raise RuntimeError("GITHUB_GATEWAY_TOKEN is not configured")
     url = f"https://api.github.com/repos/{repository}/dispatches"
+    client_payload = {"goal": goal, "metadata": metadata}
+    if event_id:
+        client_payload["event_id"] = event_id
     payload = json.dumps({
         "event_type": "orchestrator.event",
-        "client_payload": {"goal": goal, "metadata": metadata},
+        "client_payload": client_payload,
     }).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -118,7 +121,12 @@ class Handler(BaseHTTPRequestHandler):
             metadata = payload.get("metadata", {})
             if not isinstance(metadata, dict):
                 metadata = {"value": str(metadata)}
-            result = github_dispatch(goal, metadata)
+            event_id = (
+                self.headers.get("Idempotency-Key")
+                or str(payload.get("event_id") or "").strip()
+                or None
+            )
+            result = github_dispatch(goal, metadata, event_id=event_id)
             self._send(202, {"ok": True, "queued": True, **result})
         except ValueError as exc:
             self._send(400, {"ok": False, "error": str(exc)})

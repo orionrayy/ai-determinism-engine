@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def _request(url: str, user_agent: str) -> dict:
@@ -72,15 +73,21 @@ def search_crossref(query: str) -> dict:
 def research_bundle(query: str) -> dict:
     errors = {}
     results = {}
-    for name, fn in (
+    providers = (
         ('wikipedia', search_wikipedia),
         ('arxiv', search_arxiv),
         ('crossref', search_crossref),
-    ):
-        try:
-            results[name] = fn(query)
-        except Exception as exc:
-            errors[name] = {'type': type(exc).__name__, 'message': str(exc)}
-    if not results:
+    )
+    with ThreadPoolExecutor(max_workers=len(providers), thread_name_prefix='research') as pool:
+        futures = {pool.submit(fn, query): name for name, fn in providers}
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                results[name] = future.result()
+            except Exception as exc:
+                errors[name] = {'type': type(exc).__name__, 'message': str(exc)}
+    ordered_results = {name: results[name] for name, _ in providers if name in results}
+    ordered_errors = {name: errors[name] for name, _ in providers if name in errors}
+    if not ordered_results:
         raise RuntimeError('all research providers failed')
-    return {'query': query, 'sources': results, 'errors': errors}
+    return {'query': query, 'sources': ordered_results, 'errors': ordered_errors}
