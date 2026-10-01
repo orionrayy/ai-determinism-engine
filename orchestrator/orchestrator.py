@@ -1156,7 +1156,49 @@ def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
     return bool(exc.retry_allowed), True
 
 
+def execution_failure_policy(
+    node: Node,
+    exc: Exception,
+    registry: dict[str, dict[str, Any]],
+    *,
+    dry_run: bool,
+) -> tuple[str, bool, bool]:
+    failure_class = classify_failure(exc)
+    explicit_retry = getattr(exc, "retry_allowed", None)
+    can_retry = retry_allowed(
+        failure_class,
+        explicitly_retryable=explicit_retry,
+    )
+    connector_can_retry, uncertain = connector_failure_policy(node, exc)
+    if uncertain:
+        failure_class = "uncertain"
+        can_retry = connector_can_retry
+        node.error["execution_uncertain"] = True
+        node.error["reconciliation_required"] = True
+
+    if side_effecting(node, registry) and not dry_run:
+        connector_safe_retry = (
+            isinstance(exc, ConnectorRequestError)
+            and uncertain
+            and connector_can_retry
+        )
+        if not connector_safe_retry:
+            node.error["post_start_side_effect_failure"] = True
+            node.error["retry_blocked_after_side_effect_start"] = True
+            node.error["replan_blocked_after_side_effect_start"] = True
+            can_retry = False
+            if failure_class in {"transient", "intermittent", "dependency"}:
+                failure_class = "uncertain"
+                uncertain = True
+                node.error["execution_uncertain"] = True
+                node.error["reconciliation_required"] = True
+
+    node.error["failure_class"] = failure_class
+    node.error["retry_allowed"] = can_retry
+    return failure_class, can_retry, uncertain
+
 def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, dict[str, Any] | None]:
+    registry = load_registry()
     attempts = node.retry_count
     while True:
         try:
@@ -1172,20 +1214,12 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                 "message": str(exc),
                 "trace": traceback.format_exc(limit=4),
             }
-            failure_class = classify_failure(exc)
-            explicit_retry = getattr(exc, "retry_allowed", None)
-            can_retry = retry_allowed(
-                failure_class,
-                explicitly_retryable=explicit_retry,
+            failure_class, can_retry, uncertain = execution_failure_policy(
+                node,
+                exc,
+                registry,
+                dry_run=dry_run,
             )
-            connector_can_retry, uncertain = connector_failure_policy(node, exc)
-            if uncertain:
-                failure_class = "uncertain"
-                can_retry = connector_can_retry
-                node.error["execution_uncertain"] = True
-                node.error["reconciliation_required"] = True
-            node.error["failure_class"] = failure_class
-            node.error["retry_allowed"] = can_retry
             if attempts < node.max_retries and can_retry:
                 attempts += 1
                 node.retry_count = attempts
@@ -1613,20 +1647,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 'message': str(exc),
                 'trace': traceback.format_exc(limit=4),
             }
-            failure_class = classify_failure(exc)
-            explicit_retry = getattr(exc, 'retry_allowed', None)
-            can_retry = retry_allowed(
-                failure_class,
-                explicitly_retryable=explicit_retry,
+            failure_class, can_retry, uncertain = execution_failure_policy(
+                node,
+                exc,
+                registry,
+                dry_run=not live,
             )
-            connector_can_retry, uncertain = connector_failure_policy(node, exc)
-            if uncertain:
-                failure_class = 'uncertain'
-                can_retry = connector_can_retry
-                node.error['execution_uncertain'] = True
-                node.error['reconciliation_required'] = True
-            node.error['failure_class'] = failure_class
-            node.error['retry_allowed'] = can_retry
             if attempts < node.max_retries and can_retry:
                 attempts += 1
                 node.retry_count = attempts
@@ -1658,7 +1684,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 workflow,
                 'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
             )
-            if not uncertain and replan_after_failure(workflow, nodes, node, registry):
+            if not uncertain and not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
                 workflow['nodes'] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
                 return 'replanned'
@@ -1889,7 +1915,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 )
             else:
                 update_tool_health(node, False, registry)
-                if replan_after_failure(workflow, nodes, node, registry):
+                if not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
                     replan_needed = True
                 else:
                     workflow["status"] = "failed"

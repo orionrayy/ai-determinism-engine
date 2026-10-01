@@ -104,6 +104,10 @@ Persisted workflows carry a deterministic plan fingerprint. On resume, the contr
 
 The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
 
+## Post-start side-effect replay fence v20
+
+Once a live side effect has passed the durable START barrier, the worker does not automatically retry or replan a non-idempotent side-effecting operation after an execution failure. The only automatic retry exception is an uncertain connector request whose freshly discovered action contract explicitly declares idempotent: true; that retry reuses the deterministic request id. This keeps a timeout or partial response from turning into a second external write.
+
 ## Pre-side-effect durability v19
 
 For live side-effecting nodes, the GitHub Actions worker commits and pushes the execution `START` record to `main` before invoking the external effect. A remote branch drift or push failure blocks the effect. This closes the runner-crash window where an external side effect could succeed before its `started` state became durable. The barrier is intentionally conservative and does not make Git plus an external provider one atomic transaction.

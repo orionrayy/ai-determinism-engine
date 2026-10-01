@@ -346,6 +346,81 @@ class OrchestratorTests(unittest.TestCase):
         )
         execute.assert_not_called()
 
+    def test_started_side_effect_timeout_is_not_retried_or_replanned(self):
+        node = o.Node(
+            "n01-write", "publish", "webhook", [], risk="high", max_retries=2,
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_post_start_fence",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value=registry), \
+                 patch.object(o, "execute_node", side_effect=TimeoutError("upstream timeout")) as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
+        self.assertEqual(workflow["replan_count"], 0)
+        self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
+        self.assertTrue(workflow["nodes"][0]["error"]["retry_blocked_after_side_effect_start"])
+        self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
+        self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
+
+    def test_started_side_effect_permanent_error_does_not_replan(self):
+        node = o.Node(
+            "n01-write", "publish", "webhook", [], risk="high", max_retries=0,
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_post_start_permanent",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value=registry), \
+                 patch.object(o, "execute_node", side_effect=RuntimeError("provider rejected response")) as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["replan_count"], 0)
+        self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
+    def test_workflow_started_side_effect_timeout_is_not_retried(self):
+        node = o.Node(
+            "n01-write", "publish", "webhook", [], risk="high", max_retries=2,
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_workflow_post_start_fence",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value=registry), \
+                 patch.object(o, "execute_node", side_effect=TimeoutError("upstream timeout")) as execute:
+                o.run_workflow(workflow, approve_high_risk=False)
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
+        self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
+        self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
     def _uncertain_connector_workflow(self, node_error, node_id="n01-connector"):
         node = o.Node(
             node_id,
