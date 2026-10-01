@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ai-orchestrator-gateway
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: python -m py_compile gateway.py
+    startCommand: python gateway.py
+    healthCheckPath: /health
+    envVars:
+      - key: GITHUB_REPOSITORY
+        value: orionrayy/ai-determinism-engine
+      - key: GITHUB_GATEWAY_TOKEN
+        sync: false
+      - key: GATEWAY_SHARED_SECRET
+        sync: false
