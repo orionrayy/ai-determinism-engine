@@ -164,6 +164,154 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "failed")
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "execution_uncertain")
         execute.assert_not_called()
+
+    def _uncertain_connector_workflow(self, node_error, node_id="n01-connector"):
+        node = o.Node(
+            node_id,
+            "publish",
+            "connector_bridge",
+            [],
+            risk="high",
+            status="failed",
+            error=node_error,
+            input={
+                "connector": "notion",
+                "action": "create_page",
+                "payload": {"title": "Hello"},
+            },
+        )
+        return {
+            "id": "wf_reconcile",
+            "goal": "publish safely",
+            "live": True,
+            "status": "failed",
+            "nodes": [o.asdict(node)],
+            "executions": {},
+        }
+
+    def test_uncertain_connector_reconciliation_applied_completes_without_replay(self):
+        workflow = self._uncertain_connector_workflow({
+            "type": "execution_uncertain",
+            "message": "timeout",
+            "execution_uncertain": True,
+            "reconciliation_required": True,
+        })
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": [],
+            },
+            "connector_bridge": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+                "side_effects": ["external_request"],
+            },
+        }
+        reconciliation = {
+            "state": "applied",
+            "request_id": o.hashlib.sha256(b"wf_reconcile:n01-connector").hexdigest(),
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example/api/bridge",
+        }, clear=False), patch.object(
+            o, "load_registry", return_value=registry
+        ), patch.object(
+            o, "reconcile_connector_execution", return_value=reconciliation
+        ), patch.object(o, "update_tool_health"), tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "reconciled")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertTrue(workflow["nodes"][0]["output"]["reconciled"])
+
+    def test_uncertain_connector_reconciliation_not_applied_returns_ready(self):
+        workflow = self._uncertain_connector_workflow({
+            "type": "execution_uncertain",
+            "message": "timeout",
+            "execution_uncertain": True,
+            "reconciliation_required": True,
+        })
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": [],
+            },
+            "connector_bridge": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+                "side_effects": ["external_request"],
+            },
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example/api/bridge",
+        }, clear=False), patch.object(
+            o, "load_registry", return_value=registry
+        ), patch.object(
+            o, "reconcile_connector_execution", return_value={"state": "not_applied"}
+        ):
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "reconciled_ready")
+        self.assertEqual(workflow["nodes"][0]["status"], "ready")
+        self.assertEqual(workflow["status"], "running")
+
+    def test_uncertain_connector_reconciliation_unknown_fails_closed(self):
+        workflow = self._uncertain_connector_workflow({
+            "type": "execution_uncertain",
+            "message": "timeout",
+            "execution_uncertain": True,
+            "reconciliation_required": True,
+        })
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": [],
+            },
+            "connector_bridge": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+                "side_effects": ["external_request"],
+            },
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example/api/bridge",
+        }, clear=False), patch.object(
+            o, "load_registry", return_value=registry
+        ), patch.object(
+            o, "reconcile_connector_execution",
+            return_value={"state": "unknown"}
+        ):
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["nodes"][0]["status"], "failed")
+        self.assertEqual(
+            workflow["nodes"][0]["error"]["reconciliation_state"],
+            "unknown",
+        )
+
+    def test_resume_scheduler_includes_failed_uncertain_connectors(self):
+        workflow = self._uncertain_connector_workflow({
+            "type": "execution_uncertain",
+            "message": "timeout",
+            "execution_uncertain": True,
+            "reconciliation_required": True,
+        })
+        state = {
+            "version": 2,
+            "workflows": {"wf_reconcile": workflow},
+            "last_workflow_id": "wf_reconcile",
+        }
+        with patch.object(
+            o, "run_one_step",
+            side_effect=lambda wf, approve_high_risk=False: (
+                wf.update({"status": "running"}) or "reconciled_ready"
+            ),
+        ), patch.object(o, "save_state"):
+            count = o.resume_pending_workflows(state, step=True)
+        self.assertEqual(count, 1)
+
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
