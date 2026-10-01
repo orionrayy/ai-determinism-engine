@@ -26,6 +26,7 @@ try:
     )
     from .evidence import build_evidence
     from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from .plan_integrity import fingerprint_nodes
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -36,6 +37,7 @@ except ImportError:
     )
     from evidence import build_evidence
     from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from plan_integrity import fingerprint_nodes
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -1038,6 +1040,31 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     }
 
 
+def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
+    fingerprint = fingerprint_nodes(nodes)
+    previous = str(workflow.get("plan_fingerprint") or "").strip()
+    if not previous:
+        workflow["plan_fingerprint"] = fingerprint
+        workflow["plan_integrity"] = "initialized"
+        return True
+    if previous == fingerprint:
+        workflow["plan_integrity"] = "verified"
+        return True
+    workflow["plan_integrity"] = "drift_detected"
+    workflow["plan_drift"] = {
+        "expected": previous,
+        "actual": fingerprint,
+        "detected_at": utc_now(),
+    }
+    workflow["status"] = "failed"
+    append_event("workflow.plan_drift", {
+        "workflow_id": workflow["id"],
+        "expected": previous,
+        "actual": fingerprint,
+    })
+    return False
+
+
 def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
     if not isinstance(exc, ConnectorRequestError) or not exc.uncertain:
         return True, False
@@ -1215,6 +1242,8 @@ def replan_after_failure(
         "node_id": failed_node.id,
         "previous_tool": old_tool,
     })
+    workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
+    workflow["plan_integrity"] = "replanned"
     transition(failed_node, "ready")
     workflow["status"] = "running"
     return True
@@ -1333,6 +1362,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     registry = load_registry()
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
+    if not ensure_plan_integrity(workflow, nodes):
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return 'failed'
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
@@ -1521,6 +1554,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     registry = load_registry()
     live = bool(workflow.get("live"))
     enforce_node_policy(nodes, registry, live=live)
+    if not ensure_plan_integrity(workflow, nodes):
+        workflow["nodes"] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
@@ -1750,6 +1787,9 @@ def create_workflow(
         "replan_count": 0,
         "repair_feedback": {},
         "evidence": {},
+        "reconciliations": {},
+        "plan_fingerprint": None,
+        "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
         "event_id": event_id,
