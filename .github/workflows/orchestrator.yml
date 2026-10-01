@@ -49,8 +49,8 @@ jobs:
         id: goal
         shell: bash
         env:
-          INPUT_GOAL: \${{ inputs.goal }}
-          EVENT_GOAL: \${{ github.event.client_payload.goal }}
+          INPUT_GOAL: ${{ inputs.goal }}
+          EVENT_GOAL: ${{ github.event.client_payload.goal }}
         run: |
           set -euo pipefail
           goal="$INPUT_GOAL"
@@ -61,15 +61,19 @@ jobs:
 
       - name: Run orchestrator
         env:
-          ORCHESTRATOR_GOAL: \${{ steps.goal.outputs.goal }}
-          ORCHESTRATOR_LIVE: \${{ inputs.live && 'true' || 'false' }}
-          OPENAI_API_KEY: \${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: \${{ vars.OPENAI_MODEL }}
-          ORCHESTRATOR_WEBHOOK_URL: \${{ secrets.ORCHESTRATOR_WEBHOOK_URL }}
-          ORCHESTRATOR_WEBHOOK_SECRET: \${{ secrets.ORCHESTRATOR_WEBHOOK_SECRET }}
-          GITHUB_TOKEN: \${{ github.token }}
+          ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
+          ORCHESTRATOR_LIVE: ${{ inputs.live && 'true' || 'false' }}
+          ORCHESTRATOR_APPROVE_HIGH_RISK: ${{ inputs.approve_high_risk && 'true' || 'false' }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+          ORCHESTRATOR_WEBHOOK_URL: ${{ secrets.ORCHESTRATOR_WEBHOOK_URL }}
+          ORCHESTRATOR_WEBHOOK_SECRET: ${{ secrets.ORCHESTRATOR_WEBHOOK_SECRET }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          python3 orchestrator/orchestrator.py --goal "$ORCHESTRATOR_GOAL"
+          args=(--goal "$ORCHESTRATOR_GOAL")
+          if [ "$ORCHESTRATOR_LIVE" = "true" ]; then args+=(--live); fi
+          if [ "$ORCHESTRATOR_APPROVE_HIGH_RISK" = "true" ]; then args+=(--approve-high-risk); fi
+          python3 orchestrator/orchestrator.py "${args[@]}"
 
       - name: Persist state
         if: always()
@@ -88,14 +92,14 @@ jobs:
         run: |
           echo "## AI Orchestrator" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Goal: \`$(cat /tmp/orchestrator_goal.txt)\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Repository: \`$GITHUB_REPOSITORY\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Goal: `$(cat /tmp/orchestrator_goal.txt)`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Repository: `$GITHUB_REPOSITORY`" >> "$GITHUB_STEP_SUMMARY"
           if [ -f .orchestrator/state.json ]; then
             python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
 import json
 s=json.load(open(".orchestrator/state.json"))
 wf=s.get("workflows",{}).get(s.get("last_workflow_id"))
-print(f"- Workflow: \`{wf['id']}\`" if wf else "- Workflow: n/a")
+print(f"- Workflow: `{wf['id']}`" if wf else "- Workflow: n/a")
 print(f"- Status: **{wf['status']}**" if wf else "- Status: n/a")
 PY
           fi
