@@ -66,6 +66,10 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertEqual(discovered["notion"]["capabilities"], ["publish"])
         self.assertFalse(discovered["notion"]["configured"])
         self.assertNotIn("NOTION_SECRET", json.dumps(discovered))
+        self.assertEqual(
+            discovered["clickup"]["action_specs"]["create_task"],
+            {"required": [], "types": {}, "idempotent": False},
+        )
 
     def test_capability_discovery_reports_configured_secret_without_exposing_it(self):
         routes = {
@@ -79,6 +83,42 @@ class BridgeRuntimeTests(unittest.TestCase):
             discovered = br.describe_routes(routes)
         self.assertTrue(discovered["notion"]["configured"])
         self.assertNotIn("do-not-leak", json.dumps(discovered))
+
+    def test_action_specs_are_sanitized_and_enforced(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+                "action_specs": {
+                    "create_page": {
+                        "required": ["title", "properties.name"],
+                        "types": {"title": "string", "properties.name": "string", "ignored": "secret"},
+                        "idempotent": True,
+                        "secret": "must-not-leak",
+                    }
+                },
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertEqual(
+            discovered["notion"]["action_specs"]["create_page"],
+            {
+                "required": ["properties.name", "title"],
+                "types": {"properties.name": "string", "title": "string"},
+                "idempotent": True,
+            },
+        )
+        with patch.object(br, "load_routes", return_value=routes), patch.object(
+            br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}
+        ):
+            payload = self.payload(request_id=hashlib.sha256(b"wf:schema").hexdigest())
+            payload["input"]["properties"] = {"name": "N"}
+            result = br.handle_request(payload, "secret")
+            self.assertTrue(result["ok"])
+            bad = self.payload(request_id=hashlib.sha256(b"wf:schema-bad").hexdigest())
+            bad["input"] = {"title": 42, "properties": {"name": "N"}}
+            with self.assertRaises(br.BridgeRuntimeError):
+                br.handle_request(bad, "secret")
 
     def test_idempotent_response_is_replayed(self):
         payload = self.payload()
