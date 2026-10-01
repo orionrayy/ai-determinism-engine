@@ -28,6 +28,24 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
+    def test_preapproved_high_risk_node_can_resume(self):
+        node = o.Node(
+            "n01-deploy", "deploy", "noop", [], risk="high",
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_approval", "goal": "deploy", "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                     patch.object(o, "load_registry", return_value={}):
+                    result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "completed")
+        self.assertEqual(workflow["status"], "completed")
     def test_one_step_advances_dag_incrementally(self):
         workflow = o.create_workflow('build a website', live=False)
         with tempfile.TemporaryDirectory() as tmp:
