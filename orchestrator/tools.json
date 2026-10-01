@@ -86,44 +86,52 @@
       "create_or_update_file",
       "delete_file",
       "dispatch_workflow"
-    ]
+    ],
+    "risk": "medium"
   },
   "openai": {
     "required_env": "OPENAI_API_KEY",
     "side_effects": [],
-    "free_tier": false
+    "free_tier": false,
+    "risk": "low"
   },
   "webhook": {
     "required_env": "ORCHESTRATOR_WEBHOOK_URL",
     "side_effects": [
       "external_request"
     ],
-    "free_tier": false
+    "free_tier": false,
+    "risk": "high"
   },
   "firecrawl": {
     "required_env": "FIRECRAWL_API_KEY",
     "side_effects": [],
-    "free_tier": false
+    "free_tier": false,
+    "risk": "low"
   },
   "noop": {
     "required_env": null,
     "side_effects": [],
-    "free_tier": true
+    "free_tier": true,
+    "risk": "low"
   },
   "wikipedia": {
     "required_env": null,
     "side_effects": [],
-    "free_tier": true
+    "free_tier": true,
+    "risk": "low"
   },
   "gemini": {
     "required_env": "GEMINI_API_KEY",
     "side_effects": [],
-    "free_tier": true
+    "free_tier": true,
+    "risk": "low"
   },
   "research_bundle": {
     "required_env": null,
     "side_effects": [],
-    "free_tier": true
+    "free_tier": true,
+    "risk": "low"
   },
   "connector_bridge": {
     "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
@@ -135,7 +143,8 @@
     "allowed_actions": [
       "invoke"
     ],
-    "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration"
+    "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration",
+    "risk": "high"
   },
   "local_validator": {
     "required_env": null,
@@ -143,7 +152,8 @@
     "free_tier": true,
     "allowed_actions": [
       "validate"
-    ]
+    ],
+    "risk": "low"
   },
   "capability:artifact_verify": {
     "default_tool": "artifact_verifier",
@@ -156,6 +166,7 @@
     "free_tier": true,
     "allowed_actions": [
       "verify"
-    ]
+    ],
+    "risk": "low"
   }
 }
