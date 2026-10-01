@@ -179,6 +179,13 @@ Never merge a control-plane change with a red CI result.
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
 
+## Execution fabric v8
+
+- Connector transport failures and HTTP 5xx responses are represented as potentially uncertain request failures.
+- The discovered action's `idempotent` declaration controls automatic retry of an uncertain connector request.
+- Uncertain non-idempotent connector failures fail closed and are not automatically replanned to another provider.
+- An uncertain failure is persisted as requiring reconciliation so an external-state inspection can precede any later manual resume.
+
 ## Execution fabric v7
 
 - Connector discovery now includes sanitized action contracts: required fields, primitive input types, and an idempotency declaration.
