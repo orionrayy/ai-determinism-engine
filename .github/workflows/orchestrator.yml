@@ -86,6 +86,7 @@ jobs:
           fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
           echo "goal=$goal" >> "$GITHUB_OUTPUT"
+          echo "issue_number=$ISSUE_NUMBER" >> "$GITHUB_OUTPUT"
 
       - name: Bootstrap approval labels
         env:
