@@ -8,10 +8,10 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main code commit after v6: `407017b3e6ca1997d4f1af43cab03bc4d3453dfa`
+Current main baseline: execution-fabric v7 connector contracts are merged; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
-Current execution-fabric branch: `upgrade/connector-contracts-v7` (active development)
+Current execution-fabric branch: `main`
 
 ## Architecture
 
