@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -296,6 +297,138 @@ class OrchestratorTests(unittest.TestCase):
                 o.run_workflow(workflow, approve_high_risk=False)
         self.assertEqual(workflow["status"], "waiting_approval")
         self.assertEqual(workflow["nodes"][0]["status"], "waiting_approval")
+
+
+    def test_parallel_independent_nodes_execute_concurrently(self):
+        barrier = threading.Barrier(2)
+
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel",
+            "goal": "parallel",
+            "live": False,
+            "max_parallel": 2,
+            "nodes": [o.asdict(n) for n in nodes],
+        }
+
+        def fake_execute(node, goal, dry_run):
+            barrier.wait(timeout=3)
+            return {"ok": True, "node": node.id}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=fake_execute):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertTrue(all(node["status"] == "completed" for node in workflow["nodes"]))
+
+    def test_dependency_context_is_forwarded_to_next_node(self):
+        nodes = [
+            o.Node("n01-source", "execute", "noop", []),
+            o.Node("n02-consumer", "execute", "noop", ["n01-source"]),
+        ]
+        workflow = {
+            "id": "wf_context",
+            "goal": "context",
+            "live": False,
+            "max_parallel": 2,
+            "nodes": [o.asdict(n) for n in nodes],
+        }
+        seen = {}
+
+        def fake_execute(node, goal, dry_run):
+            if node.id == "n01-source":
+                return {"answer": "42"}
+            seen["context"] = node.input.get("context")
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=fake_execute):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertIn("n01-source", seen["context"]["dependencies"])
+        self.assertIn("42", seen["context"]["dependencies"]["n01-source"]["output"])
+
+    def test_local_validator_uses_completed_dependency_evidence(self):
+        nodes = [
+            o.Node("n01-source", "execute", "noop", []),
+            o.Node("n02-validate", "validate", "local_validator", ["n01-source"]),
+        ]
+        workflow = {
+            "id": "wf_validate",
+            "goal": "validate",
+            "live": False,
+            "nodes": [o.asdict(n) for n in nodes],
+        }
+
+        def fake_execute(node, goal, dry_run):
+            return {"evidence": node.id}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={
+                     "local_validator": {"free_tier": True, "side_effects": []}
+                 }),                  patch.object(o, "execute_node", side_effect=fake_execute):
+                # Use the real local validator for the validation node.
+                with patch.object(o, "execute_node", side_effect=lambda node, goal, dry_run:
+                    o.execute_local_validator(node, goal) if node.tool == "local_validator"
+                    else {"evidence": node.id}):
+                    o.run_workflow(workflow)
+
+        self.assertEqual(workflow["status"], "completed")
+        self.assertTrue(workflow["nodes"][1]["output"]["validation"]["passed"])
+
+    def test_replanned_node_becomes_runnable_on_next_step(self):
+        node = o.Node(
+            "n01-execute", "execute", "noop", [],
+            max_retries=0,
+        )
+        workflow = {
+            "id": "wf_replan",
+            "goal": "replan",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "noop",
+                "fallback_tools": ["wikipedia"],
+            },
+            "noop": {"free_tier": True, "side_effects": []},
+            "wikipedia": {"free_tier": True, "side_effects": []},
+        }
+
+        def fake_execute(node, goal, dry_run):
+            if node.tool == "noop":
+                raise RuntimeError("planned failure")
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=fake_execute):
+                first = o.run_one_step(workflow)
+                second = o.run_one_step(workflow)
+
+        self.assertEqual(first, "replanned")
+        self.assertEqual(second, "completed")
+        self.assertEqual(workflow["nodes"][0]["tool"], "wikipedia")
+
+    def test_semantic_validation_rejects_failed_http_response(self):
+        node = o.Node(
+            "n01", "execute", "noop", [],
+            max_retries=0,
+        )
+        workflow = {
+            "id": "wf_validation_error",
+            "goal": "validation",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", return_value={"status_code": 500}):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertIn("500", workflow["nodes"][0]["error"]["message"])
 
 
 if __name__ == "__main__":
