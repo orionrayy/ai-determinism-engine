@@ -71,6 +71,12 @@ def load_state() -> dict[str, Any]:
 def save_state(state: dict[str, Any]) -> None:
     write_json(STATE_FILE, state)
 
+def persist_workflow(workflow: dict[str, Any]) -> None:
+    state = load_state()
+    state.setdefault("workflows", {})[workflow["id"]] = workflow
+    state["last_workflow_id"] = workflow["id"]
+    save_state(state)
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{int(time.time() * 1000)}"
 
@@ -237,6 +243,27 @@ def execute_openai(node: Node, goal: str) -> dict[str, Any]:
         timeout=90,
     )
 
+def execute_firecrawl(node: Node, goal: str) -> dict[str, Any]:
+    key = os.environ.get("FIRECRAWL_API_KEY")
+    if not key:
+        raise RuntimeError("FIRECRAWL_API_KEY is required for the Firecrawl adapter")
+    url = node.input.get("url") or os.environ.get("ORCHESTRATOR_RESEARCH_URL")
+    if not url:
+        raise RuntimeError(
+            "Firecrawl research requires node.input.url or ORCHESTRATOR_RESEARCH_URL"
+        )
+    return http_json(
+        "https://api.firecrawl.dev/v2/scrape",
+        method="POST",
+        body={
+            "url": url,
+            "formats": ["markdown"],
+            "onlyMainContent": True,
+        },
+        headers={"Authorization": f"Bearer {key}"},
+        timeout=120,
+    )
+
 def execute_webhook(node: Node, goal: str) -> dict[str, Any]:
     url = node.input.get("url") or os.environ.get("ORCHESTRATOR_WEBHOOK_URL")
     if not url:
@@ -296,6 +323,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         }
     if node.tool == "openai":
         return execute_openai(node, goal)
+    if node.tool == "firecrawl":
+        return execute_firecrawl(node, goal)
     if node.tool == "webhook":
         return execute_webhook(node, goal)
     if node.tool == "github":
@@ -346,12 +375,12 @@ def replan_after_failure(
             {
                 "workflow_id": workflow["id"],
                 "node_id": failed_node.id,
-                "from_tool": failed_node.input.get("previous_tool"),
+                "from_tool": failed_node.tool,
                 "to_tool": candidate,
                 "replan_count": workflow["replan_count"],
             },
         )
-        failed_node.input["previous_tool"] = candidate
+        failed_node.input["previous_tool"] = failed_node.tool
         transition(failed_node, "ready")
         workflow["status"] = "running"
         return True
@@ -473,7 +502,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     return
 
         workflow["nodes"] = [asdict(node) for node in nodes]
-        save_state({**load_state(), "workflows": {workflow["id"]: workflow}, "last_workflow_id": workflow["id"]})
+        persist_workflow(workflow)
 
 def create_workflow(goal: str, live: bool) -> dict[str, Any]:
     registry = load_registry()
