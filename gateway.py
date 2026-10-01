@@ -77,29 +77,6 @@ def handle_native_result(payload: dict) -> dict:
     return github_repository_dispatch("orchestrator.native_result", validated)
 
 
-    token = os.environ.get("GITHUB_GATEWAY_TOKEN")
-    repository = os.environ.get("GITHUB_REPOSITORY", "orionrayy/ai-determinism-engine")
-    if not token:
-        raise RuntimeError("GITHUB_GATEWAY_TOKEN is not configured")
-    url = f"https://api.github.com/repos/{repository}/dispatches"
-    payload = json.dumps({
-        "event_type": "orchestrator.event",
-        "client_payload": {"goal": goal, "metadata": metadata},
-    }).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=payload,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "Content-Type": "application/json",
-            "User-Agent": "ai-orchestrator-gateway/1.0",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return {"github_status": response.status}
 
 def authorized(headers: dict[str, str], raw_body: bytes | None = None) -> bool:
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
