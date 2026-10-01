@@ -150,9 +150,9 @@ def classify_risk(capability: str) -> str:
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
-    "wikipedia", "webhook", "github", "noop",
+    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "noop",
 }
-BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "noop"}
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
