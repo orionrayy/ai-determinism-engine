@@ -1111,6 +1111,22 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             attempts = node.retry_count
             while True:
                 try:
+                    if node.tool == "native_worker":
+                        task = queue_native_worker_task(workflow, node, registry)
+                        node.output = {
+                            "queued": True,
+                            "task_issue": task.get("task_issue"),
+                            "execution_id": task.get("execution_id"),
+                        }
+                        transition(node, "waiting_native_worker")
+                        workflow["status"] = "waiting_native_worker"
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        append_event(
+                            "native_worker.queued",
+                            {"workflow_id": workflow["id"], "node_id": node.id, "task_issue": task.get("task_issue")},
+                        )
+                        return
                     node.output = execute_node(node, workflow["goal"], dry_run=not live)
                     transition(node, "validating")
                     node.output["validation"] = {
