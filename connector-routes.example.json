@@ -1,0 +1,12 @@
+{
+  "notion": {
+    "url": "https://YOUR-UPSTREAM.example/connector/notion",
+    "secret_env": "NOTION_BRIDGE_SECRET",
+    "actions": ["create_page", "update_page", "append_block"]
+  },
+  "clickup": {
+    "url": "https://YOUR-UPSTREAM.example/connector/clickup",
+    "secret_env": "CLICKUP_BRIDGE_SECRET",
+    "actions": ["create_task", "update_task"]
+  }
+}
