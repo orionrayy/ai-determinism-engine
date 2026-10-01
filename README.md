@@ -99,3 +99,7 @@ Persisted workflows carry a deterministic plan fingerprint. On resume, the contr
 ## Durable state v14
 
 The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
+
+## State durability v15
+
+State JSON writes use same-directory temporary files with flush/fsync followed by atomic replacement. Persisted workflow schemas newer than the supported version fail closed instead of being guessed at.
