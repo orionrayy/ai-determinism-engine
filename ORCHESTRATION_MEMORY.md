@@ -186,7 +186,8 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 
 ## Interrupted side-effect recovery v21
 
-- On worker resume, a live side-effecting node with status running and a durable execution record status started is treated as an interrupted in-doubt execution.
+- On worker resume, a live side-effecting node with status running and a durable execution record status prepared is safely returned to ready because the pre-side-effect durability barrier has not been crossed.
+- A live side-effecting node with status running and a durable execution record status started is treated as an interrupted in-doubt execution.
 - The worker converts that node to failed with execution_uncertain and reconciliation_required metadata before replay is considered.
 - connector_bridge nodes enter the existing applied/not_applied/unknown reconciliation path; opaque side effects remain fail-closed without automatic replay.
 - This closes the crash case where v19 had durably fenced the side effect but the worker died before persisting a terminal node state.
