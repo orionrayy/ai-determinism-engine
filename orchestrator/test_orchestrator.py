@@ -224,6 +224,28 @@ class OrchestratorTests(unittest.TestCase):
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
         self.assertEqual(workflow["status"], "planning")
 
+    def test_duplicate_event_id_is_not_recreated(self):
+        existing = {
+            "id": "wf_existing",
+            "goal": "same",
+            "status": "completed",
+            "event_id": "evt-123",
+        }
+        state = {
+            "version": 2,
+            "workflows": {"wf_existing": existing},
+            "last_workflow_id": "wf_existing",
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_EVENT_ID": "evt-123"}, clear=False):
+            duplicate = next(
+                (
+                    item for item in state["workflows"].values()
+                    if item.get("event_id") == "evt-123"
+                ),
+                None,
+            )
+            self.assertIsNotNone(duplicate)
+
     def test_workflow_creation_is_persistable(self):
         workflow = o.create_workflow("build a small website", live=False)
         self.assertTrue(workflow["id"].startswith("wf_"))
