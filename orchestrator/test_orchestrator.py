@@ -306,6 +306,29 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(task_result["execution_id"], execution_id)
         self.assertEqual(len(calls), 1)
 
+
+    def test_native_worker_dry_run_never_queues_external_task(self):
+        node = o.Node(
+            "n01-native", "execute", "native_worker", [], input={
+                "connector": "notion",
+                "action": "create_page",
+                "public_safe": True,
+                "callback_url": "https://bridge.example/native-result",
+            }
+        )
+        workflow = {
+            "id": "wf_native_dry", "goal": "simulate native work", "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={
+                     "native_worker": {"free_tier": True, "side_effects": ["native_task_create"]}
+                 }),                  patch.object(o, "queue_native_worker_task", side_effect=AssertionError("dry-run must not queue")):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "completed")
+        self.assertEqual(workflow["status"], "completed")
+        self.assertTrue(workflow["nodes"][0]["output"]["simulated"])
+
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
