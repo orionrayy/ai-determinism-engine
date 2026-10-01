@@ -697,6 +697,48 @@ def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
             "has_output": True,
             "passed": True,
         })
+    contract = node.contract or {}
+    required_fields = contract.get("required_fields", [])
+    if required_fields:
+        for field_name in required_fields:
+            found = False
+            for dep in dependencies.values():
+                candidate = dep.get("output") if isinstance(dep, dict) else None
+                try:
+                    parsed = json.loads(candidate) if isinstance(candidate, str) else candidate
+                except json.JSONDecodeError:
+                    parsed = candidate
+                current: Any = parsed
+                for part in str(field_name).split("."):
+                    if isinstance(current, dict) and part in current:
+                        current = current[part]
+                    else:
+                        current = None
+                        break
+                if current is not None:
+                    found = True
+                    break
+            checks.append({"check": f"contract:{field_name}", "passed": found})
+            passed = passed and found
+    min_sources = contract.get("min_sources")
+    if min_sources is not None:
+        source_count = 0
+        for dep in dependencies.values():
+            candidate = dep.get("output") if isinstance(dep, dict) else None
+            try:
+                parsed = json.loads(candidate) if isinstance(candidate, str) else candidate
+            except json.JSONDecodeError:
+                parsed = candidate
+            if isinstance(parsed, dict) and isinstance(parsed.get("sources"), dict):
+                source_count = max(source_count, len(parsed["sources"]))
+        ok = source_count >= int(min_sources)
+        checks.append({
+            "check": "contract:min_sources",
+            "actual": source_count,
+            "required": int(min_sources),
+            "passed": ok,
+        })
+        passed = passed and ok
     return {
         "passed": passed,
         "checks": checks,
@@ -855,8 +897,8 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
     while True:
         try:
             output = execute_node(node, goal, dry_run=dry_run)
-            output["validation"] = validate_node_output(node, output)
             node.output = output
+            output["validation"] = validate_node_output(node, output)
             transition(node, "validating")
             transition(node, "completed")
             return True, None
@@ -974,6 +1016,20 @@ def replan_after_failure(
             },
         )
         failed_node.input["previous_tool"] = old_tool
+        workflow.setdefault("repair_feedback", {})[failed_node.id] = {
+            "tool": old_tool,
+            "error": failed_node.error,
+            "output": compact_json(failed_node.output, limit=12 * 1024),
+            "next_action": (
+                failed_node.output.get("next_action")
+                if isinstance(failed_node.output, dict) else None
+            ),
+        }
+        append_event("node.repair_feedback", {
+            "workflow_id": workflow["id"],
+            "node_id": failed_node.id,
+            "previous_tool": old_tool,
+        })
         transition(failed_node, "ready")
         workflow["status"] = "running"
         return True
@@ -1360,6 +1416,8 @@ def create_workflow(
         "live": live,
         "execution_mode": "dry-run",
         "replan_count": 0,
+        "repair_feedback": {},
+        "evidence": {},
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
         "event_id": event_id,
