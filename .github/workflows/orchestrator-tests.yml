@@ -8,7 +8,7 @@ on:
       - "test_gateway.py"
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/workflows/orchestrator-continuation.yml"
-      - ".github/workflows/orchestrator-continuation.yml"
+      - ".github/workflows/orchestrator.yml"
   pull_request:
     paths:
       - "orchestrator/**"
@@ -29,6 +29,6 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile
-        run: python -m py_compile orchestrator/orchestrator.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/test_orchestrator.py orchestrator/test_research_bundle.py orchestrator/issue_notify.py gateway.py test_gateway.py
+        run: python -m py_compile orchestrator/orchestrator.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/test_orchestrator.py orchestrator/test_research_bundle.py orchestrator/issue_notify.py gateway.py test_gateway.py test_actions_config.py
       - name: Unit tests
-        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway -v
+        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config -v

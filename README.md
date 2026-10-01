@@ -6,13 +6,24 @@ Free execution path: GitHub Actions + stdlib Python control plane.
 
 - `orchestrator/orchestrator.py`: DAG/state/retry/replan engine.
 - `orchestrator/tools.json`: capability and tool registry.
+- `orchestrator/research_bundle.py`: credential-free Wikipedia/arXiv/Crossref research bundle.
+- `orchestrator/issue_notify.py`: fail-safe GitHub Issue status notifications.
 - `gateway.py`: authenticated event ingress that emits a GitHub repository dispatch.
 - `.github/workflows/orchestrator.yml`: execution worker and scheduled resume.
 - `.github/workflows/orchestrator-tests.yml`: compile + unit-test gate.
 
 ## LLM routing
 
-Gemini is the primary LLM adapter and OpenAI is an optional fallback. Google currently lists Gemini 3.7 Flash as free at the standard API tier. API-key authentication is still required.
+Gemini is the primary LLM adapter and OpenAI is an optional fallback. Google currently lists Gemini 3.8 Flash as free at the standard API tier. API-key authentication is still required.
+
+## Event / approval flow
+
+- Source issues use the `[ORCHESTRATOR]` prefix.
+- High-risk actions create `[ORCHESTRATOR APPROVAL]` issues.
+- Adding `orchestrator-approved` or `orchestrator-rejected` resumes the exact stored workflow.
+- Each continuation is bound to the originating GitHub Actions run ID, not merely the latest workflow in state.
+
+State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
 ## Gateway
 

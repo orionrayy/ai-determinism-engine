@@ -44,6 +44,24 @@ class OrchestratorTests(unittest.TestCase):
                          patch.object(o, "load_registry", return_value={}):
                         result = o.run_one_step(workflow, approve_high_risk=False)
         self.assertEqual(result, "completed")
+    def test_policy_raises_risk_for_deploy_even_if_planner_says_low(self):
+        node = o.Node("n01-deploy", "deploy", "noop", [], risk="low")
+        o.enforce_node_policy([node], {"noop": {"side_effects": []}})
+        self.assertEqual(node.risk, "high")
+
+    def test_policy_raises_risk_for_github_issue_write(self):
+        node = o.Node(
+            "n01-build", "build", "github", [], risk="medium",
+            input={"action": "create_issue"},
+        )
+        o.enforce_node_policy([node], {"github": {"side_effects": ["issue_write"]}})
+        self.assertEqual(node.risk, "high")
+
+    def test_policy_rejects_unknown_tool(self):
+        node = o.Node("n01", "execute", "unknown_tool")
+        with self.assertRaises(ValueError):
+            o.enforce_node_policy([node], {"noop": {"side_effects": []}})
+
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
