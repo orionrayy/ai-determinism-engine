@@ -62,8 +62,7 @@ jobs:
         env:
           DEPLOYMENT_URL: ${{ steps.deploy.outputs.deployment_url }}
         run: |
-          printf '%s
-' \
+          printf '%s\n' \
             "## Connector Bridge Deployment" \
-            "- URL: `$DEPLOYMENT_URL`" \
-            "- Endpoint: `$DEPLOYMENT_URL/api/bridge`" >> "$GITHUB_STEP_SUMMARY"
+            "- URL: $DEPLOYMENT_URL" \
+            "- Endpoint: $DEPLOYMENT_URL/api/bridge" >> "$GITHUB_STEP_SUMMARY"
