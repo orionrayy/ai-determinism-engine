@@ -55,7 +55,9 @@ jobs:
           set -euo pipefail
           goal="$INPUT_GOAL"
           if [ -z "$goal" ]; then goal="$EVENT_GOAL"; fi
-          if [ -z "$goal" ]; then goal='Run the orchestration health check and report current state.'; fi
+          if [ -z "$goal" ] && [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+            goal='Run the orchestration health check and report current state.'
+          fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
           echo "goal=$goal" >> "$GITHUB_OUTPUT"
 
@@ -70,7 +72,11 @@ jobs:
           ORCHESTRATOR_WEBHOOK_SECRET: ${{ secrets.ORCHESTRATOR_WEBHOOK_SECRET }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          args=(--goal "$ORCHESTRATOR_GOAL")
+          if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
+            args=(--resume)
+          else
+            args=(--goal "$ORCHESTRATOR_GOAL")
+          fi
           if [ "$ORCHESTRATOR_LIVE" = "true" ]; then args+=(--live); fi
           if [ "$ORCHESTRATOR_APPROVE_HIGH_RISK" = "true" ]; then args+=(--approve-high-risk); fi
           python3 orchestrator/orchestrator.py "${args[@]}"
