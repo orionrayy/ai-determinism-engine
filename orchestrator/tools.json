@@ -1,7 +1,10 @@
 {
   "capability:research": {
     "default_tool": "firecrawl",
-    "fallback_tools": ["webhook"],
+    "fallback_tools": [
+      "wikipedia",
+      "webhook"
+    ],
     "description": "Evidence and web research"
   },
   "capability:analyze": {
@@ -56,7 +59,10 @@
   },
   "github": {
     "required_env": "GITHUB_TOKEN",
-    "side_effects": ["repository_write", "issue_write"]
+    "side_effects": [
+      "repository_write",
+      "issue_write"
+    ]
   },
   "openai": {
     "required_env": "OPENAI_API_KEY",
@@ -64,13 +70,19 @@
   },
   "webhook": {
     "required_env": "ORCHESTRATOR_WEBHOOK_URL",
-    "side_effects": ["external_request"]
+    "side_effects": [
+      "external_request"
+    ]
   },
   "firecrawl": {
     "required_env": "FIRECRAWL_API_KEY",
     "side_effects": []
   },
   "noop": {
+    "required_env": null,
+    "side_effects": []
+  },
+  "wikipedia": {
     "required_env": null,
     "side_effects": []
   }
