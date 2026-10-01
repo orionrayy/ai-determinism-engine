@@ -101,7 +101,7 @@ def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     side_effects = set(registry.get(node.tool, {}).get("side_effects", []))
     if "external_request" in side_effects:
         floor = "high"
-    if node.tool == "github" and node.input.get("action") == "create_issue":
+    if node.tool == "github" and node.input.get("action") in {"create_issue", "create_or_update_file", "delete_file", "dispatch_workflow"}:
         floor = "high"
     return floor
 
@@ -471,6 +471,12 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
 
+def _github_path(path: str) -> str:
+    value = str(path or "").strip().lstrip("/")
+    if not value or value.startswith("../") or "/../" in value or value == "..":
+        raise RuntimeError("invalid repository path")
+    return value
+
 def execute_github(node: Node) -> dict[str, Any]:
     headers = github_headers()
     repository = github_repository()
@@ -480,6 +486,24 @@ def execute_github(node: Node) -> dict[str, Any]:
             f"https://api.github.com/repos/{repository}",
             headers=headers,
         )
+    if action == "read_file":
+        path = _github_path(node.input.get("path"))
+        branch = str(node.input.get("branch") or "main")
+        result = http_json(
+            f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}"
+            f"?ref={urllib.parse.quote(branch, safe='')}",
+            headers=headers,
+        )
+        data = result.get("data", {})
+        if isinstance(data, dict) and isinstance(data.get("content"), str):
+            import base64
+            try:
+                data["decoded_content"] = base64.b64decode(
+                    data["content"].replace("\n", "")
+                ).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                pass
+        return result
     if action == "create_issue":
         return http_json(
             f"https://api.github.com/repos/{repository}/issues",
@@ -488,6 +512,65 @@ def execute_github(node: Node) -> dict[str, Any]:
                 "title": node.input.get("title", "Orchestrator task"),
                 "body": node.input.get("body", ""),
             },
+            headers=headers,
+        )
+    if action == "create_or_update_file":
+        path = _github_path(node.input.get("path"))
+        content = str(node.input.get("content", ""))
+        if len(content.encode("utf-8")) > 512 * 1024:
+            raise RuntimeError("file content exceeds 512 KiB safety limit")
+        branch = str(node.input.get("branch") or "main")
+        message = str(node.input.get("message") or f"orchestrator: update {path}")
+        encoded = __import__("base64").b64encode(content.encode("utf-8")).decode("ascii")
+        body = {"message": message, "content": encoded, "branch": branch}
+        try:
+            existing = http_json(
+                f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}"
+                f"?ref={urllib.parse.quote(branch, safe='')}",
+                headers=headers,
+            )
+            existing_sha = existing.get("data", {}).get("sha")
+            if existing_sha:
+                body["sha"] = existing_sha
+        except Exception as exc:
+            if "404" not in str(exc):
+                raise
+        return http_json(
+            f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}",
+            method="PUT",
+            body=body,
+            headers=headers,
+        )
+    if action == "delete_file":
+        path = _github_path(node.input.get("path"))
+        branch = str(node.input.get("branch") or "main")
+        message = str(node.input.get("message") or f"orchestrator: delete {path}")
+        current = http_json(
+            f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}"
+            f"?ref={urllib.parse.quote(branch, safe='')}",
+            headers=headers,
+        )
+        sha = current.get("data", {}).get("sha")
+        if not sha:
+            raise RuntimeError("GitHub did not return file sha")
+        return http_json(
+            f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}",
+            method="DELETE",
+            body={"message": message, "sha": sha, "branch": branch},
+            headers=headers,
+        )
+    if action == "dispatch_workflow":
+        workflow = str(node.input.get("workflow") or "").strip()
+        ref = str(node.input.get("ref") or "main")
+        if not workflow:
+            raise RuntimeError("workflow is required")
+        inputs = node.input.get("inputs", {})
+        if not isinstance(inputs, dict):
+            raise RuntimeError("workflow inputs must be an object")
+        return http_json(
+            f"https://api.github.com/repos/{repository}/actions/workflows/{urllib.parse.quote(workflow, safe='')}/dispatches",
+            method="POST",
+            body={"ref": ref, "inputs": {str(k): str(v) for k, v in inputs.items()}},
             headers=headers,
         )
     raise RuntimeError(f"GitHub action not allowlisted: {action}")
