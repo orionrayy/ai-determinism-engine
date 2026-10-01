@@ -296,33 +296,22 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
     previous: list[str] = []
     for index, (capability, instruction) in enumerate(sequence, start=1):
         cap_spec = registry.get(f"capability:{capability}", {})
-        candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
-        candidates = [item for item in candidates if item]
-        preferred = next(
-            (item for item in candidates if tool_available(item, registry, require_env=live, enforce_free=True)),
-            None,
-        )
-        if preferred is None:
-            if cap_spec and not live:
-                preferred = candidates[0]
-            elif cap_spec:
-                raise ValueError(
-                    f"no available tool for capability {capability} under current policy"
-                )
-            else:
-                preferred = {
-                    "research": "research_bundle",
-                    "analyze": "gemini",
-                    "draft": "gemini",
-                    "spec": "gemini",
-                    "build": "github",
-                    "test": "github",
-                    "deploy": "webhook",
-                    "validate": "local_validator",
-                    "publish": "webhook",
-                    "notify": "webhook",
-                    "execute": "webhook",
-                }.get(capability, "noop")
+        if cap_spec:
+            preferred = route_tool(capability, registry, live=live)
+        else:
+            preferred = {
+                "research": "research_bundle",
+                "analyze": "gemini",
+                "draft": "gemini",
+                "spec": "gemini",
+                "build": "github",
+                "test": "github",
+                "deploy": "webhook",
+                "validate": "local_validator",
+                "publish": "webhook",
+                "notify": "webhook",
+                "execute": "webhook",
+            }.get(capability, "noop")
         node = Node(
             id=f"n{index:02d}-{capability}",
             capability=capability,
