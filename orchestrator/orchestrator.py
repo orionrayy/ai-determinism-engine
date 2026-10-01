@@ -378,7 +378,8 @@ def execute_openai(node: Node, goal: str) -> dict[str, Any]:
         "input": (
             "Act as a conservative workflow worker. Return JSON with "
             "result, risks, next_action.\\n"
-            f"GOAL: {goal}\\nINSTRUCTION: {node.input.get('instruction', '')}"
+            f"GOAL: {goal}\\nINSTRUCTION: {node.input.get('instruction', '')}\\n"
+            f"CONTEXT: {compact_json(node.input.get('context', {}), limit=24 * 1024)}"
         ),
     }
     return http_json(
@@ -694,6 +695,12 @@ def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
 def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("node output must be an object")
+    if output.get("simulated") is True:
+        return {
+            "passed": True,
+            "checks": [{"check": "dry_run_simulation", "passed": True}],
+            "checked_at": utc_now(),
+        }
 
     checks = []
     for key in ("status_code",):
@@ -810,7 +817,7 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
             raise RuntimeError(
                 f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
             )
-    if dry_run:
+    if dry_run and node.tool != "local_validator":
         return {
             "simulated": True,
             "tool": node.tool,
