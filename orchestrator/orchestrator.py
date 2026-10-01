@@ -93,7 +93,12 @@ def load_registry() -> dict[str, dict[str, Any]]:
         return json.loads(REGISTRY_FILE.read_text(encoding="utf-8"))
     return {}
 
+def free_only() -> bool:
+    return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
+
 def tool_available(tool_name: str, registry: dict[str, dict[str, Any]]) -> bool:
+    if free_only() and tool_name in {"openai", "firecrawl", "webhook"}:
+        return False
     spec = registry.get(tool_name, {})
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
@@ -436,6 +441,10 @@ def execute_github(node: Node) -> dict[str, Any]:
     raise RuntimeError(f"GitHub action not allowlisted: {action}")
 
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
+    if free_only() and node.tool in {"openai", "firecrawl", "webhook"} and not dry_run:
+        raise RuntimeError(
+            f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+        )
     if dry_run:
         return {
             "simulated": True,
