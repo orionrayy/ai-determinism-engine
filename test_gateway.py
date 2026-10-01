@@ -33,6 +33,26 @@ class GatewayTests(unittest.TestCase):
         with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
             self.assertTrue(gateway.authorized(headers, body))
 
+    def test_github_dispatch_propagates_event_id(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout=30):
+            captured["body"] = request.data
+            class Response:
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+            return Response()
+
+        with patch.dict(os.environ, {
+            "GITHUB_GATEWAY_TOKEN": "token",
+            "GITHUB_REPOSITORY": "owner/repo",
+        }, clear=True):
+            with patch.object(gateway.urllib.request, "urlopen", side_effect=fake_urlopen):
+                gateway.github_dispatch("hello", {"source": "test"}, event_id="evt-123")
+
+        payload = json.loads(captured["body"].decode())
+        self.assertEqual(payload["client_payload"]["event_id"], "evt-123")
+
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()) - 301)
