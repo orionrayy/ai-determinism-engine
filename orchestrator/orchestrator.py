@@ -18,11 +18,11 @@ from typing import Any
 
 try:
     from .capability_graph import load_health, record_tool_result, route_capability, save_health
-    from .connector_bridge import execute_connector_bridge
+    from .connector_bridge import ConnectorRequestError, execute_connector_bridge
     from .evidence import build_evidence
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
-    from connector_bridge import execute_connector_bridge
+    from connector_bridge import ConnectorRequestError, execute_connector_bridge
     from evidence import build_evidence
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -1025,6 +1025,12 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     }
 
 
+def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
+    if not isinstance(exc, ConnectorRequestError) or not exc.uncertain:
+        return True, False
+    return bool(exc.retry_allowed), True
+
+
 def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, dict[str, Any] | None]:
     attempts = node.retry_count
     while True:
@@ -1041,7 +1047,11 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                 "message": str(exc),
                 "trace": traceback.format_exc(limit=4),
             }
-            if attempts < node.max_retries:
+            retry_allowed, uncertain = connector_failure_policy(node, exc)
+            if uncertain:
+                node.error["execution_uncertain"] = True
+                node.error["reconciliation_required"] = True
+            if attempts < node.max_retries and retry_allowed:
                 attempts += 1
                 node.retry_count = attempts
                 transition(node, "retrying")
@@ -1305,7 +1315,11 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 'message': str(exc),
                 'trace': traceback.format_exc(limit=4),
             }
-            if attempts < node.max_retries:
+            retry_allowed, uncertain = connector_failure_policy(node, exc)
+            if uncertain:
+                node.error['execution_uncertain'] = True
+                node.error['reconciliation_required'] = True
+            if attempts < node.max_retries and retry_allowed:
                 attempts += 1
                 node.retry_count = attempts
                 transition(node, 'retrying')
@@ -1314,6 +1328,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                     'node_id': node.id,
                     'attempt': attempts,
                     'error': str(exc),
+                    'execution_uncertain': uncertain,
                 })
                 time.sleep(min(2 ** attempts, 8))
                 transition(node, 'ready')
@@ -1321,12 +1336,18 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 continue
             transition(node, 'failed')
             update_tool_health(node, False, registry)
+            if uncertain:
+                append_event('node.execution_uncertain', {
+                    'workflow_id': workflow['id'],
+                    'node_id': node.id,
+                    'error': node.error,
+                })
             append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
             notify_issue(
                 workflow,
                 'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
             )
-            if replan_after_failure(workflow, nodes, node, registry):
+            if not uncertain and replan_after_failure(workflow, nodes, node, registry):
                 workflow['nodes'] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
                 return 'replanned'
