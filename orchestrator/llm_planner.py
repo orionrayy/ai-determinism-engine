@@ -50,11 +50,11 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag) -> list:
     prompt = (
         'Create a minimal executable workflow DAG for this goal. Return only JSON with '
         'nodes[]. Each node has id, capability, tool, depends_on, risk, instruction. '
-        'Maximum 24 nodes. Dependencies must reference node ids. '
+        'Maximum 24 nodes. Dependencies must reference node ids. Build a true DAG: maximize independent nodes that can run in parallel when dependencies allow. '
         'Use only these capabilities: ' + ', '.join(capabilities) + '. '
         'Use only these tools: ' + ', '.join(tools) + '. '
         'Use low/medium/high/critical risk and mark external side effects high or critical. '
-        'Prefer tools that require no credentials. Goal: ' + goal
+        'Prefer tools that require no credentials. Include a final validate node whose dependencies cover the outputs it must verify. Goal: ' + goal
     )
     model = os.environ.get('GEMINI_PLANNER_MODEL', os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash'))
     endpoint = (
