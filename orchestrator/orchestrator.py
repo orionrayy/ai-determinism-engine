@@ -65,6 +65,24 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     with EVENT_FILE.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
+def execution_key(workflow: dict[str, Any], node: Node) -> str:
+    raw = f"{workflow['id']}:{node.id}:{node.retry_count}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+def mark_execution_started(workflow: dict[str, Any], node: Node) -> str:
+    key = execution_key(workflow, node)
+    history = workflow.setdefault("executions", {})
+    record = history.get(key)
+    if record and record.get("status") == "completed":
+        return key
+    history[key] = {"node_id": node.id, "status": "started", "started_at": utc_now()}
+    return key
+
+def mark_execution_completed(workflow: dict[str, Any], key: str) -> None:
+    record = workflow.setdefault("executions", {}).setdefault(key, {})
+    record.update({"status": "completed", "completed_at": utc_now()})
+
+
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
         return {"version": 2, "workflows": {}, "last_workflow_id": None}
