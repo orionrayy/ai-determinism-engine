@@ -39,6 +39,7 @@ class GatewayTests(unittest.TestCase):
         def fake_urlopen(request, timeout=30):
             captured["body"] = request.data
             class Response:
+                status = 204
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
             return Response()
