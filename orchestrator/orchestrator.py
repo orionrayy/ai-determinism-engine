@@ -30,6 +30,7 @@ try:
     from .plan_integrity import fingerprint_nodes
     from .state_schema import StateSchemaError, migrate_state
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
+    from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -43,6 +44,7 @@ except ImportError:
     from plan_integrity import fingerprint_nodes
     from state_schema import StateSchemaError, migrate_state
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
+    from durability_barrier import DurabilityBarrierError, commit_side_effect_start
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -1551,6 +1553,35 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         mark_execution_started(workflow, node, execution_id)
         workflow['nodes'] = [asdict(item) for item in nodes]
         persist_workflow(workflow)
+        if live and side_effecting(node, registry):
+            try:
+                commit_side_effect_start(
+                    ROOT,
+                    execution_id=execution_id,
+                )
+            except DurabilityBarrierError as barrier_exc:
+                record = workflow.setdefault('executions', {}).setdefault(execution_id, {})
+                record['status'] = 'barrier_failed'
+                record['barrier_error'] = str(barrier_exc)
+                node.error = {
+                    'type': type(barrier_exc).__name__,
+                    'message': str(barrier_exc),
+                    'failure_class': 'dependency',
+                    'durability_barrier_failed': True,
+                    'execution_id': execution_id,
+                }
+                transition(node, 'failed')
+                workflow['status'] = 'failed'
+                workflow['failed_node'] = node.id
+                workflow['nodes'] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                append_event('node.durability_barrier_failed', {
+                    'workflow_id': workflow['id'],
+                    'node_id': node.id,
+                    'execution_id': execution_id,
+                    'error': str(barrier_exc),
+                })
+                return 'failed'
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
     attempts = node.retry_count
     while True:
@@ -1777,6 +1808,35 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 mark_execution_started(workflow, node, execution_id)
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
+                if live and side_effecting(node, registry):
+                    try:
+                        commit_side_effect_start(
+                            ROOT,
+                            execution_id=execution_id,
+                        )
+                    except DurabilityBarrierError as barrier_exc:
+                        record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
+                        record["status"] = "barrier_failed"
+                        record["barrier_error"] = str(barrier_exc)
+                        node.error = {
+                            "type": type(barrier_exc).__name__,
+                            "message": str(barrier_exc),
+                            "failure_class": "dependency",
+                            "durability_barrier_failed": True,
+                            "execution_id": execution_id,
+                        }
+                        transition(node, "failed")
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        append_event("node.durability_barrier_failed", {
+                            "workflow_id": workflow["id"],
+                            "node_id": node.id,
+                            "execution_id": execution_id,
+                            "error": str(barrier_exc),
+                        })
+                        return
 
             append_event("node.started", {
                 "workflow_id": workflow["id"],
