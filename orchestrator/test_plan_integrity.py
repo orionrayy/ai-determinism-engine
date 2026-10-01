@@ -38,6 +38,11 @@ class PlanIntegrityTests(unittest.TestCase):
         second_node.input["context"] = {"different": "volatile"}
         self.assertEqual(first, fingerprint_nodes([second_node]))
 
+    def test_approval_fingerprint_is_runtime_metadata(self):
+        first = fingerprint_nodes([self.node()])
+        second_node = self.node()
+        second_node.input["approval_fingerprint"] = "different-digest"
+        self.assertEqual(first, fingerprint_nodes([second_node]))
     def test_fingerprint_changes_when_plan_definition_changes(self):
         base = fingerprint_nodes([self.node()])
         different_tool = fingerprint_nodes([self.node(tool="connector_bridge")])

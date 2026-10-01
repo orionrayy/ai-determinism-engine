@@ -184,6 +184,14 @@ Never merge a control-plane change with a red CI result.
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
 
+## Approval intent binding v23
+
+- High-risk approval issues carry the SHA-256 fingerprint of the exact node definition requested for approval.
+- A later approved label is accepted only when the current node fingerprint matches that stored approval fingerprint.
+- Stale or missing approval fingerprints are fail-closed: the old approval is cleared, the old issue reference is discarded, and the node returns to `ready` so a fresh approval issue is created.
+- The approving GitHub actor and approval timestamp are persisted as audit metadata.
+- `approval_fingerprint` is excluded from the plan fingerprint as runtime approval metadata; changing the actual tool/action/payload still changes the plan fingerprint and fails the existing plan-integrity check.
+
 ## Durability barrier recovery v22
 
 - A `barrier_failed` execution is a pre-side-effect failure: the external effect was not invoked by the durability barrier.

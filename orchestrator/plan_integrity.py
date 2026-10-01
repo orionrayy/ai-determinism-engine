@@ -11,6 +11,7 @@ _VOLATILE_INPUT_KEYS = {
     "repair_feedback",
     "approval_issue",
     "approval_granted",
+    "approval_fingerprint",
 }
 
 
