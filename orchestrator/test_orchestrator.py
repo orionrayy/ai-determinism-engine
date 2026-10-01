@@ -24,10 +24,10 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_free_only_blocks_external_paid_adapters(self):
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
-            self.assertFalse(o.tool_available("openai", {"openai": {}}))
+            self.assertFalse(o.tool_available("openai", {"openai": {"free_tier": False}}))
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
-            self.assertFalse(o.tool_available("webhook", {"webhook": {}}))
-            self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
+            self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
+            self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
     def test_one_step_does_not_require_github_token(self):
         workflow = {
             "id": "wf_no_token",
