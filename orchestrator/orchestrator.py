@@ -7,6 +7,7 @@ import json
 import os
 import time
 import traceback
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, asdict, field
@@ -532,8 +533,8 @@ def execute_github(node: Node) -> dict[str, Any]:
             existing_sha = existing.get("data", {}).get("sha")
             if existing_sha:
                 body["sha"] = existing_sha
-        except Exception as exc:
-            if "404" not in str(exc):
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
                 raise
         return http_json(
             f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}",
