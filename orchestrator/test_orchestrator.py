@@ -9,6 +9,15 @@ import orchestrator as o
 
 
 class OrchestratorTests(unittest.TestCase):
+    def setUp(self):
+        self._actions_env = patch.dict(
+            o.os.environ,
+            {"GITHUB_ACTIONS": "false"},
+            clear=False,
+        )
+        self._actions_env.start()
+        self.addCleanup(self._actions_env.stop)
+
     def test_credential_free_research_prefers_wikipedia(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = {
@@ -262,6 +271,79 @@ class OrchestratorTests(unittest.TestCase):
                     result = o.run_one_step(workflow)
         self.assertEqual(result, "failed")
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "execution_uncertain")
+        execute.assert_not_called()
+
+
+    def test_live_side_effect_runs_only_after_durable_barrier(self):
+        node = o.Node(
+            "n01-write", "build", "github", [], risk="high",
+            input={"action": "create_issue", "approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_barrier",
+            "goal": "write",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "github": {
+                "free_tier": True,
+                "side_effects": ["issue_write"],
+            }
+        }
+        order = []
+
+        def barrier(*args, **kwargs):
+            order.append("barrier")
+            return True
+
+        def execute(*args, **kwargs):
+            order.append("execute")
+            return {"result": "created"}
+
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GITHUB_TOKEN": "dummy",
+            "GITHUB_REPOSITORY": "owner/repo",
+        }, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)),                      patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                      patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                      patch.object(o, "load_registry", return_value=registry),                      patch.object(o, "commit_side_effect_start", side_effect=barrier),                      patch.object(o, "execute_node", side_effect=execute):
+                    result = o.run_one_step(workflow)
+        self.assertEqual(result, "completed")
+        self.assertEqual(order, ["barrier", "execute"])
+
+    def test_durable_barrier_failure_blocks_side_effect(self):
+        node = o.Node(
+            "n01-write", "build", "github", [], risk="high",
+            input={"action": "create_issue", "approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_barrier_fail",
+            "goal": "write",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "github": {
+                "free_tier": True,
+                "side_effects": ["issue_write"],
+            }
+        }
+        error = o.DurabilityBarrierError("push rejected")
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GITHUB_TOKEN": "dummy",
+            "GITHUB_REPOSITORY": "owner/repo",
+        }, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)),                      patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                      patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                      patch.object(o, "load_registry", return_value=registry),                      patch.object(o, "commit_side_effect_start", side_effect=error),                      patch.object(o, "execute_node") as execute:
+                    result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertTrue(workflow["nodes"][0]["error"]["durability_barrier_failed"])
+        self.assertEqual(
+            workflow["nodes"][0]["error"]["failure_class"],
+            "dependency",
+        )
         execute.assert_not_called()
 
     def _uncertain_connector_workflow(self, node_error, node_id="n01-connector"):

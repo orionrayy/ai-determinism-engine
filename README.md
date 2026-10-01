@@ -104,6 +104,10 @@ Persisted workflows carry a deterministic plan fingerprint. On resume, the contr
 
 The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
 
+## Pre-side-effect durability v19
+
+For live side-effecting nodes, the GitHub Actions worker commits and pushes the execution `START` record to `main` before invoking the external effect. A remote branch drift or push failure blocks the effect. This closes the runner-crash window where an external side effect could succeed before its `started` state became durable. The barrier is intentionally conservative and does not make Git plus an external provider one atomic transaction.
+
 ## State durability v15
 
 State JSON writes use same-directory temporary files with flush/fsync followed by atomic replacement. Persisted workflow schemas newer than the supported version fail closed instead of being guessed at.
