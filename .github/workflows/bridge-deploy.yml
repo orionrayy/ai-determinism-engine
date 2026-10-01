@@ -2,12 +2,6 @@ name: Connector Bridge Deploy
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "api/bridge.py"
-      - "bridge_runtime.py"
-      - "vercel.json"
-      - ".github/workflows/bridge-deploy.yml"
 
 permissions:
   contents: read
