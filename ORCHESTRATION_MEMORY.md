@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: pre-side-effect durability v19 commits the execution `START` record to `main` before live side effects, on top of deployment-supply-chain v18; always verify the current `main` ref before modifying.
+Current main baseline: interrupted side-effect recovery v21, on top of the post-start side-effect replay fence v20 and pre-side-effect durability v19; live side effects require a durable `START` fence and explicit recovery semantics before replay; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
