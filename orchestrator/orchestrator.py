@@ -61,7 +61,7 @@ MAX_CONTEXT_BYTES = 48 * 1024
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
     "ready": {"running", "waiting_approval", "cancelled"},
-    "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled"},
+    "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled", "ready"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
@@ -1368,6 +1368,52 @@ def replan_after_failure(
     return True
 
 
+def recover_inflight_side_effects(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> None:
+    """Turn durable START records with a still-running node into explicit in-doubt failures.
+
+    This covers a worker interruption after the v19 barrier committed but before the
+    node reached a terminal state. Connector nodes can then enter the existing
+    reconciliation path; opaque side effects remain fail-closed.
+    """
+    for node in nodes:
+        if node.status != "running" or not side_effecting(node, registry):
+            continue
+        execution_id = execution_key(workflow, node)
+        record = workflow.setdefault("executions", {}).get(execution_id)
+        if not isinstance(record, dict):
+            continue
+        if record.get("status") == "prepared":
+            transition(node, "ready")
+            workflow["status"] = "running"
+            append_event("node.pre_start_execution_rearmed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "execution_id": execution_id,
+            })
+            continue
+        if record.get("status") != "started":
+            continue
+        node.error = {
+            "type": "execution_uncertain",
+            "message": "A durable START record exists for an interrupted side-effecting node; external outcome must be reconciled before replay.",
+            "execution_id": execution_id,
+            "execution_uncertain": True,
+            "reconciliation_required": True,
+            "inflight_recovered": True,
+        }
+        transition(node, "failed")
+        workflow["status"] = "failed"
+        workflow["failed_node"] = node.id
+        append_event("node.inflight_execution_recovered", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+            "execution_id": execution_id,
+        })
+
 def reconcile_first_uncertain(
     workflow: dict[str, Any],
     nodes: list[Node],
@@ -1500,6 +1546,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
 
+    recover_inflight_side_effects(workflow, nodes, registry)
     reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
     if reconciliation is not None:
         workflow['nodes'] = [asdict(node) for node in nodes]
@@ -1726,6 +1773,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         if safety > 200:
             raise RuntimeError("orchestration safety limit reached")
 
+        recover_inflight_side_effects(workflow, nodes, registry)
         reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
         if reconciliation == "failed":
             workflow["nodes"] = [asdict(node) for node in nodes]

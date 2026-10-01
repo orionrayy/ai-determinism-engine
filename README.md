@@ -104,6 +104,10 @@ Persisted workflows carry a deterministic plan fingerprint. On resume, the contr
 
 The orchestrator migrates persisted state to its supported schema and verifies completed-node checkpoint digests and bindings before resumed execution. Unsupported future schemas and corrupted checkpoints fail closed.
 
+## Interrupted side-effect recovery v21
+
+On resume, a live side-effecting node is checked against its durable execution ledger. A running node with status prepared is safely rearmed because the external-effect barrier has not been crossed; a running node with status started is converted into an explicit in-doubt failure. Connector nodes then enter the existing reconciliation path; opaque side effects remain fail-closed and are not replayed.
+
 ## Post-start side-effect replay fence v20
 
 Once a live side effect has passed the durable START barrier, the worker does not automatically retry or replan a non-idempotent side-effecting operation after an execution failure. The only automatic retry exception is an uncertain connector request whose freshly discovered action contract explicitly declares idempotent: true; that retry reuses the deterministic request id. This keeps a timeout or partial response from turning into a second external write.
