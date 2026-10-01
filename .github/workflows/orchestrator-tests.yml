@@ -39,7 +39,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile
-        run: python -m py_compile orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
+        run: python -m py_compile orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/failure_policy.py orchestrator/plan_integrity.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/test_failure_policy.py orchestrator/test_plan_integrity.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
       - name: Actionlint
         shell: bash
         run: |
