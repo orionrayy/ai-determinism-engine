@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Latest verified main commit at memory creation: `5f515f37a116c2ea438663f9cf70f5597748b423`
+Latest verified main commit: `205dc1b72e442b5a63f7dbede9077395a362c3ab`
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 
@@ -163,7 +163,8 @@ Never merge a control-plane change with a red CI result.
 
 1. GitHub Actions does not directly invoke the ChatGPT-installed connector catalog. External connector bridges still require their own API or gateway boundary.
 2. `.orchestrator/` is repository-backed persistence. Public-repository state is not suitable for secrets or private workflow payloads.
-3. The current orchestrator does not yet have a cryptographic idempotency/lease layer for side-effecting operations that may execute successfully and then fail before state persistence.
+3. Side-effect recovery is fail-closed, not automatically reconciled. An `execution_uncertain` workflow needs external-state inspection before it can safely be resumed.
+3. Side-effecting nodes now have stable execution records. If a worker finds a prior `started` execution without a completion record, it fails closed as `execution_uncertain` rather than automatically repeating the external effect.
 4. The current validation stage is structurally present but provider-specific semantic validation remains minimal.
 5. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
 
