@@ -184,6 +184,12 @@ Never merge a control-plane change with a red CI result.
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
 
+## Actions runtime maintenance v17
+
+- GitHub Actions core dependencies are pinned to immutable commit SHAs for the current Node 24-based releases: checkout v6, setup-python v7, and setup-node v7.
+- Workflow configuration tests enforce the expected action references so future tag drift is detected by CI.
+- The deployment workflow keeps its application-level Node.js 20 setting; only the action runtime was modernized.
+
 ## Reconciliation rearm v16
 
 - A confirmed `not_applied` reconciliation outcome now settles the prior execution-ledger record as `not_applied` before the node is returned to `ready`.
