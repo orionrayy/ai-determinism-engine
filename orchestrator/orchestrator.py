@@ -1488,7 +1488,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get("live"))
-    enforce_node_policy(nodes, registry)
+    enforce_node_policy(nodes, registry, live=live)
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
@@ -1741,10 +1741,19 @@ def print_summary(workflow: dict[str, Any]) -> None:
 
 def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False, step: bool = False) -> int:
     resumed = 0
-    candidates = [
-        workflow for workflow in state.get("workflows", {}).values()
-        if workflow.get("status") in {"waiting_approval", "running"}
-    ]
+    candidates = []
+    for workflow in state.get("workflows", {}).values():
+        status = workflow.get("status")
+        uncertain = any(
+            isinstance(node, dict)
+            and node.get("status") == "failed"
+            and isinstance(node.get("error"), dict)
+            and node["error"].get("execution_uncertain")
+            and node.get("tool") == "connector_bridge"
+            for node in workflow.get("nodes", [])
+        )
+        if status in {"waiting_approval", "running"} or (status == "failed" and uncertain):
+            candidates.append(workflow)
     candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
     for workflow in candidates:
         if step:
