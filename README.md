@@ -1,17 +1,34 @@
-AI Determinism Engine
-=====================
+# AI Orchestrator Core
 
-i made this with ai. i don’t fully know how it works but it feels stable somehow. it started as a random idea about what would happen if i tried to make a game engine that always behaves the same every time. turns out it became something like a reproducible ai sandbox.
+Free execution path: GitHub Actions + stdlib Python control plane.
 
-the code handles numbers and randomness in a careful way. there are weird things inside it like kahan summation, rollback snapshots, stable softmax. i didn’t write those by hand, the ai did. i just kept testing it until it stopped breaking. everything seems deterministic now. same seed, same story, every run.
+## Components
 
-you can run it with  
-`pip install -r requirements.txt`  
-then  
-`python ai_determinism_engine.py`  
-it will create some artifacts, logs, and checks. if you run it again with the same seed, it repeats exactly. no idea why that feels so satisfying but it does.
+- `orchestrator/orchestrator.py`: DAG/state/retry/replan engine.
+- `orchestrator/tools.json`: capability and tool registry.
+- `gateway.py`: authenticated event ingress that emits a GitHub repository dispatch.
+- `.github/workflows/orchestrator.yml`: execution worker and scheduled resume.
+- `.github/workflows/orchestrator-tests.yml`: compile + unit-test gate.
 
-this repo is not really about gaming. it’s more like a small proof that ai can design its own reproducible logic if you push it gently. i don’t understand the math. i just made sure it didn’t explode. somehow it didn’t.
+## LLM routing
 
-  
-*made by orionrayy*
+Gemini is the primary LLM adapter and OpenAI is an optional fallback. Google currently lists Gemini 3.7 Flash as free at the standard API tier. API-key authentication is still required.
+
+## Gateway
+
+Set these environment variables on the gateway service:
+
+- `GITHUB_REPOSITORY` — defaults to `orionrayy/ai-determinism-engine`.
+- `GITHUB_GATEWAY_TOKEN` — GitHub token allowed to dispatch the repository event.
+- `GATEWAY_SHARED_SECRET` — bearer secret for inbound event authentication.
+
+Endpoints:
+
+- `GET /health`
+- `POST /event` with JSON `{"goal":"...","metadata":{...}}`
+
+The gateway is intentionally stateless. Do not store workflow state on its filesystem because Render Free web services have ephemeral filesystems.
+
+## Free-hosting note
+
+Render provides a Free web-service plan suitable for prototypes. Free services can spin down after 15 minutes of inactivity and restart on the next request, so this gateway should be treated as an event ingress rather than an always-on worker.
