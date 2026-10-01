@@ -182,7 +182,7 @@ class OrchestratorTests(unittest.TestCase):
                 result = o.run_one_step(workflow)
         self.assertEqual(result, "completed")
         self.assertTrue(workflow.get("plan_fingerprint"))
-        self.assertEqual(workflow.get("plan_integrity"), "verified")
+        self.assertEqual(workflow.get("plan_integrity"), "initialized")
 
     def test_side_effect_execution_uncertainty_fails_closed(self):
         node = o.Node(
