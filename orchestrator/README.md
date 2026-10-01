@@ -10,6 +10,7 @@ The GitHub Actions runner is the execution worker. State is kept in `.orchestrat
 
 - Dry-run is the default and has no external side effects.
 - Live execution is persisted in the workflow state; scheduled runs can therefore resume a previously-live workflow.
+- `ORCHESTRATOR_FREE_ONLY=true` is the default safety mode. It blocks OpenAI, Firecrawl, and generic webhook adapters during live execution so the runner cannot create an unexpected API bill.
 - High-risk nodes (for example deploy/publish) pause for explicit approval unless the run is invoked with `approve_high_risk=true`.
 
 ## LLM backends
