@@ -16,7 +16,7 @@ The GitHub Actions runner is the execution worker. State is kept in `.orchestrat
 
 ## LLM backends
 
-- `GEMINI_API_KEY` enables the primary Gemini adapter. Google currently lists Gemini 3.7 Flash as free-of-charge at the standard API tier.
+- `GEMINI_API_KEY` enables the primary Gemini adapter. Google currently lists Gemini 3.8 Flash as free-of-charge at the standard API tier.
 - `OPENAI_API_KEY` is an optional fallback.
 - `ORCHESTRATOR_WEBHOOK_URL` for a generic HTTPS tool gateway.
 - `ORCHESTRATOR_WEBHOOK_SECRET` for bearer authentication to that gateway.
