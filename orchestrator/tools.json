@@ -121,9 +121,10 @@
     "side_effects": [
       "external_request"
     ],
-    "free_tier": false,
+    "free_tier": true,
     "allowed_actions": [
       "invoke"
-    ]
+    ],
+    "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration"
   }
 }
