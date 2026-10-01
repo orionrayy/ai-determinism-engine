@@ -135,6 +135,10 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "completed")
         self.assertEqual(calls["n"], 2)
         self.assertEqual(workflow["nodes"][0]["retry_count"], 1)
+        self.assertEqual(
+            workflow["nodes"][0]["error"].get("failure_class"),
+            "transient",
+        )
 
     def test_side_effect_execution_uncertainty_fails_closed(self):
         node = o.Node(

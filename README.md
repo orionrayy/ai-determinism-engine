@@ -87,3 +87,7 @@ When a live connector request becomes uncertain, the bridge can optionally expos
 ## Reconciliation privacy v11
 
 Connector reconciliation persists only a sanitized state record (`applied`, `not_applied`, or `unknown`) plus identifiers and discovery metadata. Arbitrary upstream response bodies are intentionally excluded from persisted workflow state.
+
+## Reliability policy v12
+
+The control plane classifies failures before retrying, applies bounded deterministic jitter to backoff, and rejects oversized connector capability inventories before they enter planner or persisted evidence paths.

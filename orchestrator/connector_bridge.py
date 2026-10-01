@@ -15,6 +15,10 @@ from typing import Any
 
 PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_PAYLOAD_BYTES = 64 * 1024
+MAX_DISCOVERY_BYTES = 48 * 1024
+MAX_DISCOVERY_CONNECTORS = 64
+MAX_DISCOVERY_ACTIONS = 128
+MAX_DISCOVERY_CAPABILITIES = 64
 CONNECTOR_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
@@ -173,7 +177,10 @@ def discover_capabilities(
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read().decode("utf-8", "replace")
+            raw_bytes = response.read(MAX_DISCOVERY_BYTES + 1)
+            if len(raw_bytes) > MAX_DISCOVERY_BYTES:
+                raise ConnectorBridgeError("connector discovery response exceeds 48 KiB safety limit")
+            raw = raw_bytes.decode("utf-8", "replace")
             status = response.status
     except Exception as exc:
         raise ConnectorBridgeError(f"connector discovery request failed: {exc}") from exc
@@ -188,6 +195,8 @@ def discover_capabilities(
     connectors = payload.get("connectors")
     if not isinstance(connectors, dict):
         raise ConnectorBridgeError("connector discovery did not return connectors")
+    if len(connectors) > MAX_DISCOVERY_CONNECTORS:
+        raise ConnectorBridgeError("connector discovery exceeds connector count limit")
     normalized: dict[str, dict[str, Any]] = {}
     for name in sorted(connectors):
         spec = connectors[name]
@@ -195,6 +204,10 @@ def discover_capabilities(
             continue
         actions = spec.get("actions", [])
         capabilities = spec.get("capabilities", [])
+        if isinstance(actions, list) and len(actions) > MAX_DISCOVERY_ACTIONS:
+            raise ConnectorBridgeError(f"connector {name!r} exceeds action count limit")
+        if isinstance(capabilities, list) and len(capabilities) > MAX_DISCOVERY_CAPABILITIES:
+            raise ConnectorBridgeError(f"connector {name!r} exceeds capability count limit")
         normalized[str(name)] = {
             "actions": sorted(str(item) for item in actions) if isinstance(actions, list) else [],
             "capabilities": sorted(str(item) for item in capabilities) if isinstance(capabilities, list) else [],
