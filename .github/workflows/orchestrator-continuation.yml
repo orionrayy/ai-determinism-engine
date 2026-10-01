@@ -61,6 +61,8 @@ jobs:
 
       - name: Summary
         run: |
-          echo "Continuation decision: ${{ steps.decision.outputs.continue }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Workflow: ${{ steps.decision.outputs.workflow_id }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Status: ${{ steps.decision.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s
+' \
+            "Continuation decision: ${{ steps.decision.outputs.continue }}" \
+            "Workflow: ${{ steps.decision.outputs.workflow_id }}" \
+            "Status: ${{ steps.decision.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
