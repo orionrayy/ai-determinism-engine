@@ -9,6 +9,15 @@ import orchestrator as o
 
 
 class OrchestratorTests(unittest.TestCase):
+    def setUp(self):
+        self._actions_env = patch.dict(
+            o.os.environ,
+            {"GITHUB_ACTIONS": "false"},
+            clear=False,
+        )
+        self._actions_env.start()
+        self.addCleanup(self._actions_env.stop)
+
     def test_credential_free_research_prefers_wikipedia(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = {
