@@ -18,7 +18,7 @@ on:
         default: false
         type: boolean
   repository_dispatch:
-    types: [orchestrator.event]
+    types: [orchestrator.event, orchestrator.continue]
   issues:
     types: [opened, edited]
   schedule:
