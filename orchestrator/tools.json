@@ -39,27 +39,37 @@
   },
   "capability:deploy": {
     "default_tool": "webhook",
-    "fallback_tools": [],
+    "fallback_tools": [
+      "connector_bridge"
+    ],
     "description": "External deployment gateway"
   },
   "capability:validate": {
-    "default_tool": "webhook",
-    "fallback_tools": [],
-    "description": "External validation gateway"
+    "default_tool": "local_validator",
+    "fallback_tools": [
+      "gemini"
+    ],
+    "description": "Deterministic evidence/contract validation"
   },
   "capability:publish": {
     "default_tool": "webhook",
-    "fallback_tools": [],
+    "fallback_tools": [
+      "connector_bridge"
+    ],
     "description": "External publishing gateway"
   },
   "capability:notify": {
     "default_tool": "webhook",
-    "fallback_tools": [],
+    "fallback_tools": [
+      "connector_bridge"
+    ],
     "description": "External notification gateway"
   },
   "capability:execute": {
     "default_tool": "webhook",
-    "fallback_tools": [],
+    "fallback_tools": [
+      "connector_bridge"
+    ],
     "description": "Generic external action"
   },
   "github": {
@@ -126,5 +136,13 @@
       "invoke"
     ],
     "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration"
+  },
+  "local_validator": {
+    "required_env": null,
+    "side_effects": [],
+    "free_tier": true,
+    "allowed_actions": [
+      "validate"
+    ]
   }
 }
