@@ -671,6 +671,7 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
         "goal": node.input.get("goal", ""),
         "dependencies": dependencies,
         "contract": node.contract,
+        "repair_feedback": node.input.get("repair_feedback", {}),
     }
 
 
@@ -1046,6 +1047,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow.setdefault('replan_count', 0)
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
+        node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
 
     refresh_approvals(workflow, nodes)
     if workflow.get('status') == 'failed':
@@ -1212,6 +1214,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
     for node in nodes:
         node.input["workflow_id"] = workflow["id"]
+        node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
 
     safety = 0
     while True:
