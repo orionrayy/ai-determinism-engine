@@ -168,13 +168,24 @@ def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
         floor = "high"
     return floor
 
-def enforce_node_policy(nodes: list[Node], registry: dict[str, dict[str, Any]]) -> None:
+def enforce_node_policy(
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    live: bool = False,
+) -> None:
     for node in nodes:
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
             raise ValueError(f"unregistered tool for {node.id}: {node.tool}")
         floor = required_risk(node, registry)
         if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
             node.risk = floor
+        if registry.get(f"capability:{node.capability}"):
+            node.tool = route_tool(
+                node.capability,
+                registry,
+                live=live,
+                preferred=node.tool,
+            )
 
 def load_registry() -> dict[str, dict[str, Any]]:
     if REGISTRY_FILE.exists():
@@ -1174,7 +1185,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get('live'))
-    enforce_node_policy(nodes, registry)
+    enforce_node_policy(nodes, registry, live=live)
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
