@@ -61,8 +61,7 @@ jobs:
 
       - name: Summary
         run: |
-          printf '%s
-' \
+          printf '%s\n' \
             "Continuation decision: ${{ steps.decision.outputs.continue }}" \
             "Workflow: ${{ steps.decision.outputs.workflow_id }}" \
             "Status: ${{ steps.decision.outputs.status }}" >> "$GITHUB_STEP_SUMMARY"
