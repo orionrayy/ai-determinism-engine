@@ -16,6 +16,8 @@ PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_PAYLOAD_BYTES = 64 * 1024
 CONNECTOR_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
+_DISCOVERY_CACHE_TTL = 60
+_DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 class ConnectorBridgeError(RuntimeError):
@@ -108,6 +110,102 @@ def bridge_config() -> tuple[str, str]:
     return url, secret
 
 
+def discovery_url(bridge_url: str) -> str:
+    parsed = urllib.parse.urlparse(bridge_url)
+    if parsed.scheme != "https":
+        raise ConnectorBridgeError("connector discovery HTTPS is required")
+    path = parsed.path.rstrip("/")
+    if path.endswith("/api/bridge") or path.endswith("/bridge"):
+        path = path + "/capabilities"
+    else:
+        path = path + "/capabilities"
+    return urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, path, "", "", "")
+    )
+
+
+def discover_capabilities(
+    bridge_url: str,
+    *,
+    force_refresh: bool = False,
+    timeout: int = 20,
+) -> dict[str, dict[str, Any]]:
+    now = time.time()
+    cached = _DISCOVERY_CACHE.get(bridge_url)
+    if cached and not force_refresh and cached[0] > now:
+        return cached[1]
+
+    url = discovery_url(bridge_url)
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "ai-orchestrator-connector-discovery/1.0",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            raw = response.read().decode("utf-8", "replace")
+            status = response.status
+    except Exception as exc:
+        raise ConnectorBridgeError(f"connector discovery request failed: {exc}") from exc
+    if not (200 <= status < 300):
+        raise ConnectorBridgeError(f"connector discovery returned HTTP {status}")
+    try:
+        payload = json.loads(raw) if raw else {}
+    except json.JSONDecodeError as exc:
+        raise ConnectorBridgeError("connector discovery returned invalid JSON") from exc
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        raise ConnectorBridgeError("connector discovery response is invalid")
+    connectors = payload.get("connectors")
+    if not isinstance(connectors, dict):
+        raise ConnectorBridgeError("connector discovery did not return connectors")
+    normalized: dict[str, dict[str, Any]] = {}
+    for name in sorted(connectors):
+        spec = connectors[name]
+        if not isinstance(spec, dict):
+            continue
+        actions = spec.get("actions", [])
+        capabilities = spec.get("capabilities", [])
+        normalized[str(name)] = {
+            "actions": sorted(str(item) for item in actions) if isinstance(actions, list) else [],
+            "capabilities": sorted(str(item) for item in capabilities) if isinstance(capabilities, list) else [],
+            "risk": str(spec.get("risk") or "high"),
+            "free_tier": bool(spec.get("free_tier", False)),
+            "configured": bool(spec.get("configured", False)),
+        }
+    _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
+    return normalized
+
+
+def validate_discovered_action(
+    connector: str,
+    action: str,
+    inventory: dict[str, dict[str, Any]],
+) -> None:
+    connector = str(connector or "").strip().lower()
+    action = str(action or "").strip().lower()
+    spec = inventory.get(connector)
+    if not isinstance(spec, dict):
+        raise ConnectorBridgeError(f"connector {connector!r} is not advertised by the bridge")
+    if spec.get("configured") is False:
+        raise ConnectorBridgeError(f"connector {connector!r} is not configured on the bridge")
+    actions = spec.get("actions", [])
+    if action not in actions:
+        raise ConnectorBridgeError(
+            f"connector action {connector}:{action} is not advertised by the bridge"
+        )
+
+
+def build_discovery_snapshot(inventory: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "protocol": PROTOCOL,
+        "connectors": inventory,
+        "count": len(inventory),
+    }
+
+
 def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, Any]:
     body = canonical_json(asdict(request))
     timestamp = request.sent_at
@@ -154,10 +252,13 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         }
 
     url, secret = bridge_config()
+    inventory = discover_capabilities(url, force_refresh=True)
+    validate_discovered_action(request.connector, request.action, inventory)
     return {
         "simulated": False,
         "protocol": PROTOCOL,
         "request_id": request.request_id,
         "bridge_url": url,
+        "discovery": build_discovery_snapshot(inventory),
         "response": post_request(url, secret, request),
     }

@@ -38,6 +38,33 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertTrue(result["simulated"])
         self.assertEqual(result["request_id"], cb.execution_id("wf_bridge", "n01-connector"))
 
+    def test_discovery_url_respects_bridge_path(self):
+        self.assertEqual(
+            cb.discovery_url("https://bridge.example.test/api/bridge"),
+            "https://bridge.example.test/api/bridge/capabilities",
+        )
+        self.assertEqual(
+            cb.discovery_url("https://bridge.example.test/bridge"),
+            "https://bridge.example.test/bridge/capabilities",
+        )
+
+    def test_validate_discovered_action_accepts_configured_action(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "capabilities": ["publish"],
+                "configured": True,
+                "risk": "high",
+                "free_tier": False,
+            }
+        }
+        cb.validate_discovered_action("notion", "create_page", inventory)
+
+    def test_validate_discovered_action_rejects_unadvertised_action(self):
+        inventory = {"notion": {"actions": ["read_page"], "configured": True}}
+        with self.assertRaises(cb.ConnectorBridgeError):
+            cb.validate_discovered_action("notion", "create_page", inventory)
+
     def test_live_requires_https_and_secret(self):
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "http://example.test/bridge",
@@ -46,6 +73,36 @@ class ConnectorBridgeTests(unittest.TestCase):
             with self.assertRaises(cb.ConnectorBridgeError):
                 cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
 
+    def test_live_preflights_discovered_connector_before_post(self):
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True):
+            with patch.object(
+                cb, "discover_capabilities",
+                return_value={"notion": {"actions": ["create_page"], "configured": True}},
+            ) as discovery, patch.object(
+                cb, "post_request",
+                return_value={"ok": True, "bridge_job_id": "job-1"},
+            ) as post:
+                result = cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        self.assertEqual(result["response"]["bridge_job_id"], "job-1")
+        discovery.assert_called_once_with("https://bridge.example.test/api/bridge", force_refresh=True)
+        post.assert_called_once()
+
+    def test_live_rejects_connector_not_in_live_inventory(self):
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True):
+            with patch.object(
+                cb, "discover_capabilities",
+                return_value={"clickup": {"actions": ["create_task"], "configured": True}},
+            ), patch.object(cb, "post_request") as post:
+                with self.assertRaises(cb.ConnectorBridgeError):
+                    cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+                post.assert_not_called()
+
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
 
@@ -53,16 +110,18 @@ class ConnectorBridgeTests(unittest.TestCase):
             captured["headers"] = dict(request.header_items())
             captured["body"] = request.data
             class Response:
+                status = 200
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
                 def read(self): return b'{"ok": true, "bridge_job_id": "job-1"}'
             return Response()
 
+        inventory = {"notion": {"actions": ["create_page"], "configured": True}}
         with patch.dict(cb.os.environ, {
-            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/invoke",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
         }, clear=True):
-            with patch.object(cb.urllib.request, "urlopen", side_effect=fake_urlopen):
+            with patch.object(cb, "discover_capabilities", return_value=inventory),                  patch.object(cb.urllib.request, "urlopen", side_effect=fake_urlopen):
                 result = cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
         self.assertEqual(result["response"]["bridge_job_id"], "job-1")
         self.assertEqual(
@@ -70,6 +129,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             cb.execution_id("wf_bridge", "n01-connector"),
         )
         self.assertTrue(captured["headers"]["X-orchestrator-signature"].startswith("sha256="))
+        self.assertEqual(result["discovery"]["count"], 1)
 
 
 if __name__ == "__main__":
