@@ -261,6 +261,41 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "failed")
 
 
+
+    def test_native_task_issue_never_exposes_callback_token(self):
+        node = o.Node(
+            "n01-native", "execute", "native_worker", [], input={
+                "connector": "notion",
+                "action": "create_page",
+                "public_safe": True,
+                "callback_url": "https://bridge.example/native-result",
+                "approval_granted": True,
+            }
+        )
+        workflow = {
+            "id": "wf_native_secret", "goal": "create", "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        task = {
+            "protocol": "ai-orchestrator.native-worker/v1",
+            "workflow_id": "wf_native_secret",
+            "node_id": "n01-native",
+            "execution_id": o.execution_key(workflow, node),
+            "connector": "notion", "action": "create_page",
+        }
+        observed = {}
+        def fake_http(url, method="GET", body=None, headers=None, timeout=60):
+            observed["body"] = body
+            return {"status_code": 201, "data": {"number": 42}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={
+                     "native_worker": {"free_tier": True, "side_effects": ["native_task_create"]}
+                 }),                  patch.object(o.native_worker, "create_task", return_value=(
+                     {**task, "token_hash": "hashed-token"}, "RAW-CALLBACK-TOKEN"
+                 )),                  patch.object(o, "http_json", side_effect=fake_http),                  patch.object(o, "github_repository", return_value="owner/repo"),                  patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}):
+                o.queue_native_worker_task(workflow, node, {})
+        self.assertNotIn("RAW-CALLBACK-TOKEN", observed["body"]["body"])
+
     def test_native_task_issue_is_recovered_without_duplicate_creation(self):
         token = "secret-token-1234567890"
         execution_id = o.hashlib.sha256(b"wf_native:n01-native").hexdigest()
