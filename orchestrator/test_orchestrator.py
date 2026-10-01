@@ -22,6 +22,12 @@ class OrchestratorTests(unittest.TestCase):
                 nodes = o.deterministic_plan("research AI safety", registry)
         self.assertEqual(nodes[0].tool, "wikipedia")
 
+    def test_free_only_blocks_external_paid_adapters(self):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertFalse(o.tool_available("openai", {"openai": {}}))
+            self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {}}))
+            self.assertFalse(o.tool_available("webhook", {"webhook": {}}))
+            self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {}}))
     def test_workflow_creation_falls_back_without_gemini_key(self):
         with patch.dict(o.os.environ, {}, clear=True):
             workflow = o.create_workflow("build a small website", live=False)
