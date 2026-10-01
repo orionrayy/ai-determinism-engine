@@ -74,6 +74,7 @@ def save_state(state: dict[str, Any]) -> None:
 
 def persist_workflow(workflow: dict[str, Any]) -> None:
     state = load_state()
+    workflow["updated_at"] = utc_now()
     state.setdefault("workflows", {})[workflow["id"]] = workflow
     state["last_workflow_id"] = workflow["id"]
     save_state(state)
@@ -821,9 +822,12 @@ def print_summary(workflow: dict[str, Any]) -> None:
 
 def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False, step: bool = False) -> int:
     resumed = 0
-    for workflow in list(state.get("workflows", {}).values()):
-        if workflow.get("status") not in {"waiting_approval", "running"}:
-            continue
+    candidates = [
+        workflow for workflow in state.get("workflows", {}).values()
+        if workflow.get("status") in {"waiting_approval", "running"}
+    ]
+    candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
+    for workflow in candidates:
         if step:
             run_one_step(workflow, approve_high_risk=approve_high_risk)
         else:
