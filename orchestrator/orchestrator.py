@@ -194,16 +194,16 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                 )
             else:
                 preferred = {
-                "research": "research_bundle",
-                "analyze": "gemini",
-                "draft": "gemini",
-                "spec": "gemini",
-                "build": "github",
-                "test": "github",
-                "deploy": "webhook",
-                "validate": "webhook",
-                "publish": "webhook",
-                "notify": "webhook",
+                    "research": "research_bundle",
+                    "analyze": "gemini",
+                    "draft": "gemini",
+                    "spec": "gemini",
+                    "build": "github",
+                    "test": "github",
+                    "deploy": "webhook",
+                    "validate": "webhook",
+                    "publish": "webhook",
+                    "notify": "webhook",
                     "execute": "webhook",
                 }.get(capability, "noop")
         node = Node(
@@ -693,6 +693,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 })
                 time.sleep(min(2 ** attempts, 8))
                 transition(node, 'ready')
+                transition(node, 'running')
                 continue
             transition(node, 'failed')
             append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
