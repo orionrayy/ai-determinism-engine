@@ -30,16 +30,16 @@ jobs:
             exit 0
           fi
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-import json, os
-state=json.load(open('.orchestrator/state.json'))
-run_id=str(os.environ['WORKFLOW_RUN_ID'])
-wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
-status=wf.get('status') if wf else 'missing'
-wid=wf.get('id') if wf else ''
-print(f'workflow_id={wid}')
-print('continue=' + ('true' if status == 'running' else 'false'))
-print(f'status={status}')
-PY
+          import json, os
+          state=json.load(open('.orchestrator/state.json'))
+          run_id=str(os.environ['WORKFLOW_RUN_ID'])
+          wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
+          status=wf.get('status') if wf else 'missing'
+          wid=wf.get('id') if wf else ''
+          print(f'workflow_id={wid}')
+          print('continue=' + ('true' if status == 'running' else 'false'))
+          print(f'status={status}')
+          PY
 
       - name: Dispatch continuation
         if: steps.decision.outputs.continue == 'true'
@@ -48,16 +48,16 @@ PY
           WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
         run: |
           python3 - <<'PY'
-import json, os, subprocess
-payload=json.dumps({
-  'event_type':'orchestrator.continue',
-  'client_payload':{'workflow_id':os.environ['WORKFLOW_ID']},
-})
-subprocess.run(
-  ['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/dispatches",'--input','-'],
-  input=payload, text=True, check=True
-)
-PY
+          import json, os, subprocess
+          payload=json.dumps({
+            'event_type':'orchestrator.continue',
+            'client_payload':{'workflow_id':os.environ['WORKFLOW_ID']},
+          })
+          subprocess.run(
+            ['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/dispatches",'--input','-'],
+            input=payload, text=True, check=True
+          )
+          PY
 
       - name: Summary
         run: |
