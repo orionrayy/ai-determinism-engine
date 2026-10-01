@@ -4,7 +4,13 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler
 
-from bridge_runtime import BridgeRuntimeError, describe_routes, handle_request, verify_signature
+from bridge_runtime import (
+    BridgeRuntimeError,
+    describe_routes,
+    handle_reconciliation,
+    handle_request,
+    verify_signature,
+)
 
 
 class handler(BaseHTTPRequestHandler):
@@ -38,7 +44,7 @@ class handler(BaseHTTPRequestHandler):
         self._send(404, {"ok": False, "error": "not_found"})
 
     def do_POST(self):
-        if self.path.split("?", 1)[0] != "/api/bridge":
+        if self.path.split("?", 1)[0] not in {"/api/bridge", "/api/bridge/reconcile"}:
             self._send(404, {"ok": False, "error": "not_found"})
             return
 
@@ -63,7 +69,10 @@ class handler(BaseHTTPRequestHandler):
             if not isinstance(payload, dict):
                 raise BridgeRuntimeError("request body must be an object")
 
-            result = handle_request(payload, secret)
+            if self.path.split("?", 1)[0] == "/api/bridge/reconcile":
+                result = handle_reconciliation(payload)
+            else:
+                result = handle_request(payload, secret)
             self._send(200, result)
         except BridgeRuntimeError as exc:
             self._send(400, {"ok": False, "error": str(exc)})
