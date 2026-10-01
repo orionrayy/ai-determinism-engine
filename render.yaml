@@ -15,3 +15,18 @@ services:
         sync: false
       - key: GATEWAY_SHARED_SECRET
         sync: false
+
+  - type: web
+    name: ai-orchestrator-connector-bridge
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: python -m py_compile bridge_server.py bridge_runtime.py
+    startCommand: python bridge_server.py
+    healthCheckPath: /health
+    envVars:
+      - key: ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET
+        sync: false
+      - key: ORCHESTRATOR_CONNECTOR_ROUTES
+        sync: false

@@ -168,6 +168,10 @@ Never merge a control-plane change with a red CI result.
 5. The current validation stage is structurally present but provider-specific semantic validation remains minimal.
 6. There is no dedicated distributed database or event bus; GitHub Actions + committed state is intentionally the zero-new-service implementation.
 
+## Deployment targets
+
+The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
+
 ## Protocol for future changes
 
 Before changing runtime behavior:
