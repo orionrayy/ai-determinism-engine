@@ -1045,6 +1045,8 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
+    workflow.setdefault('repair_feedback', {})
+    workflow.setdefault('evidence', {})
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
@@ -1138,25 +1140,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             transition(node, 'completed')
             if side_effecting(node, registry):
                 mark_execution_completed(workflow, execution_id, node.output)
+            node_success_checkpoint(workflow, node)
             append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
             notify_issue(
                 workflow,
                 'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
             )
-            workflow['nodes'] = [asdict(item) for item in nodes]
-            persist_workflow(workflow)
-            checkpoint_payload = {
-                'workflow': workflow['id'],
-                'node': asdict(node),
-                'ts': utc_now(),
-            }
-            CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-            checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
-            write_json(checkpoint_path, checkpoint_payload)
-            node.output['checkpoint'] = {
-                'path': str(checkpoint_path.relative_to(ROOT)) if checkpoint_path.is_relative_to(ROOT) else str(checkpoint_path),
-                'sha256': hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
-            }
             workflow['nodes'] = [asdict(item) for item in nodes]
             persist_workflow(workflow)
             if all(item.status == 'completed' for item in nodes):
@@ -1209,6 +1198,8 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
+    workflow.setdefault("repair_feedback", {})
+    workflow.setdefault("evidence", {})
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
