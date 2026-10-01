@@ -453,6 +453,36 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "completed")
         self.assertTrue(workflow["nodes"][1]["output"]["validation"]["passed"])
 
+    def test_replan_preserves_failure_feedback(self):
+        node = o.Node(
+            "n01-execute", "execute", "noop", [],
+            max_retries=0,
+        )
+        workflow = {
+            "id": "wf_repair_feedback",
+            "goal": "repair",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "noop",
+                "fallback_tools": ["wikipedia"],
+            },
+            "noop": {"free_tier": True, "side_effects": []},
+            "wikipedia": {"free_tier": True, "side_effects": []},
+        }
+        node.status = "failed"
+        node.error = {"type": "RuntimeError", "message": "broken"}
+        node.output = {"next_action": "retry with fallback"}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            replanned = o.replan_after_failure(workflow, [node], node, registry)
+        self.assertTrue(replanned)
+        feedback = workflow["repair_feedback"]["n01-execute"]
+        self.assertEqual(feedback["error"]["message"], "broken")
+        self.assertEqual(feedback["next_action"], "retry with fallback")
+        self.assertIn("next_action", feedback["output"])
+
     def test_replanned_node_becomes_runnable_on_next_step(self):
         node = o.Node(
             "n01-execute", "execute", "noop", [],
