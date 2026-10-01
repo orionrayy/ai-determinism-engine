@@ -49,12 +49,12 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag) -> list:
     )
     prompt = (
         'Create a minimal executable workflow DAG for this goal. Return only JSON with '
-        'nodes[]. Each node has id, capability, tool, depends_on, risk, instruction. '
+        'nodes[]. Each node has id, capability, tool, depends_on, risk, instruction, contract, artifacts. '
         'Maximum 24 nodes. Dependencies must reference node ids. Build a true DAG: maximize independent nodes that can run in parallel when dependencies allow. '
         'Use only these capabilities: ' + ', '.join(capabilities) + '. '
         'Use only these tools: ' + ', '.join(tools) + '. '
         'Use low/medium/high/critical risk and mark external side effects high or critical. '
-        'Prefer tools that require no credentials. Include a final validate node whose dependencies cover the outputs it must verify. Goal: ' + goal
+        'Prefer tools that require no credentials. Include a final validate node whose dependencies cover the outputs it must verify. For validation nodes, define contract.required_fields and/or contract.min_sources when deterministically checkable; declare artifacts as a list of expected deliverables. Goal: ' + goal
     )
     model = os.environ.get('GEMINI_PLANNER_MODEL', os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash'))
     endpoint = (
@@ -99,11 +99,17 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag) -> list:
         tool = str(item.get('tool', '')).strip()
         risk = str(item.get('risk', 'low')).strip()
         instruction = str(item.get('instruction', '')).strip()
+        contract = item.get('contract', {})
+        artifacts = item.get('artifacts', [])
         deps = item.get('depends_on', [])
         if not node_id or capability not in allowed_caps or tool not in allowed_tools:
             raise ValueError('planner produced unsupported node fields')
         if not isinstance(deps, list):
             raise ValueError('depends_on must be a list')
+        if not isinstance(contract, dict):
+            raise ValueError('contract must be an object')
+        if not isinstance(artifacts, list):
+            raise ValueError('artifacts must be an array')
         if risk not in {'low', 'medium', 'high', 'critical'}:
             raise ValueError('planner produced invalid risk')
         nodes.append(Node(
@@ -112,7 +118,8 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag) -> list:
             tool=tool,
             depends_on=[str(dep) for dep in deps],
             risk=risk,
-            input={'goal': goal, 'instruction': instruction},
+            input={'goal': goal, 'instruction': instruction, 'artifacts': artifacts},
+            contract=contract,
         ))
     validate_dag(nodes)
     return nodes

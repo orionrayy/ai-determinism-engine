@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Latest verified main code commit: `1d1b3a1ba4d0e6267cb00201bb72b87c7cbce8ab`
+Base main code commit for v4 branch: `daf19744f9fe61e119e6e00c25ceab117e9ddf4b`
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 
@@ -173,6 +173,15 @@ Never merge a control-plane change with a red CI result.
 ## Deployment targets
 
 The connector bridge runtime can be hosted as a Vercel Python Function (`api/bridge.py`) or as a Render Web Service (`bridge_server.py`). Both expose the same protocol runtime and require `ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET` plus `ORCHESTRATOR_CONNECTOR_ROUTES`. Deployment is not considered verified until the public `/health` endpoint responds successfully.
+
+## Evidence and repair layer
+
+- Completed nodes produce deterministic SHA-256 evidence records stored in workflow state and checkpoints.
+- Node contracts can require output fields or minimum research source counts.
+- Validation nodes evaluate dependency evidence rather than their own validator envelope.
+- Failed nodes preserve bounded error/output/next-action feedback for fallback execution.
+- Evidence is advisory for orchestration state and is never treated as a substitute for explicit approval of side effects.
+- The artifact verifier supports HTTPS URLs, GitHub repository files, and local checked-out files without side effects.
 
 ## Orchestration v3 execution policy
 

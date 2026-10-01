@@ -18,8 +18,10 @@ from typing import Any
 
 try:
     from .connector_bridge import execute_connector_bridge
+    from .evidence import build_evidence
 except ImportError:
     from connector_bridge import execute_connector_bridge
+    from evidence import build_evidence
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -59,6 +61,7 @@ class Node:
     input: dict[str, Any] = field(default_factory=dict)
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
+    contract: dict[str, Any] = field(default_factory=dict)
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -150,9 +153,9 @@ def classify_risk(capability: str) -> str:
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
-    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "noop",
+    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "artifact_verifier", "noop",
 }
-BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "noop"}
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "artifact_verifier", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
@@ -443,6 +446,90 @@ def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
         timeout=30,
     )
 
+def execute_artifact_verifier(node: Node, goal: str) -> dict[str, Any]:
+    artifacts = node.input.get("artifacts") or []
+    if not isinstance(artifacts, list):
+        raise RuntimeError("artifacts must be an array")
+    checks = []
+    for index, artifact in enumerate(artifacts):
+        if not isinstance(artifact, dict):
+            raise RuntimeError(f"artifact {index} must be an object")
+        kind = str(artifact.get("type") or "").strip().lower()
+        if kind == "url":
+            url = str(artifact.get("url") or "").strip()
+            if not url:
+                raise RuntimeError(f"artifact {index} url is required")
+            result = http_json(url, timeout=30)
+            status = result.get("status_code")
+            ok = isinstance(status, int) and 200 <= status < 300
+            contains = artifact.get("contains")
+            if ok and contains:
+                data = result.get("data")
+                text_blob = compact_json(data, limit=24 * 1024)
+                ok = str(contains) in text_blob
+            checks.append({
+                "index": index,
+                "type": kind,
+                "status_code": status,
+                "passed": ok,
+            })
+            if not ok:
+                raise RuntimeError(f"artifact {index} URL verification failed")
+        elif kind == "github_file":
+            path = _github_path(artifact.get("path"))
+            read_node = Node(
+                id=f"{node.id}-artifact-{index}",
+                capability="execute",
+                tool="github",
+                input={
+                    "action": "read_file",
+                    "path": path,
+                    "branch": str(artifact.get("branch") or "main"),
+                },
+            )
+            result = execute_github(read_node)
+            status = result.get("status_code")
+            ok = isinstance(status, int) and 200 <= status < 300
+            checks.append({
+                "index": index,
+                "type": kind,
+                "path": path,
+                "status_code": status,
+                "passed": ok,
+            })
+            if not ok:
+                raise RuntimeError(f"artifact {index} GitHub file verification failed")
+        elif kind == "local_file":
+            path = _safe_local_path(str(artifact.get("path") or ""))
+            ok = path.is_file()
+            checks.append({
+                "index": index,
+                "type": kind,
+                "path": str(path.relative_to(ROOT)),
+                "passed": ok,
+            })
+            if not ok:
+                raise RuntimeError(f"artifact {index} local file does not exist")
+        else:
+            raise RuntimeError(f"unsupported artifact type: {kind or 'missing'}")
+    return {
+        "passed": True,
+        "checks": checks,
+        "verified_count": len(checks),
+        "goal": goal,
+        "verifier": "artifact_verifier",
+    }
+
+
+def _safe_local_path(value: str) -> Path:
+    candidate = (ROOT / value.lstrip("/")).resolve()
+    try:
+        candidate.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise RuntimeError("invalid local artifact path") from exc
+    return candidate
+
+
 def execute_webhook(node: Node, goal: str) -> dict[str, Any]:
     url = node.input.get("url") or os.environ.get("ORCHESTRATOR_WEBHOOK_URL")
     if not url:
@@ -655,16 +742,20 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
     dependencies: dict[str, Any] = {}
     for dep_id in node.depends_on:
         dep = by_id[dep_id]
+        evidence = dep.output.get("evidence", {}) if isinstance(dep.output, dict) else {}
         dependencies[dep_id] = {
             "capability": dep.capability,
             "tool": dep.tool,
             "status": dep.status,
             "output": compact_json(dep.output, limit=12 * 1024),
             "error": dep.error,
+            "evidence_sha256": evidence.get("evidence_sha256"),
         }
     return {
         "goal": node.input.get("goal", ""),
         "dependencies": dependencies,
+        "contract": node.contract,
+        "repair_feedback": node.input.get("repair_feedback", {}),
     }
 
 
@@ -691,6 +782,48 @@ def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
             "has_output": True,
             "passed": True,
         })
+    contract = node.contract or {}
+    required_fields = contract.get("required_fields", [])
+    if required_fields:
+        for field_name in required_fields:
+            found = False
+            for dep in dependencies.values():
+                candidate = dep.get("output") if isinstance(dep, dict) else None
+                try:
+                    parsed = json.loads(candidate) if isinstance(candidate, str) else candidate
+                except json.JSONDecodeError:
+                    parsed = candidate
+                current: Any = parsed
+                for part in str(field_name).split("."):
+                    if isinstance(current, dict) and part in current:
+                        current = current[part]
+                    else:
+                        current = None
+                        break
+                if current is not None:
+                    found = True
+                    break
+            checks.append({"check": f"contract:{field_name}", "passed": found})
+            passed = passed and found
+    min_sources = contract.get("min_sources")
+    if min_sources is not None:
+        source_count = 0
+        for dep in dependencies.values():
+            candidate = dep.get("output") if isinstance(dep, dict) else None
+            try:
+                parsed = json.loads(candidate) if isinstance(candidate, str) else candidate
+            except json.JSONDecodeError:
+                parsed = candidate
+            if isinstance(parsed, dict) and isinstance(parsed.get("sources"), dict):
+                source_count = max(source_count, len(parsed["sources"]))
+        ok = source_count >= int(min_sources)
+        checks.append({
+            "check": "contract:min_sources",
+            "actual": source_count,
+            "required": int(min_sources),
+            "passed": ok,
+        })
+        passed = passed and ok
     return {
         "passed": passed,
         "checks": checks,
@@ -721,7 +854,8 @@ def extract_first_llm_json(output: dict[str, Any]) -> dict[str, Any] | None:
 def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("node output must be an object")
-    if output.get("simulated") is True:
+    contract = node.contract or {}
+    if output.get("simulated") is True and not contract:
         return {
             "passed": True,
             "checks": [{"check": "dry_run_simulation", "passed": True}],
@@ -729,6 +863,32 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         }
 
     checks = []
+    required_fields = contract.get("required_fields", [])
+    if required_fields:
+        if not isinstance(required_fields, list):
+            raise RuntimeError("contract.required_fields must be an array")
+        for field_name in required_fields:
+            current: Any = output
+            for part in str(field_name).split("."):
+                if isinstance(current, dict) and part in current:
+                    current = current[part]
+                else:
+                    current = None
+                    break
+            ok = current is not None
+            checks.append({"check": f"required:{field_name}", "passed": ok})
+            if not ok:
+                raise RuntimeError(f"contract field missing: {field_name}")
+
+    min_sources = contract.get("min_sources")
+    if min_sources is not None:
+        sources = output.get("sources")
+        count = len(sources) if isinstance(sources, dict) else 0
+        ok = count >= int(min_sources)
+        checks.append({"check": "min_sources", "actual": count, "required": int(min_sources), "passed": ok})
+        if not ok:
+            raise RuntimeError(f"contract requires at least {min_sources} sources")
+
     for key in ("status_code",):
         value = output.get(key)
         if isinstance(value, int):
@@ -787,6 +947,17 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
 
 
 def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
+    evidence = build_evidence(
+        workflow["id"],
+        node.id,
+        node.capability,
+        node.tool,
+        node.output,
+        node.output.get("validation", {}),
+        node.input.get("artifacts"),
+    )
+    workflow.setdefault("evidence", {})[node.id] = evidence
+    node.output["evidence"] = evidence
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     checkpoint = {
         "workflow": workflow["id"],
@@ -811,8 +982,8 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
     while True:
         try:
             output = execute_node(node, goal, dry_run=dry_run)
-            output["validation"] = validate_node_output(node, output)
             node.output = output
+            output["validation"] = validate_node_output(node, output)
             transition(node, "validating")
             transition(node, "completed")
             return True, None
@@ -851,7 +1022,7 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
             raise RuntimeError(
                 f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
             )
-    if dry_run and node.tool != "local_validator":
+    if dry_run and node.tool not in {"local_validator"}:
         return {
             "simulated": True,
             "tool": node.tool,
@@ -874,6 +1045,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_github(node)
     if node.tool == "connector_bridge":
         return execute_connector_bridge(node, goal, dry_run)
+    if node.tool == "artifact_verifier":
+        return execute_artifact_verifier(node, goal)
     if node.tool == "local_validator":
         return execute_local_validator(node, goal)
     if node.tool == "noop":
@@ -914,6 +1087,11 @@ def replan_after_failure(
         if not tool_available(candidate, registry, require_env=bool(workflow.get("live"))):
             continue
         transition(failed_node, "replanning")
+        old_error = dict(failed_node.error)
+        old_output = dict(failed_node.output)
+        old_next_action = (
+            old_output.get("next_action") if isinstance(old_output, dict) else None
+        )
         failed_node.tool = candidate
         failed_node.retry_count = 0
         failed_node.error = {}
@@ -930,6 +1108,17 @@ def replan_after_failure(
             },
         )
         failed_node.input["previous_tool"] = old_tool
+        workflow.setdefault("repair_feedback", {})[failed_node.id] = {
+            "tool": old_tool,
+            "error": old_error,
+            "output": compact_json(old_output, limit=12 * 1024),
+            "next_action": old_next_action,
+        }
+        append_event("node.repair_feedback", {
+            "workflow_id": workflow["id"],
+            "node_id": failed_node.id,
+            "previous_tool": old_tool,
+        })
         transition(failed_node, "ready")
         workflow["status"] = "running"
         return True
@@ -944,8 +1133,11 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
+    workflow.setdefault('repair_feedback', {})
+    workflow.setdefault('evidence', {})
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
+        node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
 
     refresh_approvals(workflow, nodes)
     if workflow.get('status') == 'failed':
@@ -1036,25 +1228,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             transition(node, 'completed')
             if side_effecting(node, registry):
                 mark_execution_completed(workflow, execution_id, node.output)
+            node_success_checkpoint(workflow, node)
             append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
             notify_issue(
                 workflow,
                 'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
             )
-            workflow['nodes'] = [asdict(item) for item in nodes]
-            persist_workflow(workflow)
-            checkpoint_payload = {
-                'workflow': workflow['id'],
-                'node': asdict(node),
-                'ts': utc_now(),
-            }
-            CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-            checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
-            write_json(checkpoint_path, checkpoint_payload)
-            node.output['checkpoint'] = {
-                'path': str(checkpoint_path.relative_to(ROOT)) if checkpoint_path.is_relative_to(ROOT) else str(checkpoint_path),
-                'sha256': hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
-            }
             workflow['nodes'] = [asdict(item) for item in nodes]
             persist_workflow(workflow)
             if all(item.status == 'completed' for item in nodes):
@@ -1107,11 +1286,14 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow["status"] = "running"
     workflow["execution_mode"] = "live" if live else "dry-run"
     workflow.setdefault("replan_count", 0)
+    workflow.setdefault("repair_feedback", {})
+    workflow.setdefault("evidence", {})
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
     for node in nodes:
         node.input["workflow_id"] = workflow["id"]
+        node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
 
     safety = 0
     while True:
@@ -1316,6 +1498,8 @@ def create_workflow(
         "live": live,
         "execution_mode": "dry-run",
         "replan_count": 0,
+        "repair_feedback": {},
+        "evidence": {},
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
         "event_id": event_id,

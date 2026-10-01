@@ -144,5 +144,18 @@
     "allowed_actions": [
       "validate"
     ]
+  },
+  "capability:artifact_verify": {
+    "default_tool": "artifact_verifier",
+    "fallback_tools": [],
+    "description": "Verify declared artifacts without side effects"
+  },
+  "artifact_verifier": {
+    "required_env": null,
+    "side_effects": [],
+    "free_tier": true,
+    "allowed_actions": [
+      "verify"
+    ]
   }
 }

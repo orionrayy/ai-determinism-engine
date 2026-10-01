@@ -288,6 +288,60 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["execution_mode"], "live")
         self.assertEqual(workflow["status"], "completed")
 
+    def test_completed_node_records_evidence_digest(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_evidence",
+            "goal": "evidence",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "completed")
+        evidence = workflow["nodes"][0]["output"]["evidence"]
+        self.assertEqual(len(evidence["output_sha256"]), 64)
+        self.assertEqual(len(evidence["evidence_sha256"]), 64)
+        self.assertEqual(workflow["evidence"]["n01"]["evidence_sha256"], evidence["evidence_sha256"])
+
+    def test_artifact_verifier_checks_local_file(self):
+        node = o.Node(
+            "n01-artifacts", "artifact_verify", "artifact_verifier", [],
+            input={"artifacts": [{"type": "local_file", "path": "README.md"}]},
+        )
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            result = o.execute_artifact_verifier(node, "verify")
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["verified_count"], 1)
+
+    def test_artifact_verifier_checks_url_status(self):
+        node = o.Node(
+            "n01-artifacts", "artifact_verify", "artifact_verifier", [],
+            input={"artifacts": [{"type": "url", "url": "https://example.test"}]},
+        )
+        with patch.object(o, "http_json", return_value={"status_code": 200, "data": {"ok": True}}):
+            result = o.execute_artifact_verifier(node, "verify")
+        self.assertTrue(result["checks"][0]["passed"])
+
+    def test_contract_required_field_is_enforced(self):
+        node = o.Node(
+            "n01", "execute", "noop", [],
+            max_retries=0,
+            contract={"required_fields": ["answer"]},
+        )
+        workflow = {
+            "id": "wf_contract",
+            "goal": "contract",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertIn("contract field missing: answer", workflow["nodes"][0]["error"]["message"])
+
     def test_dry_run_end_to_end_completes_without_credentials(self):
         workflow = o.create_workflow("research an offline technical topic", live=False)
         self.assertEqual(workflow["status"], "planning")
@@ -417,6 +471,36 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertEqual(workflow["status"], "completed")
         self.assertTrue(workflow["nodes"][1]["output"]["validation"]["passed"])
+
+    def test_replan_preserves_failure_feedback(self):
+        node = o.Node(
+            "n01-execute", "execute", "noop", [],
+            max_retries=0,
+        )
+        workflow = {
+            "id": "wf_repair_feedback",
+            "goal": "repair",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "noop",
+                "fallback_tools": ["wikipedia"],
+            },
+            "noop": {"free_tier": True, "side_effects": []},
+            "wikipedia": {"free_tier": True, "side_effects": []},
+        }
+        node.status = "failed"
+        node.error = {"type": "RuntimeError", "message": "broken"}
+        node.output = {"next_action": "retry with fallback"}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            replanned = o.replan_after_failure(workflow, [node], node, registry)
+        self.assertTrue(replanned)
+        feedback = workflow["repair_feedback"]["n01-execute"]
+        self.assertEqual(feedback["error"]["message"], "broken")
+        self.assertEqual(feedback["next_action"], "retry with fallback")
+        self.assertIn("next_action", feedback["output"])
 
     def test_replanned_node_becomes_runnable_on_next_step(self):
         node = o.Node(
