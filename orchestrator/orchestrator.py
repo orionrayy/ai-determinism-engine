@@ -202,6 +202,49 @@ def tool_available(
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
 
+def tool_health_path() -> Path:
+    return STATE_DIR / "tool_health.json"
+
+
+def load_tool_health() -> dict[str, Any]:
+    return load_health(tool_health_path())
+
+
+def update_tool_health(node: Node, success: bool, registry: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    health = load_tool_health()
+    updated = record_tool_result(
+        health,
+        node.tool,
+        success=success,
+        side_effecting=side_effecting(node, registry),
+    )
+    save_health(tool_health_path(), health)
+    append_event("tool.health", {
+        "tool": node.tool,
+        "status": updated.get("status"),
+        "failure_streak": updated.get("failure_streak", 0),
+    })
+    return updated
+
+
+def route_tool(
+    capability: str,
+    registry: dict[str, dict[str, Any]],
+    *,
+    live: bool,
+    preferred: str | None = None,
+    exclude: set[str] | None = None,
+) -> str:
+    return route_capability(
+        capability,
+        registry,
+        load_tool_health(),
+        live=live,
+        preferred=preferred,
+        exclude=exclude,
+    )
+
+
 def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
     if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
