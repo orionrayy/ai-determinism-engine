@@ -300,6 +300,20 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "completed")
         self.assertTrue(all(node["status"] == "completed" for node in workflow["nodes"]))
 
+    def test_approval_creation_failure_fails_closed(self):
+        node = o.Node("deploy", "deploy", "noop", [], risk="high")
+        workflow = {
+            "id": "wf_approval_failure",
+            "goal": "deploy",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "create_approval_issue", side_effect=RuntimeError("approval service down")):
+                o.run_workflow(workflow, approve_high_risk=False)
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(workflow["nodes"][0]["status"], "failed")
+
     def test_high_risk_requires_approval_in_live_mode(self):
         nodes = [
             o.Node("deploy", "deploy", "noop", [], risk="high"),
@@ -315,10 +329,12 @@ class OrchestratorTests(unittest.TestCase):
                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
                  patch.object(o, "load_registry", return_value={}), \
+                 patch.object(o, "create_approval_issue", return_value=123), \
                  patch.dict(o.os.environ, {"ORCHESTRATOR_LIVE": "true"}, clear=False):
                 o.run_workflow(workflow, approve_high_risk=False)
         self.assertEqual(workflow["status"], "waiting_approval")
         self.assertEqual(workflow["nodes"][0]["status"], "waiting_approval")
+        self.assertEqual(workflow["nodes"][0]["input"]["approval_issue"], 123)
 
 
     def test_parallel_independent_nodes_execute_concurrently(self):
