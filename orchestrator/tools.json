@@ -8,18 +8,24 @@
     "description": "Evidence and web research"
   },
   "capability:analyze": {
-    "default_tool": "openai",
-    "fallback_tools": [],
+    "default_tool": "gemini",
+    "fallback_tools": [
+      "openai"
+    ],
     "description": "Reasoning and synthesis"
   },
   "capability:draft": {
-    "default_tool": "openai",
-    "fallback_tools": [],
+    "default_tool": "gemini",
+    "fallback_tools": [
+      "openai"
+    ],
     "description": "Drafting and transformation"
   },
   "capability:spec": {
-    "default_tool": "openai",
-    "fallback_tools": [],
+    "default_tool": "gemini",
+    "fallback_tools": [
+      "openai"
+    ],
     "description": "Technical specification"
   },
   "capability:build": {
@@ -84,6 +90,10 @@
   },
   "wikipedia": {
     "required_env": null,
+    "side_effects": []
+  },
+  "gemini": {
+    "required_env": "GEMINI_API_KEY",
     "side_effects": []
   }
 }
