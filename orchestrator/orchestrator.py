@@ -25,6 +25,7 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence
+    from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -34,6 +35,7 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence
+    from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -1058,21 +1060,38 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                 "message": str(exc),
                 "trace": traceback.format_exc(limit=4),
             }
-            retry_allowed, uncertain = connector_failure_policy(node, exc)
+            failure_class = classify_failure(exc)
+            explicit_retry = getattr(exc, "retry_allowed", None)
+            can_retry = retry_allowed(
+                failure_class,
+                explicitly_retryable=explicit_retry,
+            )
+            connector_can_retry, uncertain = connector_failure_policy(node, exc)
             if uncertain:
+                failure_class = "uncertain"
+                can_retry = connector_can_retry
                 node.error["execution_uncertain"] = True
                 node.error["reconciliation_required"] = True
-            if attempts < node.max_retries and retry_allowed:
+            node.error["failure_class"] = failure_class
+            node.error["retry_allowed"] = can_retry
+            if attempts < node.max_retries and can_retry:
                 attempts += 1
                 node.retry_count = attempts
                 transition(node, "retrying")
+                delay = deterministic_retry_delay(
+                    str(node.input.get("workflow_id") or ""),
+                    node.id,
+                    attempts,
+                )
                 append_event("node.retrying", {
                     "workflow_id": node.input.get("workflow_id"),
                     "node_id": node.id,
                     "attempt": attempts,
                     "error": str(exc),
+                    "failure_class": failure_class,
+                    "retry_delay": delay,
                 })
-                time.sleep(min(2 ** attempts, 8))
+                time.sleep(delay)
                 transition(node, "ready")
                 transition(node, "running")
                 continue
@@ -1442,22 +1461,35 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 'message': str(exc),
                 'trace': traceback.format_exc(limit=4),
             }
-            retry_allowed, uncertain = connector_failure_policy(node, exc)
+            failure_class = classify_failure(exc)
+            explicit_retry = getattr(exc, 'retry_allowed', None)
+            can_retry = retry_allowed(
+                failure_class,
+                explicitly_retryable=explicit_retry,
+            )
+            connector_can_retry, uncertain = connector_failure_policy(node, exc)
             if uncertain:
+                failure_class = 'uncertain'
+                can_retry = connector_can_retry
                 node.error['execution_uncertain'] = True
                 node.error['reconciliation_required'] = True
-            if attempts < node.max_retries and retry_allowed:
+            node.error['failure_class'] = failure_class
+            node.error['retry_allowed'] = can_retry
+            if attempts < node.max_retries and can_retry:
                 attempts += 1
                 node.retry_count = attempts
                 transition(node, 'retrying')
+                delay = deterministic_retry_delay(workflow['id'], node.id, attempts)
                 append_event('node.retrying', {
                     'workflow_id': workflow['id'],
                     'node_id': node.id,
                     'attempt': attempts,
                     'error': str(exc),
                     'execution_uncertain': uncertain,
+                    'failure_class': failure_class,
+                    'retry_delay': delay,
                 })
-                time.sleep(min(2 ** attempts, 8))
+                time.sleep(delay)
                 transition(node, 'ready')
                 transition(node, 'running')
                 continue
