@@ -421,6 +421,50 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
         self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
         self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
+    def test_barrier_failed_side_effect_is_rearmed_for_fresh_worker(self):
+        node = o.Node(
+            "n01-webhook", "publish", "webhook", [], risk="high", status="failed",
+            input={"approval_granted": True},
+        )
+        workflow_id = "wf_barrier_rearm"
+        execution_id = o.execution_key({"id": workflow_id}, node)
+        workflow = {
+            "id": workflow_id, "goal": "publish", "live": True, "status": "failed",
+            "executions": {execution_id: {"node_id": node.id, "status": "barrier_failed", "barrier_error": "push rejected"}},
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value=registry), \
+                 patch.object(o, "commit_side_effect_start", return_value=True), \
+                 patch.object(o, "execute_node", return_value={"ok": True}) as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "rearmed_pre_side_effect")
+        self.assertEqual(workflow["status"], "running")
+        self.assertEqual(workflow["nodes"][0]["status"], "ready")
+        self.assertEqual(workflow["executions"][execution_id]["status"], "prepared")
+        self.assertNotIn("barrier_error", workflow["executions"][execution_id])
+        execute.assert_not_called()
+
+    def test_resume_scheduler_selects_barrier_failed_workflow(self):
+        node = o.Node("n01", "publish", "webhook", [], status="failed")
+        workflow_id = "wf_barrier_scheduler"
+        execution_id = o.execution_key({"id": workflow_id}, node)
+        workflow = {
+            "id": workflow_id, "goal": "publish", "live": True, "status": "failed",
+            "updated_at": "2026-10-01T00:00:00+00:00",
+            "executions": {execution_id: {"node_id": node.id, "status": "barrier_failed"}},
+            "nodes": [o.asdict(node)],
+        }
+        state = {"version": 3, "workflows": {workflow_id: workflow}, "last_workflow_id": workflow_id}
+        with patch.object(o, "run_one_step", side_effect=lambda wf, approve_high_risk=False: (wf.update({"status": "running"}) or "rearmed_pre_side_effect")), \
+             patch.object(o, "save_state"):
+            count = o.resume_pending_workflows(state, step=True)
+        self.assertEqual(count, 1)
+        self.assertEqual(workflow["status"], "running")
     def _uncertain_connector_workflow(self, node_error, node_id="n01-connector"):
         node = o.Node(
             node_id,
