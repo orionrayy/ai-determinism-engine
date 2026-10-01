@@ -58,8 +58,10 @@
     "description": "External notification gateway"
   },
   "capability:execute": {
-    "default_tool": "webhook",
-    "fallback_tools": [],
+    "default_tool": "native_worker",
+    "fallback_tools": [
+      "noop"
+    ],
     "description": "Generic external action"
   },
   "github": {
@@ -126,5 +128,15 @@
       "invoke"
     ],
     "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration"
+  },
+  "native_worker": {
+    "required_env": "ORCHESTRATOR_NATIVE_CALLBACK_URL",
+    "side_effects": [
+      "native_task_create"
+    ],
+    "free_tier": true,
+    "allowed_actions": [
+      "invoke"
+    ]
   }
 }
