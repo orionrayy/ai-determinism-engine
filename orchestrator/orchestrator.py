@@ -124,9 +124,10 @@ def tool_available(
     tool_name: str,
     registry: dict[str, dict[str, Any]],
     require_env: bool = True,
+    enforce_free: bool = True,
 ) -> bool:
     spec = registry.get(tool_name, {})
-    if free_only() and not bool(spec.get("free_tier", False)):
+    if enforce_free and free_only() and not bool(spec.get("free_tier", False)):
         return False
     if not require_env:
         return True
@@ -176,7 +177,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
         candidates = [cap_spec.get("default_tool")] + cap_spec.get("fallback_tools", [])
         candidates = [item for item in candidates if item]
         preferred = next(
-            (item for item in candidates if tool_available(item, registry, require_env=live)),
+            (item for item in candidates if tool_available(item, registry, require_env=live, enforce_free=live)),
             None,
         )
         if preferred is None:
@@ -484,7 +485,9 @@ def execute_github(node: Node) -> dict[str, Any]:
     raise RuntimeError(f"GitHub action not allowlisted: {action}")
 
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
-    if free_only() and node.tool in {"openai", "firecrawl", "webhook"} and not dry_run:
+    registry = load_registry()
+    spec = registry.get(node.tool, {})
+    if free_only() and not dry_run and not bool(spec.get("free_tier", False)):
         raise RuntimeError(
             f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
         )
