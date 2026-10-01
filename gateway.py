@@ -14,7 +14,69 @@ import urllib.request
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "10000"))
 
+def github_repository_dispatch(event_type: str, client_payload: dict) -> dict:
+    token = os.environ.get("GITHUB_GATEWAY_TOKEN")
+    repository = os.environ.get("GITHUB_REPOSITORY", "orionrayy/ai-determinism-engine")
+    if not token:
+        raise RuntimeError("GITHUB_GATEWAY_TOKEN is not configured")
+    url = f"https://api.github.com/repos/{repository}/dispatches"
+    payload = json.dumps({
+        "event_type": event_type,
+        "client_payload": client_payload,
+    }).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+            "User-Agent": "ai-orchestrator-gateway/1.0",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return {"github_status": response.status}
+
+
 def github_dispatch(goal: str, metadata: dict) -> dict:
+    return github_repository_dispatch(
+        "orchestrator.event",
+        {"goal": goal, "metadata": metadata},
+    )
+
+
+NATIVE_PROTOCOL = "ai-orchestrator.native-worker/v1"
+
+
+def validate_native_result_payload(payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("request body must be an object")
+    if payload.get("protocol") != NATIVE_PROTOCOL:
+        raise ValueError("unsupported native worker protocol")
+    for field in ("workflow_id", "node_id", "token"):
+        if not str(payload.get(field) or "").strip():
+            raise ValueError(f"{field} is required")
+    execution_id = str(payload.get("execution_id") or "").strip()
+    if len(execution_id) != 64 or any(ch not in "0123456789abcdef" for ch in execution_id):
+        raise ValueError("execution_id must be a SHA-256 hex digest")
+    token = str(payload.get("token") or "")
+    if len(token) < 20:
+        raise ValueError("token is too short")
+    if ("result" not in payload) == ("error" not in payload):
+        raise ValueError("provide exactly one of result or error")
+    encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    if len(encoded) > 64 * 1024:
+        raise ValueError("payload too large")
+    return payload
+
+
+def handle_native_result(payload: dict) -> dict:
+    validated = validate_native_result_payload(payload)
+    return github_repository_dispatch("orchestrator.native_result", validated)
+
+
     token = os.environ.get("GITHUB_GATEWAY_TOKEN")
     repository = os.environ.get("GITHUB_REPOSITORY", "orionrayy/ai-determinism-engine")
     if not token:
@@ -97,6 +159,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlsplit(self.path).path
+        if path == "/native-result":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length <= 0 or length > 64 * 1024:
+                    raise ValueError("invalid request size")
+                raw = self.rfile.read(length)
+                payload = json.loads(raw.decode("utf-8"))
+                result = handle_native_result(payload)
+                self._send(202, {"ok": True, "queued": True, **result})
+            except ValueError as exc:
+                self._send(400, {"ok": False, "error": str(exc)})
+            except Exception as exc:
+                print(f"native callback error: {exc}", flush=True)
+                self._send(503, {"ok": False, "error": "dispatch_unavailable"})
+            return
+
         if path != "/event":
             self._send(404, {"ok": False, "error": "not_found"})
             return
