@@ -19,6 +19,8 @@ on:
         type: boolean
   repository_dispatch:
     types: [orchestrator.event]
+  issues:
+    types: [opened, edited]
   schedule:
     - cron: "17 * * * *"
 
@@ -45,16 +47,34 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Authorize issue trigger
+        if: github.event_name == 'issues'
+        env:
+          AUTHOR_ASSOCIATION: ${{ github.event.issue.author_association }}
+        run: |
+          case "$AUTHOR_ASSOCIATION" in
+            OWNER|MEMBER|COLLABORATOR) exit 0 ;;
+            *) echo "Issue author is not authorized to trigger orchestration"; exit 1 ;;
+          esac
+
       - name: Resolve goal
         id: goal
         shell: bash
         env:
           INPUT_GOAL: ${{ inputs.goal }}
           EVENT_GOAL: ${{ github.event.client_payload.goal }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           goal="$INPUT_GOAL"
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            case "$ISSUE_TITLE" in
+              "[ORCHESTRATOR]"*) goal="$ISSUE_BODY" ;;
+              *) echo "Ignoring non-orchestrator issue"; exit 0 ;;
+            esac
+          fi
           if [ -z "$goal" ]; then goal="$EVENT_GOAL"; fi
           if [ -z "$goal" ] && [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
             goal='Run the orchestration health check and report current state.'
@@ -84,6 +104,7 @@ jobs:
           ORCHESTRATOR_RESEARCH_URL: ${{ secrets.ORCHESTRATOR_RESEARCH_URL }}
           GITHUB_TOKEN: ${{ github.token }}
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
+          ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
             args=(--resume)
