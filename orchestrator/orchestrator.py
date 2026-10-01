@@ -1275,9 +1275,40 @@ def main() -> int:
     parser.add_argument('--list', action='store_true')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--step', action='store_true')
+    parser.add_argument('--native-result', default=os.environ.get('ORCHESTRATOR_NATIVE_RESULT', ''))
     args = parser.parse_args()
 
     state = load_state()
+
+    if args.native_result:
+        if not args.workflow_id:
+            raise SystemExit('--native-result requires --workflow-id')
+        workflow = state.get('workflows', {}).get(args.workflow_id)
+        if not workflow:
+            raise SystemExit(f'workflow not found: {args.workflow_id}')
+        try:
+            payload = json.loads(args.native_result)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f'invalid native result JSON: {exc}')
+        result = apply_native_result(workflow, payload)
+        state['workflows'][workflow['id']] = workflow
+        state['last_workflow_id'] = workflow['id']
+        save_state(state)
+        if result == 'completed':
+            next_result = run_one_step(
+                workflow,
+                approve_high_risk=args.approve_high_risk,
+            )
+            state['workflows'][workflow['id']] = workflow
+            state['last_workflow_id'] = workflow['id']
+            save_state(state)
+            print(json.dumps({
+                'native_result': result,
+                'continuation': next_result,
+            }, indent=2))
+            return 0 if next_result != 'failed' else 2
+        print(json.dumps({'native_result': result}, indent=2))
+        return 0 if result == 'rejected' else 2
 
     if args.list:
         for workflow in state.get('workflows', {}).values():
