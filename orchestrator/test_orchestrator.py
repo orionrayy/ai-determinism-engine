@@ -536,6 +536,68 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(second, "completed")
         self.assertEqual(workflow["nodes"][0]["tool"], "wikipedia")
 
+    def test_uncertain_non_idempotent_connector_fails_closed_without_replan(self):
+        node = o.Node(
+            "n01", "publish", "connector_bridge", [],
+            risk="high", max_retries=2,
+            input={"connector": "notion", "action": "create_page", "payload": {"title": "Hello"}},
+        )
+        workflow = {
+            "id": "wf_uncertain_connector",
+            "goal": "publish",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": ["webhook"],
+            },
+            "connector_bridge": {"free_tier": True, "side_effects": ["external_request"]},
+            "webhook": {"free_tier": True, "side_effects": ["external_request"]},
+        }
+        error = o.ConnectorRequestError("timeout", uncertain=True, retry_allowed=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=error) as execute:
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
+        self.assertTrue(workflow["nodes"][0]["error"]["reconciliation_required"])
+        self.assertEqual(workflow["nodes"][0]["tool"], "connector_bridge")
+        self.assertEqual(workflow["replan_count"], 0)
+
+    def test_uncertain_idempotent_connector_retries_same_tool(self):
+        node = o.Node(
+            "n01", "publish", "connector_bridge", [],
+            risk="high", max_retries=1,
+        )
+        workflow = {
+            "id": "wf_idempotent_connector",
+            "goal": "publish",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": ["webhook"],
+            },
+            "connector_bridge": {"free_tier": True, "side_effects": ["external_request"]},
+            "webhook": {"free_tier": True, "side_effects": ["external_request"]},
+        }
+        errors = [
+            o.ConnectorRequestError("timeout-1", uncertain=True, retry_allowed=True),
+            o.ConnectorRequestError("timeout-2", uncertain=True, retry_allowed=True),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=errors),                  patch.object(o.time, "sleep"):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["nodes"][0]["retry_count"], 1)
+        self.assertEqual(workflow["nodes"][0]["tool"], "connector_bridge")
+        self.assertEqual(workflow["replan_count"], 0)
+
     def test_semantic_validation_rejects_failed_http_response(self):
         node = o.Node(
             "n01", "execute", "noop", [],
