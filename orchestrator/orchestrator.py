@@ -27,6 +27,8 @@ try:
     from .evidence import build_evidence
     from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from .plan_integrity import fingerprint_nodes
+    from .state_schema import StateSchemaError, migrate_state
+    from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -38,6 +40,8 @@ except ImportError:
     from evidence import build_evidence
     from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from plan_integrity import fingerprint_nodes
+    from state_schema import StateSchemaError, migrate_state
+    from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -144,11 +148,18 @@ def mark_execution_completed(
 
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
-        return {"version": 2, "workflows": {}, "last_workflow_id": None}
-    return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        return migrate_state({"version": 3, "workflows": {}, "last_workflow_id": None})
+    try:
+        raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        return migrate_state(raw)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, StateSchemaError) as exc:
+        raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
 
 def save_state(state: dict[str, Any]) -> None:
-    write_json(STATE_FILE, state)
+    try:
+        write_json(STATE_FILE, migrate_state(state))
+    except StateSchemaError as exc:
+        raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
 
 def persist_workflow(workflow: dict[str, Any]) -> None:
     state = load_state()
@@ -1040,6 +1051,43 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     }
 
 
+def verify_completed_checkpoints(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+) -> bool:
+    statuses = []
+    for node in nodes:
+        if node.status != "completed":
+            continue
+        try:
+            result = verify_checkpoint(
+                ROOT,
+                asdict(node),
+                expected_workflow_id=workflow["id"],
+                allowed_dir=CHECKPOINT_DIR,
+            )
+            statuses.append(result)
+        except CheckpointIntegrityError as exc:
+            workflow["checkpoint_integrity"] = "failed"
+            workflow["checkpoint_error"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "node_id": node.id,
+            }
+            append_event("workflow.checkpoint_drift", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "error": str(exc),
+            })
+            workflow["status"] = "failed"
+            return False
+    workflow["checkpoint_integrity"] = (
+        "verified" if statuses and all(item.get("verified") for item in statuses)
+        else "legacy_unverified"
+    )
+    return True
+
+
 def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
     fingerprint = fingerprint_nodes(nodes)
     previous = str(workflow.get("plan_fingerprint") or "").strip()
@@ -1366,6 +1414,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return 'failed'
+    if not verify_completed_checkpoints(workflow, nodes):
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return 'failed'
     workflow['status'] = 'running'
     workflow['execution_mode'] = 'live' if live else 'dry-run'
     workflow.setdefault('replan_count', 0)
@@ -1555,6 +1607,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     live = bool(workflow.get("live"))
     enforce_node_policy(nodes, registry, live=live)
     if not ensure_plan_integrity(workflow, nodes):
+        workflow["nodes"] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return
+    if not verify_completed_checkpoints(workflow, nodes):
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return
@@ -1788,7 +1844,9 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
+        "schema_version": 2,
         "plan_fingerprint": None,
+        "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
