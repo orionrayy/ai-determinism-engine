@@ -62,6 +62,13 @@ jobs:
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
           echo "goal=$goal" >> "$GITHUB_OUTPUT"
 
+      - name: Bootstrap approval labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create orchestrator-approved --description "Approve a high-risk orchestration action" --color 0E8A16 --force
+          gh label create orchestrator-rejected --description "Reject a high-risk orchestration action" --color B60205 --force
+
       - name: Run orchestrator
         env:
           ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
