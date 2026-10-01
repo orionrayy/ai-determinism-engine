@@ -4,7 +4,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler
 
-from bridge_runtime import BridgeRuntimeError, handle_request, verify_signature
+from bridge_runtime import BridgeRuntimeError, describe_routes, handle_request, verify_signature
 
 
 class handler(BaseHTTPRequestHandler):
