@@ -83,3 +83,7 @@ The bridge also exposes sanitized connector discovery at `/capabilities` (Render
 ## Connector reconciliation v10
 
 When a live connector request becomes uncertain, the bridge can optionally expose a read-only reconciliation endpoint. The orchestrator sends a signed request containing the deterministic request id, connector, and action. The upstream returns `applied`, `not_applied`, or `unknown`. The first two states allow safe continuation without blindly replaying an uncertain side effect; `unknown` remains fail-closed.
+
+## Reconciliation privacy v11
+
+Connector reconciliation persists only a sanitized state record (`applied`, `not_applied`, or `unknown`) plus identifiers and discovery metadata. Arbitrary upstream response bodies are intentionally excluded from persisted workflow state.

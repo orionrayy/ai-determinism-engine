@@ -419,16 +419,16 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
             f"connector {request.connector!r} does not advertise reconciliation"
         )
     result = post_reconciliation(url, secret, request)
+    # Never persist arbitrary upstream reconciliation data into public workflow state.
     return {
         "simulated": False,
         "protocol": PROTOCOL,
         "request_id": request.request_id,
-        "bridge_url": url,
         "connector": request.connector,
         "action": request.action,
         "discovery": build_discovery_snapshot(inventory),
         "state": result["state"],
-        "response": result,
+        "checked_at": int(time.time()),
     }
 
 
