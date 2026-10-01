@@ -26,7 +26,7 @@ MAX_REPLANS = 2
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
-    "ready": {"running", "cancelled"},
+    "ready": {"running", "waiting_approval", "cancelled"},
     "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
