@@ -106,7 +106,7 @@ The orchestrator migrates persisted state to its supported schema and verifies c
 
 ## Interrupted side-effect recovery v21
 
-On resume, a live side-effecting node that is still marked running while its durable execution ledger says started is converted into an explicit in-doubt failure. Connector nodes then enter the existing reconciliation path; opaque side effects remain fail-closed and are not replayed.
+On resume, a live side-effecting node is checked against its durable execution ledger. A running node with status prepared is safely rearmed because the external-effect barrier has not been crossed; a running node with status started is converted into an explicit in-doubt failure. Connector nodes then enter the existing reconciliation path; opaque side effects remain fail-closed and are not replayed.
 
 ## Post-start side-effect replay fence v20
 
