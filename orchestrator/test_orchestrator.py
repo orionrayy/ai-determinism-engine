@@ -135,6 +135,34 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(calls["n"], 2)
         self.assertEqual(workflow["nodes"][0]["retry_count"], 1)
 
+    def test_side_effect_execution_uncertainty_fails_closed(self):
+        node = o.Node(
+            "n01-write", "build", "github", [], risk="high",
+            input={"action": "create_issue"},
+        )
+        execution_id = o.hashlib.sha256(b"wf_uncertain:n01-write").hexdigest()
+        workflow = {
+            "id": "wf_uncertain", "goal": "write", "live": True,
+            "executions": {execution_id: {"node_id": "n01-write", "status": "started"}},
+            "nodes": [o.asdict(node)],
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GITHUB_TOKEN": "dummy",
+            "GITHUB_REPOSITORY": "owner/repo",
+        }, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                     patch.object(o, "load_registry", return_value={"github": {
+                         "free_tier": True, "side_effects": ["issue_write"]
+                     }}), \
+                     patch.object(o, "execute_github") as execute:
+                    result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["nodes"][0]["error"]["type"], "execution_uncertain")
+        execute.assert_not_called()
     def test_preapproved_high_risk_node_can_resume(self):
         node = o.Node(
             "n01-deploy", "deploy", "noop", [], risk="high",
