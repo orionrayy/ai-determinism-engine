@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: state-durability v15 adds future-schema rejection and atomic JSON persistence on top of durable-state v14; always verify the current `main` ref before modifying.
+Current main baseline: reconciliation-rearm v16 adds safe rearming after authoritative `not_applied` outcomes on top of state-durability v15; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -42,7 +42,7 @@ pending -> ready -> running -> validating -> completed
                        +-> failed -> replanning -> ready
                                     |
                                     +-> reconciling -> completed
-                                                    \-> ready
+                                                    `-> ready
 ```
 
 High-risk operations require explicit approval in live mode unless the workflow invocation explicitly supplies approval.
@@ -286,8 +286,8 @@ Before changing runtime behavior:
 3. Identify the exact invariant being changed.
 4. Add a regression test before or with the change.
 5. Run CI.
-7. Merge only after green.
-8. Update this memory file when architecture, policy, or a known limitation changes.
+6. Merge only after green.
+7. Update this memory file when architecture, policy, or a known limitation changes.
 
 ## Design principle
 
