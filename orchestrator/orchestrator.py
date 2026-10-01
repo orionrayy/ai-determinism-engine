@@ -848,16 +848,19 @@ def print_summary(workflow: dict[str, Any]) -> None:
     }, indent=2))
 
 
-def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False) -> int:
+def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False, step: bool = False) -> int:
     resumed = 0
     for workflow in list(state.get("workflows", {}).values()):
         if workflow.get("status") not in {"waiting_approval", "running"}:
             continue
-        run_workflow(workflow, approve_high_risk=approve_high_risk)
+        if step:
+            run_one_step(workflow, approve_high_risk=approve_high_risk)
+        else:
+            run_workflow(workflow, approve_high_risk=approve_high_risk)
         state["workflows"][workflow["id"]] = workflow
         state["last_workflow_id"] = workflow["id"]
         resumed += 1
-        if workflow.get("status") == "failed":
+        if workflow.get("status") == "failed" or step:
             break
     save_state(state)
     return resumed
@@ -881,7 +884,7 @@ def main() -> int:
         return 0
 
     if args.resume:
-        count = resume_pending_workflows(state, approve_high_risk=args.approve_high_risk)
+        count = resume_pending_workflows(state, approve_high_risk=args.approve_high_risk, step=args.step)
         print(json.dumps({"resumed_workflows": count}, indent=2))
         return 0
 
