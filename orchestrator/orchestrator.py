@@ -238,7 +238,7 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
-    model = os.environ.get("GEMINI_MODEL", "gemini-3.7-flash")
+    model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
     payload = {
         "contents": [{
             "parts": [{
