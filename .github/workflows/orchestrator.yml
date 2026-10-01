@@ -132,9 +132,11 @@ jobs:
             esac
           fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
-          echo "goal=$goal" >> "$GITHUB_OUTPUT"
-          echo "issue_number=$trigger_issue" >> "$GITHUB_OUTPUT"
-          echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
+          {
+            echo "goal=$goal"
+            echo "issue_number=$trigger_issue"
+            echo "workflow_id=$workflow_id"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Bootstrap approval labels
         env:
@@ -195,11 +197,12 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "## AI Orchestrator" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Goal: `$(cat /tmp/orchestrator_goal.txt)`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Repository: `$GITHUB_REPOSITORY`" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f .orchestrator/state.json ]; then
+          printf '%s
+' \
+            "## AI Orchestrator" \
+            "" \
+            "- Goal: `$(cat /tmp/orchestrator_goal.txt)`" \
+            "- Repository: `$GITHUB_REPOSITORY`" >> "$GITHUB_STEP_SUMMARY"          if [ -f .orchestrator/state.json ]; then
             python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
             import json
             s=json.load(open(".orchestrator/state.json"))
