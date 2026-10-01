@@ -330,6 +330,7 @@ class OrchestratorTests(unittest.TestCase):
                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
                  patch.object(o, "load_registry", return_value={}), \
                  patch.object(o, "create_approval_issue", return_value=123), \
+                 patch.object(o, "get_issue_labels", return_value=set()), \
                  patch.dict(o.os.environ, {"ORCHESTRATOR_LIVE": "true"}, clear=False):
                 o.run_workflow(workflow, approve_high_risk=False)
         self.assertEqual(workflow["status"], "waiting_approval")
