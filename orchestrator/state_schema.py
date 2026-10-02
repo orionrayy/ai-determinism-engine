@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -9,6 +10,9 @@ CURRENT_WORKFLOW_SCHEMA_VERSION = 5
 MAX_PARALLEL = 8
 MAX_REPLANS = 2
 MAX_NODE_RETRIES = 8
+MAX_GOAL_CHARS = 4000
+MAX_NODE_BYTES = 32 * 1024
+MAX_ARTIFACTS_PER_NODE = 32
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 NODE_STATUSES = {
     "pending", "ready", "running", "validating", "waiting_approval",
@@ -99,6 +103,16 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 f"is newer than supported version {CURRENT_WORKFLOW_SCHEMA_VERSION}"
             )
         workflow["schema_version"] = CURRENT_WORKFLOW_SCHEMA_VERSION
+        goal = workflow.get("goal")
+        if goal is not None:
+            if not isinstance(goal, str):
+                raise StateSchemaError(f"workflow {workflow_id!r}.goal must be a string")
+            if not goal.strip():
+                raise StateSchemaError(f"workflow {workflow_id!r}.goal must not be empty")
+            if len(goal) > MAX_GOAL_CHARS:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.goal exceeds {MAX_GOAL_CHARS} characters"
+                )
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
@@ -234,6 +248,27 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                     raise StateSchemaError(
                         f"workflow {workflow_id!r} node {node['id']!r}.{field_name} must be an object"
                     )
+            artifacts = node["input"].get("artifacts")
+            if artifacts is not None:
+                if not isinstance(artifacts, list):
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r} node {node['id']!r}.input.artifacts must be an array"
+                    )
+                if len(artifacts) > MAX_ARTIFACTS_PER_NODE:
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r} node {node['id']!r} exceeds artifact limit"
+                    )
+            serialized = json.dumps(
+                node,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            )
+            if len(serialized.encode("utf-8")) > MAX_NODE_BYTES:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r} exceeds {MAX_NODE_BYTES} bytes"
+                )
 
     state["workflows"] = workflows
     state.setdefault("last_workflow_id", None)
