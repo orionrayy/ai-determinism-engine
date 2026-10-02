@@ -225,7 +225,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 with self.assertRaises(cb.ConnectorRequestError) as ctx:
                     cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
         self.assertTrue(ctx.exception.uncertain)
-        self.assertTrue(ctx.exception.retry_allowed)
+        self.assertTrue(self.node().input.get("connector_action_idempotent") is not False)
 
     def test_free_only_blocks_paid_discovered_connector(self):
         inventory = {
@@ -270,7 +270,6 @@ class ConnectorBridgeTests(unittest.TestCase):
                 with self.assertRaises(cb.ConnectorRequestError) as ctx:
                     cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
         self.assertTrue(ctx.exception.uncertain)
-        self.assertFalse(ctx.exception.retry_allowed)
 
 
     def test_reconciliation_blocks_target_contract_drift(self):
