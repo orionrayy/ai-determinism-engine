@@ -5,9 +5,12 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import io
+import http.client
 import json
 import os
 import secrets
+import socket
+import ssl
 import uuid
 import tempfile
 import zipfile
@@ -1176,6 +1179,111 @@ def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
         timeout=30,
     )
 
+MAX_ARTIFACT_RESPONSE_BYTES = 256 * 1024
+
+
+def _validated_public_https_target(url: str) -> tuple[str, int, str]:
+    parsed = urllib.parse.urlsplit(str(url).strip())
+    if parsed.scheme.lower() != "https":
+        raise RuntimeError("artifact URL must use HTTPS")
+    if parsed.username is not None or parsed.password is not None:
+        raise RuntimeError("artifact URL must not contain embedded credentials")
+    if parsed.fragment:
+        raise RuntimeError("artifact URL must not contain a fragment")
+    if parsed.port not in (None, 443):
+        raise RuntimeError("artifact URL must use port 443")
+    host = parsed.hostname
+    if not host:
+        raise RuntimeError("artifact URL hostname is required")
+    try:
+        ascii_host = host.encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise RuntimeError("artifact URL hostname is invalid") from exc
+    if ascii_host.endswith("."):
+        ascii_host = ascii_host[:-1]
+    if not ascii_host:
+        raise RuntimeError("artifact URL hostname is required")
+    try:
+        literal = ipaddress.ip_address(ascii_host)
+    except ValueError:
+        literal = None
+    if literal is not None:
+        normalized = literal.ipv4_mapped if getattr(literal, "ipv4_mapped", None) else literal
+        if not normalized.is_global:
+            raise RuntimeError("artifact URL resolves to a non-public IP")
+        connect_host = ascii_host
+    else:
+        connect_host = ascii_host
+    path = parsed.path or "/"
+    if parsed.query:
+        path += "?" + parsed.query
+    return connect_host, 443, path
+
+
+def safe_public_https_json(
+    url: str,
+    *,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    host, port, request_target = _validated_public_https_target(url)
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise RuntimeError("artifact URL DNS resolution failed") from exc
+    ips: list[str] = []
+    for info in infos:
+        sockaddr = info[4]
+        ip_text = sockaddr[0]
+        try:
+            ip_value = ipaddress.ip_address(ip_text)
+        except ValueError:
+            raise RuntimeError("artifact URL DNS returned an invalid IP") from None
+        normalized = ip_value.ipv4_mapped if getattr(ip_value, "ipv4_mapped", None) else ip_value
+        if not normalized.is_global:
+            raise RuntimeError("artifact URL resolves to a non-public IP")
+        if ip_text not in ips:
+            ips.append(ip_text)
+    if not ips:
+        raise RuntimeError("artifact URL has no usable public address")
+
+    context = ssl.create_default_context()
+    sock = None
+    tls = None
+    try:
+        sock = socket.create_connection((ips[0], port), timeout=timeout)
+        tls = context.wrap_socket(sock, server_hostname=host)
+        connection = http.client.HTTPResponse(tls)
+        connection.begin()
+        if 300 <= connection.status < 400:
+            connection.close()
+            raise RuntimeError("artifact URL redirects are disabled")
+        raw = connection.read(MAX_ARTIFACT_RESPONSE_BYTES + 1)
+        status = connection.status
+        connection.close()
+        if len(raw) > MAX_ARTIFACT_RESPONSE_BYTES:
+            raise RuntimeError("artifact URL response exceeds safety limit")
+        text = raw.decode("utf-8", "replace")
+        try:
+            data = json.loads(text) if text else {}
+        except json.JSONDecodeError:
+            data = {"text": text}
+        return {"status_code": status, "data": data}
+    except RuntimeError:
+        raise
+    except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+        raise RuntimeError(f"artifact HTTPS request failed: {exc}") from exc
+    finally:
+        if tls is not None:
+            try:
+                tls.close()
+            except OSError:
+                pass
+        elif sock is not None:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
 def execute_artifact_verifier(node: Node, goal: str) -> dict[str, Any]:
     artifacts = node.input.get("artifacts") or []
     if not isinstance(artifacts, list):
@@ -1189,7 +1297,7 @@ def execute_artifact_verifier(node: Node, goal: str) -> dict[str, Any]:
             url = str(artifact.get("url") or "").strip()
             if not url:
                 raise RuntimeError(f"artifact {index} url is required")
-            result = http_json(url, timeout=30)
+            result = safe_public_https_json(url, timeout=30)
             status = result.get("status_code")
             ok = isinstance(status, int) and 200 <= status < 300
             contains = artifact.get("contains")
