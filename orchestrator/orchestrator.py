@@ -2057,11 +2057,90 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
     except Exception:
         return
 
+def notify_execution_callback(workflow: dict[str, Any]) -> bool:
+    url = os.environ.get("ORCHESTRATOR_CALLBACK_URL", "").strip()
+    secret = os.environ.get("ORCHESTRATOR_CALLBACK_SECRET", "")
+    execution_id = str(workflow.get("execution_id") or "").strip()
+    if not url or not secret or not execution_id:
+        return False
+    if not url.startswith("https://"):
+        append_event("callback.skipped", {"workflow_id": workflow.get("id"), "reason": "https_required"})
+        return False
+
+    callback_status = "failed"
+    if workflow.get("status") == "completed":
+        callback_status = "completed"
+    else:
+        for item in workflow.get("nodes", []):
+            error = item.get("error") if isinstance(item, dict) else {}
+            if isinstance(error, dict) and error.get("execution_uncertain"):
+                callback_status = "uncertain"
+                break
+
+    result = {
+        "workflow_id": str(workflow.get("id") or ""),
+        "external_domain": str(workflow.get("external_domain") or ""),
+        "external_operation": str(workflow.get("external_operation") or ""),
+        "input_digest": str(workflow.get("input_digest") or ""),
+        "attempt": int(workflow.get("external_attempt") or 1),
+    }
+    payload = {
+        "request_id": execution_id,
+        "execution_id": execution_id,
+        "intent_fingerprint": str(workflow.get("intent_fingerprint") or ""),
+        "status": callback_status,
+        "result": result if callback_status == "completed" else {},
+        "error": str(workflow.get("failed_node") or "engine_failed") if callback_status != "completed" else "",
+    }
+    body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    for _attempt in range(3):
+        timestamp = str(int(time.time()))
+        # HMAC construction is explicit to avoid depending on a second auth helper.
+        import hmac
+        signature = "sha256=" + hmac.new(secret.encode("utf-8"), timestamp.encode("utf-8") + b"\n" + body, hashlib.sha256).hexdigest()
+        request = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Engine-Timestamp": timestamp,
+                "X-Engine-Signature": signature,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                if 200 <= int(response.status) < 300:
+                    append_event("callback.sent", {
+                        "workflow_id": workflow.get("id"),
+                        "execution_id": execution_id,
+                        "status": callback_status,
+                    })
+                    return True
+        except Exception:
+            pass
+        time.sleep(1)
+    append_event("callback.failed", {
+        "workflow_id": workflow.get("id"),
+        "execution_id": execution_id,
+        "status": callback_status,
+    })
+    return False
+
+
 def create_workflow(
     goal: str,
     live: bool,
     trigger_issue: int | None = None,
     event_id: str | None = None,
+    execution_id: str | None = None,
+    external_workflow_id: str | None = None,
+    external_domain: str | None = None,
+    external_operation: str | None = None,
+    intent_fingerprint: str | None = None,
+    input_digest: str | None = None,
+    external_attempt: int | None = None,
 ) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
@@ -2094,6 +2173,13 @@ def create_workflow(
         "trigger_issue": trigger_issue,
         "event_id": event_id,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
+        "execution_id": execution_id,
+        "external_workflow_id": external_workflow_id,
+        "external_domain": external_domain,
+        "external_operation": external_operation,
+        "intent_fingerprint": intent_fingerprint,
+        "input_digest": input_digest,
+        "external_attempt": int(external_attempt or 1),
         "nodes": [asdict(node) for node in nodes],
     }
 
@@ -2108,6 +2194,8 @@ def print_summary(workflow: dict[str, Any]) -> None:
         "replans": workflow.get("replan_count", 0),
         "counts": counts,
         "failed_node": workflow.get("failed_node"),
+        "execution_id": workflow.get("execution_id"),
+        "external_operation": workflow.get("external_operation"),
     }, indent=2))
 
 
@@ -2200,6 +2288,16 @@ def main() -> int:
     trigger_issue_raw = os.environ.get('ORCHESTRATOR_TRIGGER_ISSUE', '').strip()
     trigger_issue = int(trigger_issue_raw) if trigger_issue_raw.isdigit() else None
     event_id = os.environ.get("ORCHESTRATOR_EVENT_ID", "").strip() or None
+    execution_id_env = os.environ.get("ORCHESTRATOR_EXECUTION_ID", "").strip() or None
+    external_workflow_id = os.environ.get("ORCHESTRATOR_EXTERNAL_WORKFLOW_ID", "").strip() or None
+    external_domain = os.environ.get("ORCHESTRATOR_EXTERNAL_DOMAIN", "").strip() or None
+    external_operation = os.environ.get("ORCHESTRATOR_EXTERNAL_OPERATION", "").strip() or None
+    intent_fingerprint_env = os.environ.get("ORCHESTRATOR_INTENT_FINGERPRINT", "").strip() or None
+    input_digest = os.environ.get("ORCHESTRATOR_INPUT_DIGEST", "").strip() or None
+    try:
+        external_attempt = int(os.environ.get("ORCHESTRATOR_EXTERNAL_ATTEMPT", "1"))
+    except ValueError:
+        raise SystemExit("invalid external attempt")
     if event_id:
         existing = next(
             (
@@ -2209,6 +2307,8 @@ def main() -> int:
             None,
         )
         if existing:
+            if existing.get("status") in {"completed", "failed"}:
+                notify_execution_callback(existing)
             print_summary(existing)
             return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
     workflow = create_workflow(
@@ -2216,6 +2316,13 @@ def main() -> int:
         live=live,
         trigger_issue=trigger_issue,
         event_id=event_id,
+        execution_id=execution_id_env,
+        external_workflow_id=external_workflow_id,
+        external_domain=external_domain,
+        external_operation=external_operation,
+        intent_fingerprint=intent_fingerprint_env,
+        input_digest=input_digest,
+        external_attempt=external_attempt,
     )
     workflow['status'] = 'ready'
     state['workflows'][workflow['id']] = workflow
@@ -2237,6 +2344,8 @@ def main() -> int:
     state['workflows'][workflow['id']] = workflow
     state['last_workflow_id'] = workflow['id']
     save_state(state)
+    if workflow.get("status") in {"completed", "failed"}:
+        notify_execution_callback(workflow)
     print_summary(workflow)
     return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
