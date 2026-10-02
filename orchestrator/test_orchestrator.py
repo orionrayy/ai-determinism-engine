@@ -1141,6 +1141,28 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(first.startswith("wf-ingress-event-"))
         self.assertTrue(idem.startswith("wf-ingress-idempotency-"))
 
+    def test_sharded_index_skips_legacy_state_scan_when_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            state_file.write_text(json.dumps({"version": CURRENT_STATE_VERSION, "storage_format": "sharded-v1", "workflows": {}, "last_workflow_id": None}), encoding="utf-8")
+            with patch.object(o, "STATE_FILE", state_file), patch.object(o, "load_state", side_effect=AssertionError("full load must not be called")):
+                self.assertFalse(o.legacy_state_has_workflows())
+
+    def test_goal_ingress_creates_under_deterministic_identity_without_legacy_scan(self):
+        workflow = {"id": "wf-ingress-event-123", "goal": "new", "status": "planning", "nodes": []}
+        with patch.object(o, "load_workflow", return_value=None), \
+             patch.object(o, "legacy_state_has_workflows", return_value=False), \
+             patch.object(o, "create_workflow", return_value=workflow) as create_workflow, \
+             patch.object(o, "persist_workflow"), patch.object(o, "append_event"), \
+             patch.object(o, "run_one_step", return_value="completed"), patch.object(o, "print_summary"), \
+             patch.object(sys, "argv", ["orchestrator", "--goal", "new", "--step"]), \
+             patch.dict(o.os.environ, {"ORCHESTRATOR_EVENT_ID": "evt-123"}, clear=False), \
+             patch.object(o, "deterministic_ingress_workflow_id", return_value="wf-ingress-event-123"):
+            result = o.main()
+        self.assertEqual(result, 0)
+        self.assertEqual(create_workflow.call_args.kwargs["workflow_id"], "wf-ingress-event-123")
+
     def test_goal_ingress_uses_targeted_identity_before_global_state(self):
         workflow = {"id": "wf-ingress-event-123", "goal": "same", "status": "running", "nodes": [], "event_id": "evt-123"}
         with patch.object(o, "load_workflow", return_value=workflow) as load_workflow, \
