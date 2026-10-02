@@ -44,15 +44,16 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", self.federation)
 
     def test_federated_aggregator_is_the_only_write_permission(self):
+        self.assertIn("aggregate:", self.federation)
+        self.assertIn("contents: write", self.federation)
+        self.assertIn("orchestrator.federation.completed", self.federation)
+
     def test_supervisor_handles_federation_completion_dispatch(self):
         self.assertIn("orchestrator.federation.completed", self.orchestrator)
         self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_ID", self.orchestrator)
         self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_DIGEST", self.orchestrator)
         self.assertIn("actions: read", self.orchestrator)
 
-        self.assertIn("aggregate:", self.federation)
-        self.assertIn("contents: write", self.federation)
-        self.assertIn("orchestrator.federation.completed", self.federation)
     def test_committed_orchestrator_state_matches_current_schema(self):
         from orchestrator.state_schema import CURRENT_STATE_VERSION
         self.assertEqual(self.state.get('version'), CURRENT_STATE_VERSION)
