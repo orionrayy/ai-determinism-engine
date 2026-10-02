@@ -126,6 +126,7 @@
     "side_effects": [],
     "free_tier": true,
     "model_env": "GEMINI_MODEL",
+    "default_model": "gemini-3.8-flash",
     "free_models": [
       "gemini-3.8-flash"
     ],
