@@ -225,7 +225,7 @@ export default {
       if (url.pathname === "/v1/inputs" && request.method === "POST") {
         return await handlePost(request, env);
       }
-      const match = url.pathname.match(/^\\/v1\\/inputs\\/([0-9a-f]{64})$/);
+      const match = url.pathname.match(/^\/v1\/inputs\/([0-9a-f]{64})$/);
       if (match && request.method === "GET") return await handleGet(env, match[1]);
       if (match && request.method === "DELETE") return await handleDelete(env, match[1]);
       return response({ ok: false, error: "not_found" }, 404);
