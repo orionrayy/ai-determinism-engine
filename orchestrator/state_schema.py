@@ -243,6 +243,10 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} node {node['id']!r}.depends_on contains an invalid id"
                 )
+            if any(dep == node["id"] for dep in node["depends_on"]):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r} depends on itself"
+                )
             if node.get("risk") not in RISK_LEVELS:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} node {node['id']!r}.risk is invalid"
@@ -319,6 +323,12 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} node {node['id']!r} state exceeds {MAX_NODE_STATE_BYTES} bytes"
                 )
+        for node in nodes:
+            for dependency in node["depends_on"]:
+                if dependency not in node_ids:
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r} node {node['id']!r} references unknown dependency {dependency!r}"
+                    )
 
     state["workflows"] = workflows
     state.setdefault("last_workflow_id", None)
