@@ -929,7 +929,7 @@ class OrchestratorTests(unittest.TestCase):
         )
         node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
         workflow = {"id": "wf_approval_bind", "status": "waiting_approval", "nodes": [o.asdict(node)]}
-        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer"}, clear=False), \
+        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer", "ORCHESTRATOR_APPROVAL_EVENT": "true"}, clear=False), \
              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
             o.refresh_approvals(workflow, [node])
         self.assertTrue(node.input["approval_granted"])
@@ -937,6 +937,19 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(node.input["approval_approved_at"])
         self.assertEqual(node.status, "ready")
         self.assertEqual(workflow["status"], "running")
+
+    def test_approval_label_without_authenticated_event_is_ignored(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {"id": "wf_unverified_approval", "status": "waiting_approval", "nodes": [o.asdict(node)]}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_APPROVAL_EVENT": "false"}, clear=False),              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertEqual(node.status, "waiting_approval")
+        self.assertEqual(workflow["status"], "waiting_approval")
 
     def test_stale_approval_is_rearmed_instead_of_accepted(self):
         node = o.Node(
