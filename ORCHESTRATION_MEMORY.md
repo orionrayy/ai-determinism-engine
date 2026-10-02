@@ -214,6 +214,14 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
+## Orchestration hardening v48
+- Final workflow persistence no longer re-saves a process-start snapshot after execution; execution paths persist through `persist_workflow()`, which reloads and merges against the latest repository state. This prevents one concurrent workflow from clobbering another workflow's durable state.
+- Newly-created workflows are persisted before the first execution step, closing the pre-first-persistence crash window.
+- Gateway HMAC signatures now bind timestamp, HTTP method, request path, optional `Idempotency-Key`, and raw body rather than timestamp+body alone.
+- Gateway header lookup is case-insensitive for interoperable HTTP clients.
+- Gateway events without an explicit idempotency key receive a deterministic event identity; the gateway dispatch also uses that identity as the GitHub Actions concurrency key, so replay-equivalent events serialize before orchestrator-side event deduplication.
+- No new paid service, database, queue, or dependency was introduced; the hardening remains stdlib/GitHub Actions and free-first.
+
 ## Orchestration hardening v38
 - Tool health persistence is now sharded per tool under `.orchestrator/tool_health/<sha256(tool)>.json`; the legacy monolithic `tool_health.json` remains readable for migration/backward compatibility.
 - Updating one tool's health only reads that tool's shard plus any legacy record for the same tool, reducing unrelated-workflow contention while preserving deterministic routing through the aggregated health view.
