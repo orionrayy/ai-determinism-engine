@@ -540,3 +540,11 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Finding #3 (unbounded workflow retries): confirmed in the implementation. Initial batch admission alone did not consume budget for later retries. v46 makes every retry consume the same workflow-wide attempt budget; the counter is protected for parallel execution and the node-level retry limit remains a second guard.
 - Finding #3 state-machine subfinding is confirmed: reconciling -> completed was a direct edge. v46 removes it and requires reconciling -> validating -> completed for an applied reconciliation result.
 - The state machine is now checked by a finite-model test rather than relying only on individual transition examples.
+
+## v47 durable execution lease
+
+- Live workflow execution can acquire a coordination lease from the same Cloudflare SQLite-backed Durable Object service used for private input.
+- Lease ownership is ephemeral and defaults to 900 seconds. Attempt accounting is durable for seven days after release or expiry, so worker crashes and continuation runs cannot reset the workflow-wide attempt budget.
+- Acquire seeds the remote attempt ledger only when the execution subject has no prior ledger. On resume, the remote ledger is authoritative and its count is copied into local execution_budget.used_steps.
+- Reserve-attempt is atomic per execution subject and renews the lease. Release clears ownership but preserves the ledger until retention expiry. Durable Object alarms garbage-collect expired ledgers.
+- GitHub Actions enables the lease for live orchestrator runs. Dry-run stays local.
