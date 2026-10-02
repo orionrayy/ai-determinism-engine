@@ -501,6 +501,50 @@ class OrchestratorTests(unittest.TestCase):
 
 
 
+    def test_retry_consumes_attempt_budget_once_per_execution(self):
+        workflow = {
+            "id": "wf_budget_retry",
+            "goal": "retry",
+            "live": False,
+            "max_attempts": 2,
+            "attempts_used": 0,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop", [], max_retries=2))],
+        }
+        calls = {"n": 0}
+
+        def flaky_execute(node, goal, dry_run):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("transient")
+            return {"ok": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=flaky_execute):
+                result = o.run_one_step(workflow)
+
+        self.assertEqual(result, "completed")
+        self.assertEqual(calls["n"], 2)
+        self.assertEqual(workflow["attempts_used"], 2)
+        self.assertEqual(workflow["nodes"][0]["retry_count"], 1)
+
+    def test_retry_is_blocked_when_no_attempt_budget_remains(self):
+        workflow = {
+            "id": "wf_budget_exhausted",
+            "goal": "retry",
+            "live": False,
+            "max_attempts": 1,
+            "attempts_used": 0,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop", [], max_retries=2))],
+        }
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=RuntimeError("transient")):
+                result = o.run_one_step(workflow)
+
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["attempts_used"], 1)
+        self.assertEqual(workflow["nodes"][0]["error"]["type"], "attempt_budget_exhausted")
+
     def test_completed_checkpoint_drift_fails_closed_before_execution(self):
         node = o.Node(
             "n01",

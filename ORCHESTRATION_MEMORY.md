@@ -147,6 +147,11 @@ Current execution-fabric branch: `main`
 - Execution callbacks now include Idempotency-Key: execution_id, making the existing three-attempt delivery loop explicitly compatible with idempotent receivers.
 - Regression tests cover bounded planner/research responses, the shared reader, durable trace redaction, secret-pattern removal, and callback idempotency headers.
 - No database, broker, proxy, paid service, or additional runtime dependency was introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
+## Orchestration hardening v60 — attempt-budget accounting
+- The workflow-scoped AttemptBudget is now charged only when an execution attempt actually starts. Retry scheduling performs only a non-mutating remaining-capacity check.
+- This fixes double charging in execute_with_retries(), which previously could consume two budget units for one retry and reduce later retry/replan capacity.
+- Regression tests cover a two-attempt retry with max_attempts=2 and a max_attempts=1 fail-closed retry path.
+- No database, broker, queue, paid service, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.

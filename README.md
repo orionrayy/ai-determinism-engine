@@ -55,6 +55,12 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v60 Attempt-Budget Accounting Hardening
+
+Retry scheduling no longer consumes the workflow attempt budget ahead of the actual retry execution. The budget is charged exactly once at the execution boundary, preventing double charging and preserving retry/replan capacity under small workflow budgets.
+
+Regression coverage now verifies both exact two-attempt accounting and fail-closed behavior when no attempt slot remains. No new dependency or service is introduced; GitHub Actions + stdlib Python and free-first execution remain unchanged.
+
 ## v59 Resource-Safety and Durable-Diagnostics Hardening
 
 All outbound HTTP response bodies now pass through one stdlib bounded-reader helper. The LLM planner and credential-free research providers are capped at 512 KiB, while the connector bridge reconciliation path keeps its tighter 128 KiB limit. This prevents an unexpectedly large remote body from bypassing the existing resource-safety controls.

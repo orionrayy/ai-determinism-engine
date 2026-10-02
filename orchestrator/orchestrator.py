@@ -2466,7 +2466,7 @@ def execute_with_retries(
             )
             if attempts < node.max_retries and can_retry:
                 next_attempt = attempts + 1
-                if attempt_budget is not None and not attempt_budget.acquire(node.id):
+                if attempt_budget is not None and attempt_budget.remaining <= 0:
                     node.error = {
                         **node.error,
                         "type": "attempt_budget_exhausted",
