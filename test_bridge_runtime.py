@@ -222,6 +222,22 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertFalse(a.get("idempotent_replay", False))
         self.assertTrue(b["idempotent_replay"])
 
+    def test_free_only_blocks_uncertified_invocation(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/notion",
+                "free_tier": True,
+                "action_specs": {"create_page": {"free_tier": False}},
+            }
+        }
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True), patch.object(
+            br, "load_routes", return_value=routes
+        ), patch.object(br, "dispatch_upstream") as dispatch:
+            with self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
+                br.handle_request(self.payload(), "secret")
+        dispatch.assert_not_called()
+
     def test_upstream_requires_https(self):
         routes = {"notion": {"actions": ["create_page"], "url": "http://bad.example.test"}}
         with patch.object(br, "load_routes", return_value=routes):
