@@ -63,6 +63,7 @@ class ReconciliationRequest:
     connector: str
     action: str
     target_fingerprint: str | None
+    reconciliation_target_fingerprint: str | None
     sent_at: int
 
 
@@ -393,6 +394,7 @@ def build_reconciliation_request(
     node: Any,
     *,
     target_fingerprint: str | None = None,
+    reconciliation_target_fingerprint: str | None = None,
 ) -> ReconciliationRequest:
     workflow_id = str(node.input.get("workflow_id") or "").strip()
     node_id = str(node.id or "").strip()
@@ -421,6 +423,9 @@ def build_reconciliation_request(
         connector=connector,
         action=action,
         target_fingerprint=str(target_fingerprint or "").strip() or None,
+        reconciliation_target_fingerprint=(
+            str(reconciliation_target_fingerprint or "").strip() or None
+        ),
         sent_at=int(time.time()),
     )
 
@@ -509,6 +514,9 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
     action = str(node.input.get("action") or "").strip().lower()
     action_spec = validate_discovered_action(connector, action, inventory)
     target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
+    current_reconciliation_target = (
+        str(spec.get("reconciliation_target_fingerprint") or "").strip() or None
+    )
     current_contract = action_contract_fingerprint(
         action_spec,
         target_fingerprint=target_fingerprint,
@@ -523,9 +531,22 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
         raise ConnectorReconciliationError(
             "connector action contract changed before reconciliation"
         )
+    previous_reconciliation_target = (
+        str(runtime_error.get("connector_reconciliation_target_fingerprint") or "").strip()
+        if isinstance(runtime_error, dict)
+        else ""
+    )
+    if (
+        previous_reconciliation_target
+        and previous_reconciliation_target != current_reconciliation_target
+    ):
+        raise ConnectorReconciliationError(
+            "connector reconciliation endpoint changed before reconciliation"
+        )
     request = build_reconciliation_request(
         node,
         target_fingerprint=target_fingerprint,
+        reconciliation_target_fingerprint=current_reconciliation_target,
     )
     result = post_reconciliation(url, secret, request)
     # Never persist arbitrary upstream reconciliation data into public workflow state.
@@ -640,6 +661,9 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
             "connector action contract changed after a failed attempt"
         )
     runtime_error["connector_action_contract_fingerprint"] = contract_fingerprint
+    runtime_error["connector_reconciliation_target_fingerprint"] = (
+        reconciliation_target_fingerprint
+    )
     try:
         response = post_request(url, secret, request)
     except ConnectorRequestError as exc:
