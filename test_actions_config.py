@@ -123,6 +123,13 @@ class ActionsConfigTests(unittest.TestCase):
     def test_render_runtime_matches_ci_python(self):
         self.assertEqual((ROOT / ".python-version").read_text().strip(), "3.12")
 
+    def test_private_input_channel_is_not_bypassed_in_structured_live_mode(self):
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_REF", self.orchestrator)
+        self.assertIn("private_input_unavailable", (ROOT / "gateway.py").read_text())
+        self.assertIn("test_private_input.py", self.tests)
+
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
