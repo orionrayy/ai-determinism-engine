@@ -4,7 +4,7 @@ const RETENTION_SECONDS = 7 * 24 * 60 * 60;
 
 const CREATE_SQL = `
   CREATE TABLE IF NOT EXISTS lease_state (
-    subject TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY CHECK (id = 1),
     owner_id TEXT NOT NULL,
     lease_until INTEGER NOT NULL,
     retention_until INTEGER NOT NULL,
@@ -21,8 +21,7 @@ export class ExecutionLease extends DurableObject {
   async acquire(subject, ownerId, now, ttlSeconds, maxAttempts, initialAttempts) {
     const row = this.ctx.storage.sql
       .exec(
-        "SELECT subject, owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
-        subject,
+        "SELECT id, owner_id, lease_until, retention_until, attempts FROM lease_state WHERE id = 1",
       )
       .toArray()[0];
 
@@ -36,7 +35,7 @@ export class ExecutionLease extends DurableObject {
       };
     }
 
-    if (row && row.lease_until > now && row.owner_id !== ownerId) {
+    if (row && row.lease_until > now && row.owner_id && row.owner_id !== ownerId) {
       return {
         ok: false,
         conflict: true,
@@ -54,14 +53,13 @@ export class ExecutionLease extends DurableObject {
 
     this.ctx.storage.sql.exec(
       `INSERT INTO lease_state
-         (subject, owner_id, lease_until, retention_until, attempts)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(subject) DO UPDATE SET
+         (id, owner_id, lease_until, retention_until, attempts)
+       VALUES (1, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
          owner_id = excluded.owner_id,
          lease_until = excluded.lease_until,
          retention_until = excluded.retention_until,
          attempts = excluded.attempts`,
-      subject,
       ownerId,
       leaseUntil,
       retentionUntil,
@@ -80,8 +78,7 @@ export class ExecutionLease extends DurableObject {
   async reserve(subject, ownerId, now, count, maxAttempts, ttlSeconds) {
     const row = this.ctx.storage.sql
       .exec(
-        "SELECT subject, owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
-        subject,
+        "SELECT id, owner_id, lease_until, retention_until, attempts FROM lease_state WHERE id = 1",
       )
       .toArray()[0];
 
@@ -101,15 +98,18 @@ export class ExecutionLease extends DurableObject {
 
     const next = current + count;
     const leaseUntil = now + ttlSeconds;
-    const retentionUntil = Math.max(row.retention_until, leaseUntil + RETENTION_SECONDS);
+    const retentionUntil = Math.max(
+      row.retention_until,
+      leaseUntil + RETENTION_SECONDS,
+    );
+
     this.ctx.storage.sql.exec(
       `UPDATE lease_state
           SET attempts = ?, lease_until = ?, retention_until = ?
-        WHERE subject = ? AND owner_id = ? AND lease_until > ?`,
+        WHERE id = 1 AND owner_id = ? AND lease_until > ?`,
       next,
       leaseUntil,
       retentionUntil,
-      subject,
       ownerId,
       now,
     );
@@ -128,8 +128,7 @@ export class ExecutionLease extends DurableObject {
   async release(subject, ownerId, now) {
     const row = this.ctx.storage.sql
       .exec(
-        "SELECT owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
-        subject,
+        "SELECT owner_id, lease_until, retention_until, attempts FROM lease_state WHERE id = 1",
       )
       .toArray()[0];
 
@@ -141,15 +140,16 @@ export class ExecutionLease extends DurableObject {
       row.retention_until,
       now + RETENTION_SECONDS,
     );
+
     this.ctx.storage.sql.exec(
       `UPDATE lease_state
           SET owner_id = '', lease_until = 0, retention_until = ?
-        WHERE subject = ? AND owner_id = ?`,
+        WHERE id = 1 AND owner_id = ?`,
       retentionUntil,
-      subject,
       ownerId,
     );
     await this.ctx.storage.setAlarm(retentionUntil * 1000);
+
     return {
       ok: true,
       released: true,
@@ -160,33 +160,28 @@ export class ExecutionLease extends DurableObject {
 
   async alarm() {
     const now = Math.floor(Date.now() / 1000);
-    const rows = this.ctx.storage.sql
+    const row = this.ctx.storage.sql
       .exec(
-        "SELECT owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
+        "SELECT owner_id, lease_until, retention_until, attempts FROM lease_state WHERE id = 1",
       )
-      .toArray();
+      .toArray()[0];
 
-    if (!rows.length) return;
+    if (!row) return;
 
-    const row = rows[0];
     if (row.lease_until > now) {
       await this.ctx.storage.setAlarm(row.lease_until * 1000);
       return;
     }
+
     if (row.retention_until > now) {
       this.ctx.storage.sql.exec(
-        `UPDATE lease_state SET owner_id = '', lease_until = 0
-          WHERE subject = ?`,
-        this.ctx.id.toString(),
+        "UPDATE lease_state SET owner_id = '', lease_until = 0 WHERE id = 1",
       );
       await this.ctx.storage.setAlarm(row.retention_until * 1000);
       return;
     }
 
-    this.ctx.storage.sql.exec(
-      "DELETE FROM lease_state WHERE subject = ?",
-      this.ctx.id.toString(),
-    );
+    this.ctx.storage.sql.exec("DELETE FROM lease_state WHERE id = 1");
     await this.ctx.storage.deleteAlarm();
   }
 }
