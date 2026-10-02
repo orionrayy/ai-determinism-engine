@@ -41,6 +41,34 @@ class StateSchemaTests(unittest.TestCase):
         self.assertEqual(workflow["max_attempts"], 64)
         self.assertEqual(len(workflow["retry_jitter_seed"]), 32)
 
+    def test_run_attempt_is_preserved_and_validated(self):
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf": {
+                    "id": "wf",
+                    "github_run_attempt": 2,
+                    "origin_github_run_attempt": 1,
+                    "nodes": [],
+                }
+            },
+        })
+        workflow = migrated["workflows"]["wf"]
+        self.assertEqual(workflow["github_run_attempt"], 2)
+        self.assertEqual(workflow["origin_github_run_attempt"], 1)
+
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "github_run_attempt": 0,
+                        "nodes": [],
+                    }
+                },
+            })
+
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
