@@ -10,6 +10,7 @@ CURRENT_WORKFLOW_SCHEMA_VERSION = 6
 MAX_PARALLEL = 8
 MAX_REPLANS = 2
 MAX_NODE_RETRIES = 8
+MAX_CALLBACK_ATTEMPTS = 12
 MAX_GOAL_CHARS = 4000
 MAX_NODE_INTENT_BYTES = 32 * 1024
 MAX_NODE_STATE_BYTES = 128 * 1024
@@ -161,6 +162,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
         workflow.setdefault("executions", {})
+        workflow.setdefault("callback", {"status": "disabled"})
         workflow.setdefault("route_snapshot", {})
         for field_name in (
             "repair_feedback",
@@ -168,6 +170,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             "reconciliations",
             "executions",
             "route_snapshot",
+            "callback",
         ):
             if not isinstance(workflow.get(field_name), dict):
                 raise StateSchemaError(
@@ -248,6 +251,25 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             workflow.get("origin_github_run_attempt"),
             field_name=f"workflow {workflow_id!r}.origin_github_run_attempt",
         )
+        callback = workflow["callback"]
+        callback_statuses = {"disabled", "pending", "sent", "dead_letter"}
+        callback_status = str(callback.get("status") or "disabled")
+        if callback_status not in callback_statuses:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.callback.status is invalid"
+            )
+        try:
+            callback_attempts = int(callback.get("attempts", 0))
+        except (TypeError, ValueError) as exc:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.callback.attempts must be an integer"
+            ) from exc
+        if callback_attempts < 0 or callback_attempts > MAX_CALLBACK_ATTEMPTS:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.callback.attempts out of bounds"
+            )
+        callback["status"] = callback_status
+        callback["attempts"] = callback_attempts
         workflow.setdefault("execution_budget", {
             "max_steps": 96,
             "used_steps": 0,
