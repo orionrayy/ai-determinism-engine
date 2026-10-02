@@ -1675,6 +1675,23 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             o.http_json("http://example.com")
 
+    def test_http_response_is_bounded(self):
+        class Response:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def read(self, limit=None):
+                return b"x" * (limit + 1)
+
+        with patch.object(o.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "HTTP response exceeds 2048 bytes"):
+                o.http_json(
+                    "https://example.test",
+                    max_response_bytes=2048,
+                )
+
     def test_live_state_does_not_require_process_env_on_resume(self):
         nodes = [o.Node("safe", "execute", "noop", [], risk="low")]
         workflow = {
