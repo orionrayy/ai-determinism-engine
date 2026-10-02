@@ -98,6 +98,21 @@ def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _require_int(
+    result: dict[str, Any],
+    field: str,
+    *,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int:
+    value = result.get(field)
+    if not isinstance(value, int) or value < minimum or (
+        maximum is not None and value > maximum
+    ):
+        raise ExecutionLeaseError(f"execution lease response field {field} is invalid")
+    return value
+
+
 def acquire_execution_lease(
     workflow: dict[str, Any],
     *,
@@ -129,6 +144,11 @@ def acquire_execution_lease(
         if result.get("budget_exhausted"):
             raise ExecutionLeaseError("execution attempt budget already exhausted")
         raise ExecutionLeaseError("execution lease acquisition failed")
+    attempts = _require_int(result, "attempts", maximum=max_attempts)
+    _require_int(result, "lease_until", minimum=int(time.time()))
+    if result.get("retention_until") is not None:
+        _require_int(result, "retention_until", minimum=attempts)
+    result["attempts"] = attempts
     return result
 
 
@@ -161,6 +181,13 @@ def reserve_remote_execution_attempt(
         if result.get("lease_lost"):
             raise ExecutionLeaseError("execution lease lost")
         raise ExecutionLeaseError("execution attempt reservation failed")
+    start_attempt = _require_int(result, "start_attempt", minimum=1, maximum=max_attempts)
+    used_attempts = _require_int(result, "used_attempts", minimum=start_attempt, maximum=max_attempts)
+    if start_attempt + count - 1 != used_attempts:
+        raise ExecutionLeaseError("execution lease attempt range is inconsistent")
+    _require_int(result, "lease_until", minimum=int(time.time()))
+    result["start_attempt"] = start_attempt
+    result["used_attempts"] = used_attempts
     return result
 
 
