@@ -506,7 +506,10 @@ class OrchestratorTests(unittest.TestCase):
             "nodes": [o.asdict(node)],
         }
         registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
-        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook",
+        }, clear=False), \
              patch.object(o, "load_registry", return_value=registry), \
              patch.object(o, "execute_node", return_value={"ok": True}) as execute:
             with tempfile.TemporaryDirectory() as tmp:
@@ -514,10 +517,9 @@ class OrchestratorTests(unittest.TestCase):
                      patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
                      patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"):
                     result = o.run_one_step(workflow, approve_high_risk=False)
-        self.assertEqual(result, "rearmed_pre_side_effect")
-        self.assertEqual(execute.call_count, 0)
-        self.assertEqual(workflow["status"], "running")
-        self.assertEqual(workflow["nodes"][0]["status"], "ready")
+        self.assertEqual(result, "completed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
     def test_interrupted_started_connector_enters_reconciliation(self):
         node = o.Node(
             "n01-connector", "publish", "connector_bridge", [],
