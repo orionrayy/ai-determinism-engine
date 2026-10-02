@@ -2890,6 +2890,33 @@ def resume_pending_workflows(
     save_state(state)
     return resumed
 
+def find_existing_replay(
+    state: dict[str, Any],
+    *,
+    event_id: str | None,
+    execution_id: str | None,
+    idempotency_key: str | None,
+) -> dict[str, Any] | None:
+    identifiers = (
+        ("event_id", event_id),
+        ("execution_id", execution_id),
+        ("idempotency_key", idempotency_key),
+    )
+    matches: dict[str, dict[str, Any]] = {}
+    for workflow in state.get("workflows", {}).values():
+        if not isinstance(workflow, dict):
+            continue
+        for field_name, value in identifiers:
+            normalized = str(value or "").strip()
+            if normalized and normalized == str(workflow.get(field_name) or "").strip():
+                matches[str(workflow.get("id") or "")] = workflow
+                break
+    if len(matches) > 1:
+        raise SystemExit("replay identifiers map to multiple persisted workflows")
+    return next(iter(matches.values()), None) if matches else None
+
+
+
 def validate_event_replay_identity(
     workflow: dict[str, Any],
     *,
@@ -2983,13 +3010,12 @@ def main() -> int:
         external_attempt = int(os.environ.get("ORCHESTRATOR_EXTERNAL_ATTEMPT", "1"))
     except ValueError:
         raise SystemExit("invalid external attempt")
-    if event_id:
-        existing = next(
-            (
-                item for item in state.get("workflows", {}).values()
-                if item.get("event_id") == event_id
-            ),
-            None,
+    if event_id or execution_id_env or idempotency_key:
+        existing = find_existing_replay(
+            state,
+            event_id=event_id,
+            execution_id=execution_id_env,
+            idempotency_key=idempotency_key,
         )
         if existing:
             validate_event_replay_identity(
