@@ -142,6 +142,30 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_large_runtime_context_does_not_count_as_intent(self):
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf": {
+                    "id": "wf",
+                    "goal": "x",
+                    "nodes": [{
+                        "id": "n01",
+                        "capability": "execute",
+                        "tool": "noop",
+                        "input": {
+                            "instruction": "small",
+                            "context": {"x": "y" * (40 * 1024)},
+                        },
+                    }],
+                }
+            },
+        })
+        self.assertEqual(
+            migrated["workflows"]["wf"]["nodes"][0]["input"]["instruction"],
+            "small",
+        )
+
     def test_oversized_node_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
