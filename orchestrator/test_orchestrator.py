@@ -1133,6 +1133,82 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("output_sha256", record)
         self.assertNotIn("output", record)
 
+    def test_find_federation_artifact_filters_exact_name_and_unexpired(self):
+        with patch.object(
+            o,
+            "github_repository",
+            return_value="owner/repo",
+        ), patch.object(
+            o,
+            "github_headers",
+            return_value={"Authorization": "Bearer token"},
+        ), patch.object(
+            o,
+            "http_json",
+            return_value={
+                "data": {
+                    "artifacts": [
+                        {"id": 10, "name": "federation-results-fed-bad", "expired": False},
+                        {"id": 11, "name": "federation-results-fed-good", "expired": True},
+                        {"id": 12, "name": "federation-results-fed-good", "expired": False, "digest": "sha256:ok"},
+                    ]
+                }
+            },
+        ):
+            self.assertEqual(
+                o.find_federation_artifact("fed-good"),
+                (12, "sha256:ok"),
+            )
+
+    def test_run_one_step_does_not_reexecute_waiting_federation(self):
+        workflow = {
+            "id": "wf-test",
+            "goal": "research test",
+            "status": "waiting_agents",
+            "live": False,
+            "nodes": [],
+            "federation": {"id": "fed-test", "status": "dispatched"},
+        }
+        with patch.object(o, "load_registry", return_value={}):
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "waiting_agents")
+        self.assertEqual(workflow["status"], "waiting_agents")
+
+    def test_tool_health_is_sharded_by_tool(self):
+        node = o.Node(
+            "n01",
+            "research",
+            "research_bundle",
+            risk="low",
+            input={"instruction": "collect evidence"},
+        )
+        registry = {"research_bundle": {"side_effects": [], "free_tier": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "append_event"):
+                updated = o.update_tool_health(node, False, registry)
+                shard = o.tool_health_path("research_bundle")
+                self.assertTrue(shard.exists())
+                self.assertEqual(
+                    o.load_tool_health()["research_bundle"]["status"],
+                    updated["status"],
+                )
+                self.assertFalse((root / "tool_health.json").exists())
+
+    def test_tool_health_legacy_file_is_compatible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "tool_health.json"
+            legacy.write_text(
+                '{"research_bundle":{"status":"degraded","failure_streak":1}}',
+                encoding="utf-8",
+            )
+            with patch.object(o, "STATE_DIR", root):
+                self.assertEqual(
+                    o.load_tool_health()["research_bundle"]["failure_streak"],
+                    1,
+                )
+
     def test_workflow_events_are_sharded(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

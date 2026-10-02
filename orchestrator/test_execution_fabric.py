@@ -42,10 +42,12 @@ class ExecutionFabricTests(unittest.TestCase):
                 root = Path(tmp)
                 with patch.object(o, "STATE_DIR", root),                      patch.object(o, "EVENT_FILE", root / "events.jsonl"),                      patch.object(o, "CHECKPOINT_DIR", root / "checkpoints"),                      patch.object(o, "load_registry", return_value=registry):
                     result = o.run_one_step(workflow)
-                self.assertEqual(result, "completed")
-                health = json.loads((root / "tool_health.json").read_text(encoding="utf-8"))
-                self.assertEqual(health["noop"]["status"], "healthy")
-                self.assertEqual(health["noop"]["failure_streak"], 0)
+                    self.assertEqual(result, "completed")
+                    health = json.loads(
+                        o.tool_health_path("noop").read_text(encoding="utf-8")
+                    )
+                    self.assertEqual(health["noop"]["status"], "healthy")
+                    self.assertEqual(health["noop"]["failure_streak"], 0)
 
 
 if __name__ == "__main__":

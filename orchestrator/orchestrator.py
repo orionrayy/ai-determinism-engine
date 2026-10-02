@@ -248,6 +248,38 @@ def dispatch_federation(manifest: dict[str, Any]) -> None:
     )
 
 
+def find_federation_artifact(
+    federation_id: str,
+) -> tuple[int, str] | None:
+    name = f"federation-results-{federation_id}"
+    repository = github_repository()
+    query = urllib.parse.urlencode({
+        "name": name,
+        "per_page": "10",
+        "page": "1",
+    })
+    data = http_json(
+        f"https://api.github.com/repos/{repository}/actions/artifacts?{query}",
+        headers=github_headers(),
+        timeout=30,
+    ).get("data") or {}
+    artifacts = data.get("artifacts", [])
+    if not isinstance(artifacts, list):
+        return None
+    candidates = [
+        item for item in artifacts
+        if isinstance(item, dict)
+        and str(item.get("name") or "") == name
+        and not bool(item.get("expired"))
+        and isinstance(item.get("id"), int)
+    ]
+    candidates.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    if not candidates:
+        return None
+    artifact = candidates[0]
+    return int(artifact["id"]), str(artifact.get("digest") or "")
+
+
 def download_federation_aggregate(
     artifact_id: int,
     expected_artifact_digest: str = "",
@@ -500,8 +532,12 @@ def ingest_federation(
     federation = workflow.get("federation") or {}
     if federation.get("status") == "completed" and int(federation.get("artifact_id") or 0) == int(artifact_id):
         return "already_completed"
+    aggregate_value = download_federation_aggregate(
+        artifact_id,
+        artifact_digest,
+    )
     results = validate_federation_aggregate(
-        download_federation_aggregate(artifact_id, artifact_digest),
+        aggregate_value,
         workflow,
         artifact_digest,
     )
@@ -549,7 +585,6 @@ def ingest_federation(
     federation["status"] = "completed" if not failures else "partial_failure"
     federation["artifact_id"] = int(artifact_id)
     federation["artifact_digest"] = artifact_digest or None
-    aggregate_value = download_federation_aggregate(artifact_id, artifact_digest)
     federation["aggregate_sha256"] = aggregate_value.get("aggregate_sha256")
     federation["completed_at"] = utc_now()
 
@@ -739,23 +774,44 @@ def tool_available(
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
 
-def tool_health_path() -> Path:
+def tool_health_dir() -> Path:
+    return STATE_DIR / "tool_health"
+
+
+def tool_health_path(tool: str | None = None) -> Path:
+    if tool:
+        shard = hashlib.sha256(str(tool).encode("utf-8")).hexdigest()
+        return tool_health_dir() / f"{shard}.json"
     return STATE_DIR / "tool_health.json"
 
 
 def load_tool_health() -> dict[str, Any]:
-    return load_health(tool_health_path())
+    health = load_health(tool_health_path())
+    if tool_health_dir().exists():
+        for path in sorted(tool_health_dir().glob("*.json")):
+            shard = load_health(path)
+            if shard:
+                health.update(shard)
+    return health
 
 
 def update_tool_health(node: Node, success: bool, registry: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    health = load_tool_health()
+    shard_path = tool_health_path(node.tool)
+    shard = load_health(shard_path)
+    current = shard.get(node.tool)
+    if not isinstance(current, dict):
+        legacy = load_health(tool_health_path())
+        current = legacy.get(node.tool)
+    health = {
+        node.tool: dict(current) if isinstance(current, dict) else {}
+    }
     updated = record_tool_result(
         health,
         node.tool,
         success=success,
         side_effecting=side_effecting(node, registry),
     )
-    save_health(tool_health_path(), health)
+    save_health(shard_path, health)
     append_event("tool.health", {
         "tool": node.tool,
         "status": updated.get("status"),
@@ -2109,6 +2165,9 @@ def reconcile_first_uncertain(
 
 
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+    active_federation = workflow.get("federation") or {}
+    if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
+        return "waiting_agents"
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
     registry = load_registry()
@@ -2858,8 +2917,19 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
             and node.get("status") == "failed"
             and isinstance(executions, dict)
             and isinstance(node.get("id"), str)
-            and isinstance(executions.get(hashlib.sha256(f"{workflow.get('id')}:{node['id']}".encode("utf-8")).hexdigest()), dict)
-            and executions[hashlib.sha256(f"{workflow.get('id')}:{node['id']}".encode("utf-8")).hexdigest()].get("status") == "barrier_failed"
+            and isinstance(
+                executions.get(
+                    hashlib.sha256(
+                        f"{workflow.get('id')}:{node['id']}".encode("utf-8")
+                    ).hexdigest()
+                ),
+                dict,
+            )
+            and executions[
+                hashlib.sha256(
+                    f"{workflow.get('id')}:{node['id']}".encode("utf-8")
+                ).hexdigest()
+            ].get("status") == "barrier_failed"
             for node in workflow.get("nodes", [])
         )
         uncertain = any(
@@ -2870,10 +2940,93 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
             and node.get("tool") == "connector_bridge"
             for node in workflow.get("nodes", [])
         )
-        if status in {"waiting_approval", "running"} or (status == "failed" and (uncertain or barrier_failed)):
+        federation = workflow.get("federation") or {}
+        federation_waiting = (
+            status == "waiting_agents"
+            and federation.get("status") in {"prepared", "dispatched"}
+        )
+        if (
+            status in {"waiting_approval", "running"}
+            or federation_waiting
+            or (status == "failed" and (uncertain or barrier_failed))
+        ):
             candidates.append(workflow)
-    candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
+
+    candidates.sort(
+        key=lambda item: item.get("updated_at") or item.get("created_at") or ""
+    )
+
     for workflow in candidates:
+        if workflow.get("status") == "waiting_agents":
+            federation = workflow.get("federation") or {}
+            artifact_id = None
+            artifact_digest = ""
+            try:
+                found = find_federation_artifact(str(federation.get("id") or ""))
+                if found is not None:
+                    artifact_id, artifact_digest = found
+            except Exception as exc:
+                append_event("federation.recovery_lookup_failed", {
+                    "workflow_id": workflow.get("id"),
+                    "federation_id": federation.get("id"),
+                    "error": str(exc),
+                })
+                if step:
+                    break
+                continue
+
+            if artifact_id is None:
+                append_event("federation.recovery_waiting", {
+                    "workflow_id": workflow.get("id"),
+                    "federation_id": federation.get("id"),
+                })
+                if step:
+                    break
+                continue
+
+            nodes = [Node(**node) for node in workflow.get("nodes", [])]
+            try:
+                ingest_federation(
+                    workflow,
+                    nodes,
+                    load_registry(),
+                    artifact_id,
+                    artifact_digest,
+                )
+            except Exception as exc:
+                workflow["status"] = "failed"
+                workflow["error"] = {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "federation_artifact_id": artifact_id,
+                }
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                append_event("federation.recovery_ingest_failed", {
+                    "workflow_id": workflow.get("id"),
+                    "federation_id": federation.get("id"),
+                    "artifact_id": artifact_id,
+                    "error": str(exc),
+                })
+            else:
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                if workflow.get("status") not in {"completed", "failed"}:
+                    run_one_step(
+                        workflow,
+                        approve_high_risk=approve_high_risk,
+                    )
+                workflow["nodes"] = [
+                    asdict(item) for item in workflow.get("nodes", nodes)
+                ]
+                persist_workflow(workflow)
+
+            state["workflows"][workflow["id"]] = workflow
+            state["last_workflow_id"] = workflow["id"]
+            resumed += 1
+            if workflow.get("status") == "failed" or step:
+                break
+            continue
+
         if step:
             run_one_step(workflow, approve_high_risk=approve_high_risk)
         else:
@@ -2883,8 +3036,10 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
         resumed += 1
         if workflow.get("status") == "failed" or step:
             break
+
     save_state(state)
     return resumed
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
