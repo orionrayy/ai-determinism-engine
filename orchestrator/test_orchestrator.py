@@ -778,6 +778,25 @@ class OrchestratorTests(unittest.TestCase):
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
         self.assertEqual(workflow["status"], "planning")
 
+    def test_resume_scheduler_does_not_rewrite_stale_state_snapshot(self):
+        older = {
+            "id": "wf-old", "goal": "old", "live": False,
+            "status": "running", "updated_at": "2026-10-02T00:00:00+00:00",
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        newer = {
+            "id": "wf-new", "goal": "new", "live": False,
+            "status": "running", "updated_at": "2026-10-02T01:00:00+00:00",
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        state = {"version": CURRENT_STATE_VERSION, "workflows": {"wf-old": older, "wf-new": newer}}
+        with patch.object(o, "run_one_step", side_effect=lambda wf, approve_high_risk=False: (wf.update({"status": "completed"}) or "completed")), \
+             patch.object(o, "persist_workflow"), \
+             patch.object(o, "save_state") as save_state:
+            count = o.resume_pending_workflows(state, step=True)
+        self.assertEqual(count, 1)
+        save_state.assert_not_called()
+
     def test_state_migration_is_idempotent(self):
         source = {
             "version": 2,
