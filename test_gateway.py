@@ -130,7 +130,7 @@ class GatewayTests(unittest.TestCase):
         self.assertIn("wattpad-romance-publisher.chapter.produce", goal)
 
     def test_structured_live_execution_fails_closed_without_private_channel(self):
-        with self.assertRaisesRegex(ValueError, "live_structured_requires_private_input_channel"):
+        with self.assertRaisesRegex(ValueError, "private_input_unavailable"):
             gateway.build_execution_event({
                 "event_id": "evt-live",
                 "domain": "wattpad-romance-publisher",
@@ -138,6 +138,31 @@ class GatewayTests(unittest.TestCase):
                 "payload": {"story_id": "s1"},
                 "requested_mode": "live",
             })
+
+    def test_structured_live_execution_stores_private_payload(self):
+        payload = {
+            "event_id": "evt-live",
+            "execution_id": "a" * 64,
+            "workflow_id": "wf-live",
+            "domain": "notion",
+            "operation": "create_page",
+            "payload": {"title": "Secret title"},
+            "requested_mode": "live",
+        }
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example.test",
+            "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
+        }, clear=True), patch.object(
+            gateway,
+            "store_private_input",
+            return_value="b" * 64,
+        ) as store:
+            goal, metadata, event_id = gateway.build_execution_event(payload)
+        store.assert_called_once()
+        self.assertEqual(event_id, "evt-live")
+        self.assertEqual(metadata["private_input_ref"], "b" * 64)
+        self.assertNotIn("Secret title", json.dumps(metadata))
+        self.assertIn("notion.create_page", goal)
 
     def test_gateway_rejects_non_positive_content_length(self):
         with self.assertRaisesRegex(ValueError, "payload size"):
