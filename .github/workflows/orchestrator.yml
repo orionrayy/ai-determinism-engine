@@ -144,6 +144,12 @@ jobs:
                     *) echo "Ignoring unrelated label"; exit 0 ;;
                   esac
                 fi
+                if [ -z "$workflow_id" ]; then
+                  echo "Approval event does not identify a target workflow"; exit 1
+                fi
+                case "$workflow_id" in
+                  *[!A-Za-z0-9_.:-]*) echo "Approval workflow ID contains unsafe characters"; exit 1 ;;
+                esac
                 goal="Resume workflow $workflow_id after approval state change."
                 ;;
               "[ORCHESTRATOR]"*)
