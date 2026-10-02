@@ -1,3 +1,15 @@
+## Strict state identity validation v39
+
+State migration now fails closed on malformed explicit schema versions and workflow identity mismatches. Legacy records without an `id` are repaired deterministically from their state key. Worker run-attempt fields are normalized and validated.
+
+## Durable output privacy v38
+
+Connector outputs no longer persist the raw bridge URL. Durable state receives a target fingerprint and sanitized discovery metadata instead, keeping deployment endpoint details out of public workflow artifacts.
+
+## Worker attempt binding v37
+
+Workflow state now binds the latest worker to both GitHub Actions run ID and run attempt. Continuation consumes both fields, preventing an earlier attempt of the same workflow run from satisfying a later continuation event.
+
 ## Reconciliation endpoint binding v36
 
 Connector recovery now binds to both the original upstream execution target and the reconciliation endpoint. A change to either target causes reconciliation to fail closed before the lookup is dispatched; the bridge runtime repeats both checks independently.
