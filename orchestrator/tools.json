@@ -143,7 +143,7 @@
     "allowed_actions": [
       "invoke"
     ],
-    "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration",
+    "cost_model": "self-hosted/free-hostable; under ORCHESTRATOR_FREE_ONLY=true, the discovered upstream route must also advertise free_tier=true",
     "risk": "high"
   },
   "local_validator": {
