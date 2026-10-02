@@ -17,10 +17,13 @@ MAX_SKEW_SECONDS = 300
 MAX_BODY_BYTES = 64 * 1024
 MAX_UPSTREAM_RESPONSE_BYTES = 128 * 1024
 IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+IDEMPOTENCY_WAIT_TIMEOUT_SECONDS = 65
 MAX_COMPLETED_ENTRIES = 128
 _LOCK = threading.Lock()
 # request_id -> (expires_at, semantic_request_digest, cached_response)
 _COMPLETED: dict[str, tuple[float, str, dict[str, Any]]] = {}
+# request_id -> (semantic_request_digest, completion_event)
+_INFLIGHT: dict[str, tuple[str, threading.Event]] = {}
 
 
 class BridgeRuntimeError(RuntimeError):
@@ -246,6 +249,47 @@ def cache_result(
         _COMPLETED[request_id] = (time.time() + ttl, semantic_digest, result)
 
 
+def acquire_idempotency_slot(
+    request_id: str,
+    semantic_digest: str,
+) -> tuple[dict[str, Any] | None, threading.Event | None, bool]:
+    """Return cached result, waiter event, and owner flag for one request identity."""
+    now = time.time()
+    with _LOCK:
+        cleanup_idempotency(now)
+        item = _COMPLETED.get(request_id)
+        if item is not None:
+            if item[1] != semantic_digest:
+                raise BridgeRuntimeError(
+                    "idempotency key conflicts with an existing request payload"
+                )
+            return item[2], None, False
+
+        inflight = _INFLIGHT.get(request_id)
+        if inflight is not None:
+            existing_digest, event = inflight
+            if existing_digest != semantic_digest:
+                raise BridgeRuntimeError(
+                    "idempotency key conflicts with an in-flight request payload"
+                )
+            return None, event, False
+
+        event = threading.Event()
+        _INFLIGHT[request_id] = (semantic_digest, event)
+        return None, event, True
+
+
+def release_idempotency_slot(
+    request_id: str,
+    event: threading.Event,
+) -> None:
+    with _LOCK:
+        current = _INFLIGHT.get(request_id)
+        if current is not None and current[1] is event:
+            _INFLIGHT.pop(request_id, None)
+        event.set()
+
+
 def reconciliation_url(route: dict[str, Any]) -> str:
     value = str(route.get("reconciliation_url") or "").strip()
     parsed = urllib.parse.urlparse(value)
@@ -448,17 +492,38 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
             "connector action is not certified for free-only execution"
         )
     semantic_digest = semantic_request_digest(payload)
-    cached = cached_result(request_id, semantic_digest)
+    cached, event, owner = acquire_idempotency_slot(request_id, semantic_digest)
     if cached is not None:
         return {**cached, "idempotent_replay": True}
-    result = dispatch_upstream(route, payload)
-    response = {
-        "ok": True,
-        "protocol": PROTOCOL,
-        "request_id": request_id,
-        "connector": connector,
-        "action": action,
-        "upstream": result,
-    }
-    cache_result(request_id, semantic_digest, response)
-    return response
+    if not owner:
+        assert event is not None
+        if not event.wait(IDEMPOTENCY_WAIT_TIMEOUT_SECONDS):
+            raise BridgeUpstreamError(
+                "timed out waiting for the original idempotent request",
+                status_code=503,
+                uncertain=True,
+            )
+        cached = cached_result(request_id, semantic_digest)
+        if cached is not None:
+            return {**cached, "idempotent_replay": True}
+        raise BridgeUpstreamError(
+            "original idempotent request did not complete successfully",
+            status_code=503,
+            uncertain=True,
+        )
+
+    assert event is not None
+    try:
+        result = dispatch_upstream(route, payload)
+        response = {
+            "ok": True,
+            "protocol": PROTOCOL,
+            "request_id": request_id,
+            "connector": connector,
+            "action": action,
+            "upstream": result,
+        }
+        cache_result(request_id, semantic_digest, response)
+        return response
+    finally:
+        release_idempotency_slot(request_id, event)

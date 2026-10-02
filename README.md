@@ -55,6 +55,12 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v57 Connector Concurrent Idempotency
+
+The connector bridge uses a per-request single-flight guard. Concurrent duplicates with the same semantic request identity wait for the original upstream execution instead of issuing a second call. A conflicting payload for the same identity fails closed. The wait is bounded; failure does not trigger a second upstream execution.
+
+This is intentionally scoped per request identity rather than a global bridge lock, preserving concurrency for unrelated requests. Provider-side idempotency and reconciliation remain required across bridge restarts or multiple bridge replicas.
+
 ## v56 Connector Bridge Correctness Hardening
 
 The connector bridge now binds its in-memory idempotency cache to a semantic request digest. Reusing the same request ID with a different connector/action/input fails closed instead of returning an unrelated cached response. Validation and the current free-only policy are re-run before replay.

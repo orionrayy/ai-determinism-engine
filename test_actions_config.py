@@ -210,6 +210,13 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("configured_gemini_model", Path("orchestrator/orchestrator.py").read_text())
         self.assertIn("not allowed by the free-only model registry", Path("orchestrator/llm_planner.py").read_text())
 
+    def test_connector_single_flight_invariant_is_wired(self):
+        bridge_runtime = (ROOT / "bridge_runtime.py").read_text()
+        self.assertIn("_INFLIGHT", bridge_runtime)
+        self.assertIn("IDEMPOTENCY_WAIT_TIMEOUT_SECONDS", bridge_runtime)
+        self.assertIn("acquire_idempotency_slot", bridge_runtime)
+        self.assertIn("release_idempotency_slot", bridge_runtime)
+
     def test_connector_bridge_free_hosting_is_not_upstream_certification(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
         bridge = registry["connector_bridge"]
