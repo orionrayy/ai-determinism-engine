@@ -112,6 +112,17 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
 
+
+    def test_control_plane_dependency_boundary_is_lightweight(self):
+        requirements = (ROOT / "requirements.txt").read_text()
+        legacy = (ROOT / "requirements-legacy.txt").read_text()
+        for package in ("torch", "numpy", "pillow", "zstandard"):
+            self.assertNotIn(package, requirements.lower())
+            self.assertIn(package, legacy.lower())
+
+    def test_render_runtime_matches_ci_python(self):
+        self.assertEqual((ROOT / ".python-version").read_text().strip(), "3.12")
+
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
