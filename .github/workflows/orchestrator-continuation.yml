@@ -61,6 +61,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
           TRIGGER_ISSUE: ${{ steps.decision.outputs.trigger_issue }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           python3 - <<'PY'
           import json, os, subprocess
