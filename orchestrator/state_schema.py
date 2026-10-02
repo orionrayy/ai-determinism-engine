@@ -6,6 +6,14 @@ from typing import Any
 CURRENT_STATE_VERSION = 4
 CURRENT_WORKFLOW_SCHEMA_VERSION = 5
 MAX_PARALLEL = 8
+MAX_REPLANS = 2
+MAX_NODE_RETRIES = 8
+RISK_LEVELS = {"low", "medium", "high", "critical"}
+NODE_STATUSES = {
+    "pending", "ready", "running", "validating", "waiting_approval",
+    "retrying", "replanning", "reconciling", "completed", "failed", "cancelled",
+}
+WORKFLOW_STATUSES = {"planning", "ready", "running", "waiting_approval", "failed", "completed", "cancelled"}
 
 
 class StateSchemaError(RuntimeError):
@@ -128,7 +136,22 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.used_steps exceeds max_steps")
         budget["max_steps"] = max_steps
         budget["used_steps"] = used_steps
-        workflow.setdefault("replan_count", 0)
+        try:
+            replan_count = int(workflow.get("replan_count", 0))
+        except (TypeError, ValueError) as exc:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.replan_count must be an integer"
+            ) from exc
+        if replan_count < 0 or replan_count > MAX_REPLANS:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.replan_count out of bounds"
+            )
+        workflow["replan_count"] = replan_count
+        status = workflow.get("status")
+        if status is not None and status not in WORKFLOW_STATUSES:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.status is invalid"
+            )
         workflow.setdefault("execution_mode", "live" if workflow.get("live") else "dry-run")
         workflow.setdefault("plan_fingerprint", None)
         if "plan_integrity" not in workflow:
@@ -154,6 +177,57 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             node.setdefault("output", {})
             node.setdefault("error", {})
             node.setdefault("contract", {})
+            if not isinstance(node.get("id"), str) or not node["id"].strip():
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node id must be a non-empty string"
+                )
+            if not isinstance(node.get("capability"), str) or not node["capability"].strip():
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node capability must be a non-empty string"
+                )
+            if not isinstance(node.get("tool"), str) or not node["tool"].strip():
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node tool must be a non-empty string"
+                )
+            if not isinstance(node.get("depends_on"), list):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r}.depends_on must be an array"
+                )
+            if any(not isinstance(dep, str) or not dep.strip() for dep in node["depends_on"]):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r}.depends_on contains an invalid id"
+                )
+            if node.get("risk") not in RISK_LEVELS:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r}.risk is invalid"
+                )
+            if node.get("status") not in NODE_STATUSES:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r}.status is invalid"
+                )
+            try:
+                retry_count = int(node.get("retry_count", 0))
+                max_retries = int(node.get("max_retries", 2))
+            except (TypeError, ValueError) as exc:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r} retry fields must be integers"
+                ) from exc
+            if (
+                retry_count < 0
+                or max_retries < 0
+                or max_retries > MAX_NODE_RETRIES
+                or retry_count > max_retries
+            ):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r} retry fields are out of bounds"
+                )
+            node["retry_count"] = retry_count
+            node["max_retries"] = max_retries
+            for field_name in ("input", "output", "error", "contract"):
+                if not isinstance(node.get(field_name), dict):
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r} node {node['id']!r}.{field_name} must be an object"
+                    )
 
     state["workflows"] = workflows
     state.setdefault("last_workflow_id", None)
