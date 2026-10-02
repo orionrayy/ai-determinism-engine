@@ -1703,9 +1703,21 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow.setdefault('repair_feedback', {})
     workflow.setdefault('evidence', {})
     workflow.setdefault('reconciliations', {})
+    workflow.setdefault(
+        'retry_jitter_seed',
+        hashlib.sha256(str(workflow['id']).encode('utf-8')).hexdigest()[:32],
+    )
+    workflow.setdefault('attempts_used', 0)
+    workflow.setdefault('max_attempts', DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+    workflow['max_attempts'] = max(
+        1,
+        min(int(workflow['max_attempts']), MAX_ATTEMPTS_PER_WORKFLOW),
+    )
+    attempt_budget = AttemptBudget(workflow)
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
+        node.input['retry_jitter_seed'] = workflow['retry_jitter_seed']
 
     if recover_barrier_failed_side_effects(workflow, nodes, registry):
         workflow['nodes'] = [asdict(node) for node in nodes]
@@ -1772,6 +1784,24 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return 'waiting_approval'
 
     node.input["context"] = build_node_context(nodes, node)
+    if not attempt_budget.acquire(node.id):
+        node.error = {
+            "type": "attempt_budget_exhausted",
+            "message": (
+                f"workflow attempt budget exhausted at "
+                f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+            ),
+            "failure_class": "permanent",
+            "retry_allowed": False,
+        }
+        transition(node, "failed")
+        workflow["status"] = "failed"
+        workflow["failed_node"] = node.id
+        workflow["nodes"] = [asdict(item) for item in nodes]
+        attempt_budget.sync()
+        persist_workflow(workflow)
+        return "failed"
+    attempt_budget.sync()
     transition(node, 'running')
     execution_id = execution_key(workflow, node)
     if side_effecting(node, registry):
