@@ -1,5 +1,10 @@
 # AI Orchestrator Core
 
+## Continuation chain binding v28
+
+`github_run_id` now tracks the latest worker Actions run that durably persisted the workflow, while `origin_github_run_id` preserves the initial run for provenance. This keeps `workflow_run` continuation correlated across multiple resume cycles.
+
+The continuation worker still resolves the workflow by exact run correlation and dispatches the exact persisted `workflow_id`; it never falls back to the global `last_workflow_id`.
 ## Route snapshot + policy integrity v27
 
 Every workflow now stores a deterministic route/policy snapshot: persisted tool choice, capability fallback candidates, node risk/action context, relevant tool policy fields, live mode, and the free-only setting.
