@@ -78,7 +78,27 @@ const envelope = {
   payload: { title: "private" },
 };
 
-let response = await call("POST", "/v1/inputs", JSON.stringify(envelope));
+let // Protocol and schema gates must fail closed.
+response = await worker.fetch(
+  new Request("https://example.test/v1/inputs", {
+    method: "POST",
+    body: JSON.stringify(envelope),
+    headers: {
+      "X-Orchestrator-Protocol": "ai-orchestrator.private-input/v2",
+      "X-Orchestrator-Timestamp": "123abc",
+      "X-Orchestrator-Signature": await sign("POST", "/v1/inputs", 123, JSON.stringify(envelope)),
+      "Content-Type": "application/json",
+    },
+  }),
+  env(),
+);
+assert.equal(response.status, 401);
+
+const unknownEnvelope = { ...envelope, extra: true };
+response = await call("POST", "/v1/inputs", JSON.stringify(unknownEnvelope));
+assert.equal(response.status, 400);
+
+response = await call("POST", "/v1/inputs", JSON.stringify(envelope));
 assert.equal(response.status, 201);
 let data = await response.json();
 assert.equal(data.ok, true);
