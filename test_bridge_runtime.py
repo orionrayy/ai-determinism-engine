@@ -277,6 +277,37 @@ class BridgeRuntimeTests(unittest.TestCase):
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
 
+    def test_upstream_http_failure_is_not_cached(self):
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+        payload = self.payload(request_id=hashlib.sha256(b"upstream-failure").hexdigest())
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+            }
+        }
+        failure = br.UpstreamConnectorError(
+            "upstream connector returned HTTP 500",
+            status_code=500,
+            uncertain=True,
+        )
+        with patch.object(
+            br, "load_routes", return_value=routes
+        ), patch.object(
+            br,
+            "dispatch_upstream",
+            side_effect=[failure, {"status_code": 200, "data": {"id": "p1"}}],
+        ) as dispatch:
+            with self.assertRaises(br.UpstreamConnectorError):
+                br.handle_request(payload, "secret")
+            result = br.handle_request(payload, "secret")
+        self.assertTrue(result["ok"])
+        self.assertEqual(dispatch.call_count, 2)
+        self.assertTrue(result["upstream"]["status_code"] == 200)
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+
     def test_same_idempotency_key_cannot_change_request_intent(self):
         request_id = hashlib.sha256(b"stable-intent-key").hexdigest()
         first_payload = self.payload(request_id=request_id)
