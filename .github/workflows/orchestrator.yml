@@ -43,7 +43,14 @@ jobs:
     if: >-
       github.event_name != 'issues' ||
       startsWith(github.event.issue.title, '[ORCHESTRATOR]') ||
-      startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]')
+      (
+        startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]') &&
+        github.event.action == 'labeled' &&
+        (
+          github.event.label.name == 'orchestrator-approved' ||
+          github.event.label.name == 'orchestrator-rejected'
+        )
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -164,6 +171,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
+          ORCHESTRATOR_APPROVAL_EVENT: ${{ github.event_name == 'issues' && github.event.action == 'labeled' && startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]') && (github.event.label.name == 'orchestrator-approved' || github.event.label.name == 'orchestrator-rejected') && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EVENT_ID: ${{ github.event.client_payload.event_id }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
