@@ -24,6 +24,12 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## State-machine bounds hardening v41
+
+- Workflow `replan_count` is now schema-bounded to 0–2, matching the runtime replan ceiling; malformed or excessive values fail closed instead of enabling unbounded replanning.
+- Persisted node `retry_count`/`max_retries` are validated and bounded (`max_retries` <= 8) so corrupted state cannot create an unbounded retry loop.
+- Node status/risk/id/capability/dependency and runtime payload container types are validated during migration before recovery can execute them.
+
 ## Approval trust-boundary hardening v40
 
 - Approval labels are now accepted only when the actor has `admin`, `maintain`, or `push` repository permission; `triage` is excluded even though it can manage issues/labels.
