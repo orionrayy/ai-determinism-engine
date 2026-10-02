@@ -392,6 +392,63 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             o.enforce_node_policy([node], {"noop": {"side_effects": []}})
 
+    def test_one_step_retry_consumes_global_attempt_budget(self):
+        workflow = {
+            "id": "wf_retry_budget",
+            "goal": "retry",
+            "live": False,
+            "execution_budget": {"max_steps": 1, "used_steps": 0},
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop", [], max_retries=2))],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", side_effect=RuntimeError("transient")):
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 1)
+        self.assertTrue(workflow["nodes"][0]["error"]["budget_exhausted"])
+
+    def test_retry_seed_is_auditable_and_changes_across_new_workflows(self):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            a = o.create_workflow("research a", live=False)
+            b = o.create_workflow("research b", live=False)
+        self.assertRegex(a["retry_seed"], r"^[0-9a-f]{32}$")
+        self.assertRegex(b["retry_seed"], r"^[0-9a-f]{32}$")
+        self.assertNotEqual(a["retry_seed"], b["retry_seed"])
+
+    def test_reconciling_completion_passes_validation_state(self):
+        workflow = self._uncertain_connector_workflow({
+            "type": "execution_uncertain",
+            "message": "timeout",
+            "execution_uncertain": True,
+            "reconciliation_required": True,
+        })
+        registry = {
+            "capability:publish": {"default_tool": "connector_bridge", "fallback_tools": []},
+            "connector_bridge": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+                "side_effects": ["external_request"],
+                "reconciliation": True,
+            },
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example/api/bridge",
+        }, clear=False), patch.object(
+            o, "load_registry", return_value=registry
+        ), patch.object(
+            o, "reconcile_connector_execution",
+            return_value={"state": "applied", "request_id": "req-1"},
+        ), patch.object(o, "update_tool_health") as health, patch.object(
+            o, "node_success_checkpoint"
+        ) as checkpoint:
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "reconciled")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertTrue(workflow["nodes"][0]["output"]["validation"]["passed"])
+        health.assert_called_once()
+        checkpoint.assert_called_once()
+
     def test_one_step_retry_reenters_running_state(self):
         workflow = {
             "id": "wf_retry",
@@ -1572,6 +1629,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["execution_mode"], "dry-run")
         self.assertEqual(workflow["schema_version"], 6)
         self.assertEqual(workflow["execution_budget"], {"max_steps": 96, "used_steps": 0})
+        self.assertRegex(workflow["retry_seed"], r"^[0-9a-f]{32}$")
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
 
     def test_workflow_creation_persists_requested_execution_budget(self):
@@ -2022,7 +2080,7 @@ class OrchestratorTests(unittest.TestCase):
             "connector_bridge": {"free_tier": True, "side_effects": ["external_request"]},
             "webhook": {"free_tier": True, "side_effects": ["external_request"]},
         }
-        error = o.ConnectorRequestError("timeout", uncertain=True, retry_allowed=False)
+        error = o.ConnectorRequestError("timeout", uncertain=True)
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=error) as execute:
                 result = o.run_one_step(workflow)
@@ -2037,6 +2095,7 @@ class OrchestratorTests(unittest.TestCase):
         node = o.Node(
             "n01", "publish", "connector_bridge", [],
             risk="high", max_retries=1,
+            input={"connector_action_idempotent": True},
         )
         workflow = {
             "id": "wf_idempotent_connector",
@@ -2053,8 +2112,8 @@ class OrchestratorTests(unittest.TestCase):
             "webhook": {"free_tier": True, "side_effects": ["external_request"]},
         }
         errors = [
-            o.ConnectorRequestError("timeout-1", uncertain=True, retry_allowed=True),
-            o.ConnectorRequestError("timeout-2", uncertain=True, retry_allowed=True),
+            o.ConnectorRequestError("timeout-1", uncertain=True),
+            o.ConnectorRequestError("timeout-2", uncertain=True),
         ]
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=errors),                  patch.object(o.time, "sleep"):
