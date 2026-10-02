@@ -36,6 +36,7 @@ try:
     from .state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .private_input import PrivateInputError, fetch_private_input
 except ImportError:
     from capability_graph import (
         QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
@@ -405,7 +406,11 @@ def enforce_node_policy(
         floor = required_risk(node, registry)
         if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
             node.risk = floor
-        if route and registry.get(f"capability:{node.capability}"):
+        if (
+            route
+            and registry.get(f"capability:{node.capability}")
+            and not node.input.get("tool_selection_pinned")
+        ):
             node.tool = route_tool(
                 node.capability,
                 registry,
@@ -1715,6 +1720,25 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     if node.tool == "github":
         return execute_github(node)
     if node.tool == "connector_bridge":
+        private_ref = str(node.input.get("private_input_ref") or "").strip()
+        if private_ref:
+            if not str(node.input.get("private_input_execution_id") or "").strip():
+                raise PrivateInputError("private input execution identity is missing")
+            if "payload" in node.input:
+                raise PrivateInputError("private connector node must not persist a payload")
+            try:
+                payload = fetch_private_input(
+                    input_ref=private_ref,
+                    execution_id=str(node.input["private_input_execution_id"]),
+                    expected_digest=str(node.input.get("private_input_digest") or ""),
+                    expected_intent_fingerprint=(
+                        str(node.input.get("private_input_intent_fingerprint") or "").strip() or None
+                    ),
+                )
+                node.input["payload"] = payload
+                return execute_connector_bridge(node, goal, dry_run)
+            finally:
+                node.input.pop("payload", None)
         return execute_connector_bridge(node, goal, dry_run)
     if node.tool == "artifact_verifier":
         return execute_artifact_verifier(node, goal)
@@ -2826,10 +2850,36 @@ def create_workflow(
     input_digest: str | None = None,
     idempotency_key: str | None = None,
     external_attempt: int | None = None,
+    private_input_ref: str | None = None,
 ) -> dict[str, Any]:
     goal = normalize_goal(goal)
     registry = load_registry()
     nodes = None
+    if live and private_input_ref and external_domain and external_operation:
+        # Structured live connector operations never send raw private input to an LLM.
+        nodes = [
+            Node(
+                id="n01-private-execute",
+                capability="execute",
+                tool="connector_bridge",
+                depends_on=[],
+                risk="high",
+                input={
+                    "goal": goal,
+                    "instruction": (
+                        f"Execute private structured connector operation "
+                        f"{external_domain}.{external_operation}."
+                    ),
+                    "connector": str(external_domain).strip().lower(),
+                    "action": str(external_operation).strip().lower(),
+                    "private_input_ref": private_input_ref,
+                    "private_input_digest": str(input_digest or ""),
+                    "private_input_intent_fingerprint": str(intent_fingerprint or ""),
+                    "private_input_execution_id": str(execution_id or ""),
+                    "tool_selection_pinned": True,
+                },
+            )
+        ]
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
         try:
             from llm_planner import plan_goal
@@ -2874,6 +2924,7 @@ def create_workflow(
         "input_digest": input_digest,
         "idempotency_key": idempotency_key,
         "external_attempt": int(external_attempt or 1),
+        "private_input_ref": private_input_ref,
         "origin_github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
         "github_run_attempt": (
@@ -3152,6 +3203,7 @@ def main() -> int:
         input_digest=input_digest,
         idempotency_key=idempotency_key,
         external_attempt=external_attempt,
+        private_input_ref=os.environ.get("ORCHESTRATOR_PRIVATE_INPUT_REF", "").strip() or None,
     )
     workflow['status'] = 'ready'
     state['workflows'][workflow['id']] = workflow
