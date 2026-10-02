@@ -210,21 +210,39 @@ def save_state(state: dict[str, Any]) -> None:
 def persist_workflow(workflow: dict[str, Any]) -> None:
     state = load_state()
     current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
+    current_run_attempt_raw = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
+    current_run_attempt = (
+        int(current_run_attempt_raw) if current_run_attempt_raw.isdigit() else None
+    )
     if current_run_id:
         previous_run_id = str(workflow.get("github_run_id") or "").strip() or None
+        previous_run_attempt = workflow.get("github_run_attempt")
         origin_run_id = (
             str(workflow.get("origin_github_run_id") or "").strip()
             or previous_run_id
             or current_run_id
         )
+        origin_run_attempt = (
+            workflow.get("origin_github_run_attempt")
+            if workflow.get("origin_github_run_attempt") is not None
+            else (previous_run_attempt if previous_run_id else current_run_attempt)
+        )
         workflow["origin_github_run_id"] = origin_run_id
+        workflow["origin_github_run_attempt"] = origin_run_attempt
         workflow["github_run_id"] = current_run_id
-        if previous_run_id != current_run_id:
+        workflow["github_run_attempt"] = current_run_attempt
+        if (
+            previous_run_id != current_run_id
+            or previous_run_attempt != current_run_attempt
+        ):
             append_event("workflow.worker_run_rebound", {
                 "workflow_id": workflow["id"],
                 "previous_run_id": previous_run_id,
+                "previous_run_attempt": previous_run_attempt,
                 "current_run_id": current_run_id,
+                "current_run_attempt": current_run_attempt,
                 "origin_run_id": origin_run_id,
+                "origin_run_attempt": origin_run_attempt,
             })
     workflow["updated_at"] = utc_now()
     state.setdefault("workflows", {})[workflow["id"]] = workflow
