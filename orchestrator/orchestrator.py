@@ -34,7 +34,7 @@ try:
         execute_connector_bridge,
         reconcile_connector_execution,
     )
-    from .evidence import build_evidence
+    from .evidence import build_evidence, sanitize_for_durable
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
     from .state_schema import (
@@ -67,7 +67,7 @@ except ImportError:
         execute_connector_bridge,
         reconcile_connector_execution,
     )
-    from evidence import build_evidence
+    from evidence import build_evidence, sanitize_for_durable
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
     from state_schema import (
@@ -1137,9 +1137,14 @@ def _write_workflow_shard(workflow: dict[str, Any]) -> None:
         })
     except StateSchemaError as exc:
         raise RuntimeError(f"invalid workflow state: {exc}") from exc
+    durable_workflow = sanitize_for_durable(
+        migrated["workflows"][workflow_id]
+    )
+    if not isinstance(durable_workflow, dict):
+        raise RuntimeError("sanitized workflow state must remain an object")
     write_json(
         workflow_shard_path(workflow_id),
-        migrated["workflows"][workflow_id],
+        durable_workflow,
     )
 
 
@@ -2275,7 +2280,7 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     checkpoint = {
         "workflow": workflow["id"],
-        "node": asdict(node),
+        "node": sanitize_for_durable(asdict(node)),
         "ts": utc_now(),
     }
     checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
