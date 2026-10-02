@@ -20,6 +20,68 @@ class OrchestratorTests(unittest.TestCase):
         self._actions_env.start()
         self.addCleanup(self._actions_env.stop)
 
+    def test_private_connector_payload_is_fetched_just_in_time_and_scrubbed(self):
+        node = o.Node(
+            id="n01-private",
+            capability="execute",
+            tool="connector_bridge",
+            risk="high",
+            input={
+                "workflow_id": "wf-private",
+                "connector": "notion",
+                "action": "create_page",
+                "private_input_ref": "b" * 64,
+                "private_input_digest": "d" * 64,
+                "private_input_intent_fingerprint": "f" * 64,
+                "private_input_execution_id": "e" * 64,
+            },
+        )
+        seen = {}
+
+        def fake_execute(runtime_node, goal, dry_run):
+            seen["payload"] = dict(runtime_node.input["payload"])
+            return {"ok": True}
+
+        with patch.object(
+            o, "fetch_private_input", return_value={"title": "Secret"}
+        ) as fetch, patch.object(
+            o, "execute_connector_bridge", side_effect=fake_execute
+        ):
+            result = o.execute_node(node, "private goal", dry_run=False)
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(seen["payload"], {"title": "Secret"})
+        self.assertNotIn("payload", node.input)
+        fetch.assert_called_once()
+
+    def test_private_structured_live_plan_avoids_llm(self):
+        registry = {
+            "connector_bridge": {
+                "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+                "secret_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET",
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_LLM_PLANNER": "false"}, clear=False), patch.object(
+            o, "load_registry", return_value=registry
+        ):
+            workflow = o.create_workflow(
+                "Execute private notion.create_page",
+                live=True,
+                execution_id="e" * 64,
+                external_domain="notion",
+                external_operation="create_page",
+                intent_fingerprint="f" * 64,
+                input_digest="d" * 64,
+                private_input_ref="b" * 64,
+            )
+        self.assertEqual(len(workflow["nodes"]), 1)
+        node = workflow["nodes"][0]
+        self.assertEqual(node["tool"], "connector_bridge")
+        self.assertEqual(node["input"]["private_input_ref"], "b" * 64)
+        self.assertNotIn("payload", node["input"])
+
     def test_credential_free_research_prefers_wikipedia(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = {
