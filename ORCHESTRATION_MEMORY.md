@@ -5,6 +5,7 @@
 This file is the durable, version-controlled memory of the AI orchestration control plane. Before modifying the orchestrator, treat this document and the current source tree as the source of truth. Do not assume older conversation state is still accurate without checking the repository.
 
 ## Execution preflight + resume plan immutability v25
+- Terminal `completed` and `cancelled` workflows are idempotent on resume: the worker does not re-enter execution or emit a duplicate side effect.
 
 - Persisted workflow plans are no longer re-routed during resume before plan-integrity verification. Tool selection is treated as part of the durable intent and changes only during explicit replanning or initial plan construction.
 - Initial workflow creation still routes each node through the capability graph so free-tier, credential availability, risk, and health are considered before the plan is persisted.
@@ -16,7 +17,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: approval intent binding v23 plus its v24 hotfix, on top of durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; live side effects require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
+Current main baseline for this branch: execution preflight + resume plan immutability v25, on top of approval intent binding v23 plus its v24 hotfix, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; live side effects require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
