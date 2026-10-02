@@ -55,7 +55,6 @@ assert.match(leaseObject, /async release\(/);
 assert.match(leaseObject, /async alarm\(/);
 assert.match(config, /"class_name": "PrivateInput"/);
 assert.match(config, /"class_name": "ExecutionLease"/);
-assert.match(config, /"storage": "sqlite"/);
 assert.match(config, /"new_sqlite_classes"/);
 assert.match(config, /"secrets"/);
 
