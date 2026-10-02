@@ -152,32 +152,25 @@ class GatewayTests(unittest.TestCase):
             gateway.build_execution_event(payload)
 
     def test_structured_live_dispatch_failure_cleans_private_input(self):
-        payload = {
-            "event_id": "evt-cleanup",
-            "execution_id": "a" * 64,
-            "workflow_id": "wf-cleanup",
-            "domain": "notion",
-            "operation": "create_page",
-            "payload": {"title": "secret"},
-            "requested_mode": "live",
-        }
-        with patch.dict(os.environ, {
-            "GATEWAY_SHARED_SECRET": "gateway",
-            "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example.test",
-            "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
-            "GITHUB_GATEWAY_TOKEN": "token",
-            "GITHUB_REPOSITORY": "owner/repo",
-        }, clear=True), patch.object(
-            gateway, "store_private_input", return_value="b" * 64
-        ), patch.object(
+        metadata = {"private_input_ref": "b" * 64}
+        with patch.object(
             gateway, "github_dispatch", side_effect=RuntimeError("dispatch down")
         ), patch.object(
             gateway, "delete_private_input", return_value=True
         ) as cleanup:
             with self.assertRaises(RuntimeError):
-                gateway.build_execution_event(payload)
-            # Build alone must not dispatch; cleanup belongs to Handler.do_POST.
-            cleanup.assert_not_called()
+                gateway.dispatch_execution("goal", metadata, event_id="evt-cleanup")
+        cleanup.assert_called_once_with("b" * 64)
+
+    def test_dispatch_cleanup_does_not_mask_original_error(self):
+        metadata = {"private_input_ref": "b" * 64}
+        with patch.object(
+            gateway, "github_dispatch", side_effect=RuntimeError("dispatch down")
+        ), patch.object(
+            gateway, "delete_private_input", side_effect=RuntimeError("cleanup down")
+        ):
+            with self.assertRaisesRegex(RuntimeError, "dispatch down"):
+                gateway.dispatch_execution("goal", metadata, event_id="evt-cleanup")
 
     def test_structured_live_execution_stores_private_payload(self):
         payload = {
