@@ -42,9 +42,23 @@ def _candidates(registry: dict[str, dict[str, Any]], capability: str) -> list[st
     return list(dict.fromkeys(str(value) for value in values if value))
 
 
+def free_only_enabled() -> bool:
+    value = os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").strip().lower()
+    return value not in {"0", "false", "no", "off", "disabled"}
+
+def _configured_model(tool: str, registry: dict[str, dict[str, Any]]) -> str:
+    env_name = str(registry.get(tool, {}).get("model_env") or "").strip()
+    return os.environ.get(env_name, "").strip() if env_name else ""
+
 def _free(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
     spec = registry.get(tool, {})
-    return bool(spec.get("free_tier", False))
+    if not bool(spec.get("free_tier", False)):
+        return False
+    allowed_models = spec.get("free_models") or []
+    if not allowed_models:
+        return True
+    model = _configured_model(tool, registry)
+    return model in {str(value).strip() for value in allowed_models}
 
 
 def _requires_env(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
@@ -60,7 +74,7 @@ def _env_available(tool: str, registry: dict[str, dict[str, Any]], live: bool) -
 
 
 def _free_allowed(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
-    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() != "true":
+    if not free_only_enabled():
         return True
     return _free(tool, registry)
 
