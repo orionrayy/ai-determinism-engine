@@ -59,6 +59,7 @@ class ExecutionLeaseTests(unittest.TestCase):
             "ok": True,
             "start_attempt": 8,
             "used_attempts": 8,
+            "lease_until": int(__import__("time").time()) + 600,
         }), patch.dict(os.environ, {
             "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
             "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
