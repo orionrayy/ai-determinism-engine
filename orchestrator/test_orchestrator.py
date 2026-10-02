@@ -830,6 +830,12 @@ class OrchestratorTests(unittest.TestCase):
             )
             self.assertIsNotNone(duplicate)
 
+    def test_new_workflow_ids_are_collision_resistant(self):
+        ids = {o.new_id("wf") for _ in range(256)}
+        self.assertEqual(len(ids), 256)
+        self.assertTrue(all(item.startswith("wf_") for item in ids))
+        self.assertTrue(all(len(item.split("_", 1)[1]) == 32 for item in ids))
+
     def test_workflow_creation_is_persistable(self):
         workflow = o.create_workflow("build a small website", live=False)
         self.assertTrue(workflow["id"].startswith("wf_"))
