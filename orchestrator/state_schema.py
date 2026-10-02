@@ -19,11 +19,40 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def _strict_schema_version(value: Any, *, default: int, field_name: str) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise StateSchemaError(f"{field_name} must be an integer") from exc
+
+
+def _strict_optional_positive_int(
+    value: Any,
+    *,
+    field_name: str,
+) -> int | None:
+    if value is None:
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise StateSchemaError(f"{field_name} must be an integer or null") from exc
+    if parsed < 1:
+        raise StateSchemaError(f"{field_name} must be >= 1")
+    return parsed
+
+
 def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(state, dict):
         raise StateSchemaError("state must be an object")
 
-    version = _as_int(state.get("version"), 1)
+    version = _strict_schema_version(
+        state.get("version"),
+        default=1,
+        field_name="state.version",
+    )
     if version > CURRENT_STATE_VERSION:
         raise StateSchemaError(
             f"state version {version} is newer than supported version {CURRENT_STATE_VERSION}"
@@ -39,9 +68,16 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(workflow, dict):
             raise StateSchemaError(f"workflow {workflow_id!r} must be an object")
 
-        workflow_version = _as_int(
+        if workflow.get("id") is None:
+            workflow["id"] = str(workflow_id)
+        if str(workflow.get("id")) != str(workflow_id):
+            raise StateSchemaError(
+                f"workflow key {workflow_id!r} does not match workflow.id {workflow.get('id')!r}"
+            )
+        workflow_version = _strict_schema_version(
             workflow.get("schema_version"),
-            1,
+            default=1,
+            field_name=f"workflow {workflow_id!r}.schema_version",
         )
         if workflow_version > CURRENT_WORKFLOW_SCHEMA_VERSION:
             raise StateSchemaError(
@@ -64,6 +100,14 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             workflow.get("github_run_attempt"),
         )
         workflow.setdefault("github_run_attempt", None)
+        workflow["github_run_attempt"] = _strict_optional_positive_int(
+            workflow.get("github_run_attempt"),
+            field_name=f"workflow {workflow_id!r}.github_run_attempt",
+        )
+        workflow["origin_github_run_attempt"] = _strict_optional_positive_int(
+            workflow.get("origin_github_run_attempt"),
+            field_name=f"workflow {workflow_id!r}.origin_github_run_attempt",
+        )
         workflow.setdefault("execution_budget", {
             "max_steps": 96,
             "used_steps": 0,
