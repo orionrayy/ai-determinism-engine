@@ -2632,8 +2632,8 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
 def notify_execution_callback(workflow: dict[str, Any]) -> bool:
     """Durable terminal callback outbox with stable request identity."""
     callback = workflow.setdefault("callback", {})
-    if isinstance(callback, dict) and callback.get("status") == "sent":
-        return True
+    if isinstance(callback, dict) and callback.get("status") in {"sent", "dead_letter", "disabled"}:
+        return callback.get("status") == "sent"
     url = os.environ.get("ORCHESTRATOR_CALLBACK_URL", "").strip()
     secret = os.environ.get("ORCHESTRATOR_CALLBACK_SECRET", "")
     execution_id = str(workflow.get("execution_id") or "").strip()
@@ -2686,7 +2686,14 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    for _ in range(3):
+    attempts = int(callback.get("attempts", 0)) if isinstance(callback, dict) else 0
+    remaining_attempts = min(3, max(0, 12 - attempts))
+    if remaining_attempts == 0:
+        if isinstance(callback, dict):
+            callback["status"] = "dead_letter"
+            callback["last_error"] = "callback retry budget exhausted"
+        return False
+    for _ in range(remaining_attempts):
         timestamp = str(int(time.time()))
         signature = "sha256=" + hmac.new(
             secret.encode("utf-8"),
@@ -2723,7 +2730,11 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
         except Exception:
             pass
         time.sleep(1)
-    callback["status"] = "pending"
+    callback["status"] = (
+        "dead_letter"
+        if int(callback.get("attempts", 0)) >= 12
+        else "pending"
+    )
     callback["last_error"] = "callback delivery failed after bounded retries"
     append_event(
         "callback.failed",
