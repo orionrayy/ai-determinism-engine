@@ -99,6 +99,47 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["plan_integrity"], "verified")
         self.assertEqual(workflow["nodes"][0]["tool"], "noop")
 
+    def test_running_safe_node_is_rearmed_after_runner_interruption(self):
+        node = o.Node("n01", "execute", "noop", [], status="running")
+        workflow = {
+            "id": "wf_safe_recovery",
+            "goal": "recover safe node",
+            "status": "running",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", return_value={"ok": True}) as execute:
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 1)
+
+    def test_postcondition_failure_after_side_effect_does_not_replan(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", max_retries=2,
+            input={"approval_granted": True, "url": "https://example.test/hook"},
+            contract={"postconditions": [{"type": "field_equals", "field": "status", "value": "published"}]},
+        )
+        workflow = {
+            "id": "wf_postcondition_fence",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(o.os.environ, {
+                "ORCHESTRATOR_FREE_ONLY": "true",
+                "ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook",
+            }, clear=False),                  patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "commit_side_effect_start", return_value=True),                  patch.object(o, "execute_node", return_value={"status": "queued"}) as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["replan_count"], 0)
+        self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
+        self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
+
     def test_execution_budget_blocks_before_side_effect_barrier(self):
         node = o.Node(
             "n01-publish", "publish", "webhook", [], risk="high",
