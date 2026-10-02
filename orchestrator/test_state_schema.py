@@ -129,6 +129,37 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_oversized_goal_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "goal": "x" * 4001,
+                        "nodes": [],
+                    }
+                },
+            })
+
+    def test_oversized_node_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "goal": "x",
+                        "nodes": [{
+                            "id": "n01",
+                            "capability": "execute",
+                            "tool": "noop",
+                            "input": {"instruction": "x" * (32 * 1024)},
+                        }],
+                    }
+                },
+            })
+
     def test_replan_count_and_retry_budget_are_bounded(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
