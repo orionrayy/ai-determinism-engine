@@ -104,9 +104,9 @@ Free execution path: GitHub Actions + stdlib Python control plane.
 
 Structured live connector inputs now have a deployable zero-dollar reference backend at `workers/private-input/`. It uses Cloudflare Workers Free with a SQLite-backed Durable Object. Each opaque `input_ref` maps to one Durable Object instance, keeping raw payloads outside public GitHub state while providing strongly consistent, transactional storage and per-input TTL cleanup.
 
-Current Workers Free Durable Object allowances include 100,000 requests/day, 13,000 GB-s/day, 5 million SQLite rows read/day, 100,000 rows written/day, and 5 GB total SQLite storage. These are finite free quotas, not unlimited capacity. citeturn182528search0turn182683search0
+Current Workers Free Durable Object allowances include 100,000 requests/day, 13,000 GB-s/day, 5 million SQLite rows read/day, 100,000 rows written/day, and 5 GB total SQLite storage. These are finite free quotas, not unlimited capacity. (Cloudflare Workers Durable Objects documentation)
 
-The design intentionally avoids Workers KV for the authoritative ingress path. KV is free and persistent, but reads are eventually consistent and a write may take up to about 60 seconds or more to become visible in another global location; that is a poor fit for a short-lived request handoff. citeturn593529search0
+The design intentionally avoids Workers KV for the authoritative ingress path. KV is free and persistent, but reads are eventually consistent and a write may take up to about 60 seconds or more to become visible in another global location; that is a poor fit for a short-lived request handoff. (Cloudflare Workers KV consistency documentation)
 
 Deployment is manual through `.github/workflows/private-input-deploy.yml`, with Wrangler pinned to `4.146.0`. The workflow requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and `ORCHESTRATOR_PRIVATE_INPUT_SECRET`. The repository does not claim the Worker is deployed until a real account deployment and `/health` check succeed.
 
