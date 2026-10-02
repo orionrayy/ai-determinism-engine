@@ -1859,82 +1859,78 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 })
                 return 'failed'
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
-    attempts = node.retry_count
-    while True:
-        try:
-            node.output = execute_node(node, workflow['goal'], dry_run=not live)
-            node.output['validation'] = validate_node_output(node, node.output)
-            transition(node, 'validating')
-            transition(node, 'completed')
-            if side_effecting(node, registry):
-                mark_execution_completed(workflow, execution_id, node.output)
-            update_tool_health(node, True, registry)
-            node_success_checkpoint(workflow, node)
-            append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
-            notify_issue(
-                workflow,
-                'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
+    success, error = execute_with_retries(
+        node,
+        workflow['goal'],
+        dry_run=not live,
+        attempt_budget=attempt_budget,
+        initial_attempt_reserved=True,
+        before_retry=(
+            lambda: (
+                attempt_budget.sync(),
+                workflow.__setitem__('nodes', [asdict(item) for item in nodes]),
+                persist_workflow(workflow),
             )
-            workflow['nodes'] = [asdict(item) for item in nodes]
+            if side_effecting(node, registry)
+            else None
+        ),
+    )
+    attempt_budget.sync()
+
+    if success:
+        if side_effecting(node, registry):
+            mark_execution_completed(workflow, execution_id, node.output)
+        update_tool_health(node, True, registry)
+        node_success_checkpoint(workflow, node)
+        append_event('node.completed', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'tool': node.tool,
+        })
+        notify_issue(
+            workflow,
+            'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
+        )
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        if all(item.status == 'completed' for item in nodes):
+            workflow['status'] = 'completed'
             persist_workflow(workflow)
-            if all(item.status == 'completed' for item in nodes):
-                workflow['status'] = 'completed'
-                persist_workflow(workflow)
-                append_event('workflow.completed', {'workflow_id': workflow['id']})
-                return 'completed'
-            return 'completed_step'
-        except Exception as exc:
-            node.error = {
-                'type': type(exc).__name__,
-                'message': str(exc),
-                'trace': traceback.format_exc(limit=4),
-            }
-            failure_class, can_retry, uncertain = execution_failure_policy(
-                node,
-                exc,
-                registry,
-                dry_run=not live,
-            )
-            if attempts < node.max_retries and can_retry:
-                attempts += 1
-                node.retry_count = attempts
-                transition(node, 'retrying')
-                delay = deterministic_retry_delay(workflow['id'], node.id, attempts)
-                append_event('node.retrying', {
-                    'workflow_id': workflow['id'],
-                    'node_id': node.id,
-                    'attempt': attempts,
-                    'error': str(exc),
-                    'execution_uncertain': uncertain,
-                    'failure_class': failure_class,
-                    'retry_delay': delay,
-                })
-                time.sleep(delay)
-                transition(node, 'ready')
-                transition(node, 'running')
-                continue
-            transition(node, 'failed')
-            update_tool_health(node, False, registry)
-            if uncertain:
-                append_event('node.execution_uncertain', {
-                    'workflow_id': workflow['id'],
-                    'node_id': node.id,
-                    'error': node.error,
-                })
-            append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
-            notify_issue(
-                workflow,
-                'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
-            )
-            if not uncertain and not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
-                workflow['nodes'] = [asdict(item) for item in nodes]
-                persist_workflow(workflow)
-                return 'replanned'
-            workflow['status'] = 'failed'
-            workflow['failed_node'] = node.id
-            workflow['nodes'] = [asdict(item) for item in nodes]
-            persist_workflow(workflow)
-            return 'failed'
+            append_event('workflow.completed', {'workflow_id': workflow['id']})
+            return 'completed'
+        return 'completed_step'
+
+    update_tool_health(node, False, registry)
+    if node.error.get('execution_uncertain'):
+        append_event('node.execution_uncertain', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'error': node.error,
+        })
+    append_event('node.failed', {
+        'workflow_id': workflow['id'],
+        'node_id': node.id,
+        'error': node.error,
+    })
+    notify_issue(
+        workflow,
+        'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
+    )
+    if (
+        not node.error.get('execution_uncertain')
+        and not node.error.get('replan_blocked_after_side_effect_start')
+        and replan_after_failure(workflow, nodes, node, registry)
+    ):
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'replanned'
+    workflow['status'] = 'failed'
+    workflow['failed_node'] = node.id
+    workflow['nodes'] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
+    return 'failed'
+
+
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
     nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
