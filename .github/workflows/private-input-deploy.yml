@@ -46,7 +46,16 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
-          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --secrets-file /tmp/private-input-secrets.env
+          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --secrets-file /tmp/private-input-secrets.env 2>&1 | tee /tmp/private-input-deploy.log
+
+      - name: Verify deployed Worker
+        run: |
+          set -euo pipefail
+          worker_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/private-input-deploy.log | tail -1 || true)"
+          test -n "$worker_url"
+          health="$(curl --fail --silent --show-error --max-time 20 "$worker_url/health")"
+          printf '%s\n' "$health"
+          printf '### Private-input Worker\n\n%s\n\nHealth: %s\n' "$worker_url" "$health" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup secret file
         if: always()
