@@ -55,6 +55,12 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v45 Reliability Hardening
+
+The gateway HMAC covers timestamp, HTTP method, request path, optional `Idempotency-Key`, and the raw body; header names are normalized case-insensitively. Unkeyed unstructured events receive a deterministic event identity that is propagated as the workflow identity for replay serialization.
+
+The orchestrator persists a newly created workflow before its first execution step and no longer writes a stale caller snapshot after execution. Continuations carry the exact GitHub Actions run ID and run attempt into the dispatch step, and source Issue triggers explicitly bind the Issue action event.
+
 ## Gateway
 
 Set these environment variables on the gateway service:
