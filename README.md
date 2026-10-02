@@ -1,3 +1,7 @@
+## Reconciliation target binding v34
+
+Recovery now binds reconciliation to the same connector target and normalized action contract observed during the failed execution. A target or contract change causes reconciliation to fail closed before the recovery lookup is sent. The bridge runtime repeats the target comparison as an independent boundary.
+
 ## Upstream failure boundary v33
 
 The connector bridge no longer treats an upstream non-2xx response as a successful cached operation. Typed upstream failures prevent false `completed` states and preserve the distinction between uncertain 5xx/network failures and non-uncertain 4xx failures. The orchestrator adapter independently rejects nested upstream non-2xx statuses as a second safety boundary.
