@@ -8,7 +8,9 @@ from unittest.mock import patch
 
 from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
 
-import orchestrator as o
+import importlib
+
+o = importlib.import_module("orchestrator.orchestrator")
 
 
 class OrchestratorTests(unittest.TestCase):
