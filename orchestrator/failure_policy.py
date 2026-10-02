@@ -96,12 +96,12 @@ def decide_retry(
 
     if is_uncertain:
         normalized = "uncertain"
-        if side_effect_started and idempotent:
+        if idempotent:
             return {
                 "failure_class": normalized,
                 "retry_allowed": True,
                 "uncertain": True,
-                "reason": "uncertain_idempotent_side_effect",
+                "reason": "uncertain_idempotent_operation",
             }
         return {
             "failure_class": normalized,
