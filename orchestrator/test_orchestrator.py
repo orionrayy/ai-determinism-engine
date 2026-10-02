@@ -803,6 +803,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(workflow["id"].startswith("wf_"))
         self.assertEqual(workflow["status"], "planning")
         self.assertEqual(workflow["execution_mode"], "dry-run")
+        self.assertEqual(workflow["schema_version"], 3)
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
 
     def test_plan_is_acyclic(self):
