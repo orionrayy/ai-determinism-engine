@@ -3,11 +3,20 @@
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
-  "kv_namespaces": [
-    {
-      "binding": "PRIVATE_INPUTS"
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PRIVATE_INPUTS",
+        "class_name": "PrivateInput"
+      }
+    ]
+  },
+  "exports": {
+    "PrivateInput": {
+      "type": "durable-object",
+      "storage": "sqlite"
     }
-  ],
+  },
   "secrets": {
     "required": ["ORCHESTRATOR_PRIVATE_INPUT_SECRET"]
   }
