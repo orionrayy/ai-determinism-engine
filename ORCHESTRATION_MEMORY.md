@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + v38 health-state sharding/federation recovery + earlier durable control-plane generations.
+Current main baseline: orchestration hardening v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -71,6 +71,12 @@ Current execution-fabric branch: `main`
 - `save_state()` remains only as a compatibility/bootstrap migration writer; normal runtime execution uses `persist_workflow()` exclusively.
 - Storage format is explicitly tagged `sharded-v1`; the schema version remains unchanged because the workflow contract is unchanged.
 - No database, event bus, paid queue, or paid API is introduced. The control plane remains GitHub Actions + stdlib Python and free-first.
+
+## Orchestration hardening v49 — targeted workflow hydration
+- `load_workflow(workflow_id)` loads only the canonical workflow shard when the workflow identity is already known, avoiding full-state hydration on ordinary continuation/targeted execution paths.
+- The loader falls back to the legacy monolithic state only when the target shard does not yet exist, preserving incremental migration compatibility.
+- `main --workflow-id` now uses targeted hydration; global `--resume`, `--list`, and event-id deduplication still use `load_state()` because they require a repository-wide workflow view.
+- No new database, cache, service, or runtime dependency is introduced; the optimization reduces read amplification while retaining the existing fail-closed schema and identity checks.
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
