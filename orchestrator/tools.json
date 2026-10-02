@@ -125,6 +125,7 @@
     "required_env": "GEMINI_API_KEY",
     "side_effects": [],
     "free_tier": true,
+    "model_env": "GEMINI_MODEL",
     "free_models": [
       "gemini-3.8-flash"
     ],
