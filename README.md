@@ -1,3 +1,7 @@
+## Approval trust-boundary hardening v40
+
+High-risk orchestration approval now requires a write-capable repository role (`push`, `maintain`, or `admin`). The `triage` role is excluded because it can manage issues and labels without code-write access.
+
 ## Strict state identity validation v39
 
 State migration now fails closed on malformed explicit schema versions and workflow identity mismatches. Legacy records without an `id` are repaired deterministically from their state key. Worker run-attempt fields are normalized and validated.
