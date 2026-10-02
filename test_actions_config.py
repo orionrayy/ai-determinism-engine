@@ -60,5 +60,13 @@ class ActionsConfigTests(unittest.TestCase):
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
+    def test_state_persistence_retries_after_main_advances(self):
+        self.assertIn("git fetch origin main", self.orchestrator)
+        self.assertIn("git rebase origin/main", self.orchestrator)
+        self.assertIn("for attempt in 1 2 3", self.orchestrator)
+        self.assertIn("git push origin HEAD:main", self.orchestrator)
+        self.assertIn("State persistence rebase conflict; refusing to overwrite concurrent main state.", self.orchestrator)
+        self.assertIn("State persistence push failed after bounded retries.", self.orchestrator)
+
 if __name__ == '__main__':
     unittest.main()
