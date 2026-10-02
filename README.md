@@ -1,3 +1,7 @@
+## Upstream failure boundary v33
+
+The connector bridge no longer treats an upstream non-2xx response as a successful cached operation. Typed upstream failures prevent false `completed` states and preserve the distinction between uncertain 5xx/network failures and non-uncertain 4xx failures. The orchestrator adapter independently rejects nested upstream non-2xx statuses as a second safety boundary.
+
 ## Connector target binding v32
 
 Connector requests now bind retry semantics to a hashed upstream target identity in addition to the action contract. If the configured upstream target changes while a request is being retried, the control plane rejects the retry before another POST. The bridge runtime also includes that target identity in its local idempotency fingerprint, preventing an old cached result from being replayed against a different target.
