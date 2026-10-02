@@ -1006,6 +1006,36 @@ class OrchestratorTests(unittest.TestCase):
                 self.assertEqual(statuses[-1], 'completed')
                 self.assertEqual(workflow['status'], 'completed')
                 self.assertTrue(all(node['status'] == 'completed' for node in workflow['nodes']))
+    def test_parallel_batch_preflight_failure_does_not_strand_siblings(self):
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel_preflight",
+            "goal": "parallel preflight",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 2,
+            "execution_budget": {"max_steps": 4, "used_steps": 0},
+            "nodes": [o.asdict(node) for node in nodes],
+        }
+        registry = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(
+                     o,
+                     "preflight_node",
+                     side_effect=[None, RuntimeError("second node unavailable")],
+                 ),                  patch.object(o, "replan_after_failure", return_value=False),                  patch.object(o, "execute_node") as execute:
+                o.run_workflow(workflow)
+
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(workflow["failed_node"], "n02-b")
+        self.assertEqual(workflow["nodes"][0]["status"], "ready")
+        self.assertEqual(workflow["nodes"][1]["status"], "failed")
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 0)
+        execute.assert_not_called()
+
     def test_parallel_batch_is_bounded_by_remaining_execution_budget(self):
         nodes = [
             o.Node("n01-a", "execute", "noop", []),
