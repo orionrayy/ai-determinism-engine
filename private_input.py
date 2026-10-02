@@ -94,6 +94,8 @@ def request_signature(
         + b"\n"
         + normalized_path.encode("utf-8")
         + b"\n"
+        + PROTOCOL.encode("utf-8")
+        + b"\n"
         + str(timestamp).encode("utf-8")
         + b"\n"
         + body
