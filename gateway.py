@@ -212,7 +212,17 @@ class Handler(BaseHTTPRequestHandler):
                     or None
                 )
             result = github_dispatch(goal, metadata, event_id=event_id)
-            self._send(202, {"ok": True, "queued": True, **result})
+            receipt = {"ok": True, "queued": True, **result}
+            if isinstance(metadata, dict):
+                for field in (
+                    "request_id", "execution_id", "workflow_id",
+                    "intent_fingerprint", "input_digest", "attempt",
+                ):
+                    if field in metadata and metadata[field] not in (None, ""):
+                        receipt[field] = metadata[field]
+            if "request_id" not in receipt:
+                receipt["request_id"] = str(event_id or "")
+            self._send(202, receipt)
         except ValueError as exc:
             self._send(400, {"ok": False, "error": str(exc)})
         except Exception as exc:
