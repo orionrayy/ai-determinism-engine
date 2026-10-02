@@ -285,7 +285,7 @@ class PrivateInputTests(unittest.TestCase):
         }, clear=True), patch.object(pi.urllib.request, "urlopen", side_effect=fake_urlopen):
             self.assertTrue(pi.delete_private_input("a" * 64))
         self.assertEqual(captured["request"].method, "DELETE")
-        timestamp = int(captured["request"].get_header("X-Orchestrator-timestamp"))
+        timestamp = int(captured["request"].get_header("X-orchestrator-timestamp"))
         expected = pi.request_signature(
             method="DELETE",
             path="/v1/inputs/" + "a" * 64,
