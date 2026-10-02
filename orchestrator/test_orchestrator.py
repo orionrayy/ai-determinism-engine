@@ -1655,6 +1655,16 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(nodes), 9)
         self.assertEqual(nodes[-1].capability, "notify")
 
+    def test_validate_dag_rejects_unsafe_and_oversized_node_ids(self):
+        with self.assertRaisesRegex(ValueError, "unsafe node id"):
+            o.validate_dag([
+                o.Node("../escape", "execute", "noop", []),
+            ])
+        with self.assertRaisesRegex(ValueError, "exceeds 100"):
+            o.validate_dag([
+                o.Node("n" * 101, "execute", "noop", []),
+            ])
+
     def test_cycle_is_rejected(self):
         a = o.Node("a", "x", "noop", ["b"])
         b = o.Node("b", "x", "noop", ["a"])
