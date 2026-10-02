@@ -11,19 +11,29 @@ import bridge_runtime as br
 
 
 class BridgeRuntimeTests(unittest.TestCase):
-    def payload(self, request_id=None):
-        request_id = request_id or hashlib.sha256(b"wf:n1").hexdigest()
-        return {
+    def payload(self, request_id=None, input_value=None):
+        input_value = {"title": "Hello"} if input_value is None else input_value
+        payload = {
             "protocol": br.PROTOCOL,
-            "request_id": request_id,
             "workflow_id": "wf",
             "node_id": "n1",
             "connector": "notion",
             "action": "create_page",
             "goal": "create",
-            "input": {"title": "Hello"},
+            "input": input_value,
             "sent_at": int(time.time()),
         }
+        payload["request_id"] = (
+            request_id
+            or br.connector_request_id(
+                payload["workflow_id"],
+                payload["node_id"],
+                payload["connector"],
+                payload["action"],
+                payload["input"],
+            )
+        )
+        return payload
 
     def test_signature_is_verified_with_replay_window(self):
         body = br.canonical_json(self.payload())
@@ -35,6 +45,17 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertTrue(br.verify_signature(headers, body, "secret", now=ts))
         self.assertFalse(br.verify_signature(headers, body, "wrong", now=ts))
         self.assertFalse(br.verify_signature(headers, body, "secret", now=ts + 301))
+
+    def test_request_id_must_match_request_intent(self):
+        payload = self.payload()
+        payload["request_id"] = hashlib.sha256(b"wrong-intent-key").hexdigest()
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+            }
+        }
+        with self.assertRaises(br.BridgeRuntimeError):
+            br.validate_envelope(payload, routes)
 
     def test_route_allowlist_rejects_unknown_action(self):
         routes = {"notion": {"actions": ["read_page"]}}
@@ -127,11 +148,11 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br, "load_routes", return_value=routes), patch.object(
             br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}
         ):
-            payload = self.payload(request_id=hashlib.sha256(b"wf:schema").hexdigest())
+            payload = self.payload()
             payload["input"]["properties"] = {"name": "N"}
             result = br.handle_request(payload, "secret")
             self.assertTrue(result["ok"])
-            bad = self.payload(request_id=hashlib.sha256(b"wf:schema-bad").hexdigest())
+            bad = self.payload()
             bad["input"] = {"title": 42, "properties": {"name": "N"}}
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_request(bad, "secret")
@@ -214,7 +235,7 @@ class BridgeRuntimeTests(unittest.TestCase):
                 "reconciliation_url": "https://upstream.example.test/reconcile",
             }
         }
-        payload = self.payload(request_id=hashlib.sha256(b"wf:invalid-state").hexdigest())
+        payload = self.payload()
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen") as urlopen:
             class Response:
                 status = 200
@@ -289,7 +310,7 @@ class BridgeRuntimeTests(unittest.TestCase):
     def test_same_request_id_different_target_fails_closed(self):
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
-        payload = self.payload(request_id=hashlib.sha256(b"stable-target-key").hexdigest())
+        payload = self.payload()
         routes_a = {
             "notion": {
                 "actions": ["create_page"],
@@ -314,7 +335,7 @@ class BridgeRuntimeTests(unittest.TestCase):
     def test_upstream_http_failure_is_not_cached(self):
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
-        payload = self.payload(request_id=hashlib.sha256(b"upstream-failure").hexdigest())
+        payload = self.payload()
         routes = {
             "notion": {
                 "actions": ["create_page"],
@@ -400,8 +421,10 @@ class BridgeRuntimeTests(unittest.TestCase):
 
     def test_same_idempotency_key_cannot_change_request_intent(self):
         request_id = hashlib.sha256(b"stable-intent-key").hexdigest()
-        first_payload = self.payload(request_id=request_id)
-        changed_payload = self.payload(request_id=request_id)
+        first_payload = self.payload()
+        request_id = first_payload["request_id"]
+        changed_payload = self.payload(input_value={"title": "Different"})
+        changed_payload["request_id"] = request_id
         changed_payload["input"] = {"title": "Different"}
 
         routes = {
