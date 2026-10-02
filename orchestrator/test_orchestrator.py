@@ -878,6 +878,27 @@ class OrchestratorTests(unittest.TestCase):
                     result = o.run_one_step(workflow, approve_high_risk=False)
         self.assertEqual(result, "completed")
         self.assertEqual(workflow["status"], "completed")
+    def test_persist_rebinds_latest_worker_run_and_preserves_origin(self):
+        workflow = {
+            "id": "wf_run_binding",
+            "goal": "chain",
+            "status": "running",
+            "live": False,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(o.os.environ, {"ORCHESTRATOR_GITHUB_RUN_ID": "run-A"}, clear=False):
+                o.persist_workflow(workflow)
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(o.os.environ, {"ORCHESTRATOR_GITHUB_RUN_ID": "run-B"}, clear=False):
+                o.persist_workflow(workflow)
+            saved = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        stored = saved["workflows"]["wf_run_binding"]
+        self.assertEqual(stored["origin_github_run_id"], "run-A")
+        self.assertEqual(stored["github_run_id"], "run-B")
+        events = (root / "events.jsonl").read_text(encoding="utf-8")
+        self.assertIn("workflow.worker_run_rebound", events)
+
     def test_resume_scheduler_prioritizes_oldest_updated_workflow(self):
         older = {
             "id": "wf_old", "goal": "old", "live": False,
