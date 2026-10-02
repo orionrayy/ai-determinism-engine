@@ -14,6 +14,7 @@ MAX_GOAL_CHARS = 4000
 MAX_NODE_INTENT_BYTES = 32 * 1024
 MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
+MAX_NODES = 24
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 NODE_STATUSES = {
     "pending", "ready", "running", "validating", "waiting_approval",
@@ -196,6 +197,11 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         nodes = workflow.get("nodes", [])
         if not isinstance(nodes, list):
             raise StateSchemaError(f"workflow {workflow_id!r}.nodes must be an array")
+        if len(nodes) == 0 or len(nodes) > MAX_NODES:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.nodes count must be between 1 and {MAX_NODES}"
+            )
+        node_ids: set[str] = set()
         for node in nodes:
             if not isinstance(node, dict):
                 raise StateSchemaError(f"workflow {workflow_id!r} contains a non-object node")
@@ -212,6 +218,15 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} node id must be a non-empty string"
                 )
+            if not SAFE_ID_RE.fullmatch(node["id"]):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r} contains unsafe characters"
+                )
+            if node["id"] in node_ids:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} contains duplicate node id {node['id']!r}"
+                )
+            node_ids.add(node["id"])
             if not isinstance(node.get("capability"), str) or not node["capability"].strip():
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} node capability must be a non-empty string"
