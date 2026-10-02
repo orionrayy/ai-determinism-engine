@@ -15,6 +15,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
+        cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
     def test_approval_labels_use_dedicated_dispatcher(self):
