@@ -58,7 +58,11 @@ def run(task_payload: dict) -> dict:
         contract=task.contract,
         agent_role=task.role,
     )
-    core.enforce_node_policy([node], registry, live=False)
+    floor = core.required_risk(node, registry)
+    if core.RISK_ORDER.get(task.risk, 0) < core.RISK_ORDER.get(floor, 0):
+        raise RuntimeError(
+            f"federated task risk {task.risk} is below required floor {floor}"
+        )
     output = core.execute_node(
         node,
         str(task.context.get("goal") or task.instruction),
