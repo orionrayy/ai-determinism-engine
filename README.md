@@ -1,5 +1,13 @@
 # AI Orchestrator Core
 
+## Route snapshot + policy integrity v27
+
+Every workflow now stores a deterministic route/policy snapshot: persisted tool choice, capability fallback candidates, node risk/action context, relevant tool policy fields, live mode, and the free-only setting.
+
+On resume, the control plane recomputes that policy fingerprint before checkpoint recovery or execution. Registry/policy drift fails closed instead of silently continuing under changed side-effect or free-tier semantics. Explicit replanning refreshes the snapshot because the tool choice has intentionally changed.
+
+Legacy workflows without a policy fingerprint initialize one before their first post-v27 node execution.
+
 ## Lifecycle control plane v26
 
 Workflow execution now has a durable logical-step budget (96 by default, bounded to 256) that is consumed before a node activation and persisted across continuation. Budget exhaustion fails closed instead of creating an unbounded replan loop.
