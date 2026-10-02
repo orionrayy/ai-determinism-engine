@@ -167,22 +167,28 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
                     raise ValueError(str(exc)) from exc
         if risk not in {'low', 'medium', 'high', 'critical'}:
             raise ValueError('planner produced invalid risk')
-        node = Node(
-            id=node_id,
-            capability=capability,
-            tool=tool,
-            depends_on=[str(dep) for dep in deps],
-            risk=risk,
-            input={
+        node_kwargs = {
+            'id': node_id,
+            'capability': capability,
+            'tool': tool,
+            'depends_on': [str(dep) for dep in deps],
+            'risk': risk,
+            'input': {
                 'goal': goal,
                 'instruction': instruction,
                 'artifacts': artifacts,
                 **({'connector': connector, 'action': action, 'payload': payload}
                    if tool == 'connector_bridge' else {}),
             },
-            contract=contract,
-            agent_role=agent_role,
-        )
+            'contract': contract,
+        }
+        try:
+            node = Node(**node_kwargs, agent_role=agent_role)
+        except TypeError as exc:
+            if 'agent_role' not in str(exc):
+                raise
+            node = Node(**node_kwargs)
+            setattr(node, 'agent_role', agent_role)
         assign_role(node)
         role_instruction(node.agent_role, node.capability)
         nodes.append(node)
