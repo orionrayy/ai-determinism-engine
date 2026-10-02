@@ -1,7 +1,12 @@
 import { PrivateInput } from "./private_input_object.js";
+import { ExecutionLease } from "./execution_lease_object.js";
 
 const PROTOCOL = "ai-orchestrator.private-input/v2";
 const MAX_BODY_BYTES = 128 * 1024;
+const MAX_LEASE_TTL_SECONDS = 900;
+const MIN_LEASE_TTL_SECONDS = 60;
+const MAX_ATTEMPT_RESERVATION = 16;
+
 const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MIN_TTL_SECONDS = 300;
 const CLOCK_SKEW_SECONDS = 300;
@@ -136,6 +141,84 @@ function privateInputStub(env, ref) {
   return env.PRIVATE_INPUTS.getByName(ref);
 }
 
+function validateLeaseRequest(value, kind) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("lease_request_must_be_object");
+  }
+  const allowed = new Set(
+    kind === "acquire"
+      ? ["subject", "owner_id", "ttl_seconds"]
+      : kind === "reserve"
+        ? ["subject", "owner_id", "count", "max_attempts"]
+        : ["subject", "owner_id"],
+  );
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw new Error("unknown_lease_field");
+  }
+  if (typeof value.subject !== "string" || value.subject.length < 1 || value.subject.length > 128) {
+    throw new Error("lease_subject_invalid");
+  }
+  if (typeof value.owner_id !== "string" || value.owner_id.length < 1 || value.owner_id.length > 128) {
+    throw new Error("lease_owner_invalid");
+  }
+  if (kind === "acquire") {
+    if (!Number.isInteger(value.ttl_seconds) ||
+        value.ttl_seconds < MIN_LEASE_TTL_SECONDS ||
+        value.ttl_seconds > MAX_LEASE_TTL_SECONDS) {
+      throw new Error("lease_ttl_invalid");
+    }
+  }
+  if (kind === "reserve") {
+    if (!Number.isInteger(value.count) || value.count < 1 || value.count > MAX_ATTEMPT_RESERVATION) {
+      throw new Error("lease_count_invalid");
+    }
+    if (!Number.isInteger(value.max_attempts) || value.max_attempts < 1 || value.max_attempts > 256) {
+      throw new Error("lease_max_attempts_invalid");
+    }
+  }
+}
+
+async function leaseRequest(request, env, kind) {
+  const body = await request.text();
+  if (new TextEncoder().encode(body).byteLength > 16 * 1024) {
+    return response({ ok: false, error: "lease_request_too_large" }, 413);
+  }
+  let value;
+  try {
+    value = JSON.parse(body);
+    validateLeaseRequest(value, kind);
+  } catch (error) {
+    return response({
+      ok: false,
+      error: error instanceof Error ? error.message : "invalid_lease_request",
+    }, 400);
+  }
+
+  const stub = env.EXECUTION_LEASES.getByName(value.subject);
+  const now = Math.floor(Date.now() / 1000);
+  if (kind === "acquire") {
+    const result = await stub.acquire(
+      value.subject,
+      value.owner_id,
+      now,
+      value.ttl_seconds,
+    );
+    return response(result, result.conflict ? 409 : 200);
+  }
+  if (kind === "reserve") {
+    const result = await stub.reserve(
+      value.subject,
+      value.owner_id,
+      now,
+      value.count,
+      value.max_attempts,
+    );
+    return response(result, result.ok ? 200 : 409);
+  }
+  const result = await stub.release(value.subject, value.owner_id);
+  return response(result);
+}
+
 async function handlePost(request, env) {
   const body = await request.text();
   if (new TextEncoder().encode(body).byteLength > MAX_BODY_BYTES) {
@@ -193,6 +276,15 @@ export default {
       if (url.pathname === "/v1/inputs" && request.method === "POST") {
         return await handlePost(request, env);
       }
+      if (url.pathname === "/v1/leases/acquire" && request.method === "POST") {
+        return await leaseRequest(request, env, "acquire");
+      }
+      if (url.pathname === "/v1/leases/reserve-attempt" && request.method === "POST") {
+        return await leaseRequest(request, env, "reserve");
+      }
+      if (url.pathname === "/v1/leases/release" && request.method === "POST") {
+        return await leaseRequest(request, env, "release");
+      }
       const match = url.pathname.match(/^\/v1\/inputs\/([0-9a-f]{64})$/);
       if (match && request.method === "GET") return await handleGet(env, match[1]);
       if (match && request.method === "DELETE") return await handleDelete(env, match[1]);
@@ -204,4 +296,4 @@ export default {
 };
 
 
-export { PrivateInput };
+export { PrivateInput, ExecutionLease };
