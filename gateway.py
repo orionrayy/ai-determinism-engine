@@ -69,9 +69,11 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         raise ValueError("attempt_invalid")
     if attempt < 1 or attempt > 1000:
         raise ValueError("attempt_out_of_range")
-    requested_mode = str(payload.get("requested_mode") or "live").strip().lower()
+    requested_mode = str(payload.get("requested_mode") or "dry-run").strip().lower()
     if requested_mode not in {"dry-run", "live"}:
         raise ValueError("requested_mode_invalid")
+    if requested_mode == "live":
+        raise ValueError("live_structured_requires_private_input_channel")
     metadata = {
         "execution_id": execution_id,
         "workflow_id": workflow_id,
