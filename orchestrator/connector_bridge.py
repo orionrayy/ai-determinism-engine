@@ -333,6 +333,10 @@ def validate_discovered_action(
     return _normalize_action_spec(raw_action_spec)
 
 
+def action_contract_fingerprint(action_spec: dict[str, Any]) -> str:
+    return hashlib.sha256(canonical_json(_normalize_action_spec(action_spec))).hexdigest()
+
+
 def validate_discovered_payload(
     connector: str,
     action: str,
@@ -558,6 +562,15 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         request.input,
         inventory,
     )
+    contract_fingerprint = action_contract_fingerprint(action_spec)
+    previous_contract = str(
+        node.error.get("connector_action_contract_fingerprint") or ""
+    ).strip()
+    if previous_contract and previous_contract != contract_fingerprint:
+        raise ConnectorBridgeError(
+            "connector action contract changed after a failed attempt"
+        )
+    node.error["connector_action_contract_fingerprint"] = contract_fingerprint
     try:
         response = post_request(url, secret, request)
     except ConnectorRequestError as exc:
@@ -570,5 +583,6 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "bridge_url": url,
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
+        "action_contract_fingerprint": contract_fingerprint,
         "response": response,
     }
