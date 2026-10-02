@@ -34,6 +34,7 @@ try:
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
     from .state_schema import (
+        CURRENT_STATE_VERSION,
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
@@ -66,6 +67,7 @@ except ImportError:
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
     from state_schema import (
+        CURRENT_STATE_VERSION,
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
