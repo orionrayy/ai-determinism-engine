@@ -240,7 +240,7 @@ def enforce_node_policy(
     registry: dict[str, dict[str, Any]],
     live: bool = False,
     *,
-    route: bool = False,
+    route: bool = True,
 ) -> None:
     for node in nodes:
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
