@@ -824,6 +824,47 @@ def _latest_workflow_id(
     )[0]
 
 
+def load_state() -> dict[str, Any]:
+    if STATE_FILE.exists():
+        raw = _read_json_file(STATE_FILE, MAX_LEGACY_STATE_BYTES)
+        if not isinstance(raw, dict):
+            raise RuntimeError(
+                "invalid orchestrator state: root must be an object"
+            )
+    else:
+        raw = {
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {},
+            "last_workflow_id": None,
+            "storage_format": STATE_STORAGE_FORMAT,
+        }
+
+    storage_format = raw.get("storage_format")
+    if storage_format not in (None, "legacy", STATE_STORAGE_FORMAT):
+        raise RuntimeError(
+            f"unsupported orchestrator storage format: {storage_format}"
+        )
+
+    try:
+        state = migrate_state(raw)
+        sharded = _load_workflow_shards()
+        workflows = dict(state.get("workflows") or {})
+        workflows.update(sharded)
+        state["workflows"] = workflows
+        if (
+            storage_format == STATE_STORAGE_FORMAT
+            or sharded
+        ):
+            state["storage_format"] = STATE_STORAGE_FORMAT
+            state["last_workflow_id"] = _latest_workflow_id(workflows)
+        elif state.get("last_workflow_id") not in workflows:
+            state["last_workflow_id"] = _latest_workflow_id(workflows)
+        return state
+    except StateSchemaError as exc:
+        raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
+
+
+
 def load_workflow(workflow_id: str) -> dict[str, Any] | None:
     """Load one workflow without hydrating unrelated workflow shards."""
     workflow_id = str(workflow_id or "").strip()
