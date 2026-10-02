@@ -28,7 +28,7 @@ class StateSchemaTests(unittest.TestCase):
         migrated = migrate_state(state)
         self.assertEqual(migrated["version"], CURRENT_STATE_VERSION)
         workflow = migrated["workflows"]["wf-old"]
-        self.assertEqual(workflow["schema_version"], 5)
+        self.assertEqual(workflow["schema_version"], 6)
         self.assertEqual(workflow["reconciliations"], {})
         self.assertEqual(workflow["policy_fingerprint"], None)
         self.assertEqual(workflow["route_snapshot"], {})
@@ -162,7 +162,7 @@ class StateSchemaTests(unittest.TestCase):
                 "version": CURRENT_STATE_VERSION,
                 "workflows": {
                     "wf": {
-                        "schema_version": 6,
+                        "schema_version": 7,
                         "nodes": [],
                     }
                 },
