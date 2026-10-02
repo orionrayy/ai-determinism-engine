@@ -37,7 +37,6 @@ export class PrivateInput extends DurableObject {
         existing.expires_at === envelope.expires_at &&
         existing.payload_json === payloadJson;
       if (!identical) return { ok: false, conflict: true };
-      await this.ctx.storage.setAlarm(envelope.expires_at * 1000);
       return {
         ok: true,
         created: false,
