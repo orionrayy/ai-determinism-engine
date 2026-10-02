@@ -1288,6 +1288,61 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(node.status, "ready")
         self.assertEqual(workflow["status"], "running")
 
+    def test_approval_event_only_accepts_its_exact_issue(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [],
+            risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {
+            "id": "wf_exact_approval",
+            "status": "waiting_approval",
+            "nodes": [o.asdict(node)],
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_APPROVAL_EVENT": "true",
+                "ORCHESTRATOR_APPROVAL_ISSUE": "99",
+            },
+            clear=False,
+        ), patch.object(
+            o, "get_issue_labels", return_value={"orchestrator-approved"}
+        ) as labels:
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertEqual(node.status, "waiting_approval")
+        labels.assert_not_called()
+
+    def test_approval_event_accepts_matching_issue_only_after_fingerprint_check(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [],
+            risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {
+            "id": "wf_matching_approval",
+            "status": "waiting_approval",
+            "nodes": [o.asdict(node)],
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_APPROVAL_EVENT": "true",
+                "ORCHESTRATOR_APPROVAL_ISSUE": "42",
+                "GITHUB_ACTOR": "maintainer",
+            },
+            clear=False,
+        ), patch.object(
+            o, "get_issue_labels", return_value={"orchestrator-approved"}
+        ):
+            o.refresh_approvals(workflow, [node])
+        self.assertTrue(node.input["approval_granted"])
+        self.assertEqual(node.status, "ready")
+        self.assertEqual(node.input["approval_actor"], "maintainer")
+
     def test_approval_label_without_authenticated_event_is_ignored(self):
         node = o.Node(
             "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
