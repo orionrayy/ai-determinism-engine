@@ -158,6 +158,44 @@ class OrchestratorTests(unittest.TestCase):
                 o.execute_gemini(node, "analyze")
         http.assert_not_called()
 
+    def test_paid_gemini_planner_override_falls_back_without_api_call(self):
+        registry = {
+            "capability:research": {
+                "default_tool": "research_bundle",
+                "fallback_tools": ["wikipedia"],
+            },
+            "research_bundle": {"free_tier": True, "side_effects": []},
+            "wikipedia": {"free_tier": True, "side_effects": []},
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+                "required_env": "GEMINI_API_KEY",
+            },
+        }
+        import sys
+        from types import SimpleNamespace
+
+        planner_called = {"value": False}
+
+        def forbidden_plan(*args, **kwargs):
+            planner_called["value"] = True
+            raise AssertionError("paid Gemini planner override must be blocked")
+
+        fake_planner = SimpleNamespace(plan_goal=forbidden_plan)
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_LLM_PLANNER": "true",
+            "GEMINI_API_KEY": "test-key",
+            "GEMINI_PLANNER_MODEL": "gemini-3.8-pro",
+        }, clear=False), patch.object(o, "load_registry", return_value=registry), patch.dict(
+            sys.modules, {"llm_planner": fake_planner}
+        ):
+            workflow = o.create_workflow("research AI safety", live=False)
+
+        self.assertFalse(planner_called["value"])
+        self.assertEqual(workflow["nodes"][0]["tool"], "research_bundle")
+
     def test_atomic_json_write_replaces_existing_file_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
