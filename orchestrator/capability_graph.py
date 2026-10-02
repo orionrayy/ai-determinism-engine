@@ -47,8 +47,10 @@ def free_only_enabled() -> bool:
     return value not in {"0", "false", "no", "off", "disabled"}
 
 def _configured_model(tool: str, registry: dict[str, dict[str, Any]]) -> str:
-    env_name = str(registry.get(tool, {}).get("model_env") or "").strip()
-    return os.environ.get(env_name, "").strip() if env_name else ""
+    spec = registry.get(tool, {})
+    env_name = str(spec.get("model_env") or "").strip()
+    configured = os.environ.get(env_name, "").strip() if env_name else ""
+    return configured or str(spec.get("default_model") or "").strip()
 
 def _free(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
     spec = registry.get(tool, {})
