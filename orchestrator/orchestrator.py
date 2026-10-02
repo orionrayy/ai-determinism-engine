@@ -3019,6 +3019,18 @@ def validate_event_replay_identity(
             )
 
 
+def finalize_workflow_state(
+    state: dict[str, Any],
+    workflow: dict[str, Any],
+) -> None:
+    state["workflows"][workflow["id"]] = workflow
+    state["last_workflow_id"] = workflow["id"]
+    if workflow.get("status") in {"completed", "failed"}:
+        notify_execution_callback(workflow)
+    save_state(state)
+
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--goal', default=os.environ.get('ORCHESTRATOR_GOAL', ''))
@@ -3053,15 +3065,11 @@ def main() -> int:
             raise SystemExit(f'workflow not found: {args.workflow_id}')
         if args.step:
             result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-            state['workflows'][workflow['id']] = workflow
-            state['last_workflow_id'] = workflow['id']
-            save_state(state)
+            finalize_workflow_state(state, workflow)
             print_summary(workflow)
             return 0 if result not in {'failed', 'continuation_failed'} else 2
         run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-        state['workflows'][workflow['id']] = workflow
-        state['last_workflow_id'] = workflow['id']
-        save_state(state)
+        finalize_workflow_state(state, workflow)
         print_summary(workflow)
         return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
@@ -3105,7 +3113,7 @@ def main() -> int:
                 idempotency_key=idempotency_key,
             )
             if existing.get("status") in {"completed", "failed"}:
-                notify_execution_callback(existing)
+                finalize_workflow_state(state, existing)
             print_summary(existing)
             return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
     workflow = create_workflow(
@@ -3133,20 +3141,12 @@ def main() -> int:
 
     if args.step:
         result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-        state['workflows'][workflow['id']] = workflow
-        state['last_workflow_id'] = workflow['id']
-        save_state(state)
-        if workflow.get("status") in {"completed", "failed"}:
-            notify_execution_callback(workflow)
+        finalize_workflow_state(state, workflow)
         print_summary(workflow)
         return 0 if result not in {'failed', 'continuation_failed'} else 2
 
     run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-    state['workflows'][workflow['id']] = workflow
-    state['last_workflow_id'] = workflow['id']
-    save_state(state)
-    if workflow.get("status") in {"completed", "failed"}:
-        notify_execution_callback(workflow)
+    finalize_workflow_state(state, workflow)
     print_summary(workflow)
     return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
