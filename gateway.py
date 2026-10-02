@@ -105,6 +105,8 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
     client_payload = {"goal": goal, "metadata": metadata}
     if event_id:
         client_payload["event_id"] = event_id
+        # Replays of the same gateway event must share the Actions concurrency key.
+        client_payload.setdefault("workflow_id", event_id)
     for field in (
         "execution_id", "workflow_id", "domain", "operation",
         "intent_fingerprint", "input_digest", "attempt", "requested_mode",
@@ -259,10 +261,6 @@ class Handler(BaseHTTPRequestHandler):
                     or ""
                 )
                 event_id = explicit_event_id or derive_unstructured_event_id(goal, metadata)
-                if isinstance(metadata, dict) and not str(metadata.get("workflow_id") or "").strip():
-                    # Use the idempotency identity as the Actions concurrency key so
-                    # replay-equivalent requests cannot race before state deduplication.
-                    metadata["workflow_id"] = event_id
             result = github_dispatch(goal, metadata, event_id=event_id)
             receipt = {"ok": True, "queued": True, **result}
             if isinstance(metadata, dict):
