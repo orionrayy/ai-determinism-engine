@@ -82,21 +82,78 @@ def retry_allowed(
     return failure_class in {"transient", "intermittent", "dependency"}
 
 
+def decide_retry(
+    failure_class: str,
+    *,
+    explicitly_retryable: bool | None = None,
+    uncertain: bool = False,
+    side_effect_started: bool = False,
+    idempotent: bool = False,
+) -> dict[str, Any]:
+    """Return the single authoritative retry/recovery decision."""
+    normalized = failure_class if failure_class in FAILURE_CLASSES else "permanent"
+    is_uncertain = bool(uncertain or normalized == "uncertain")
+
+    if is_uncertain:
+        normalized = "uncertain"
+        if side_effect_started and idempotent:
+            return {
+                "failure_class": normalized,
+                "retry_allowed": True,
+                "uncertain": True,
+                "reason": "uncertain_idempotent_side_effect",
+            }
+        return {
+            "failure_class": normalized,
+            "retry_allowed": False,
+            "uncertain": True,
+            "reason": "uncertain_requires_reconciliation",
+        }
+
+    allowed = retry_allowed(
+        normalized,
+        explicitly_retryable=explicitly_retryable,
+    )
+    if side_effect_started:
+        return {
+            "failure_class": "uncertain",
+            "retry_allowed": bool(idempotent and allowed),
+            "uncertain": True,
+            "reason": (
+                "side_effect_started_idempotent"
+                if idempotent and allowed
+                else "side_effect_started_requires_reconciliation"
+            ),
+        }
+
+    return {
+        "failure_class": normalized,
+        "retry_allowed": allowed,
+        "uncertain": False,
+        "reason": "failure_class_policy",
+    }
+
+
 def deterministic_retry_delay(
     workflow_id: str,
     node_id: str,
     attempt: int,
     *,
+    jitter_seed: str | None = None,
     base_max: float = 8.0,
+    jitter_ratio: float = 0.5,
 ) -> float:
+    """Compute reproducible backoff with a wider workflow-scoped jitter window."""
     attempt = max(1, int(attempt))
     base = min(float(2 ** attempt), float(base_max))
+    ratio = max(0.0, min(float(jitter_ratio), 1.0))
+    seed = str(jitter_seed or workflow_id or "orchestrator")
     digest = hashlib.sha256(
-        f"{workflow_id}:{node_id}:{attempt}".encode("utf-8")
+        f"{seed}:{workflow_id}:{node_id}:{attempt}".encode("utf-8")
     ).digest()
-    # 0.000-0.250 seconds: deterministic jitter, not wall-clock randomness.
-    jitter = int.from_bytes(digest[:2], "big") % 251
-    return base + (jitter / 1000.0)
+    fraction = int.from_bytes(digest[:8], "big") / float(2**64)
+    jitter = base * ratio * fraction
+    return round(base + jitter, 3)
 
 
 def describe_failure(exc: Exception, *, uncertain: bool = False) -> dict[str, Any]:
