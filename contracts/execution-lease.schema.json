@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/contracts/execution-lease.schema.json",
+  "title": "Execution Lease Request",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "subject": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "owner_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "ttl_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 900
+    },
+    "max_attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
+    },
+    "initial_attempts": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 256
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 16
+    }
+  },
+  "required": [
+    "subject",
+    "owner_id"
+  ]
+}
