@@ -87,6 +87,12 @@ Terminal `completed` and `cancelled` workflow shards older than the configured r
 
 The default compaction age is 30 days (bounded to 1–365 days). Scheduled recovery performs the maintenance with the same bounded Git rebase/push guard used by the state writer. This reduces current checkout/state size without rewriting Git history or introducing another service.
 
+## v54 Connector Output Verification
+
+Connector actions may optionally advertise `result_required` and `result_types` alongside their input contract. Live responses are validated against that contract before acceptance by the orchestrator. Connector invoke and reconciliation response bodies are capped at 128 KiB. If a response is oversized or violates the declared output contract after a successful upstream call, the result is treated as uncertain so the existing idempotency and reconciliation policy remains in control.
+
+These checks are optional for existing connectors, so the protocol remains backward-compatible. No external schema engine or paid service is required.
+
 ## Gateway
 
 Set these environment variables on the gateway service:

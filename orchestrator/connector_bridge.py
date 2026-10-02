@@ -19,6 +19,7 @@ MAX_DISCOVERY_BYTES = 48 * 1024
 MAX_DISCOVERY_CONNECTORS = 64
 MAX_DISCOVERY_ACTIONS = 128
 MAX_DISCOVERY_CAPABILITIES = 64
+MAX_RESPONSE_BYTES = 128 * 1024
 CONNECTOR_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
@@ -247,9 +248,27 @@ def _normalize_action_spec(
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in _ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+
+    result_required = raw.get("result_required", [])
+    if not isinstance(result_required, list):
+        result_required = []
+    normalized_result_required = sorted(
+        {str(item).strip() for item in result_required if str(item).strip()}
+    )
+    result_types = raw.get("result_types", {})
+    if not isinstance(result_types, dict):
+        result_types = {}
+    normalized_result_types = {}
+    for key in sorted(result_types):
+        value = str(result_types[key] or "").strip().lower()
+        if str(key).strip() and value in _ACTION_TYPE_NAMES:
+            normalized_result_types[str(key).strip()] = value
+
     return {
         "required": normalized_required,
         "types": normalized_types,
+        "result_required": normalized_result_required,
+        "result_types": normalized_result_types,
         "idempotent": bool(raw.get("idempotent", False)),
         "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
@@ -322,6 +341,30 @@ def validate_discovered_payload(
         found, value = _resolve_payload_path(payload, field_name)
         if found and not _matches_payload_type(value, type_name):
             raise ConnectorBridgeError(f"connector payload field {field_name} must be {type_name}")
+    return action_spec
+
+
+def validate_discovered_result(
+    connector: str,
+    action: str,
+    result: Any,
+    inventory: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    action_spec = validate_discovered_action(connector, action, inventory)
+    if not isinstance(result, dict):
+        raise ConnectorBridgeError("connector response must be an object")
+    for field_name in action_spec["result_required"]:
+        found, _ = _resolve_payload_path(result, field_name)
+        if not found:
+            raise ConnectorBridgeError(
+                f"connector response missing required field: {field_name}"
+            )
+    for field_name, type_name in action_spec["result_types"].items():
+        found, value = _resolve_payload_path(result, field_name)
+        if found and not _matches_payload_type(value, type_name):
+            raise ConnectorBridgeError(
+                f"connector response field {field_name} must be {type_name}"
+            )
     return action_spec
 
 
@@ -398,7 +441,12 @@ def post_reconciliation(
     )
     try:
         with urllib.request.urlopen(http, timeout=60) as response:
-            raw = response.read().decode("utf-8", "replace")
+            raw_bytes = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw_bytes) > MAX_RESPONSE_BYTES:
+                raise ConnectorReconciliationError(
+                    "connector reconciliation response exceeds 128 KiB safety limit"
+                )
+            raw = raw_bytes.decode("utf-8", "replace")
             status = response.status
     except urllib.error.HTTPError as exc:
         raise ConnectorReconciliationError(
@@ -493,7 +541,13 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
     http = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(http, timeout=60) as response:
-            raw = response.read().decode("utf-8", "replace")
+            raw_bytes = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw_bytes) > MAX_RESPONSE_BYTES:
+                raise ConnectorRequestError(
+                    "connector bridge response exceeds 128 KiB safety limit",
+                    uncertain=True,
+                )
+            raw = raw_bytes.decode("utf-8", "replace")
             status = response.status
     except urllib.error.HTTPError as exc:
         raise ConnectorRequestError(
@@ -565,6 +619,22 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         # Retry policy remains centralized in the orchestrator.
         exc.idempotent = bool(action_spec.get("idempotent"))
         raise
+    try:
+        validate_discovered_result(
+            request.connector,
+            request.action,
+            response,
+            inventory,
+        )
+    except ConnectorBridgeError as exc:
+        # A 2xx transport response can still follow a side effect. If the
+        # returned object violates the advertised contract, the effect is
+        # uncertain and must flow through reconciliation/idempotency policy.
+        raise ConnectorRequestError(
+            f"connector response contract failed: {exc}",
+            uncertain=True,
+            idempotent=bool(action_spec.get("idempotent")),
+        ) from exc
     return {
         "simulated": False,
         "protocol": PROTOCOL,

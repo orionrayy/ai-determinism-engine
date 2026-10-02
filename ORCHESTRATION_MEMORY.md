@@ -103,6 +103,13 @@ Current execution-fabric branch: `main`
 - This is a current-state size/lifecycle optimization; Git history remains immutable, so compaction does not rewrite repository history.
 - No deletion/purge of workflow identity is performed, preserving targeted lookups and reducing the risk of old event identities becoming silently reusable.
 - No new service, database, broker, queue, or paid dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
+## Orchestration hardening v54 — connector output contract and response bounds
+- Connector discovery action specs can now optionally declare `result_required` and `result_types` for the sanitized upstream response object; absent fields remain backward-compatible.
+- Live connector execution validates the returned response against that output contract after transport success but before the result is returned to the orchestrator for durable node completion.
+- Connector invoke and reconciliation response bodies are bounded to 128 KiB, preventing an upstream response from causing unbounded worker memory growth.
+- Live connector output contracts are checked after transport success; if a 2xx response is oversized or violates the advertised output contract, the failure is marked uncertain because the upstream side effect may already have occurred, forcing the existing reconciliation/idempotency policy to decide recovery.
+- Contract validation remains downstream of the existing free-tier/idempotency/risk gates, so an invalid response cannot be mistaken for a successful side-effecting operation.
+- This is stdlib-only and introduces no external schema engine, database, queue, proxy, or paid service.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.

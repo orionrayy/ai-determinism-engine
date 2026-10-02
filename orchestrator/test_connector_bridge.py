@@ -50,6 +50,49 @@ class ConnectorBridgeTests(unittest.TestCase):
             "https://bridge.example.test/bridge/capabilities",
         )
 
+    def test_validate_discovered_result_accepts_declared_output_contract(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_required": ["bridge_job_id"],
+                        "result_types": {"bridge_job_id": "string"},
+                    }
+                },
+            }
+        }
+        cb.validate_discovered_result(
+            "notion", "create_page", {"bridge_job_id": "job-1"}, inventory
+        )
+
+    def test_validate_discovered_result_rejects_missing_required_field(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "action_specs": {
+                    "create_page": {"result_required": ["bridge_job_id"]}
+                },
+            }
+        }
+        with self.assertRaisesRegex(cb.ConnectorBridgeError, "response missing required field"):
+            cb.validate_discovered_result("notion", "create_page", {}, inventory)
+
+    def test_validate_discovered_result_rejects_wrong_result_type(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "action_specs": {
+                    "create_page": {"result_types": {"bridge_job_id": "string"}}
+                },
+            }
+        }
+        with self.assertRaisesRegex(cb.ConnectorBridgeError, "response field bridge_job_id must be string"):
+            cb.validate_discovered_result("notion", "create_page", {"bridge_job_id": 1}, inventory)
+
     def test_validate_discovered_action_accepts_configured_action(self):
         inventory = {
             "notion": {
@@ -353,6 +396,53 @@ class ConnectorBridgeTests(unittest.TestCase):
                 cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
         post.assert_not_called()
 
+    def test_live_rejects_oversized_connector_response(self):
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None):
+                return b'x' * (cb.MAX_RESPONSE_BYTES + 1)
+
+        inventory = {"notion": {"actions": ["create_page"], "configured": True, "free_tier": True}}
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(cb, "discover_capabilities", return_value=inventory), \
+             patch.object(cb.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(cb.ConnectorRequestError, "128 KiB") as ctx:
+                cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        self.assertTrue(ctx.exception.uncertain)
+
+    def test_live_rejects_response_contract_violation(self):
+        captured = {}
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None): return b'{"bridge_job_id":123}'
+
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_types": {"bridge_job_id": "string"}
+                    }
+                },
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(cb, "discover_capabilities", return_value=inventory), \
+             patch.object(cb.urllib.request, "urlopen", side_effect=lambda req, timeout=60: Response()):
+            with self.assertRaisesRegex(cb.ConnectorRequestError, "response contract failed") as ctx:
+                cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        self.assertTrue(ctx.exception.uncertain)
+
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
 
@@ -363,7 +453,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 status = 200
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self): return b'{"ok": true, "bridge_job_id": "job-1"}'
+                def read(self, limit=None): return b'{"ok": true, "bridge_job_id": "job-1"}'
             return Response()
 
         inventory = {"notion": {"actions": ["create_page"], "configured": True, "free_tier": True}}
