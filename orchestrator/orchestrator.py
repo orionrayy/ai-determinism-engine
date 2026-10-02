@@ -107,6 +107,8 @@ DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
 MAX_ATTEMPTS_PER_WORKFLOW = STATE_MAX_ATTEMPTS_PER_WORKFLOW
 MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
+MAX_NODE_ID_LENGTH = 100
+SAFE_NODE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -1439,6 +1441,11 @@ def validate_dag(nodes: list[Node]) -> None:
     ids = {node.id for node in nodes}
     if len(ids) != len(nodes):
         raise ValueError("duplicate node id")
+    for node_id in ids:
+        if len(str(node_id)) > MAX_NODE_ID_LENGTH:
+            raise ValueError(f"node id exceeds {MAX_NODE_ID_LENGTH} characters")
+        if not SAFE_NODE_ID_RE.fullmatch(str(node_id)):
+            raise ValueError(f"unsafe node id: {node_id!r}")
     by_id = {node.id: node for node in nodes}
     for node in nodes:
         if node.tool not in {"noop"} and node.tool == "":
