@@ -755,6 +755,11 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "reconciled")
         self.assertEqual(workflow["nodes"][0]["status"], "completed")
         self.assertTrue(workflow["nodes"][0]["output"]["reconciled"])
+        self.assertEqual(workflow["nodes"][0]["output"]["request_id"], reconciliation["request_id"])
+        self.assertEqual(
+            workflow["nodes"][0]["output"]["execution_id"],
+            o.hashlib.sha256(b"wf_reconcile:n01-connector").hexdigest(),
+        )
 
     def test_uncertain_connector_reconciliation_not_applied_allows_new_attempt(self):
         workflow = self._uncertain_connector_workflow({
