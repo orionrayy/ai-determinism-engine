@@ -27,6 +27,19 @@ class ResearchBundleTests(unittest.TestCase):
         self.assertEqual(value, payload)
         mocked.assert_called_once()
 
+    def test_request_bounds_large_json_response(self):
+        class FakeResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, size=-1):
+                return b"x" * (size if size > 0 else 1)
+
+        with patch.object(r, "urlopen", return_value=FakeResponse()):
+            with self.assertRaisesRegex(RuntimeError, "research response exceeds 512 KiB"):
+                r._request("https://example.test", "test")
+
     def test_bundle_survives_partial_provider_failure(self):
         def fake(name):
             if name == 'wiki':
