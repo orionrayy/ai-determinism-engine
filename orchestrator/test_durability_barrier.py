@@ -30,9 +30,8 @@ class DurabilityBarrierTests(unittest.TestCase):
         responses = iter([
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
-            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "remote\trefs/heads/main\n", ""),
             subprocess.CompletedProcess([], 0, "local\n", ""),
-            subprocess.CompletedProcess([], 0, "remote\n", ""),
         ])
         with patch.dict(
             os.environ,
@@ -48,8 +47,7 @@ class DurabilityBarrierTests(unittest.TestCase):
         responses = iter([
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
-            subprocess.CompletedProcess([], 0, "", ""),
-            subprocess.CompletedProcess([], 0, "same\n", ""),
+            subprocess.CompletedProcess([], 0, "same\trefs/heads/main\n", ""),
             subprocess.CompletedProcess([], 0, "same\n", ""),
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 1, "", ""),
@@ -72,6 +70,16 @@ class DurabilityBarrierTests(unittest.TestCase):
                 "--force-with-lease=refs/heads/main:same",
                 "origin",
                 "HEAD:refs/heads/main",
+            ],
+            commands,
+        )
+        self.assertIn(
+            [
+                "git",
+                "ls-remote",
+                "--refs",
+                "origin",
+                "refs/heads/main",
             ],
             commands,
         )
