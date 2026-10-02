@@ -2634,6 +2634,23 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
     except Exception:
         return
 
+def callback_target_fingerprint(url: str) -> str | None:
+    value = str(url or "").strip()
+    if not value:
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme.lower() != "https" or not parsed.netloc:
+        return None
+    normalized = urllib.parse.urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path or "/",
+        parsed.query,
+        "",
+    ))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def notify_execution_callback(workflow: dict[str, Any]) -> bool:
     """Durable terminal callback outbox with stable request identity."""
     callback = workflow.setdefault("callback", {})
@@ -2644,17 +2661,38 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
     execution_id = str(workflow.get("execution_id") or "").strip()
     if not url or not secret or not execution_id:
         return False
+    current_target_fingerprint = callback_target_fingerprint(url)
+    if current_target_fingerprint is None:
+        if isinstance(callback, dict):
+            callback["status"] = "dead_letter"
+            callback["last_error"] = "callback endpoint must use HTTPS"
+        return False
+    previous_target_fingerprint = (
+        str(callback.get("target_fingerprint") or "").strip()
+        if isinstance(callback, dict)
+        else ""
+    )
+    if (
+        previous_target_fingerprint
+        and previous_target_fingerprint != current_target_fingerprint
+    ):
+        if isinstance(callback, dict):
+            callback["status"] = "dead_letter"
+            callback["last_error"] = "callback endpoint changed"
+        append_event(
+            "callback.endpoint_drift",
+            {
+                "workflow_id": workflow.get("id"),
+                "execution_id": execution_id,
+            },
+        )
+        return False
+    if isinstance(callback, dict):
+        callback["target_fingerprint"] = current_target_fingerprint
     if isinstance(callback, dict):
         callback["status"] = "pending"
         callback["last_attempt_at"] = utc_now()
         callback["attempts"] = int(callback.get("attempts", 0)) + 1
-    if not url.startswith("https://"):
-        append_event(
-            "callback.skipped",
-            {"workflow_id": workflow.get("id"), "reason": "https_required"},
-        )
-        return False
-
     status = str(workflow.get("status") or "failed")
     callback_status = "completed" if status == "completed" else "failed"
     if status != "completed":
