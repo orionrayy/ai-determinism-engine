@@ -75,6 +75,36 @@ class ConnectorBridgeTests(unittest.TestCase):
 
 
 
+    def test_discovery_snapshot_has_stable_digest(self):
+        inventory = {
+            "notion": {
+                "actions": ["read_page"],
+                "configured": True,
+                "free_tier": True,
+                "action_specs": {"read_page": {"free_tier": True}},
+            }
+        }
+        first = cb.build_discovery_snapshot(inventory)
+        second = cb.build_discovery_snapshot(inventory)
+        self.assertEqual(first["sha256"], second["sha256"])
+        self.assertRegex(first["sha256"], r"^[0-9a-f]{64}$")
+        self.assertEqual(first["count"], 1)
+        self.assertEqual(
+            first["sha256"],
+            hashlib.sha256(
+                json.dumps(
+                    {
+                        "protocol": cb.PROTOCOL,
+                        "connectors": inventory,
+                        "count": 1,
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest(),
+        )
+
     def test_discovery_rejects_oversized_response(self):
         class Response:
             status = 200
