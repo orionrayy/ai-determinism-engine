@@ -3291,6 +3291,29 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
     return False
 
 
+def deterministic_ingress_workflow_id(
+    event_id: str | None,
+    idempotency_key: str | None,
+) -> str | None:
+    """Derive a stable internal workflow identity for ingress deduplication."""
+    value = str(idempotency_key or "").strip()
+    kind = "idempotency"
+    if not value:
+        value = str(event_id or "").strip()
+        kind = "event"
+    if not value:
+        return None
+    digest = hashlib.sha256(
+        json.dumps(
+            {"kind": kind, "value": value},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"wf-ingress-{kind}-{digest}"
+
+
 def create_workflow(
     goal: str,
     live: bool,
@@ -3305,6 +3328,7 @@ def create_workflow(
     idempotency_key: str | None = None,
     private_input_ref: str | None = None,
     external_attempt: int | None = None,
+    workflow_id: str | None = None,
 ) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
@@ -3353,7 +3377,9 @@ def create_workflow(
     validate_dag(nodes)
     for node in nodes:
         assign_role(node)
-    workflow_id = new_id("wf")
+    workflow_id = str(workflow_id or new_id("wf")).strip()
+    if not workflow_id:
+        raise RuntimeError("workflow id cannot be empty")
     return {
         "id": workflow_id,
         "created_at": utc_now(),
@@ -3661,9 +3687,6 @@ def main() -> int:
             return 0 if result not in {'failed', 'continuation_failed'} else 2
         return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
-    # Goal-driven ingress may need global event deduplication, so hydrate all state only here.
-    state = load_state()
-
     if not args.goal:
         raise SystemExit('provide --goal or --workflow-id')
 
@@ -3683,11 +3706,45 @@ def main() -> int:
         external_attempt = int(os.environ.get("ORCHESTRATOR_EXTERNAL_ATTEMPT", "1"))
     except ValueError:
         raise SystemExit("invalid external attempt")
-    if event_id:
+
+    ingress_workflow_id = deterministic_ingress_workflow_id(
+        event_id,
+        idempotency_key,
+    )
+    existing = None
+
+    def _validate_ingress_match(workflow: dict[str, Any]) -> None:
+        for field_name, supplied in (
+            ("intent_fingerprint", intent_fingerprint_env),
+            ("input_digest", input_digest),
+        ):
+            stored = str(workflow.get(field_name) or "").strip()
+            if supplied and stored and supplied != stored:
+                raise SystemExit(
+                    f"ingress identity conflict: {field_name} does not match "
+                    "the existing workflow"
+                )
+
+    if ingress_workflow_id:
+        existing = load_workflow(ingress_workflow_id)
+        if existing is not None:
+            matches_event = bool(event_id and existing.get("event_id") == event_id)
+            matches_idempotency = bool(
+                idempotency_key
+                and existing.get("idempotency_key") == idempotency_key
+            )
+            if not (matches_event or matches_idempotency):
+                raise SystemExit("ingress workflow identity collision")
+            _validate_ingress_match(existing)
+
+    # Compatibility fallback: old workflows may predate deterministic ingress
+    # identities and therefore still live under a random workflow_id shard.
+    if (event_id or idempotency_key) and existing is None:
+        state = load_state()
         existing = next(
             (
                 item for item in state.get("workflows", {}).values()
-                if item.get("event_id") == event_id
+                if (event_id and item.get("event_id") == event_id)
                 or (
                     idempotency_key
                     and item.get("idempotency_key") == idempotency_key
@@ -3695,11 +3752,19 @@ def main() -> int:
             ),
             None,
         )
-        if existing:
-            if existing.get("status") in {"completed", "failed"}:
-                notify_execution_callback(existing)
-            print_summary(existing)
-            return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
+        if existing is not None:
+            _validate_ingress_match(existing)
+
+    if existing:
+        if existing.get("status") in {"completed", "failed"}:
+            notify_execution_callback(existing)
+        print_summary(existing)
+        return 0 if existing.get("status") in {
+            "completed",
+            "waiting_approval",
+            "running",
+        } else 2
+
     workflow = create_workflow(
         args.goal,
         live=live,
@@ -3714,6 +3779,7 @@ def main() -> int:
         idempotency_key=idempotency_key,
         private_input_ref=private_input_ref,
         external_attempt=external_attempt,
+        workflow_id=ingress_workflow_id,
     )
     workflow['status'] = 'ready'
     persist_workflow(workflow)

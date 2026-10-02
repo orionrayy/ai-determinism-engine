@@ -77,6 +77,10 @@ New workflows are durably persisted before their first execution step. Execution
 
 When a workflow ID is already known, the orchestrator loads only that workflow's canonical shard instead of hydrating every workflow snapshot. Global resume/list and event-id deduplication continue to use the full loader because those operations require repository-wide visibility.
 
+## v52 Identity-First Ingress
+
+Ingress events with an `Idempotency-Key` or `event_id` receive a deterministic internal workflow identity. New duplicate checks read that single canonical shard first; a full-state scan is retained only as a legacy compatibility fallback. Reused identities with conflicting intent/input digests fail closed. Repository-dispatch concurrency also falls back from workflow ID to event ID and idempotency key, reducing duplicate execution races before state inspection.
+
 ## Gateway
 
 Set these environment variables on the gateway service:
