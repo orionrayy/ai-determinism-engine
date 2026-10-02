@@ -2,6 +2,7 @@ import unittest
 
 from state_schema import (
     CURRENT_STATE_VERSION,
+    CURRENT_WORKFLOW_SCHEMA_VERSION,
     StateSchemaError,
     migrate_state,
 )
@@ -28,8 +29,10 @@ class StateSchemaTests(unittest.TestCase):
         migrated = migrate_state(state)
         self.assertEqual(migrated["version"], CURRENT_STATE_VERSION)
         workflow = migrated["workflows"]["wf-old"]
-        self.assertEqual(workflow["schema_version"], 3)
+        self.assertEqual(workflow["schema_version"], CURRENT_WORKFLOW_SCHEMA_VERSION)
         self.assertEqual(workflow["reconciliations"], {})
+        self.assertEqual(workflow["agent_team"], {})
+        self.assertEqual(workflow["nodes"][0]["agent_role"], "")
         self.assertEqual(workflow["plan_integrity"], "legacy_unverified")
         self.assertEqual(workflow["nodes"][0]["status"], "pending")
         self.assertEqual(workflow["max_parallel"], 4)
@@ -51,7 +54,7 @@ class StateSchemaTests(unittest.TestCase):
                 "version": CURRENT_STATE_VERSION,
                 "workflows": {
                     "wf": {
-                        "schema_version": 4,
+                        "schema_version": CURRENT_WORKFLOW_SCHEMA_VERSION + 1,
                         "nodes": [],
                     }
                 },
