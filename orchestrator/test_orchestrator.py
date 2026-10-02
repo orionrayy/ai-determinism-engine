@@ -969,7 +969,20 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(workflow["id"].startswith("wf_"))
         self.assertEqual(workflow["status"], "planning")
         self.assertEqual(workflow["execution_mode"], "dry-run")
+        self.assertEqual(workflow["schema_version"], 5)
+        self.assertEqual(workflow["execution_budget"], {"max_steps": 96, "used_steps": 0})
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
+
+    def test_workflow_creation_persists_requested_execution_budget(self):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "17"}, clear=False):
+            workflow = o.create_workflow("research something", live=False)
+        self.assertEqual(workflow["schema_version"], 5)
+        self.assertEqual(workflow["execution_budget"], {"max_steps": 17, "used_steps": 0})
+
+    def test_invalid_requested_execution_budget_fails_closed(self):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "0"}, clear=False):
+            with self.assertRaises(ValueError):
+                o.create_workflow("research something", live=False)
 
     def test_plan_is_acyclic(self):
         with tempfile.TemporaryDirectory() as tmp:
