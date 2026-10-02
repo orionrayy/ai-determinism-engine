@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 import urllib.request
 
+from private_input import PrivateInputError, input_digest, store_private_input
+
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "10000"))
 EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -157,12 +159,24 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     ).strip().lower()
     if requested_mode not in {"dry-run", "live"}:
         raise ValueError("requested_mode_invalid")
-    if requested_mode == "live":
-        raise ValueError("live_structured_requires_private_input_channel")
 
     source = str(payload.get("source") or "automation-core").strip()[:128]
     if not source:
         source = "automation-core"
+
+    private_input_ref = None
+    if requested_mode == "live":
+        try:
+            private_input_ref = store_private_input(
+                execution_id=execution_id,
+                intent_fingerprint=expected_fp,
+                payload=request_input,
+                ttl_seconds=int(
+                    os.environ.get("ORCHESTRATOR_PRIVATE_INPUT_TTL_SECONDS", "86400")
+                ),
+            )
+        except (PrivateInputError, ValueError) as exc:
+            raise ValueError(f"private_input_unavailable: {exc}") from exc
 
     metadata = {
         "execution_id": execution_id,
@@ -176,6 +190,7 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         "source": source,
         "requested_mode": requested_mode,
         "idempotency_key": idempotency_key,
+        "private_input_ref": private_input_ref,
     }
     goal = f"Execute orchestration operation {domain}.{operation}"
     return goal, metadata, event_id
@@ -204,6 +219,7 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
         "attempt",
         "requested_mode",
         "idempotency_key",
+        "private_input_ref",
     ):
         if field in metadata and metadata[field] not in (None, ""):
             client_payload[field] = metadata[field]
@@ -353,6 +369,7 @@ class Handler(BaseHTTPRequestHandler):
                 "attempt",
                 "requested_mode",
                 "idempotency_key",
+                "private_input_ref",
             ):
                 if isinstance(metadata, dict) and field in metadata and metadata[field] not in (None, ""):
                     receipt[field] = metadata[field]
