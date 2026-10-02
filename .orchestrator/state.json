@@ -1,5 +1,6 @@
 {
   "version": 4,
   "workflows": {},
-  "last_workflow_id": null
+  "last_workflow_id": null,
+  "storage_format": "sharded-v1"
 }
