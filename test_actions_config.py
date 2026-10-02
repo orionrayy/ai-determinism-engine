@@ -59,8 +59,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(self.state.get('version'), CURRENT_STATE_VERSION)
         self.assertIsInstance(self.state.get('workflows'), dict)
 
-    def test_pending_runs_are_not_replaced(self):
-        self.assertIn('queue: max', self.orchestrator)
+    def test_concurrency_uses_actionlint_compatible_keys(self):
+        self.assertNotIn('queue: max', self.orchestrator)
+        self.assertIn('cancel-in-progress: false', self.orchestrator)
 
     def test_orchestrator_concurrency_isolated_by_workflow_identity(self):
         self.assertIn(
@@ -72,7 +73,7 @@ class ActionsConfigTests(unittest.TestCase):
             self.orchestrator,
         )
         self.assertIn("github.run_id", self.orchestrator)
-        self.assertIn("queue: max", self.orchestrator)
+        self.assertIn("github.run_attempt", self.orchestrator)
         self.assertIn("cancel-in-progress: false", self.orchestrator)
 
     def test_continuation_carries_exact_workflow_identity(self):
@@ -91,7 +92,10 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_continuation_binds_to_originating_run(self):
         self.assertIn('workflow_run.id', self.continuation)
+        self.assertIn('workflow_run.run_attempt', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
+        self.assertIn("item.get('github_run_attempt')", self.continuation)
+        self.assertIn("orchestrator-continuation-", self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
