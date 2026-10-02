@@ -55,6 +55,14 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v56 Connector Bridge Correctness Hardening
+
+The connector bridge now binds its in-memory idempotency cache to a semantic request digest. Reusing the same request ID with a different connector/action/input fails closed instead of returning an unrelated cached response. Validation and the current free-only policy are re-run before replay.
+
+Upstream non-2xx responses, transport failures, and oversized responses are surfaced as explicit upstream failures; 5xx/transport/oversized cases remain marked uncertain so the orchestrator can enter reconciliation rather than mistaking an upstream failure for success. The bridge caps upstream response bodies at 128 KiB and bounds its local replay cache.
+
+The Render and Vercel bridge handlers preserve the distinction between malformed client requests and uncertain upstream failures. No external database, queue, paid service, or runtime dependency is introduced.
+
 ## v48 Sharded Workflow State
 
 Workflow snapshots are stored under `.orchestrator/workflows/` using SHA-256(workflow_id) filenames. `.orchestrator/state.json` remains a compact compatibility/index envelope, while `load_state()` hydrates the canonical workflow shards and validates their identities and size bounds.
