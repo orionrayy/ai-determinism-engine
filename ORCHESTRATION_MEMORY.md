@@ -48,6 +48,13 @@ Current execution-fabric branch: `main`
 - No new database, broker, queue, or paid dependency was introduced.
 
 
+## Orchestration hardening v46 — discovery snapshot provenance
+- Connector capability discovery snapshots now include a deterministic SHA-256 digest computed from the canonical normalized snapshot.
+- The digest is evidence/provenance only; live execution still performs its existing fresh preflight and does not silently freeze a stale connector route.
+- This preserves usability while making capability-contract changes observable and auditable across execution, reconciliation, and evidence records.
+- No new dependency or service is introduced.
+
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
