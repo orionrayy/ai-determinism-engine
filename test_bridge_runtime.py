@@ -173,6 +173,23 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertEqual(result["state"], "applied")
         self.assertIn("request_id=", captured["url"])
 
+    def test_reconciliation_rejects_target_drift(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream-current.example.test/invoke",
+                "reconciliation_url": "https://upstream-current.example.test/reconcile",
+            }
+        }
+        payload = self.payload()
+        payload["target_fingerprint"] = br.route_target_fingerprint(
+            "https://upstream-original.example.test/invoke"
+        )
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_reconciliation") as reconcile:
+            with self.assertRaises(br.BridgeRuntimeError):
+                br.handle_reconciliation(payload)
+        reconcile.assert_not_called()
+
     def test_reconciliation_rejects_invalid_state(self):
         routes = {
             "notion": {
