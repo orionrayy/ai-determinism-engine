@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 CURRENT_STATE_VERSION = 4
-CURRENT_WORKFLOW_SCHEMA_VERSION = 3
+CURRENT_WORKFLOW_SCHEMA_VERSION = 4
 MAX_PARALLEL = 8
 
 
@@ -52,6 +52,9 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
+        workflow.setdefault("policy_fingerprint", None)
+        workflow.setdefault("route_snapshot", {})
+        workflow.setdefault("policy_integrity", "legacy_unverified")
         workflow.setdefault("execution_budget", {
             "max_steps": 96,
             "used_steps": 0,
