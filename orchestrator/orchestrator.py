@@ -2239,6 +2239,36 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
         )
 
+        # Admission control is performed before any node is persisted as running.
+        # Never partially activate a parallel batch and then fail a later reservation:
+        # otherwise an earlier safe node could be stranded as running in a failed workflow.
+        budget = execution_budget(workflow)
+        available_steps = budget["max_steps"] - budget["used_steps"]
+        if available_steps <= 0:
+            node = sorted(batch, key=lambda item: item.id)[0]
+            budget_exc = ExecutionBudgetExceeded(
+                f"execution step budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
+            )
+            node.error = {
+                "type": type(budget_exc).__name__,
+                "message": str(budget_exc),
+                "failure_class": "dependency",
+                "budget_exhausted": True,
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            workflow["budget_exhausted"] = {
+                "node_id": node.id,
+                "used_steps": budget["used_steps"],
+                "max_steps": budget["max_steps"],
+            }
+            workflow["nodes"] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return
+        if len(batch) > available_steps:
+            batch = batch[:available_steps]
+
         executable = []
         preflight_replan_needed = False
         for node in batch:
