@@ -29,6 +29,11 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("github.event.label.name == 'orchestrator-approved'", self.orchestrator)
         self.assertIn("github.event.label.name == 'orchestrator-rejected'", self.orchestrator)
 
+    def test_execution_budget_input_is_wired_to_worker(self):
+        self.assertIn('max_steps:', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_MAX_EXECUTION_STEPS:', self.orchestrator)
+        self.assertIn("inputs.max_steps || '96'", self.orchestrator)
+
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
 
