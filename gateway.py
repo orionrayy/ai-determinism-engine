@@ -69,6 +69,9 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         raise ValueError("attempt_invalid")
     if attempt < 1 or attempt > 1000:
         raise ValueError("attempt_out_of_range")
+    requested_mode = str(payload.get("requested_mode") or "live").strip().lower()
+    if requested_mode not in {"dry-run", "live"}:
+        raise ValueError("requested_mode_invalid")
     metadata = {
         "execution_id": execution_id,
         "workflow_id": workflow_id,
@@ -78,6 +81,7 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         "input_digest": hashlib.sha256(canonical_json(request_input)).hexdigest(),
         "attempt": attempt,
         "source": str(payload.get("source") or "automation-core")[:128],
+        "requested_mode": requested_mode,
     }
     goal = f"Execute orchestration operation {domain}.{operation}"
     return goal, metadata, event_id
@@ -94,7 +98,7 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
         client_payload["event_id"] = event_id
     for field in (
         "execution_id", "workflow_id", "domain", "operation",
-        "intent_fingerprint", "input_digest", "attempt",
+        "intent_fingerprint", "input_digest", "attempt", "requested_mode",
     ):
         if field in metadata and metadata[field] not in (None, ""):
             client_payload[field] = metadata[field]
