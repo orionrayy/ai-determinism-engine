@@ -4,6 +4,14 @@
 
 This file is the durable, version-controlled memory of the AI orchestration control plane. Before modifying the orchestrator, treat this document and the current source tree as the source of truth. Do not assume older conversation state is still accurate without checking the repository.
 
+## Execution preflight + resume plan immutability v25
+
+- Persisted workflow plans are no longer re-routed during resume before plan-integrity verification. Tool selection is treated as part of the durable intent and changes only during explicit replanning or initial plan construction.
+- Initial workflow creation still routes each node through the capability graph so free-tier, credential availability, risk, and health are considered before the plan is persisted.
+- Live execution performs a local preflight before approval/barrier handling: tool registration, free-only policy, required credentials/secrets, quarantined health state, and HTTPS endpoint prerequisites are checked before any external side-effect START fence.
+- A preflight failure can re-enter the existing bounded replan path because no side-effect durability barrier has been crossed.
+- The ready state permits a policy/dependency failure transition to failed, making pre-execution failures explicit without pretending that an external action started.
+- The AI Orchestrator workflow job explicitly accepts both [ORCHESTRATOR] source issues and [ORCHESTRATOR APPROVAL] issues so approval labels can reach the worker.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
