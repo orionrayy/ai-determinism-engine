@@ -45,9 +45,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('ORCHESTRATOR_TRIGGER_ISSUE', self.orchestrator)
         self.assertIn('ORCHESTRATOR_GITHUB_RUN_ID', self.orchestrator)
 
-    def test_continuation_binds_to_originating_run(self):
+    def test_continuation_binds_to_current_worker_run(self):
         self.assertIn('workflow_run.id', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
+        self.assertIn("WORKFLOW_RUN_ID", self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
