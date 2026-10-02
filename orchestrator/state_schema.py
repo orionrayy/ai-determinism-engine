@@ -4,8 +4,23 @@ from __future__ import annotations
 from typing import Any
 import hashlib
 
+try:
+    from .federation_scheduler import (
+        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        MAX_BATCHES_PER_WORKFLOW,
+        MAX_TASKS_PER_WORKFLOW,
+    )
+except ImportError:
+    from federation_scheduler import (
+        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        MAX_BATCHES_PER_WORKFLOW,
+        MAX_TASKS_PER_WORKFLOW,
+    )
+
 CURRENT_STATE_VERSION = 4
-CURRENT_WORKFLOW_SCHEMA_VERSION = 5
+CURRENT_WORKFLOW_SCHEMA_VERSION = 6
 MAX_PARALLEL = 8
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
@@ -57,6 +72,42 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("reconciliations", {})
         workflow.setdefault("agent_team", {})
         workflow.setdefault("federation", {})
+        workflow.setdefault(
+            "max_federation_batches",
+            DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        )
+        workflow["max_federation_batches"] = max(
+            0,
+            min(
+                _as_int(
+                    workflow.get("max_federation_batches"),
+                    DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+                ),
+                MAX_BATCHES_PER_WORKFLOW,
+            ),
+        )
+        workflow.setdefault(
+            "max_federation_tasks",
+            DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        )
+        workflow["max_federation_tasks"] = max(
+            0,
+            min(
+                _as_int(
+                    workflow.get("max_federation_tasks"),
+                    DEFAULT_MAX_TASKS_PER_WORKFLOW,
+                ),
+                MAX_TASKS_PER_WORKFLOW,
+            ),
+        )
+        workflow.setdefault("federation_batches_used", 0)
+        workflow["federation_batches_used"] = max(
+            0, _as_int(workflow.get("federation_batches_used"), 0)
+        )
+        workflow.setdefault("federation_tasks_used", 0)
+        workflow["federation_tasks_used"] = max(
+            0, _as_int(workflow.get("federation_tasks_used"), 0)
+        )
         workflow.setdefault("replan_count", 0)
         workflow.setdefault("attempts_used", 0)
         workflow["attempts_used"] = max(0, _as_int(workflow.get("attempts_used"), 0))

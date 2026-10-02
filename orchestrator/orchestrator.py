@@ -43,6 +43,16 @@ try:
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
+    from .federation_scheduler import (
+        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        FEDERATION_SLOTS,
+        MAX_TASKS_PER_BATCH,
+        can_reserve as can_reserve_federation,
+        federation_slot,
+        refund as refund_federation_quota,
+        reserve as reserve_federation_quota,
+    )
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -64,6 +74,16 @@ except ImportError:
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
+    from federation_scheduler import (
+        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        FEDERATION_SLOTS,
+        MAX_TASKS_PER_BATCH,
+        can_reserve as can_reserve_federation,
+        federation_slot,
+        refund as refund_federation_quota,
+        reserve as reserve_federation_quota,
+    )
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -236,12 +256,17 @@ def federation_enabled() -> bool:
 
 def dispatch_federation(manifest: dict[str, Any]) -> None:
     repository = github_repository()
+    federation_id = str(manifest.get("federation_id") or "")
+    slot = federation_slot(federation_id)
     http_json(
         f"https://api.github.com/repos/{repository}/dispatches",
         method="POST",
         body={
             "event_type": "orchestrator.federate",
-            "client_payload": {"manifest": manifest},
+            "client_payload": {
+                "manifest": manifest,
+                "slot": slot,
+            },
         },
         headers=github_headers(),
         timeout=30,
@@ -425,7 +450,7 @@ def delegate_ready_agents(
     limit = min(
         len(eligible),
         int(workflow.get("max_parallel") or DEFAULT_MAX_PARALLEL),
-        8,
+        MAX_TASKS_PER_BATCH,
     )
     selected = eligible[:limit]
     federation_id = new_id("fed")
@@ -455,15 +480,31 @@ def delegate_ready_agents(
         })
         return None
 
+    allowed, quota_reason = can_reserve_federation(workflow, len(selected))
+    if not allowed:
+        append_event("federation.deferred", {
+            "workflow_id": workflow["id"],
+            "reason": quota_reason,
+            "task_count": len(selected),
+            "federation_batches_used": workflow.get("federation_batches_used", 0),
+            "federation_tasks_used": workflow.get("federation_tasks_used", 0),
+        })
+        return None
     if attempt_budget.remaining < len(selected):
         return None
     for node in selected:
         attempt_budget.acquire(node.id)
+    try:
+        reserve_federation_quota(workflow, len(selected))
+    except Exception:
+        attempt_budget.refund(len(selected))
+        return None
 
     workflow["federation"] = {
         "id": federation_id,
         "status": "prepared",
         "task_count": len(tasks),
+        "slot": federation_slot(federation_id),
         "tasks": [
             {
                 "task_id": task.task_id,
@@ -499,6 +540,7 @@ def delegate_ready_agents(
         dispatch_federation(manifest)
     except Exception as exc:
         attempt_budget.refund(len(selected))
+        refund_federation_quota(workflow, len(selected))
         workflow["federation"]["status"] = "dispatch_failed"
         workflow["federation"]["error"] = str(exc)
         for node in selected:
@@ -2870,13 +2912,39 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 5,
+        "schema_version": 6,
         "agent_team": team_manifest(workflow_id, nodes),
         "federation": {},
         "plan_fingerprint": None,
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
+        "max_federation_batches": max(
+            0,
+            min(
+                int(
+                    os.environ.get(
+                        "ORCHESTRATOR_MAX_FEDERATION_BATCHES",
+                        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+                    )
+                ),
+                8,
+            ),
+        ),
+        "max_federation_tasks": max(
+            0,
+            min(
+                int(
+                    os.environ.get(
+                        "ORCHESTRATOR_MAX_FEDERATION_TASKS",
+                        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+                    )
+                ),
+                32,
+            ),
+        ),
+        "federation_batches_used": 0,
+        "federation_tasks_used": 0,
         "trigger_issue": trigger_issue,
         "event_id": event_id,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),

@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v38 health-state sharding + federation recovery on top of v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v39 federation fairness/backpressure on top of v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -213,6 +213,17 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `AI Orchestrator` concurrency is scoped by workflow identity when available, so independent workflows no longer serialize behind one global lock.
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
+
+## Orchestration hardening v39
+- Added `orchestrator/federation_scheduler.py`: deterministic federation slots plus per-workflow batch/task quotas for free-first backpressure.
+- Federation uses 3 fixed concurrency slots, each with matrix `max-parallel: 4`, limiting federation worker fan-out to at most 12 agent jobs at once while leaving runner headroom for supervisor/CI jobs.
+- Default per-workflow federation quota is 4 batches / 16 tasks, with hard caps of 8 batches / 32 tasks. This quota is separate from the existing logical attempt budget and protects hosted-runner consumption.
+- Quota reservation occurs only after task/manifest validation; dispatch failure refunds both attempt and federation reservations.
+- Exhausted federation quota causes deterministic fallback to the existing local executor rather than failing the workflow, preserving full usability when federation capacity is unavailable.
+- Federation slot selection is deterministic from federation ID and is passed in the repository-dispatch envelope. Different federation IDs may run concurrently across different fixed slots; identical slot IDs serialize at the workflow level.
+- Workflow schema is now v6 with persisted federation quota configuration/usage fields.
+- Same-tool health shards remain safe at Git persistence boundaries; the next deeper health optimization can move from per-tool last-state overwrite toward per-workflow observations if contention becomes measurable.
+- No database, broker, paid queue, or hosted scheduler was introduced.
 
 ## Orchestration hardening v38
 - Tool health persistence is now sharded per tool under `.orchestrator/tool_health/<sha256(tool)>.json`; the legacy monolithic `tool_health.json` remains readable for migration/backward compatibility.
