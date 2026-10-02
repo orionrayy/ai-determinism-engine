@@ -37,6 +37,7 @@ concurrency:
   # Serialize retries/continuations for the exact workflow identity. Issue events
   # are source-ingress only; approvals are translated to repository_dispatch by
   # orchestrator-approval.yml so they use the same workflow_id group.
+  group: ${{ github.workflow }}-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.workflow_id || github.event_name == 'issues' && github.event.issue.number || github.event_name == 'schedule' && 'scheduled-recovery' || github.run_id }}
   cancel-in-progress: false
   queue: max
 
@@ -57,7 +58,7 @@ jobs:
           python-version: "3.12"
 
       - name: Authorize source issue trigger
-        if: github.event_name == 'issues' && !startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]')
+        if: github.event_name == 'issues' && startsWith(github.event.issue.title, '[ORCHESTRATOR]')
         env:
           AUTHOR_ASSOCIATION: ${{ github.event.issue.author_association }}
         run: |
@@ -83,8 +84,6 @@ jobs:
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_ACTION: ${{ github.event.action }}
-          ISSUE_LABEL: ${{ github.event.label.name }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
