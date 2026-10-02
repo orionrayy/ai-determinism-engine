@@ -3,6 +3,15 @@
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "PrivateInput",
+        "ExecutionLease"
+      ]
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -14,16 +23,6 @@
         "class_name": "ExecutionLease"
       }
     ]
-  },
-  "exports": {
-    "PrivateInput": {
-      "type": "durable-object",
-      "storage": "sqlite"
-    },
-    "ExecutionLease": {
-      "type": "durable-object",
-      "storage": "sqlite"
-    }
   },
   "secrets": {
     "required": ["ORCHESTRATOR_PRIVATE_INPUT_SECRET"]
