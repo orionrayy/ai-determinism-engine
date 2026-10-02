@@ -19,6 +19,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('Authorize approval actor', self.orchestrator)
         self.assertIn('github.actor', self.orchestrator)
 
+    def test_approval_issue_prefix_is_allowed_by_job_filter(self):
+        self.assertIn("startsWith(github.event.issue.title, '[ORCHESTRATOR]')", self.orchestrator)
+        self.assertIn("startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]')", self.orchestrator)
+
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
 
