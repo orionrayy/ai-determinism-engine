@@ -239,12 +239,21 @@ jobs:
             "" \
             "- Goal: $(cat /tmp/orchestrator_goal.txt)" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f .orchestrator/state.json ]; then
-            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json
-          s=json.load(open(".orchestrator/state.json"))
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          from orchestrator.orchestrator import load_state
+          s=load_state()
           wf=s.get("workflows",{}).get(s.get("last_workflow_id"))
+          if wf is None:
+              workflows=s.get("workflows",{})
+              wf=max(
+                  workflows.values(),
+                  key=lambda item: (
+                      str(item.get("updated_at") or ""),
+                      str(item.get("created_at") or ""),
+                      str(item.get("id") or ""),
+                  ),
+                  default=None,
+              )
           print(f"- Workflow: `{wf['id']}`" if wf else "- Workflow: n/a")
           print(f"- Status: **{wf['status']}**" if wf else "- Status: n/a")
           PY
-          fi
