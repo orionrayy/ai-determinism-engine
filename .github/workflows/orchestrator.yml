@@ -90,7 +90,7 @@ jobs:
           set -euo pipefail
           permission="$(gh api "repos/$REPOSITORY/collaborators/$ACTOR/permission" --jq '.permission' 2>/dev/null || true)"
           case "$permission" in
-            admin|maintain|push|triage) ;;
+            admin|maintain|push) ;;
             *) echo "Actor lacks repository permission to approve orchestration"; exit 1 ;;
           esac
       - name: Resolve goal
