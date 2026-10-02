@@ -168,6 +168,7 @@ class PrivateInputTests(unittest.TestCase):
                         "execution_id": "e" * 64,
                         "input_digest": digest,
                         "intent_fingerprint": "f" * 64,
+                        "expires_at": int(time.time()) + 3600,
                         "payload": payload,
                     }).encode()
             return Response()
