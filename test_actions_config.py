@@ -136,6 +136,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('"workflow_id": workflow_id', self.orchestrator)
         self.assertIn('"orchestrator.continue"', self.orchestrator)
 
+    def test_scheduled_recovery_uses_canonical_loader(self):
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('from orchestrator.orchestrator import load_state', recovery)
+        self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
+
 
     def test_core_actions_are_pinned_to_node24_releases(self):
         expected = {
