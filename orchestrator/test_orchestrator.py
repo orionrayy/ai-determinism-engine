@@ -21,6 +21,7 @@ _CONTROL_PLANE_SPEC = importlib.util.spec_from_file_location(
 if _CONTROL_PLANE_SPEC is None or _CONTROL_PLANE_SPEC.loader is None:
     raise RuntimeError("cannot load control-plane module for tests")
 o = importlib.util.module_from_spec(_CONTROL_PLANE_SPEC)
+sys.modules[_CONTROL_PLANE_SPEC.name] = o
 _CONTROL_PLANE_SPEC.loader.exec_module(o)
 
 
