@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure, v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v44 reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure, v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -39,6 +39,14 @@ Current execution-fabric branch: `main`
 - An uncertified reconciliation is rejected before `post_reconciliation`/`dispatch_reconciliation`, so recovery cannot create an unbudgeted vendor API charge.
 - Canonical memory layout is header-first and the current baseline explicitly records v43/v42/v41 so historical context cannot be mistaken for the active `main` state.
 - No paid dependency or service is introduced.
+
+## Orchestration hardening v45 — continuation, ingress, and persistence race closure
+- Gateway HMAC now binds timestamp, HTTP method, request path, optional `Idempotency-Key`, and raw body; HTTP header lookup is case-insensitive.
+- Unstructured gateway events receive a deterministic event identity when no explicit idempotency key is supplied, and the gateway propagates that identity as `workflow_id` so replay-equivalent repository dispatches share the workflow concurrency group.
+- New workflows are durably registered through `persist_workflow()` before their first execution step; process-start snapshots are no longer re-saved after execution, preventing stale in-memory state from overwriting concurrent workflow updates.
+- Source-issue handling now receives the actual GitHub issue action explicitly, avoiding an unset shell variable on `labeled` events.
+- Continuation dispatch carries the exact originating `workflow_run.id` and `run_attempt` into the shell environment used to construct the continuation event, closing the runtime variable-binding gap.
+- No paid service, database, queue, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
