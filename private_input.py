@@ -44,6 +44,8 @@ def canonical_json(value: Any) -> bytes:
 
 
 def input_digest(payload: dict[str, Any]) -> str:
+    if not isinstance(payload, dict):
+        raise PrivateInputError("private input payload must be an object")
     encoded = canonical_json(payload)
     if len(encoded) > MAX_INPUT_BYTES:
         raise PrivateInputError("private input exceeds 96 KiB")
