@@ -33,7 +33,7 @@ class ExecutionLeaseTests(unittest.TestCase):
         with patch.object(el, "_post", side_effect=lambda path, body: captured.update(path=path, body=body) or {
             "ok": True,
             "attempts": 7,
-            "lease_until": 1000,
+            "lease_until": int(__import__("time").time()) + 600,
         }), patch.dict(os.environ, {
             "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
             "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
@@ -74,7 +74,7 @@ class ExecutionLeaseTests(unittest.TestCase):
         self.assertEqual(captured["body"]["ttl_seconds"], 900)
 
     def test_acquire_rejects_malformed_backend_response(self):
-        with patch.object(el, "_post", return_value={"ok": True, "attempts": 9999, "lease_until": 9999}), patch.dict(os.environ, {
+        with patch.object(el, "_post", return_value={"ok": True, "attempts": 9999, "lease_until": int(__import__("time").time()) + 600}), patch.dict(os.environ, {
             "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
             "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
         }, clear=True):
