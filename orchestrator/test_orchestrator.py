@@ -906,8 +906,8 @@ class OrchestratorTests(unittest.TestCase):
             "nodes": [],
         }
         nodes = [
-            o.Node("n01", "research", "research_bundle", risk="low", agent_role="researcher"),
-            o.Node("n02", "research", "research_bundle", risk="low", agent_role="skeptic"),
+            o.Node("n01", "research", "research_bundle", risk="low", agent_role="researcher", input={"instruction": "collect evidence"}),
+            o.Node("n02", "research", "research_bundle", risk="low", agent_role="skeptic", input={"instruction": "check counterevidence"}),
         ]
         workflow["nodes"] = [o.asdict(node) for node in nodes]
         registry = {
