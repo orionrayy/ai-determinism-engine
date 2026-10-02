@@ -36,10 +36,9 @@ class ConnectorBridgeError(RuntimeError):
 
 
 class ConnectorRequestError(ConnectorBridgeError):
-    def __init__(self, message: str, *, uncertain: bool = False, retry_allowed: bool = False) -> None:
+    def __init__(self, message: str, *, uncertain: bool = False) -> None:
         super().__init__(message)
         self.uncertain = uncertain
-        self.retry_allowed = retry_allowed
 
 
 class ConnectorReconciliationError(ConnectorBridgeError):
@@ -732,10 +731,12 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
     runtime_error["connector_reconciliation_target_fingerprint"] = (
         reconciliation_target_fingerprint
     )
+    node.input["connector_action_idempotent"] = bool(action_spec.get("idempotent"))
     try:
         response = post_request(url, secret, request)
-    except ConnectorRequestError as exc:
-        exc.retry_allowed = bool(action_spec.get("idempotent"))
+    except ConnectorRequestError:
+        # Retry policy belongs to the orchestrator. This field records only
+        # the observed action-contract fact needed by that policy.
         raise
     return {
         "simulated": False,
