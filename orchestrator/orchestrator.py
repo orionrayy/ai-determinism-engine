@@ -591,6 +591,24 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
         previous = [node.id]
     return nodes
 
+def _node_intent_input(input_value: dict[str, Any]) -> dict[str, Any]:
+    volatile = {
+        "workflow_id",
+        "context",
+        "repair_feedback",
+        "approval_issue",
+        "approval_granted",
+        "approval_fingerprint",
+        "approval_actor",
+        "approval_approved_at",
+    }
+    return {
+        key: value
+        for key, value in input_value.items()
+        if key not in volatile
+    }
+
+
 def validate_dag(nodes: list[Node]) -> None:
     if not nodes or len(nodes) > MAX_NODES:
         raise ValueError(f"invalid node count: {len(nodes)}")
@@ -606,7 +624,7 @@ def validate_dag(nodes: list[Node]) -> None:
                 "tool": node.tool,
                 "depends_on": list(node.depends_on),
                 "risk": node.risk,
-                "input": node.input,
+                "input": _node_intent_input(node.input),
                 "contract": node.contract,
             },
             ensure_ascii=False,
