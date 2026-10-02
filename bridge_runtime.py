@@ -201,24 +201,6 @@ def cleanup_idempotency(now: float) -> None:
         _COMPLETED.pop(key, None)
 
 
-def cached_result(
-    request_id: str,
-    intent_fingerprint: str,
-) -> dict[str, Any] | None:
-    now = time.time()
-    with _LOCK:
-        cleanup_idempotency(now)
-        item = _COMPLETED.get(request_id)
-        if item is None:
-            return None
-        _, stored_fingerprint, result = item
-        if stored_fingerprint != intent_fingerprint:
-            raise BridgeRuntimeError(
-                "idempotency key conflicts with request intent"
-            )
-        return copy.deepcopy(result)
-
-
 def acquire_idempotency_slot(
     request_id: str,
     intent_fingerprint: str,
