@@ -440,6 +440,22 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
         raise ConnectorReconciliationError(
             f"connector {request.connector!r} does not advertise reconciliation"
         )
+    action_spec = validate_discovered_action(
+        request.connector,
+        request.action,
+        inventory,
+    )
+    if (
+        os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
+        and (
+            spec.get("free_tier") is not True
+            or action_spec.get("free_tier") is not True
+        )
+    ):
+        raise ConnectorReconciliationError(
+            f"connector reconciliation {request.connector}:{request.action} "
+            "is not certified for free-only execution"
+        )
     result = post_reconciliation(url, secret, request)
     # Never persist arbitrary upstream reconciliation data into public workflow state.
     return {
