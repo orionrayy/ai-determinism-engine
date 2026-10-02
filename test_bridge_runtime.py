@@ -160,6 +160,24 @@ class BridgeRuntimeTests(unittest.TestCase):
                 br.handle_request(bad, "secret")
 
 
+    def test_response_fields_are_sanitized_and_bounded(self):
+        routes = {
+            "notion": {
+                "url": "https://upstream.example/invoke",
+                "actions": ["create_page"],
+                "action_specs": {
+                    "create_page": {
+                        "response_fields": ["upstream.data.id"],
+                    }
+                },
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertEqual(
+            discovered["notion"]["action_specs"]["create_page"]["response_fields"],
+            ["upstream.data.id"],
+        )
+
     def test_reconciliation_capability_is_discovered(self):
         routes = {
             "notion": {
