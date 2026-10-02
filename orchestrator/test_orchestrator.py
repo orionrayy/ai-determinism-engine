@@ -1159,6 +1159,103 @@ class OrchestratorTests(unittest.TestCase):
                     o.resume_pending_workflows(state, scheduled_recovery=False)
         runner.assert_called_once()
 
+    def test_workflow_creation_persists_execution_envelope_identity(self):
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "17"},
+            clear=False,
+        ):
+            workflow = o.create_workflow(
+                "structured work",
+                live=False,
+                execution_id="a" * 64,
+                parent_execution_id="parent-1",
+                external_workflow_id="external-wf",
+                external_domain="publisher",
+                external_operation="chapter.produce",
+                intent_fingerprint="b" * 64,
+                input_digest="c" * 64,
+                idempotency_key="evt-1",
+                external_attempt=2,
+            )
+        self.assertEqual(workflow["execution_id"], "a" * 64)
+        self.assertEqual(workflow["parent_execution_id"], "parent-1")
+        self.assertEqual(workflow["external_workflow_id"], "external-wf")
+        self.assertEqual(workflow["external_domain"], "publisher")
+        self.assertEqual(workflow["external_operation"], "chapter.produce")
+        self.assertEqual(workflow["intent_fingerprint"], "b" * 64)
+        self.assertEqual(workflow["input_digest"], "c" * 64)
+        self.assertEqual(workflow["idempotency_key"], "evt-1")
+        self.assertEqual(workflow["external_attempt"], 2)
+
+    def test_terminal_execution_callback_is_hmac_signed_and_idempotent(self):
+        workflow = {
+            "id": "wf_callback",
+            "execution_id": "d" * 64,
+            "status": "completed",
+            "external_workflow_id": "external-wf",
+            "external_domain": "publisher",
+            "external_operation": "chapter.produce",
+            "intent_fingerprint": "e" * 64,
+            "input_digest": "f" * 64,
+            "external_attempt": 3,
+            "nodes": [],
+        }
+        captured = {}
+
+        def fake_urlopen(request, timeout=30):
+            captured["body"] = request.data
+            captured["headers"] = dict(request.header_items())
+            captured["method"] = request.method
+            captured["url"] = request.full_url
+
+            class Response:
+                status = 204
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+            return Response()
+
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "https://callback.example.test/terminal",
+                "ORCHESTRATOR_CALLBACK_SECRET": "secret",
+            },
+            clear=False,
+        ), patch.object(
+            o.urllib.request, "urlopen", side_effect=fake_urlopen
+        ) as send:
+            self.assertTrue(o.notify_execution_callback(workflow))
+
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(
+            captured["headers"]["Idempotency-key"],
+            workflow["execution_id"],
+        )
+        body = json.loads(captured["body"].decode("utf-8"))
+        self.assertEqual(body["execution_id"], workflow["execution_id"])
+        self.assertEqual(body["status"], "completed")
+        self.assertEqual(body["result"]["attempt"], 3)
+        self.assertTrue(captured["headers"]["X-engine-signature"].startswith("sha256="))
+
+    def test_terminal_execution_callback_does_not_send_without_private_channel(self):
+        workflow = {
+            "id": "wf_callback_missing",
+            "execution_id": "d" * 64,
+            "status": "completed",
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "",
+                "ORCHESTRATOR_CALLBACK_SECRET": "",
+            },
+            clear=False,
+        ), patch.object(o.urllib.request, "urlopen") as send:
+            self.assertFalse(o.notify_execution_callback(workflow))
+        send.assert_not_called()
+
     def test_workflow_creation_is_persistable(self):
         workflow = o.create_workflow("build a small website", live=False)
         self.assertTrue(workflow["id"].startswith("wf_"))
