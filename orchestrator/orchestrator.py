@@ -382,6 +382,8 @@ def delegate_ready_agents(
         profile_safe = bool(getattr(node, "agent_role", "")) and node.agent_role not in {"publisher", "operator"}
         if not profile_safe or node.risk not in {"low", "medium"}:
             continue
+        if not str(node.input.get("instruction") or "").strip():
+            continue
         if side_effecting(node, registry):
             continue
         eligible.append(node)
