@@ -1140,7 +1140,7 @@ class OrchestratorTests(unittest.TestCase):
                  o.os.environ,
                  {"ORCHESTRATOR_EVENT_WORKFLOW_ID": "wf-cont"},
                  clear=False,
-             ), patch.object(sys, "argv", ["orchestrator", "--goal", "continue"]):
+             ), patch.object(sys, "argv", ["orchestrator", "--goal", "continue", "--step"]):
             result = o.main()
         self.assertEqual(result, 0)
         load_workflow.assert_called_once_with("wf-cont")
