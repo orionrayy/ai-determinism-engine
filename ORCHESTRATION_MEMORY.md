@@ -78,6 +78,11 @@ Current execution-fabric branch: `main`
 - `main --workflow-id` now uses targeted hydration; global `--resume`, `--list`, and event-id deduplication still use `load_state()` because they require a repository-wide workflow view.
 - No new database, cache, service, or runtime dependency is introduced; the optimization reduces read amplification while retaining the existing fail-closed schema and identity checks.
 
+## Orchestration hardening v50 — goal-ingress state-load repair
+- Fixed a source-level regression where a literal `\\n` sequence accidentally commented out the `state = load_state()` assignment in the goal-driven ingress path.
+- Added a regression that exercises event-id deduplication with a non-empty `ORCHESTRATOR_EVENT_ID`, proving the global state load is actually executed before duplicate workflow creation can occur.
+- This is a correctness-only repair; no new service, dependency, or cost surface is introduced.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
