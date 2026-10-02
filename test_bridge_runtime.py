@@ -90,7 +90,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertNotIn("NOTION_SECRET", json.dumps(discovered))
         self.assertEqual(
             discovered["clickup"]["action_specs"]["create_task"],
-            {"required": [], "types": {}, "idempotent": False},
+            {"required": [], "types": {}, "idempotent": False, "response_fields": []},
         )
 
     def test_route_target_fingerprint_is_exposed_without_url(self):
