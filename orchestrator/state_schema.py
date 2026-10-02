@@ -158,6 +158,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
         workflow.setdefault("executions", {})
+        workflow.setdefault("route_snapshot", {})
         for field_name in (
             "repair_feedback",
             "evidence",
