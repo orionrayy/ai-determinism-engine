@@ -1314,6 +1314,57 @@ class OrchestratorTests(unittest.TestCase):
                 loaded = o.load_workflow("wf-legacy-only")
             self.assertEqual(loaded["status"], "waiting_approval")
 
+    def test_compact_terminal_workflow_preserves_identity_and_hashes(self):
+        workflow = {
+            "id": "wf-terminal",
+            "goal": "private-ish goal",
+            "status": "completed",
+            "created_at": "2026-08-01T00:00:00+00:00",
+            "updated_at": "2026-08-01T00:00:00+00:00",
+            "event_id": "evt-1",
+            "idempotency_key": "idem-1",
+            "intent_fingerprint": "a" * 64,
+            "input_digest": "b" * 64,
+            "plan_fingerprint": "c" * 64,
+            "nodes": [{"id": "n01", "capability": "research", "tool": "noop", "status": "completed", "input": {"secret": "large"}, "output": {"large": "x" * 10000}, "error": {}, "depends_on": []}],
+            "evidence": {"large": "y" * 10000},
+            "reconciliations": {"large": "z" * 10000},
+        }
+        changed = o.compact_terminal_workflow(
+            workflow,
+            now=o.datetime.fromisoformat("2026-09-15T00:00:00+00:00"),
+            retention_days=30,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(workflow["id"], "wf-terminal")
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["event_id"], "evt-1")
+        self.assertEqual(workflow["idempotency_key"], "idem-1")
+        self.assertEqual(workflow["intent_fingerprint"], "a" * 64)
+        self.assertEqual(workflow["input_digest"], "b" * 64)
+        self.assertNotIn("goal", workflow)
+        self.assertTrue(workflow["goal_sha256"])
+        self.assertTrue(workflow["original_state_sha256"])
+        self.assertTrue(workflow["original_evidence_sha256"])
+        self.assertTrue(workflow["original_reconciliation_sha256"])
+        self.assertNotIn("output", workflow["nodes"][0])
+
+    def test_compact_terminal_workflow_skips_recent_and_nonterminal(self):
+        recent = {"id": "wf-recent", "status": "completed", "updated_at": "2026-09-10T00:00:00+00:00", "nodes": []}
+        failed = {"id": "wf-failed", "status": "failed", "updated_at": "2026-08-01T00:00:00+00:00", "nodes": []}
+        now = o.datetime.fromisoformat("2026-09-15T00:00:00+00:00")
+        self.assertFalse(o.compact_terminal_workflow(recent, now=now, retention_days=30))
+        self.assertFalse(o.compact_terminal_workflow(failed, now=now, retention_days=30))
+
+    def test_compact_terminal_workflows_is_idempotent(self):
+        state = {"workflows": {"wf-terminal": {"id": "wf-terminal", "status": "completed", "updated_at": "2026-07-01T00:00:00+00:00", "nodes": []}}}
+        now = o.datetime.fromisoformat("2026-09-15T00:00:00+00:00")
+        first = o.compact_terminal_workflows(state, now=now, retention_days=30)
+        second = o.compact_terminal_workflows(state, now=now, retention_days=30)
+        self.assertEqual(first, ["wf-terminal"])
+        self.assertEqual(second, [])
+        self.assertEqual(state["workflows"]["wf-terminal"]["terminal_compaction_version"], 1)
+
     def test_state_migration_is_idempotent(self):
         source = {
             "version": 2,
