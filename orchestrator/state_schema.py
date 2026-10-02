@@ -21,6 +21,16 @@ NODE_STATUSES = {
 }
 WORKFLOW_STATUSES = {"planning", "ready", "running", "waiting_approval", "failed", "completed", "cancelled"}
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+VOLATILE_INPUT_KEYS = {
+    "workflow_id",
+    "context",
+    "repair_feedback",
+    "approval_issue",
+    "approval_granted",
+    "approval_fingerprint",
+    "approval_actor",
+    "approval_approved_at",
+}
 
 
 class StateSchemaError(RuntimeError):
@@ -259,6 +269,11 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                     raise StateSchemaError(
                         f"workflow {workflow_id!r} node {node['id']!r} exceeds artifact limit"
                     )
+            intent_input = {
+                key: value
+                for key, value in node["input"].items()
+                if key not in VOLATILE_INPUT_KEYS
+            }
             intent_serialized = json.dumps(
                 {
                     "id": node["id"],
@@ -266,7 +281,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                     "tool": node["tool"],
                     "depends_on": node["depends_on"],
                     "risk": node["risk"],
-                    "input": node["input"],
+                    "input": intent_input,
                     "contract": node["contract"],
                 },
                 ensure_ascii=False,
