@@ -1,0 +1,62 @@
+name: Deploy private input worker
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30eaf803
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Validate deployment credentials
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ORCHESTRATOR_PRIVATE_INPUT_SECRET: ${{ secrets.ORCHESTRATOR_PRIVATE_INPUT_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$ORCHESTRATOR_PRIVATE_INPUT_SECRET"
+
+      - name: Write Worker secret file
+        env:
+          ORCHESTRATOR_PRIVATE_INPUT_SECRET: ${{ secrets.ORCHESTRATOR_PRIVATE_INPUT_SECRET }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf "ORCHESTRATOR_PRIVATE_INPUT_SECRET=%s\n" "$ORCHESTRATOR_PRIVATE_INPUT_SECRET" > /tmp/private-input-secrets.env
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --secrets-file /tmp/private-input-secrets.env 2>&1 | tee /tmp/private-input-deploy.log
+
+      - name: Verify deployed Worker
+        run: |
+          set -euo pipefail
+          worker_url="$(grep -Eo "https://[A-Za-z0-9.-]+\.workers\.dev" /tmp/private-input-deploy.log | tail -1 || true)"
+          test -n "$worker_url"
+          health="$(curl --fail --silent --show-error --max-time 20 "$worker_url/health")"
+          printf "%s\n" "$health"
+          printf "### Private-input Worker\n\n%s\n\nHealth: %s\n" "$worker_url" "$health" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup secret file
+        if: always()
+        run: rm -f /tmp/private-input-secrets.env

@@ -80,6 +80,38 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_private_input_ref_requires_execution_identity(self):
+        with self.assertRaisesRegex(StateSchemaError, "private_input_ref requires execution_id and input_digest"):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "private_input_ref": "a" * 64,
+                        "nodes": [],
+                    }
+                },
+            })
+
+    def test_private_input_metadata_accepts_bound_values(self):
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf": {
+                    "id": "wf",
+                    "execution_id": "e" * 64,
+                    "input_digest": "d" * 64,
+                    "intent_fingerprint": "f" * 64,
+                    "private_input_ref": "b" * 64,
+                    "idempotency_key": "evt-private",
+                    "nodes": [],
+                }
+            },
+        })
+        wf = migrated["workflows"]["wf"]
+        self.assertEqual(wf["private_input_ref"], "b" * 64)
+        self.assertEqual(wf["idempotency_key"], "evt-private")
+
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({

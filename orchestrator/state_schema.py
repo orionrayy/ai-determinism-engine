@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 import hashlib
+import re
 
 try:
     from .federation_scheduler import (
@@ -73,6 +74,27 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("agent_team", {})
         workflow.setdefault("github_run_attempt", None)
         workflow.setdefault("origin_github_run_attempt", workflow.get("github_run_attempt"))
+        workflow.setdefault("private_input_ref", None)
+        workflow.setdefault("idempotency_key", None)
+        for field_name in ("private_input_ref", "input_digest", "intent_fingerprint"):
+            value = workflow.get(field_name)
+            if value in (None, ""):
+                continue
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.{field_name} must be a 64-character lowercase hexadecimal string"
+                )
+        private_ref = workflow.get("private_input_ref")
+        if private_ref not in (None, ""):
+            if workflow.get("execution_id") in (None, "") or workflow.get("input_digest") in (None, ""):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} private_input_ref requires execution_id and input_digest"
+                )
+        if workflow.get("idempotency_key") not in (None, ""):
+            if not isinstance(workflow["idempotency_key"], str) or len(workflow["idempotency_key"]) > 128:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.idempotency_key must be at most 128 characters"
+                )
         for field_name in ("github_run_attempt", "origin_github_run_attempt"):
             value = workflow.get(field_name)
             if value is not None:

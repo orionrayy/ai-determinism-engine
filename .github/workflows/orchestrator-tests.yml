@@ -13,6 +13,11 @@ on:
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
       - "test_gateway.py"
+      - "private_input.py"
+      - "test_private_input.py"
+      - "contracts/private-input.schema.json"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-deploy.yml"
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/actionlint.yaml"
       - ".github/workflows/orchestrator-agent-federation.yml"
@@ -28,6 +33,11 @@ on:
       - ".orchestrator/state.json"
   pull_request:
     paths:
+      - "private_input.py"
+      - "test_private_input.py"
+      - "contracts/private-input.schema.json"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-deploy.yml"
       - ".github/actionlint.yaml"
       - "orchestrator/**"
       - ".github/workflows/bridge-deploy.yml"
@@ -52,7 +62,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile orchestrator/aggregate_agent_results.py orchestrator/agent_worker.py
-        run: python -m py_compile orchestrator/federation_scheduler.py orchestrator/agent_protocol.py orchestrator/agent_fabric.py orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/failure_policy.py orchestrator/plan_integrity.py orchestrator/state_schema.py orchestrator/checkpoint_integrity.py orchestrator/durability_barrier.py orchestrator/test_durability_barrier.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/test_failure_policy.py orchestrator/test_plan_integrity.py orchestrator/test_state_schema.py orchestrator/test_checkpoint_integrity.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
+        run: python -m py_compile private_input.py test_private_input.py orchestrator/federation_scheduler.py orchestrator/agent_protocol.py orchestrator/agent_fabric.py orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/failure_policy.py orchestrator/plan_integrity.py orchestrator/state_schema.py orchestrator/checkpoint_integrity.py orchestrator/durability_barrier.py orchestrator/test_durability_barrier.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/test_failure_policy.py orchestrator/test_plan_integrity.py orchestrator/test_state_schema.py orchestrator/test_checkpoint_integrity.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
       - name: Actionlint
         shell: bash
         run: |
@@ -68,5 +78,17 @@ jobs:
           tar -xzf "/tmp/${archive}" -C /tmp
           /tmp/actionlint -color
 
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
       - name: Unit tests
-        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config -v
+        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
+      - name: Validate private-input Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check workers/private-input/src/index.js
+          node --check workers/private-input/src/private_input_object.js
+          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --dry-run

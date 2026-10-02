@@ -15,6 +15,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
+        cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
     def test_approval_labels_use_dedicated_dispatcher(self):
@@ -139,6 +140,16 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn('vercel@latest', self.bridge_deploy)
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
+
+    def test_private_input_boundary_is_wired(self):
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_REF", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_IDEMPOTENCY_KEY", self.orchestrator)
+        self.assertIn("private_input_unavailable", Path("gateway.py").read_text())
+        self.assertIn("workers/private-input/**", self.tests)
+        self.assertIn("node workers/private-input/test.mjs", self.tests)
+        self.assertIn("wrangler@4.146.0", self.tests)
 
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
