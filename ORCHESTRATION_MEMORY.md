@@ -14,6 +14,15 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - The ready state permits a policy/dependency failure transition to failed, making pre-execution failures explicit without pretending that an external action started.
 - The AI Orchestrator workflow job explicitly accepts both [ORCHESTRATOR] source issues and [ORCHESTRATOR APPROVAL] issues so approval labels can reach the worker.
 - Approval labels are accepted only during an authenticated `issues` `labeled` event carrying an allowlisted approval/rejection label; scheduled recovery cannot bootstrap approval from an unverified label.
+## Lifecycle control plane v26
+
+- Both run_one_step() and run_workflow() preserve the persisted node tool choice during resume; capability routing is reserved for initial plan construction or explicit replanning.
+- Every logical node activation consumes one durable workflow execution-budget step before entering running or crossing the side-effect barrier.
+- Default workflow budget is 96 logical steps with a hard maximum of 256; exhausted budgets fail closed and do not trigger another replan.
+- The budget is persisted and schema-validated so crash recovery cannot silently reset the runaway-loop guard.
+- Node contracts may declare deterministic postconditions: field_exists, field_equals, field_in, non_empty, or bounded http_status. These checks execute before a node is marked completed.
+- Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
+- Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
