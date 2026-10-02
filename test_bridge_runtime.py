@@ -148,12 +148,14 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br, "load_routes", return_value=routes), patch.object(
             br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}
         ):
-            payload = self.payload()
-            payload["input"]["properties"] = {"name": "N"}
+            payload = self.payload(
+                input_value={"title": "Hello", "properties": {"name": "N"}}
+            )
             result = br.handle_request(payload, "secret")
             self.assertTrue(result["ok"])
-            bad = self.payload()
-            bad["input"] = {"title": 42, "properties": {"name": "N"}}
+            bad = self.payload(
+                input_value={"title": 42, "properties": {"name": "N"}}
+            )
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_request(bad, "secret")
 
