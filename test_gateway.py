@@ -24,14 +24,59 @@ class GatewayTests(unittest.TestCase):
     def test_authorization_accepts_hmac_signature(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()))
-        signed = timestamp.encode() + b"\n" + body
-        digest = hmac.new(b"test-secret", signed, hashlib.sha256).hexdigest()
+        signature = gateway.hmac_signature(timestamp, "POST", "/event", "", body, "test-secret")
         headers = {
             "X-Orchestrator-Timestamp": timestamp,
-            "X-Orchestrator-Signature": "sha256=" + digest,
+            "X-Orchestrator-Signature": signature,
         }
         with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
             self.assertTrue(gateway.authorized(headers, body))
+
+    def test_github_dispatch_binds_workflow_id_to_event_id(self):
+        captured = {}
+        def fake_urlopen(request, timeout=30):
+            captured["body"] = request.data
+            class Response:
+                status = 204
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+            return Response()
+
+        with patch.dict(os.environ, {"GITHUB_GATEWAY_TOKEN": "token", "GITHUB_REPOSITORY": "owner/repo"}, clear=True), \
+             patch.object(gateway.urllib.request, "urlopen", side_effect=fake_urlopen):
+            gateway.github_dispatch("hello", {"source": "test"}, event_id="evt-123")
+
+        payload = json.loads(captured["body"].decode())
+        self.assertEqual(payload["client_payload"]["workflow_id"], "evt-123")
+
+    def test_hmac_binds_method_and_path(self):
+        body = b'{"goal":"hello"}'
+        timestamp = str(int(time.time()))
+        signature = gateway.hmac_signature(timestamp, "POST", "/event", "", body, "test-secret")
+        headers = {"X-Orchestrator-Timestamp": timestamp, "X-Orchestrator-Signature": signature}
+        with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
+            self.assertTrue(gateway.authorized(headers, body, method="POST", path="/event"))
+            self.assertFalse(gateway.authorized(headers, body, method="GET", path="/event"))
+            self.assertFalse(gateway.authorized(headers, body, method="POST", path="/other"))
+
+    def test_hmac_binds_idempotency_key(self):
+        body = b'{"goal":"hello"}'
+        timestamp = str(int(time.time()))
+        signature = gateway.hmac_signature(timestamp, "POST", "/event", "key-1", body, "test-secret")
+        headers = {"X-Orchestrator-Timestamp": timestamp, "X-Orchestrator-Signature": signature, "Idempotency-Key": "key-1"}
+        with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
+            self.assertTrue(gateway.authorized(headers, body))
+            altered = dict(headers)
+            altered["Idempotency-Key"] = "key-2"
+            self.assertFalse(gateway.authorized(altered, body))
+
+    def test_unstructured_event_id_is_deterministic(self):
+        first = gateway.derive_unstructured_event_id("do work", {"source": "test"})
+        second = gateway.derive_unstructured_event_id("do work", {"source": "test"})
+        other = gateway.derive_unstructured_event_id("do work", {"source": "other"})
+        self.assertEqual(first, second)
+        self.assertEqual(len(first), 64)
+        self.assertNotEqual(first, other)
 
     def test_github_dispatch_propagates_event_id(self):
         captured = {}
@@ -57,11 +102,9 @@ class GatewayTests(unittest.TestCase):
     def test_authorization_is_case_insensitive_for_http_headers(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()))
-        digest = hmac.new(
-            b"test-secret",
-            timestamp.encode() + b"\n" + body,
-            hashlib.sha256,
-        ).hexdigest()
+        signature = gateway.hmac_signature(
+            timestamp, "POST", "/event", "key-1", body, "test-secret"
+        )
         headers = {
             "authorization": "Bearer test-secret",
         }
@@ -69,7 +112,8 @@ class GatewayTests(unittest.TestCase):
             self.assertTrue(gateway.authorized(headers))
         headers = {
             "x-orchestrator-timestamp": timestamp,
-            "x-orchestrator-signature": "sha256=" + digest,
+            "x-orchestrator-signature": signature,
+            "idempotency-key": "key-1",
         }
         with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
             self.assertTrue(gateway.authorized(headers, body))
