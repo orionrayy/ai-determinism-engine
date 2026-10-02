@@ -13,6 +13,17 @@ Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
 
+## Multi-agent coordination
+The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
+- The orchestrator is the sole supervisor and authoritative state/side-effect writer.
+- Nodes are typed agent-cells with a role, capability, stable agent identity, risk ceiling, and contract.
+- Supported roles include researcher, skeptic, analyst, architect, implementer, tester, critic, publisher, communicator, operator, and verifier.
+- DAG dependencies are explicit agent handoffs through dependency context; independent safe nodes use the existing bounded thread pool as scatter-gather execution.
+- Deterministic fallback plans deliberately fan out researcher+sceptic lanes and converge through analysis/critic nodes for research, content, and software workflows.
+- Gemini execution receives role-specific instructions and a stable agent identity. Without Gemini credentials, deterministic/free tool routing remains available according to the registry and dry-run remains credential-free.
+- agent_fabric.py is stdlib-only and versioned as protocol v1. It can later map to GitHub Actions matrix/reusable-workflow workers using artifacts as ephemeral mailboxes, or to external MCP/A2A bridges, without changing the core task contract.
+- Consensus is represented as DAG convergence plus a critic/verifier node, not unbounded peer-to-peer debate; this keeps attempts, retries, and side effects governed by the existing workflow budget and safety gates.
+
 ## Architecture
 
 ```
@@ -202,6 +213,15 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `AI Orchestrator` concurrency is scoped by workflow identity when available, so independent workflows no longer serialize behind one global lock.
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
+
+## Orchestration hardening v35
+- Added orchestrator/agent_fabric.py, a zero-dollar typed agent registry/protocol with stable agent identities, role/capability validation, risk ceilings, team manifests, handoff edges, and collaboration pattern classification.
+- Node now carries agent_role; workflow schema is v4 so agent-role assignment is persisted and included in plan integrity.
+- Deterministic fallback plans now implement real scatter-gather/parallel-deliberation shapes for research, content, and software tasks instead of forcing every worker into a single linear chain.
+- LLM planner output accepts and validates agent_role and is instructed to prefer independent specialist lanes only when they add distinct value.
+- Gemini worker prompts are role-specific and include the stable derived agent identity.
+- Durable agent.started / agent.completed events make the multi-agent lifecycle auditable.
+- No new database, broker, hosted agent runtime, or paid service was introduced.
 
 ## Orchestration hardening v34
 
