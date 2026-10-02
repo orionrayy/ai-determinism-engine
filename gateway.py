@@ -12,7 +12,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 import urllib.request
 
-from private_input import PrivateInputError, input_digest, store_private_input
+from private_input import (
+    PrivateInputError,
+    delete_private_input,
+    input_digest,
+    store_private_input,
+)
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "10000"))
@@ -115,7 +120,7 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         if supplied_fp != expected_fp:
             raise ValueError("intent_fingerprint_mismatch")
 
-    expected_digest = hashlib.sha256(canonical_json(request_input)).hexdigest()
+    expected_digest = input_digest(request_input)
     supplied_digest = str(payload.get("input_digest") or "").strip()
     if supplied_digest:
         if not FINGERPRINT_RE.fullmatch(supplied_digest):
@@ -133,6 +138,8 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     execution_id = supplied_execution_id or derived_execution_id
     if not EXECUTION_ID_RE.fullmatch(execution_id):
         raise ValueError("execution_id_invalid")
+    if supplied_execution_id and supplied_execution_id != derived_execution_id:
+        raise ValueError("execution_id_mismatch")
 
     workflow_id = str(payload.get("workflow_id") or execution_id).strip()
     if not SAFE_ID_RE.fullmatch(workflow_id):
@@ -357,7 +364,20 @@ class Handler(BaseHTTPRequestHandler):
                     or None
                 )
 
-            result = github_dispatch(goal, metadata, event_id=event_id)
+            try:
+                result = github_dispatch(goal, metadata, event_id=event_id)
+            except Exception:
+                private_ref = str(metadata.get("private_input_ref") or "").strip()
+                if private_ref:
+                    try:
+                        delete_private_input(private_ref)
+                    except Exception as cleanup_exc:
+                        print(
+                            "private input cleanup unavailable after dispatch failure",
+                            type(cleanup_exc).__name__,
+                            flush=True,
+                        )
+                raise
             receipt = {"ok": True, "queued": True, **result}
             for field in (
                 "request_id",
