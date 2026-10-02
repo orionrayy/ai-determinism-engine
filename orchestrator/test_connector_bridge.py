@@ -599,7 +599,8 @@ class ConnectorBridgeTests(unittest.TestCase):
                 def read(self): return b'{"ok": true, "bridge_job_id": "job-1"}'
             return Response()
 
-        inventory = {"notion": {"actions": ["create_page"], "configured": True, "action_specs": {"create_page": {"response_fields": ["bridge_job_id"]}}}}
+        inventory = {"notion": {"actions": ["create_page"], "configured": True,
+ "free_tier": True, "action_specs": {"create_page": {"response_fields": ["bridge_job_id"]}}}}
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
