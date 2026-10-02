@@ -21,8 +21,8 @@ class FailurePolicyTests(unittest.TestCase):
         self.assertEqual(classify_failure(ValueError("invalid payload")), "contract")
         self.assertEqual(classify_failure(RuntimeError("tool disabled by ORCHESTRATOR_FREE_ONLY=true")), "policy")
         self.assertEqual(classify_failure(RuntimeError("semantic validation failed")), "semantic")
-        self.assertEqual(classify_failure(RuntimeError("unclassified terminal failure")), "permanent")
-        for failure_class in ("contract", "policy", "semantic", "permanent", "uncertain"):
+        self.assertEqual(classify_failure(RuntimeError("unclassified terminal failure")), "unknown")
+        for failure_class in ("contract", "policy", "semantic", "permanent", "unknown", "uncertain"):
             self.assertFalse(retry_class_allowed(failure_class))
 
     def test_http_failures_have_typed_classes(self):
