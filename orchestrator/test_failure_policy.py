@@ -3,6 +3,7 @@ import urllib.error
 
 from failure_policy import (
     classify_failure,
+    decide_retry,
     deterministic_retry_delay,
     retry_allowed,
 )
@@ -48,15 +49,39 @@ class FailurePolicyTests(unittest.TestCase):
         self.assertFalse(retry_allowed("transient", explicitly_retryable=False))
         self.assertFalse(retry_allowed("uncertain", explicitly_retryable=True))
 
-    def test_deterministic_retry_delay_is_stable_and_bounded(self):
-        a = deterministic_retry_delay("wf-1", "n-1", 1)
-        b = deterministic_retry_delay("wf-1", "n-1", 1)
-        c = deterministic_retry_delay("wf-1", "n-1", 2)
+    def test_central_retry_decision_blocks_uncertain_non_idempotent_side_effect(self):
+        decision = decide_retry(
+            "transient",
+            uncertain=True,
+            side_effect_started=True,
+            idempotent=False,
+        )
+        self.assertEqual(decision["failure_class"], "uncertain")
+        self.assertFalse(decision["retry_allowed"])
+        self.assertTrue(decision["uncertain"])
+
+    def test_central_retry_decision_allows_uncertain_idempotent_side_effect(self):
+        decision = decide_retry(
+            "transient",
+            uncertain=True,
+            side_effect_started=True,
+            idempotent=True,
+        )
+        self.assertTrue(decision["retry_allowed"])
+        self.assertTrue(decision["uncertain"])
+
+    def test_retry_jitter_is_stable_per_seed_and_spreads_nodes(self):
+        a = deterministic_retry_delay("wf-1", "n-1", 1, jitter_seed="seed-a")
+        b = deterministic_retry_delay("wf-1", "n-1", 1, jitter_seed="seed-a")
+        c = deterministic_retry_delay("wf-1", "n-1", 1, jitter_seed="seed-b")
         self.assertEqual(a, b)
         self.assertNotEqual(a, c)
         self.assertGreaterEqual(a, 2.0)
-        self.assertLessEqual(a, 2.250)
-        self.assertLessEqual(c, 4.250)
+        self.assertLessEqual(a, 3.0)
+        self.assertLessEqual(
+            deterministic_retry_delay("wf-1", "n-1", 2, jitter_seed="seed-a"),
+            6.0,
+        )
 
 
 if __name__ == "__main__":
