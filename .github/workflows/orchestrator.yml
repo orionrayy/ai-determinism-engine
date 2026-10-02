@@ -22,6 +22,11 @@ on:
         required: false
         default: "4"
         type: string
+      max_steps:
+        description: "Maximum durable logical execution steps for one workflow"
+        required: false
+        default: "96"
+        type: string
   repository_dispatch:
     types: [orchestrator.event, orchestrator.continue]
   issues:
@@ -179,6 +184,7 @@ jobs:
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_FREE_ONLY: "true"
           ORCHESTRATOR_MAX_PARALLEL: ${{ inputs.max_parallel || '4' }}
+          ORCHESTRATOR_MAX_EXECUTION_STEPS: ${{ inputs.max_steps || '96' }}
           ORCHESTRATOR_DURABILITY_BARRIER: "true"
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
