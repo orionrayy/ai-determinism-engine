@@ -96,7 +96,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 ## Control-plane hardening v30
 
 - Workflow creation now persists execution_budget.max_steps from ORCHESTRATOR_MAX_EXECUTION_STEPS, bounded to 1–256, instead of wiring the input only through YAML.
-- New workflows use CURRENT_WORKFLOW_SCHEMA_VERSION (currently v5) rather than a stale hard-coded schema number.
+- New workflows use CURRENT_WORKFLOW_SCHEMA_VERSION (currently v6) rather than a stale hard-coded schema number.
 - Connector bridge idempotency is single-flight per request ID inside a bridge process; identical concurrent requests wait for the first result instead of launching duplicate upstream calls.
 - Idempotency cache entries are intent-bound and returned as defensive copies. Same-key/different-intent and same-key/different-in-flight-intent collisions fail closed.
 - Continuation events are keyed as continuation:<workflow_run_id>:<run_attempt> and dispatched with the exact workflow ID. The continuation workflow uses a per-run/per-attempt concurrency group. The pinned actionlint version does not understand an explicit queue key, so the default single-pending behavior is retained.
@@ -119,7 +119,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - `origin_github_run_id` preserves the first worker run for provenance and audit history.
 - This closes the chained-continuation gap where a resumed workflow kept its original run id and the next `workflow_run` event could no longer correlate to the exact persisted workflow.
 - The continuation workflow still matches the triggering run id against the exact persisted workflow and dispatches the exact `workflow_id`; it does not fall back to `last_workflow_id`.
-- Workflow schema is now v5; top-level state schema remains v4.
+- Workflow schema is now v6; top-level state schema remains v4.
 ## Route snapshot + policy integrity v27
 
 - Each workflow now persists a deterministic route/policy snapshot covering the selected node tool, capability fallback candidates, risk/action context, the relevant tool policy fields, live mode, and the free-only setting.
@@ -127,7 +127,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - A policy mismatch fails closed as `workflow.policy_drift`; the runner does not silently re-route a persisted plan or continue under changed side-effect/free-tier semantics.
 - Legacy workflows without a policy fingerprint initialize one on their first post-v27 resume before any node execution; subsequent resumes are protected by the fingerprint.
 - Explicit replanning refreshes both the route snapshot and policy fingerprint because the tool choice intentionally changes.
-- Historical note: at v27, the durable route/policy fields were introduced before the workflow schema advanced to v5 in v28/v30; the current workflow schema is v5 and the top-level state schema remains v4.
+- Historical note: at v27, the durable route/policy fields were introduced before the workflow schema advanced to v6 in this hardening line; the current workflow schema is v5 and the top-level state schema remains v4.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
