@@ -11,6 +11,7 @@ import time
 import traceback
 import urllib.error
 import urllib.parse
+import re
 import urllib.request
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
@@ -66,6 +67,7 @@ DEFAULT_MAX_EXECUTION_STEPS = 96
 MAX_MAX_EXECUTION_STEPS = 256
 RUNNING_RECOVERY_GRACE_SECONDS = 300
 MAX_CONTEXT_BYTES = 48 * 1024
+SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -579,6 +581,12 @@ def validate_dag(nodes: list[Node]) -> None:
         raise ValueError("duplicate node id")
     by_id = {node.id: node for node in nodes}
     for node in nodes:
+        if not SAFE_ID_RE.fullmatch(str(node.id or "")):
+            raise ValueError(f"unsafe node id: {node.id!r}")
+        if not SAFE_ID_RE.fullmatch(str(node.capability or "")):
+            raise ValueError(f"unsafe capability name: {node.capability!r}")
+        if not SAFE_ID_RE.fullmatch(str(node.tool or "")):
+            raise ValueError(f"unsafe tool name: {node.tool!r}")
         if node.tool not in {"noop"} and node.tool == "":
             raise ValueError(f"empty tool for {node.id}")
         for dependency in node.depends_on:
@@ -1362,6 +1370,8 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
         "node": asdict(node),
         "ts": utc_now(),
     }
+    if not SAFE_ID_RE.fullmatch(str(workflow.get("id") or "")):
+        raise RuntimeError("unsafe workflow id for checkpoint path")
     checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
     write_json(checkpoint_path, checkpoint)
     checkpoint_bytes = checkpoint_path.read_bytes()
