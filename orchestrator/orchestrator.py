@@ -60,6 +60,8 @@ REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 MAX_NODES = 24
 MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
+DEFAULT_MAX_EXECUTION_STEPS = 96
+MAX_MAX_EXECUTION_STEPS = 256
 MAX_CONTEXT_BYTES = 48 * 1024
 
 TRANSITIONS = {
@@ -208,6 +210,43 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     state.setdefault("workflows", {})[workflow["id"]] = workflow
     state["last_workflow_id"] = workflow["id"]
     save_state(state)
+
+class ExecutionBudgetExceeded(RuntimeError):
+    pass
+
+
+def execution_budget(workflow: dict[str, Any]) -> dict[str, Any]:
+    budget = workflow.setdefault("execution_budget", {})
+    try:
+        maximum = int(budget.get("max_steps", DEFAULT_MAX_EXECUTION_STEPS))
+    except (TypeError, ValueError):
+        maximum = DEFAULT_MAX_EXECUTION_STEPS
+    try:
+        used = int(budget.get("used_steps", 0))
+    except (TypeError, ValueError):
+        used = 0
+    budget["max_steps"] = max(1, min(maximum, MAX_MAX_EXECUTION_STEPS))
+    budget["used_steps"] = max(0, min(used, MAX_MAX_EXECUTION_STEPS))
+    return budget
+
+
+def reserve_execution_step(workflow: dict[str, Any], node_id: str) -> int:
+    budget = execution_budget(workflow)
+    if budget["used_steps"] >= budget["max_steps"]:
+        raise ExecutionBudgetExceeded(
+            f"execution step budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
+        )
+    budget["used_steps"] += 1
+    budget["last_node_id"] = str(node_id)
+    budget["last_reserved_at"] = utc_now()
+    append_event("workflow.budget_step_reserved", {
+        "workflow_id": workflow["id"],
+        "node_id": str(node_id),
+        "used_steps": budget["used_steps"],
+        "max_steps": budget["max_steps"],
+    })
+    return budget["used_steps"]
+
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{int(time.time() * 1000)}"
@@ -1155,7 +1194,63 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         if not ok:
             raise RuntimeError("semantic validation failed")
 
-    return {"passed": True, "checks": checks, "checked_at": utc_now()}
+    postconditions = contract.get("postconditions", [])
+    if postconditions:
+        if not isinstance(postconditions, list):
+            raise RuntimeError("contract.postconditions must be an array")
+        for index, condition in enumerate(postconditions):
+            if not isinstance(condition, dict):
+                raise RuntimeError(f"contract.postconditions[{index}] must be an object")
+            kind = str(condition.get("type") or "").strip().lower()
+            field = str(condition.get("field") or "").strip()
+            current: Any = output
+            if field:
+                for part in field.split("."):
+                    if isinstance(current, dict) and part in current:
+                        current = current[part]
+                    else:
+                        current = None
+                        break
+            if kind == "field_exists":
+                passed = bool(field) and current is not None
+            elif kind == "field_equals":
+                passed = bool(field) and current == condition.get("value")
+            elif kind == "field_in":
+                values = condition.get("values")
+                if not isinstance(values, list):
+                    raise RuntimeError(f"contract.postconditions[{index}].values must be an array")
+                passed = bool(field) and current in values
+            elif kind == "non_empty":
+                passed = bool(field) and bool(current)
+            elif kind == "http_status":
+                if not isinstance(current, int):
+                    raise RuntimeError(
+                        f"postcondition {index} field {field or '<root>'} is not an integer HTTP status"
+                    )
+                minimum = int(condition.get("min", 200))
+                maximum = int(condition.get("max", 299))
+                passed = minimum <= current <= maximum
+            else:
+                raise RuntimeError(f"unsupported postcondition type: {kind or 'missing'}")
+            check = {
+                "check": f"postcondition:{index}:{kind}",
+                "field": field,
+                "passed": passed,
+            }
+            if kind == "http_status":
+                check["value"] = current
+            checks.append(check)
+            if not passed:
+                raise RuntimeError(f"postcondition {index} failed: {kind}")
+    return {
+        "passed": True,
+        "checks": checks,
+        "acceptance": {
+            "postconditions": postconditions,
+            "passed": True,
+        },
+        "checked_at": utc_now(),
+    }
 
 
 def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
@@ -1582,7 +1677,8 @@ def reconcile_first_uncertain(
         transition(node, "failed")
         workflow["status"] = "failed"
         workflow["failed_node"] = node.id
-        workflow.setdefault("reconciliations", {})[node.id] = {
+        workflow.setdefault("reconciliations", {})[    execution_budget(workflow)
+node.id] = {
             "state": "unknown",
             "error": str(exc),
             "checked_at": utc_now(),
@@ -1596,7 +1692,8 @@ def reconcile_first_uncertain(
         return "failed"
 
     state = str(result.get("state") or "unknown").lower()
-    workflow.setdefault("reconciliations", {})[node.id] = result
+    workflow.setdefault("reconciliations", {})[    execution_budget(workflow)
+node.id] = result
     if state == "applied":
         node.output = {
             "reconciled": True,
@@ -1770,6 +1867,28 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return 'waiting_approval'
 
+    try:
+        reserve_execution_step(workflow, node.id)
+    except ExecutionBudgetExceeded as budget_exc:
+        node.error = {
+            'type': type(budget_exc).__name__,
+            'message': str(budget_exc),
+            'failure_class': 'dependency',
+            'budget_exhausted': True,
+        }
+        transition(node, 'failed')
+        workflow['status'] = 'failed'
+        workflow['failed_node'] = node.id
+        workflow['budget_exhausted'] = {
+            'node_id': node.id,
+            'used_steps': execution_budget(workflow)['used_steps'],
+            'max_steps': execution_budget(workflow)['max_steps'],
+        }
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'failed'
+    workflow['nodes'] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
     node.input["context"] = build_node_context(nodes, node)
     transition(node, 'running')
     execution_id = execution_key(workflow, node)
@@ -1911,7 +2030,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get("live"))
-    enforce_node_policy(nodes, registry, live=live)
+    enforce_node_policy(nodes, registry, live=live, route=False)
     if not ensure_plan_integrity(workflow, nodes):
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
@@ -2047,6 +2166,28 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 })
                 continue
 
+            try:
+                reserve_execution_step(workflow, node.id)
+            except ExecutionBudgetExceeded as budget_exc:
+                node.error = {
+                    "type": type(budget_exc).__name__,
+                    "message": str(budget_exc),
+                    "failure_class": "dependency",
+                    "budget_exhausted": True,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["budget_exhausted"] = {
+                    "node_id": node.id,
+                    "used_steps": execution_budget(workflow)["used_steps"],
+                    "max_steps": execution_budget(workflow)["max_steps"],
+                }
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
             node.input["context"] = build_node_context(nodes, node)
             transition(node, "running")
 
