@@ -2095,7 +2095,6 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
     body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     for _attempt in range(3):
         timestamp = str(int(time.time()))
-        signature = "sha256=" + hashlib.sha256(timestamp.encode("utf-8") + b"\n" + body).hexdigest()
         # HMAC construction is explicit to avoid depending on a second auth helper.
         import hmac
         signature = "sha256=" + hmac.new(secret.encode("utf-8"), timestamp.encode("utf-8") + b"\n" + body, hashlib.sha256).hexdigest()
@@ -2308,6 +2307,8 @@ def main() -> int:
             None,
         )
         if existing:
+            if existing.get("status") in {"completed", "failed"}:
+                notify_execution_callback(existing)
             print_summary(existing)
             return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
     workflow = create_workflow(
