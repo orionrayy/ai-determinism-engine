@@ -54,6 +54,7 @@ class GatewayTests(unittest.TestCase):
 
         payload = json.loads(captured["body"].decode())
         self.assertEqual(payload["client_payload"]["event_id"], "evt-123")
+        self.assertEqual(payload["client_payload"]["workflow_id"], "evt-123")
 
     def test_structured_execution_event_sanitizes_private_input(self):
         payload = {
@@ -148,6 +149,20 @@ class GatewayTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(len(first), 64)
         self.assertNotEqual(first, other)
+
+    def test_hmac_header_names_are_case_insensitive(self):
+        body = b'{"goal":"hello"}'
+        timestamp = str(int(time.time()))
+        signature = gateway.hmac_signature(
+            timestamp, "POST", "/event", "key-1", body, "test-secret"
+        )
+        headers = {
+            "x-orchestrator-timestamp": timestamp,
+            "x-orchestrator-signature": signature,
+            "idempotency-key": "key-1",
+        }
+        with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
+            self.assertTrue(gateway.authorized(headers, body))
 
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
