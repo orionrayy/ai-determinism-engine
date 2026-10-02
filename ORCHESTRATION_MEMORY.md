@@ -548,3 +548,5 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Acquire seeds the remote attempt ledger only when the execution subject has no prior ledger. On resume, the remote ledger is authoritative and its count is copied into local execution_budget.used_steps.
 - Reserve-attempt is atomic per execution subject and renews the lease. Release clears ownership but preserves the ledger until retention expiry. Durable Object alarms garbage-collect expired ledgers.
 - GitHub Actions enables the lease for live orchestrator runs. Dry-run stays local.
+
+- v47 lease storage uses a `retention_until` column: ownership expiry releases the worker lease without deleting the attempt ledger. Garbage collection occurs only after the seven-day retention window.
