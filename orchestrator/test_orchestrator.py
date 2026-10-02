@@ -803,6 +803,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(workflow["id"].startswith("wf_"))
         self.assertEqual(workflow["status"], "planning")
         self.assertEqual(workflow["execution_mode"], "dry-run")
+        self.assertEqual(workflow["schema_version"], 3)
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
 
     def test_plan_is_acyclic(self):
@@ -974,6 +975,24 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][0]["status"], "waiting_approval")
         self.assertEqual(workflow["nodes"][0]["input"]["approval_issue"], 123)
 
+
+    def test_execution_ledger_stores_digest_not_full_output(self):
+        workflow = {"id": "wf_ledger", "executions": {}}
+        payload = {"result": "x" * 1000}
+        o.mark_execution_completed(workflow, "exec-1", payload)
+        record = workflow["executions"]["exec-1"]
+        self.assertEqual(record["status"], "completed")
+        self.assertIn("output_sha256", record)
+        self.assertNotIn("output", record)
+
+    def test_event_payload_is_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event_path = Path(tmp) / "events.jsonl"
+            with patch.object(o, "EVENT_FILE", event_path):
+                o.append_event("test.large", {"payload": "x" * (o.MAX_EVENT_PAYLOAD_BYTES + 1000)})
+            entry = json.loads(event_path.read_text(encoding="utf-8"))
+        self.assertTrue(entry["payload"]["truncated"])
+        self.assertEqual(len(entry["payload"]["sha256"]), 64)
 
     def test_workflow_attempt_budget_blocks_execution(self):
         node = o.Node("n01", "execute", "noop", [], max_retries=999)

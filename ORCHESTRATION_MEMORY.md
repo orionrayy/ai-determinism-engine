@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: secure structured live boundary v26, on top of execution-envelope ingress v25, approval intent binding v23/v24, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; cross-service requests carry execution identity, intent fingerprint, input digest, attempt, and requested mode; structured live requests fail closed until a private input channel exists.
+Current main baseline: orchestration hardening v28 on top of secure structured live boundary v26, execution-envelope ingress v25, approval intent binding v23/v24, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; cross-service requests carry execution identity, intent fingerprint, input digest, attempt, and requested mode; structured live requests fail closed until a private input channel exists.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -41,9 +41,14 @@ pending -> ready -> running -> validating -> completed
                        |
                        +-> failed -> replanning -> ready
                                     |
-                                    +-> reconciling -> completed
+                                    +-> reconciling -> validating -> completed
                                                     `-> ready
 ```
+
+Workflow attempt budget:
+- default `max_attempts`: 64
+- hard cap: 128
+- `attempts_used` is shared by retries and replans and persisted in workflow state
 
 High-risk operations require explicit approval in live mode unless the workflow invocation explicitly supplies approval.
 
@@ -191,6 +196,13 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - Stale or missing approval fingerprints are fail-closed: the old approval is cleared, the old issue reference is discarded, and the node returns to `ready` so a fresh approval issue is created.
 - The approving GitHub actor and approval timestamp are persisted as audit metadata.
 - `approval_fingerprint` is excluded from the plan fingerprint as runtime approval metadata; changing the actual tool/action/payload still changes the plan fingerprint and fails the existing plan-integrity check.
+
+## Orchestration hardening v28
+
+- Audit events are bounded to 16 KiB payloads and are written with flush/fsync before the worker proceeds.
+- Execution ledger completion records store output SHA-256 and evidence SHA-256 rather than duplicating full node output inside `executions`, reducing persisted state redundancy.
+- New workflows are created at workflow schema v3 and new empty state initializes at state version v4.
+- Persisted retry seed, attempt counters, and runtime metadata remain excluded from the plan fingerprint where appropriate.
 
 ## Orchestration hardening v27
 
