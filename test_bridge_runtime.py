@@ -72,6 +72,21 @@ class BridgeRuntimeTests(unittest.TestCase):
             {"required": [], "types": {}, "idempotent": False},
         )
 
+    def test_route_target_fingerprint_is_exposed_without_url(self):
+        url = "https://upstream.example.test/invoke"
+        routes = {
+            "notion": {
+                "url": url,
+                "actions": ["create_page"],
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertEqual(
+            discovered["notion"]["target_fingerprint"],
+            br.route_target_fingerprint(url),
+        )
+        self.assertNotIn(url, json.dumps(discovered))
+
     def test_capability_discovery_reports_configured_secret_without_exposing_it(self):
         routes = {
             "notion": {
@@ -234,6 +249,31 @@ class BridgeRuntimeTests(unittest.TestCase):
             sum(1 for result in results if result.get("idempotent_replay", False)),
             1,
         )
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+
+    def test_same_request_id_different_target_fails_closed(self):
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+        payload = self.payload(request_id=hashlib.sha256(b"stable-target-key").hexdigest())
+        routes_a = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream-a.example.test/invoke",
+            }
+        }
+        routes_b = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream-b.example.test/invoke",
+            }
+        }
+        with patch.object(br, "load_routes", side_effect=[routes_a, routes_b]),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200}) as dispatch:
+            first = br.handle_request(payload, "secret")
+            self.assertTrue(first["ok"])
+            with self.assertRaises(br.BridgeRuntimeError):
+                br.handle_request(payload, "secret")
+        dispatch.assert_called_once()
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
 
