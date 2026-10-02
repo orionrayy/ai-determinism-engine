@@ -77,7 +77,6 @@ class GatewayTests(unittest.TestCase):
     def test_structured_execution_event_sanitizes_private_input(self):
         payload = {
             "event_id": "evt-1",
-            "execution_id": "a" * 64,
             "workflow_id": "wf-1",
             "domain": "wattpad-romance-publisher",
             "operation": "publication.schedule",
@@ -175,7 +174,6 @@ class GatewayTests(unittest.TestCase):
     def test_structured_live_execution_stores_private_payload(self):
         payload = {
             "event_id": "evt-live",
-            "execution_id": "a" * 64,
             "workflow_id": "wf-live",
             "domain": "notion",
             "operation": "create_page",
