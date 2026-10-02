@@ -85,5 +85,19 @@ def commit_side_effect_start(
         "-m",
         f"chore(orchestrator): persist execution start {execution_id}",
     )
-    _run_git(root, "push", "origin", "HEAD:main")
+    # The expected remote SHA becomes the CAS guard at the actual use point.
+    # A remote change after the HEAD check therefore causes this push to fail
+    # before any external side effect is allowed to proceed.
+    try:
+        _run_git(
+            root,
+            "push",
+            f"--force-with-lease=refs/heads/main:{remote}",
+            "origin",
+            "HEAD:refs/heads/main",
+        )
+    except DurabilityBarrierError as exc:
+        raise DurabilityBarrierError(
+            "durability barrier CAS rejected: main changed after preflight"
+        ) from exc
     return True
