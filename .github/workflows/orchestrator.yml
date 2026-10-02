@@ -22,8 +22,13 @@ on:
         required: false
         default: "4"
         type: string
+      federate_safe_agents:
+        description: "Enable $0 GitHub Actions matrix federation for independent safe agents"
+        required: false
+        default: false
+        type: boolean
   repository_dispatch:
-    types: [orchestrator.event, orchestrator.continue]
+    types: [orchestrator.event, orchestrator.continue, orchestrator.federation.completed]
   issues:
     types: [opened, edited, labeled]
   schedule:
@@ -32,6 +37,7 @@ on:
 permissions:
   contents: write
   issues: write
+  actions: read
 
 concurrency:
   # Serialize retries/continuations for the exact workflow identity. Issue events
@@ -172,6 +178,10 @@ jobs:
           ORCHESTRATOR_MAX_PARALLEL: ${{ inputs.max_parallel || '4' }}
           ORCHESTRATOR_MAX_ATTEMPTS: ${{ vars.ORCHESTRATOR_MAX_ATTEMPTS || '64' }}
           ORCHESTRATOR_DURABILITY_BARRIER: "true"
+          ORCHESTRATOR_FEDERATION_ENABLED: ${{ inputs.federate_safe_agents && 'true' || vars.ORCHESTRATOR_FEDERATION_ENABLED || 'false' }}
+          ORCHESTRATOR_FEDERATION_ARTIFACT_ID: ${{ github.event.client_payload.artifact_id }}
+          ORCHESTRATOR_FEDERATION_ARTIFACT_DIGEST: ${{ github.event.client_payload.artifact_digest }}
+          ORCHESTRATOR_FEDERATION_ID: ${{ github.event.client_payload.federation_id }}
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then
             args=(--resume --step)
