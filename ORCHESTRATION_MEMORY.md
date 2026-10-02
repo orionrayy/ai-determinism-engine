@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + v38 health-state sharding/federation recovery + earlier durable control-plane generations.
+Current main baseline: orchestration hardening v45 artifact verifier SSRF guard + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + v38 health-state sharding/federation recovery + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -47,6 +47,14 @@ Current execution-fabric branch: `main`
 - This is a stdlib-only mitigation aligned with OWASP SSRF guidance; arbitrary URL verification remains available for public HTTPS destinations without adding a paid egress/proxy service.
 - No new database, broker, queue, or paid dependency was introduced.
 
+
+## Orchestration hardening v46 — continuation, ingress, and persistence race closure
+- Gateway HMAC binds timestamp, HTTP method, request path, optional `Idempotency-Key`, and raw body; header lookup is case-insensitive.
+- Unstructured gateway requests without an explicit event/idempotency key receive a deterministic event identity, propagated as `workflow_id` so replay-equivalent repository dispatches use the same workflow concurrency group.
+- Newly-created workflows are persisted before the first execution step, and execution no longer performs stale caller-snapshot `save_state()` writes after `persist_workflow()` has durably updated the workflow.
+- Source Issue handling explicitly binds `github.event.action` before bash `set -u` executes the labeled-event branch.
+- Continuation dispatch explicitly exports the originating `workflow_run.id` and `run_attempt` used to construct the exact continuation event identity.
+- No paid service, database, broker, queue, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
