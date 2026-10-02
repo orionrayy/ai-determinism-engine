@@ -37,7 +37,7 @@ AGENTS = {
     "analyst": AgentProfile(
         "analyst",
         "Synthesize evidence, compare alternatives, and surface uncertainty.",
-        frozenset({"analyze"}),
+        frozenset({"analyze", "draft"}),
     ),
     "architect": AgentProfile(
         "architect",
