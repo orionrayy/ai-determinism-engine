@@ -3,6 +3,7 @@ import unittest
 from state_schema import (
     CURRENT_STATE_VERSION,
     CURRENT_WORKFLOW_SCHEMA_VERSION,
+    DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
     StateSchemaError,
     migrate_state,
 )
@@ -33,6 +34,16 @@ class StateSchemaTests(unittest.TestCase):
         self.assertEqual(workflow["reconciliations"], {})
         self.assertEqual(workflow["agent_team"], {})
         self.assertEqual(workflow["federation"], {})
+        self.assertEqual(
+            workflow["max_federation_batches"],
+            4,
+        )
+        self.assertEqual(
+            workflow["max_federation_tasks"],
+            16,
+        )
+        self.assertEqual(workflow["federation_batches_used"], 0)
+        self.assertEqual(workflow["federation_tasks_used"], 0)
         self.assertEqual(workflow["nodes"][0]["agent_role"], "")
         self.assertEqual(workflow["plan_integrity"], "legacy_unverified")
         self.assertEqual(workflow["nodes"][0]["status"], "pending")
