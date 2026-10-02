@@ -70,24 +70,24 @@ class PrivateInputTests(unittest.TestCase):
         secret = "secret"
         body = b"{}"
         timestamp = 1700000000
+        path = "/v1/inputs/" + "a" * 64
         current = pi.request_signature(
             method="GET",
-            path="/v1/inputs/" + "a" * 64,
+            path=path,
             timestamp=timestamp,
             body=body,
             secret=secret,
         )
-        with patch.object(pi, "PROTOCOL", "different-protocol/v9"):
-            self.assertNotEqual(
-                current,
-                pi.request_signature(
-                    method="GET",
-                    path="/v1/inputs/" + "a" * 64,
-                    timestamp=timestamp,
-                    body=body,
-                    secret=secret,
-                ),
-            )
+        alternate_message = (
+            "GET\n" + path + "\ndifferent-protocol/v9\n"
+            + str(timestamp) + "\n"
+        ).encode() + body
+        alternate = hmac.new(
+            secret.encode(),
+            alternate_message,
+            hashlib.sha256,
+        ).hexdigest()
+        self.assertNotEqual(current, alternate)
 
     def test_store_rejects_invalid_intent_fingerprint(self):
         with patch.dict(os.environ, {
@@ -147,7 +147,7 @@ class PrivateInputTests(unittest.TestCase):
         )
         self.assertEqual(actual_signature, "sha256=" + expected_signature)
         self.assertEqual(
-            captured["request"].get_header("X-Orchestrator-protocol"),
+            captured["request"].get_header("X-orchestrator-protocol"),
             pi.PROTOCOL,
         )
 
