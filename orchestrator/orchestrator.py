@@ -533,8 +533,12 @@ def ingest_federation(
     federation = workflow.get("federation") or {}
     if federation.get("status") == "completed" and int(federation.get("artifact_id") or 0) == int(artifact_id):
         return "already_completed"
+    aggregate_value = download_federation_aggregate(
+        artifact_id,
+        artifact_digest,
+    )
     results = validate_federation_aggregate(
-        download_federation_aggregate(artifact_id, artifact_digest),
+        aggregate_value,
         workflow,
         artifact_digest,
     )
@@ -582,7 +586,6 @@ def ingest_federation(
     federation["status"] = "completed" if not failures else "partial_failure"
     federation["artifact_id"] = int(artifact_id)
     federation["artifact_digest"] = artifact_digest or None
-    aggregate_value = download_federation_aggregate(artifact_id, artifact_digest)
     federation["aggregate_sha256"] = aggregate_value.get("aggregate_sha256")
     federation["completed_at"] = utc_now()
 
