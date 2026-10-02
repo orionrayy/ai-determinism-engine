@@ -40,9 +40,16 @@ jobs:
           run_id=str(os.environ['WORKFLOW_RUN_ID'])
           run_attempt=str(os.environ['WORKFLOW_RUN_ATTEMPT'])
           event_id=f"continuation:{run_id}:{run_attempt}"
-          # github_run_id is the latest durable worker run; origin_github_run_id is provenance.
-          # Exact run correlation is retained without falling back to last_workflow_id.
-          wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
+          # github_run_id/run_attempt identify the latest durable worker execution;
+          # origin_* fields preserve first-run provenance. Never fall back to last_workflow_id.
+          wf=next(
+              (
+                  item for item in state.get('workflows',{}).values()
+                  if str(item.get('github_run_id')) == run_id
+                  and str(item.get('github_run_attempt')) == run_attempt
+              ),
+              None,
+          )
           status=wf.get('status') if wf else 'missing'
           wid=wf.get('id') if wf else ''
           print(f'workflow_id={wid}')
