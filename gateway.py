@@ -10,9 +10,78 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import urllib.parse
 import urllib.request
+import re
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", "10000"))
+EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+
+def canonical_json(value) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+
+
+def intent_fingerprint(domain: str, operation: str, payload: dict) -> str:
+    return hashlib.sha256(canonical_json({
+        "domain": str(domain).strip(),
+        "operation": str(operation).strip().lower(),
+        "input": payload,
+    })).hexdigest()
+
+
+def derive_execution_id(event_id: str, domain: str, operation: str, fingerprint: str) -> str:
+    return hashlib.sha256(canonical_json({
+        "schema_version": 1,
+        "event_id": str(event_id).strip(),
+        "domain": str(domain).strip(),
+        "operation": str(operation).strip().lower(),
+        "intent_fingerprint": fingerprint,
+    })).hexdigest()
+
+
+def build_execution_event(payload: dict) -> tuple[str, dict, str]:
+    domain = str(payload.get("domain") or "").strip()
+    operation = str(payload.get("operation") or "").strip().lower()
+    if not domain or not operation:
+        raise ValueError("domain and operation are required")
+    request_input = payload.get("payload")
+    if request_input is None:
+        request_input = payload.get("input") or {}
+    if not isinstance(request_input, dict):
+        raise ValueError("payload/input must be an object")
+    event_id = str(payload.get("event_id") or payload.get("request_id") or "").strip()
+    if not event_id:
+        event_id = hashlib.sha256(canonical_json({
+            "domain": domain, "operation": operation, "input": request_input
+        })).hexdigest()
+    expected_fp = intent_fingerprint(domain, operation, request_input)
+    supplied_fp = str(payload.get("intent_fingerprint") or "").strip()
+    if supplied_fp and supplied_fp != expected_fp:
+        raise ValueError("intent_fingerprint_mismatch")
+    execution_id = str(payload.get("execution_id") or "").strip() or derive_execution_id(
+        event_id, domain, operation, expected_fp
+    )
+    if not EXECUTION_ID_RE.fullmatch(execution_id):
+        raise ValueError("execution_id_invalid")
+    workflow_id = str(payload.get("workflow_id") or execution_id).strip()
+    try:
+        attempt = int(payload.get("attempt") or 1)
+    except (TypeError, ValueError):
+        raise ValueError("attempt_invalid")
+    if attempt < 1 or attempt > 1000:
+        raise ValueError("attempt_out_of_range")
+    metadata = {
+        "execution_id": execution_id,
+        "workflow_id": workflow_id,
+        "domain": domain,
+        "operation": operation,
+        "intent_fingerprint": expected_fp,
+        "input_digest": hashlib.sha256(canonical_json(request_input)).hexdigest(),
+        "attempt": attempt,
+        "source": str(payload.get("source") or "automation-core")[:128],
+    }
+    goal = f"Execute orchestration operation {domain}.{operation}"
+    return goal, metadata, event_id
+
 
 def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> dict:
     token = os.environ.get("GITHUB_GATEWAY_TOKEN")
@@ -118,14 +187,20 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("goal is required")
             if len(goal) > 4000:
                 raise ValueError("goal too long")
-            metadata = payload.get("metadata", {})
-            if not isinstance(metadata, dict):
-                metadata = {"value": str(metadata)}
-            event_id = (
-                self.headers.get("Idempotency-Key")
-                or str(payload.get("event_id") or "").strip()
-                or None
-            )
+            structured_call = any(key in payload for key in (
+                "domain", "operation", "execution_id", "intent_fingerprint"
+            ))
+            if structured_call:
+                goal, metadata, event_id = build_execution_event(payload)
+            else:
+                metadata = payload.get("metadata", {})
+                if not isinstance(metadata, dict):
+                    metadata = {"value": str(metadata)}
+                event_id = (
+                    self.headers.get("Idempotency-Key")
+                    or str(payload.get("event_id") or "").strip()
+                    or None
+                )
             result = github_dispatch(goal, metadata, event_id=event_id)
             self._send(202, {"ok": True, "queued": True, **result})
         except ValueError as exc:
