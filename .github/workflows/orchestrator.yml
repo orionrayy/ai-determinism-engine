@@ -85,6 +85,12 @@ jobs:
           INPUT_GOAL: ${{ inputs.goal }}
           EVENT_GOAL: ${{ github.event.client_payload.goal }}
           EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
+          EVENT_EXECUTION_ID: ${{ github.event.client_payload.execution_id }}
+          EVENT_DOMAIN: ${{ github.event.client_payload.domain }}
+          EVENT_OPERATION: ${{ github.event.client_payload.operation }}
+          EVENT_INTENT_FINGERPRINT: ${{ github.event.client_payload.intent_fingerprint }}
+          EVENT_INPUT_DIGEST: ${{ github.event.client_payload.input_digest }}
+          EVENT_ATTEMPT: ${{ github.event.client_payload.attempt }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -102,6 +108,9 @@ jobs:
             esac
           fi
           if [ -z "$goal" ]; then goal="$EVENT_GOAL"; fi
+          if [ -z "$goal" ] && [ -n "$EVENT_OPERATION" ] && [ -n "$EVENT_DOMAIN" ]; then
+            goal="Execute orchestration operation $EVENT_DOMAIN.$EVENT_OPERATION"
+          fi
           if [ -z "$goal" ] && [ -n "$GITHUB_EVENT_WORKFLOW_ID" ]; then goal="Continuing workflow $GITHUB_EVENT_WORKFLOW_ID"; fi
           if [ -z "$goal" ] && [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
             goal='Run the orchestration health check and report current state.'
@@ -136,6 +145,12 @@ jobs:
             echo "goal=$goal"
             echo "issue_number=$trigger_issue"
             echo "workflow_id=$workflow_id"
+            echo "execution_id=$EVENT_EXECUTION_ID"
+            echo "domain=$EVENT_DOMAIN"
+            echo "operation=$EVENT_OPERATION"
+            echo "intent_fingerprint=$EVENT_INTENT_FINGERPRINT"
+            echo "input_digest=$EVENT_INPUT_DIGEST"
+            echo "attempt=$EVENT_ATTEMPT"
           } >> "$GITHUB_OUTPUT"
 
       - name: Bootstrap approval labels
@@ -163,6 +178,15 @@ jobs:
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EVENT_ID: ${{ github.event.client_payload.event_id }}
+          ORCHESTRATOR_EXECUTION_ID: ${{ github.event.client_payload.execution_id }}
+          ORCHESTRATOR_EXTERNAL_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
+          ORCHESTRATOR_EXTERNAL_DOMAIN: ${{ github.event.client_payload.domain }}
+          ORCHESTRATOR_EXTERNAL_OPERATION: ${{ github.event.client_payload.operation }}
+          ORCHESTRATOR_INTENT_FINGERPRINT: ${{ github.event.client_payload.intent_fingerprint }}
+          ORCHESTRATOR_INPUT_DIGEST: ${{ github.event.client_payload.input_digest }}
+          ORCHESTRATOR_EXTERNAL_ATTEMPT: ${{ github.event.client_payload.attempt || '1' }}
+          ORCHESTRATOR_CALLBACK_URL: ${{ secrets.ORCHESTRATOR_CALLBACK_URL }}
+          ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
