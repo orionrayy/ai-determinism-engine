@@ -493,3 +493,21 @@ Before changing runtime behavior:
 ## Design principle
 
 The system should fail closed on unsafe tool selection and unknown side-effect outcomes, fail open on optional observability, remain deterministic under duplicate events, and preserve explicit human approval for irreversible external effects.
+
+## Free-first private input backend v45
+
+- The v44 private-input client is hardened to protocol v2: request signatures bind HTTP method, request path, protocol version, timestamp, and exact body.
+- Structured live ingress now rejects a caller-supplied execution identity that differs from the deterministic identity derived from event id, domain, operation, and intent fingerprint.
+- Private-input fetch verifies expiry, required execution/digest/intent metadata, and bounded 404 retries to tolerate eventual consistency at a serverless KV boundary.
+- Gateway dispatch failures attempt best-effort deletion of the orphaned private input before returning the original dispatch error; cleanup failure never masks the original error.
+- Added `workers/private-input/`: a zero-dollar Cloudflare Workers + KV reference backend with authenticated POST/GET/DELETE, native TTL expiration, idempotent writes by input reference, and a public health endpoint.
+- Added a manual GitHub Actions deployment workflow using pinned Wrangler 4.146.0 and Node 24. Secrets are supplied through the workflow secret store and never committed.
+- Current Cloudflare Free limits are finite: 100,000 Worker requests/day; Workers KV 100,000 reads/day, 1,000 writes/day, 1,000 deletes/day, and 1 GB stored data. The free path is therefore usable at small scale, not unlimited.
+- Cloudflare KV was selected over Render Free Postgres and Render Free Key Value for this boundary: Render's free Postgres expires after 30 days, while Render Free Key Value is volatile across restarts.
+- The Worker is deployable but not claimed as deployed until a real Cloudflare account deploy and authenticated `/health` check succeed. No Cloudflare connector is currently available in the connected tool catalog, so account-side deployment remains an explicit operational step.
+
+## Private-input security follow-up
+
+- Do not persist raw connector payloads in GitHub state, issue bodies, workflow goals, or event logs.
+- Keep private-input transport errors sanitized; backend URLs and exception strings must not be propagated into public workflow state.
+- Preserve the existing connector response sanitizer and post-start replay fence; free hosting must not weaken side-effect safety.
