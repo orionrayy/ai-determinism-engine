@@ -169,6 +169,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         routes = {
             "notion": {
                 "actions": ["create_page"],
+                "free_tier": True,
                 "reconciliation_url": "https://upstream.example.test/reconcile",
             }
         }
@@ -194,6 +195,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         routes = {
             "notion": {
                 "actions": ["create_page"],
+                "free_tier": True,
                 "reconciliation_url": "https://upstream.example.test/reconcile",
             }
         }
