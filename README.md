@@ -1,3 +1,7 @@
+## Parallel budget admission v31
+
+The parallel executor now admits a safe-node batch against the workflow's remaining durable execution-step budget before persisting any node in `running`. A batch is truncated to available capacity; when capacity is exhausted, the deterministic next ready node is failed before another node can become stranded in an unfinished runtime state.
+
 ## Control-plane hardening v30
 
 v30 closes cross-layer correctness gaps found after the v29 audit: workflow creation now persists the configured execution-step budget and uses the current workflow schema constant; connector idempotency is single-flight within a bridge process and cached responses are protected from caller mutation; continuation events bind to the worker run ID and run attempt; and reconciliation keeps the connector request ID distinct from the internal execution ID.
