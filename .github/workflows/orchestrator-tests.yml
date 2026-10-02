@@ -2,6 +2,8 @@ name: Orchestrator Tests
 
 on:
   push:
+    branches:
+      - main
     paths:
       - "orchestrator/**"
       - "render.yaml"
@@ -28,6 +30,10 @@ on:
       - "ORCHESTRATION_MEMORY.md"
       - ".github/workflows/orchestrator-tests.yml"
   workflow_dispatch:
+
+concurrency:
+  group: orchestrator-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
