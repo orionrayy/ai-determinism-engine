@@ -852,6 +852,68 @@ class OrchestratorTests(unittest.TestCase):
         ):
             self.assertFalse(o.federation_enabled())
 
+    def test_federation_clamps_large_parallelism_to_protocol_batch_cap(self):
+        workflow = {
+            "id": "wf-test",
+            "goal": "research test",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 8,
+            "attempts_used": 0,
+            "max_attempts": 64,
+            "max_federation_batches": 4,
+            "max_federation_tasks": 16,
+            "federation_batches_used": 0,
+            "federation_tasks_used": 0,
+            "nodes": [],
+        }
+        nodes = [
+            o.Node(
+                f"n{i:02d}",
+                "research",
+                "research_bundle",
+                risk="low",
+                agent_role="researcher",
+                input={"instruction": f"task {i}"},
+            )
+            for i in range(1, 7)
+        ]
+        workflow["nodes"] = [o.asdict(node) for node in nodes]
+        registry = {
+            "research_bundle": {"free_tier": True, "side_effects": []},
+            "capability:research": {"default_tool": "research_bundle", "fallback_tools": []},
+        }
+        captured = {}
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FEDERATION_ENABLED": "true", "GITHUB_ACTIONS": "true", "GITHUB_TOKEN": "token"},
+            clear=False,
+        ), patch.object(o, "build_node_context", return_value={}), \
+             patch.object(o, "new_id", side_effect=["fed_test"]), \
+             patch.object(o, "persist_workflow"), \
+             patch.object(o, "dispatch_federation", side_effect=lambda manifest: captured.setdefault("manifest", manifest)):
+            budget = o.AttemptBudget(workflow)
+            result = o.delegate_ready_agents(workflow, nodes, registry, budget)
+        self.assertEqual(result, "fed_test")
+        self.assertEqual(len(captured["manifest"]["tasks"]), 4)
+
+    def test_dispatch_federation_emits_deterministic_slot(self):
+        manifest = {
+            "protocol_version": 2,
+            "federation_id": "fed_example",
+            "workflow_id": "wf_example",
+            "tasks": [],
+        }
+        captured = {}
+        with patch.object(o, "github_repository", return_value="owner/repo"),              patch.object(o, "github_headers", return_value={"Authorization": "Bearer x"}),              patch.object(o, "http_json", side_effect=lambda *args, **kwargs: captured.setdefault("body", kwargs.get("body"))):
+            o.dispatch_federation(manifest)
+        self.assertEqual(
+            captured["body"]["client_payload"]["slot"],
+            o.federation_scheduler.federation_slot("fed_example")
+            if hasattr(o, "federation_scheduler")
+            else __import__("federation_scheduler").federation_slot("fed_example"),
+        )
+
     def test_delegate_ready_agents_persists_and_dispatches_safe_batch(self):
         workflow = {
             "id": "wf-test",
