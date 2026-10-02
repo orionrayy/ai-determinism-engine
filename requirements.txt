@@ -1,4 +1,2 @@
-torch
-numpy
-pillow
-zstandard
+# The orchestration control plane, gateway, and connector bridge use Python stdlib only.
+# Legacy ML engine dependencies are isolated in requirements-legacy.txt.
