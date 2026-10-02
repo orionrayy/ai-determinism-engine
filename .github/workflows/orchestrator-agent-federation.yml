@@ -1,0 +1,185 @@
+name: Orchestrator Agent Federation
+
+on:
+  repository_dispatch:
+    types: [orchestrator.federate]
+  workflow_dispatch:
+    inputs:
+      manifest:
+        description: "JSON federation manifest produced by the supervisor"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tasks: ${{ steps.manifest.outputs.tasks }}
+      federation_id: ${{ steps.manifest.outputs.federation_id }}
+      workflow_id: ${{ steps.manifest.outputs.workflow_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Resolve and validate manifest
+        id: manifest
+        env:
+          INPUT_MANIFEST: ${{ inputs.manifest }}
+          EVENT_MANIFEST: ${{ toJSON(github.event.client_payload.manifest) }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_MANIFEST" ]; then
+            printf '%s' "$INPUT_MANIFEST" > manifest.json
+          else
+            printf '%s' "$EVENT_MANIFEST" > manifest.json
+          fi
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          from orchestrator.agent_protocol import build_manifest, task_from_dict, canonical_json
+
+          value = json.loads(Path("manifest.json").read_text())
+          if not isinstance(value, dict):
+              raise SystemExit("manifest must be an object")
+          tasks = [task_from_dict(item) for item in value.get("tasks", [])]
+          checked = build_manifest(
+              str(value.get("federation_id") or ""),
+              tasks,
+          )
+          # client_payload and job outputs are transport envelopes, not state.
+          raw = canonical_json(checked)
+          if len(raw) > 48 * 1024:
+              raise SystemExit("manifest exceeds federation transport budget")
+          print("federation_id=" + checked["federation_id"])
+          print("workflow_id=" + checked["workflow_id"])
+          print("tasks=" + json.dumps(checked["tasks"], separators=(",", ":")))
+          PY
+      - name: Upload immutable manifest
+        id: manifest-artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: federation-manifest-${{ steps.manifest.outputs.federation_id }}
+          path: manifest.json
+          if-no-files-found: error
+          retention-days: 1
+
+  agents:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        task: ${{ fromJSON(needs.prepare.outputs.tasks) }}
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30af803
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Run isolated agent
+        env:
+          TASK_JSON: ${{ toJSON(matrix.task) }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+          ORCHESTRATOR_FREE_ONLY: "true"
+          GITHUB_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 orchestrator/agent_worker.py --task-json "$TASK_JSON" --output result.json
+      - name: Upload agent result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: agent-result-${{ matrix.task.task_id }}
+          path: result.json
+          if-no-files-found: error
+          retention-days: 1
+
+  aggregate:
+    needs: [prepare, agents]
+    if: ${{ always() && needs.prepare.result == 'success' && needs.agents.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Download manifest
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: federation-manifest-${{ needs.prepare.outputs.federation_id }}
+          path: manifest-download
+      - name: Download agent results
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: agent-result-*
+          path: agent-results
+          merge-multiple: false
+      - name: Aggregate and validate
+        run: |
+          python3 orchestrator/aggregate_agent_results.py             --manifest manifest-download/manifest.json             --results-root agent-results             --output aggregate.json
+      - name: Upload aggregate
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: federation-results-${{ needs.prepare.outputs.federation_id }}
+          path: aggregate.json
+          if-no-files-found: error
+          retention-days: 1
+      - name: Dispatch completion to supervisor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          WORKFLOW_ID: ${{ needs.prepare.outputs.workflow_id }}
+          FEDERATION_ID: ${{ needs.prepare.outputs.federation_id }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_DIGEST: ${{ steps.upload.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          payload = {
+              "event_type": "orchestrator.federation.completed",
+              "client_payload": {
+                  "workflow_id": os.environ["WORKFLOW_ID"],
+                  "federation_id": os.environ["FEDERATION_ID"],
+                  "artifact_id": int(os.environ["ARTIFACT_ID"]),
+                  "artifact_digest": os.environ.get("ARTIFACT_DIGEST", ""),
+              },
+          }
+          subprocess.run(
+              [
+                  "gh",
+                  "api",
+                  f"repos/{os.environ['REPOSITORY']}/dispatches",
+                  "--input",
+                  "-",
+              ],
+              input=json.dumps(payload),
+              text=True,
+              check=True,
+          )
+          PY
