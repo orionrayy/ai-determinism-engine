@@ -208,6 +208,22 @@ def save_state(state: dict[str, Any]) -> None:
 
 def persist_workflow(workflow: dict[str, Any]) -> None:
     state = load_state()
+    current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
+    if current_run_id:
+        origin_run_id = (
+            str(workflow.get("origin_github_run_id") or "").strip()
+            or str(workflow.get("github_run_id") or "").strip()
+            or current_run_id
+        )
+        workflow["origin_github_run_id"] = origin_run_id
+        workflow["github_run_id"] = current_run_id
+        if str(workflow.get("github_run_id")) != str(current_run_id):
+            append_event("workflow.worker_run_rebound", {
+                "workflow_id": workflow["id"],
+                "previous_run_id": workflow.get("github_run_id"),
+                "current_run_id": current_run_id,
+                "origin_run_id": origin_run_id,
+            })
     workflow["updated_at"] = utc_now()
     state.setdefault("workflows", {})[workflow["id"]] = workflow
     state["last_workflow_id"] = workflow["id"]
@@ -2453,7 +2469,8 @@ def create_workflow(
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
         "event_id": event_id,
-        "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
+        "origin_github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
+        "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
         "nodes": [asdict(node) for node in nodes],
     }
 
