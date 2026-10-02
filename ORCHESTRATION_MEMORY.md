@@ -24,6 +24,12 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Concurrent single-flight failure semantics v35
+
+- Bridge-runtime single-flight now propagates the first flight's result or failure to requests that actually overlapped that flight; a waiting duplicate never starts an implicit second upstream attempt.
+- After a failed flight is released, a later fresh request may retry normally; failures are not stored as completed idempotency results.
+- This prevents concurrent duplicate callers from turning an uncertain/non-idempotent upstream failure into a second external attempt while retaining normal retry behavior for a new request cycle.
+
 ## Reconciliation target binding v34
 
 - Connector reconciliation now re-discovers the current connector action contract and target fingerprint before contacting the reconciliation endpoint.
