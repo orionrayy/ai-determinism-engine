@@ -30,6 +30,16 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Persisted node `retry_count`/`max_retries` are validated and bounded (`max_retries` <= 8) so corrupted state cannot create an unbounded retry loop.
 - Node status/risk/id/capability/dependency and runtime payload container types are validated during migration before recovery can execute them.
 
+## Private input transport v43
+
+- Structured live ingress can now accept live requests only when an authenticated HTTPS private-input store is configured; otherwise it fails closed with `private_input_unavailable`.
+- The gateway stores the raw structured input in the private store and sends GitHub Actions only an opaque HMAC-derived `private_input_ref`, execution identity, intent fingerprint, and digest. Raw structured input is not copied into repository-backed state.
+- The worker passes the private reference into the persisted workflow. For structured live connector operations, the planner is bypassed so private payload content is never sent to Gemini/OpenAI; the worker executes `external_domain.external_operation` through the connector bridge and fetches the payload just-in-time.
+- Private connector payloads are injected only into the in-memory node during the upstream call and are removed from node input in a `finally` block before validation/persistence. The connector request ID and intent fingerprint therefore still bind to the actual payload while durable state retains only the reference/digest.
+- The private-input protocol uses HTTPS, HMAC request signing, a deterministic secret-bound reference, bounded envelope/input size, digest verification, execution-identity binding, and a bounded TTL (24 hours by default, configurable up to 7 days).
+- `contracts/private-input.schema.json` is the versioned envelope contract. The protocol is vendor-neutral; the backend must implement `POST /v1/inputs` and `GET /v1/inputs/{input_ref}`.
+- No private-input backend is deployed or health-verified in this repository yet. Structured live execution remains operationally unavailable until a private store is provisioned, configured in the gateway/worker secrets, and verified end-to-end.
+
 ## Executor activation + dependency boundary hardening v42
 
 - Fixed a regression in the two-phase parallel executor where the Phase 2 activation block was accidentally nested under the execution-budget exception path; successful budget admission now actually activates and executes the admitted batch.
