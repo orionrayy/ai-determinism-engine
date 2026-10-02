@@ -196,6 +196,172 @@ class OrchestratorTests(unittest.TestCase):
         self.assertFalse(planner_called["value"])
         self.assertEqual(workflow["nodes"][0]["tool"], "research_bundle")
 
+    def test_artifact_verifier_rejects_private_dns_target(self):
+        with patch.object(
+            o.socket,
+            "getaddrinfo",
+            return_value=[
+                (
+                    o.socket.AF_INET,
+                    o.socket.SOCK_STREAM,
+                    6,
+                    "",
+                    ("127.0.0.1", 443),
+                )
+            ],
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "non-public IP"
+            ):
+                o.safe_public_https_json("https://example.test/health")
+
+    def test_artifact_verifier_rejects_redirects(self):
+        class FakeSocket:
+            def sendall(self, data):
+                self.sent = data
+
+            def makefile(self, *args, **kwargs):
+                return io.BytesIO()
+
+            def close(self):
+                pass
+
+        class FakeTLS(FakeSocket):
+            pass
+
+        class FakeContext:
+            def wrap_socket(self, sock, server_hostname):
+                return FakeTLS()
+
+        class FakeResponse:
+            status = 302
+
+            def begin(self):
+                pass
+
+            def close(self):
+                pass
+
+        with patch.object(
+            o.socket,
+            "getaddrinfo",
+            return_value=[
+                (
+                    o.socket.AF_INET,
+                    o.socket.SOCK_STREAM,
+                    6,
+                    "",
+                    ("93.184.216.34", 443),
+                )
+            ],
+        ), patch.object(o.socket, "create_connection", return_value=FakeSocket()), patch.object(
+            o.ssl, "create_default_context", return_value=FakeContext()
+        ), patch.object(
+            o.http.client, "HTTPResponse", return_value=FakeResponse()
+        ):
+            with self.assertRaisesRegex(RuntimeError, "redirects are disabled"):
+                o.safe_public_https_json("https://example.test/redirect")
+
+    def test_artifact_verifier_pins_request_and_uses_safe_fetch(self):
+        class FakeSocket:
+            def __init__(self):
+                self.sent = b""
+
+            def sendall(self, data):
+                self.sent += data
+
+            def close(self):
+                pass
+
+        class FakeContext:
+            def __init__(self, tls):
+                self.tls = tls
+
+            def wrap_socket(self, sock, server_hostname):
+                self.tls.sock = sock
+                self.tls.server_hostname = server_hostname
+                return self.tls
+
+        class FakeTLS:
+            def __init__(self):
+                self.sock = None
+                self.server_hostname = None
+
+            def sendall(self, data):
+                self.sock.sendall(data)
+
+            def makefile(self, *args, **kwargs):
+                return io.BytesIO()
+
+            def close(self):
+                pass
+
+        class FakeResponse:
+            status = 200
+
+            def begin(self):
+                pass
+
+            def read(self, size=-1):
+                return b'{"ok":true}'
+
+            def close(self):
+                pass
+
+        fake_socket = FakeSocket()
+        fake_tls = FakeTLS()
+        with patch.object(
+            o.socket,
+            "getaddrinfo",
+            return_value=[
+                (
+                    o.socket.AF_INET,
+                    o.socket.SOCK_STREAM,
+                    6,
+                    "",
+                    ("93.184.216.34", 443),
+                )
+            ],
+        ), patch.object(o.socket, "create_connection", return_value=fake_socket), patch.object(
+            o.ssl, "create_default_context", return_value=FakeContext(fake_tls)
+        ), patch.object(
+            o.http.client, "HTTPResponse", return_value=FakeResponse()
+        ):
+            result = o.safe_public_https_json(
+                "https://example.test/api?x=1"
+            )
+
+        self.assertEqual(result["status_code"], 200)
+        self.assertIn(b"GET /api?x=1 HTTP/1.1\r\n", fake_socket.sent)
+        self.assertIn(b"Host: example.test\r\n", fake_socket.sent)
+
+    def test_artifact_verifier_uses_safe_fetch(self):
+        node = o.Node(
+            "n01",
+            "verify",
+            "artifact_verifier",
+            [],
+            input={
+                "artifacts": [
+                    {
+                        "type": "url",
+                        "url": "https://example.test/artifact",
+                        "contains": "ok",
+                    }
+                ]
+            },
+        )
+        with patch.object(
+            o, "safe_public_https_json",
+            return_value={"status_code": 200, "data": {"ok": True}},
+        ) as fetch:
+            result = o.execute_artifact_verifier(node, "verify artifact")
+
+        self.assertTrue(result["passed"])
+        fetch.assert_called_once_with(
+            "https://example.test/artifact", timeout=30
+        )
+
     def test_atomic_json_write_replaces_existing_file_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
