@@ -365,6 +365,28 @@ class ConnectorBridgeTests(unittest.TestCase):
                 ),
             )
 
+    def test_bridge_post_rejects_nested_upstream_http_failure(self):
+        node = self.node({"title": "Hello"})
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True):
+            inventory = {"notion": {"actions": ["create_page"], "configured": True}}
+            class Response:
+                status = 200
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+                def read(self):
+                    return (
+                        b'{"ok": true, "upstream": '
+                        b'{"status_code": 500, "data": {"error": "upstream"}}}'
+                    )
+            with patch.object(cb, "discover_capabilities", return_value=inventory),                  patch.object(cb.urllib.request, "urlopen", return_value=Response()):
+                with self.assertRaises(cb.ConnectorRequestError) as ctx:
+                    cb.execute_connector_bridge(node, "bridge it", dry_run=False)
+        self.assertTrue(ctx.exception.uncertain)
+        self.assertFalse(ctx.exception.retry_allowed)
+
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
 
