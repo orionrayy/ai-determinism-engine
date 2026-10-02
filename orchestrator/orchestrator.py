@@ -2325,8 +2325,8 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         if len(batch) > available_steps:
             batch = batch[:available_steps]
 
-        executable = []
-        preflight_replan_needed = False
+        # Phase 1: preflight the entire batch before any node is persisted as running.
+        # If a preflight/replan/approval gate blocks, no sibling node is stranded.
         for node in batch:
             try:
                 preflight_node(node, registry, live=live)
@@ -2345,8 +2345,9 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "error": str(preflight_exc),
                 })
                 if replan_after_failure(workflow, nodes, node, registry):
-                    preflight_replan_needed = True
-                    continue
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    break
                 workflow["status"] = "failed"
                 workflow["failed_node"] = node.id
                 workflow["nodes"] = [asdict(item) for item in nodes]
@@ -2375,11 +2376,14 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "risk": node.risk,
                     "issue": node.input.get("approval_issue"),
                 })
-                continue
-
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return
+        else:
             try:
-                reserve_execution_step(workflow, node.id)
+                reserve_execution_steps(workflow, [node.id for node in batch])
             except ExecutionBudgetExceeded as budget_exc:
+                node = sorted(batch, key=lambda item: item.id)[0]
                 node.error = {
                     "type": type(budget_exc).__name__,
                     "message": str(budget_exc),
@@ -2397,75 +2401,78 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
                 return
-            workflow["nodes"] = [asdict(node) for node in nodes]
-            persist_workflow(workflow)
-            node.input["context"] = build_node_context(nodes, node)
-            transition(node, "running")
 
-            execution_id = execution_key(workflow, node)
-            if side_effecting(node, registry):
-                record = workflow.setdefault("executions", {}).get(execution_id)
-                if record and record.get("status") == "started":
-                    node.error = {
-                        "type": "execution_uncertain",
-                        "message": "A prior run may have completed an external side effect before state persistence.",
-                        "execution_id": execution_id,
-                    }
-                    transition(node, "failed")
-                    workflow["status"] = "failed"
-                    workflow["failed_node"] = node.id
-                    append_event("node.execution_uncertain", {
-                        "workflow_id": workflow["id"],
-                        "node_id": node.id,
-                        "execution_id": execution_id,
-                    })
-                    workflow["nodes"] = [asdict(item) for item in nodes]
-                    persist_workflow(workflow)
-                    return
-
-                mark_execution_prepared(workflow, node)
+            # Phase 2: only now cross runtime activation and side-effect barriers.
+            executable = []
+            for node in batch:
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
-                mark_execution_started(workflow, node, execution_id)
-                workflow["nodes"] = [asdict(item) for item in nodes]
-                persist_workflow(workflow)
-                if live and side_effecting(node, registry):
-                    try:
-                        commit_side_effect_start(
-                            ROOT,
-                            execution_id=execution_id,
-                        )
-                    except DurabilityBarrierError as barrier_exc:
-                        record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
-                        record["status"] = "barrier_failed"
-                        record["barrier_error"] = str(barrier_exc)
+                node.input["context"] = build_node_context(nodes, node)
+                transition(node, "running")
+
+                execution_id = execution_key(workflow, node)
+                if side_effecting(node, registry):
+                    record = workflow.setdefault("executions", {}).get(execution_id)
+                    if record and record.get("status") == "started":
                         node.error = {
-                            "type": type(barrier_exc).__name__,
-                            "message": str(barrier_exc),
-                            "failure_class": "dependency",
-                            "durability_barrier_failed": True,
+                            "type": "execution_uncertain",
+                            "message": "A prior run may have completed an external side effect before state persistence.",
                             "execution_id": execution_id,
                         }
                         transition(node, "failed")
                         workflow["status"] = "failed"
                         workflow["failed_node"] = node.id
-                        workflow["nodes"] = [asdict(item) for item in nodes]
-                        persist_workflow(workflow)
-                        append_event("node.durability_barrier_failed", {
+                        append_event("node.execution_uncertain", {
                             "workflow_id": workflow["id"],
                             "node_id": node.id,
                             "execution_id": execution_id,
-                            "error": str(barrier_exc),
                         })
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
                         return
 
-            append_event("node.started", {
-                "workflow_id": workflow["id"],
-                "node_id": node.id,
-                "tool": node.tool,
-            })
-            executable.append((node, execution_id))
+                    mark_execution_prepared(workflow, node)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    mark_execution_started(workflow, node, execution_id)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    if live and side_effecting(node, registry):
+                        try:
+                            commit_side_effect_start(
+                                ROOT,
+                                execution_id=execution_id,
+                            )
+                        except DurabilityBarrierError as barrier_exc:
+                            record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
+                            record["status"] = "barrier_failed"
+                            record["barrier_error"] = str(barrier_exc)
+                            node.error = {
+                                "type": type(barrier_exc).__name__,
+                                "message": str(barrier_exc),
+                                "failure_class": "dependency",
+                                "durability_barrier_failed": True,
+                                "execution_id": execution_id,
+                            }
+                            transition(node, "failed")
+                            workflow["status"] = "failed"
+                            workflow["failed_node"] = node.id
+                            workflow["nodes"] = [asdict(item) for item in nodes]
+                            persist_workflow(workflow)
+                            append_event("node.durability_barrier_failed", {
+                                "workflow_id": workflow["id"],
+                                "node_id": node.id,
+                                "execution_id": execution_id,
+                                "error": str(barrier_exc),
+                            })
+                            return
 
+                append_event("node.started", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                })
+                executable.append((node, execution_id))
         if not executable:
             workflow["nodes"] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
@@ -2492,7 +2499,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     completed_futures[node.id] = (node, execution_id, *future.result())
                 results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
 
-        replan_needed = preflight_replan_needed
+        replan_needed = False
         for node, execution_id, success, error in results:
             if success:
                 if side_effecting(node, registry):
