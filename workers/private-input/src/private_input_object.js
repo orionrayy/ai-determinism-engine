@@ -34,7 +34,6 @@ export class PrivateInput extends DurableObject {
         existing.execution_id === envelope.execution_id &&
         existing.intent_fingerprint === envelope.intent_fingerprint &&
         existing.input_digest === envelope.input_digest &&
-        existing.expires_at === envelope.expires_at &&
         existing.payload_json === payloadJson;
       if (!identical) return { ok: false, conflict: true };
       return {
