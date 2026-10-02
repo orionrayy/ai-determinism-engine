@@ -5,6 +5,11 @@ on:
     workflows: ["AI Orchestrator"]
     types: [completed]
 
+concurrency:
+  group: orchestrator-continuation-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+  queue: single
+
 permissions:
   contents: write
 
@@ -23,6 +28,7 @@ jobs:
         shell: bash
         env:
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
           if [ ! -f .orchestrator/state.json ]; then
@@ -33,12 +39,15 @@ jobs:
           import json, os
           state=json.load(open('.orchestrator/state.json'))
           run_id=str(os.environ['WORKFLOW_RUN_ID'])
+          run_attempt=str(os.environ['WORKFLOW_RUN_ATTEMPT'])
+          event_id=f"continuation:{run_id}:{run_attempt}"
           # github_run_id is the latest durable worker run; origin_github_run_id is provenance.
           # Exact run correlation is retained without falling back to last_workflow_id.
           wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
           status=wf.get('status') if wf else 'missing'
           wid=wf.get('id') if wf else ''
           print(f'workflow_id={wid}')
+          print(f'event_id={event_id}')
           print('continue=' + ('true' if status == 'running' else 'false'))
           print(f'status={status}')
           PY
@@ -48,12 +57,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
+          EVENT_ID: ${{ steps.decision.outputs.event_id }}
         run: |
           python3 - <<'PY'
           import json, os, subprocess
           payload=json.dumps({
             'event_type':'orchestrator.continue',
-            'client_payload':{'workflow_id':os.environ['WORKFLOW_ID']},
+            'client_payload':{
+              'workflow_id':os.environ['WORKFLOW_ID'],
+              'event_id':os.environ['EVENT_ID'],
+            },
           })
           subprocess.run(
             ['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/dispatches",'--input','-'],
