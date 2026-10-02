@@ -32,6 +32,48 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(value["nodes"][0]["id"], "n01")
 
 
+    def test_free_only_rejects_unlisted_planner_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            }
+        }
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_API_KEY": "planner-key",
+            "GEMINI_PLANNER_MODEL": "gemini-3.8-pro",
+        }, clear=True), patch.object(lp, "_post") as post:
+            with self.assertRaisesRegex(RuntimeError, "not allowed by the free-only model registry"):
+                lp.plan_goal("analyze", registry, FakeNode, fake_validate)
+        post.assert_not_called()
+
+    def test_free_only_accepts_registry_free_planner_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            },
+            "capability:analyze": {
+                "default_tool": "gemini",
+                "fallback_tools": [],
+            },
+        }
+        planner_response = {"candidates": [{"content": {"parts": [{"text":
+            json.dumps({"nodes": [{"id": "n01", "capability": "analyze", "tool": "gemini",
+            "depends_on": [], "risk": "low", "instruction": "analyze",
+            "contract": {}, "artifacts": []}]})
+        }]}}]}
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_API_KEY": "planner-key",
+        }, clear=True), patch.object(lp, "_post", return_value=planner_response) as post:
+            nodes = lp.plan_goal("analyze", registry, FakeNode, fake_validate)
+        self.assertEqual(nodes[0].tool, "gemini")
+        self.assertIn("gemini-3.8-flash", post.call_args.args[1]["model"])
+
     def test_live_planner_passes_connector_inventory_and_node_fields(self):
         planner_response = {"candidates": [{"content": {"parts": [{"text": json.dumps({"nodes": [{"id": "n01", "capability": "publish", "tool": "connector_bridge", "depends_on": [], "risk": "high", "instruction": "publish", "contract": {}, "artifacts": [], "connector": "notion", "action": "create_page", "payload": {"title": "Hello"}}]})}]}}]}
         registry = {"capability:publish": {"default_tool": "connector_bridge", "fallback_tools": []}, "connector_bridge": {"free_tier": True}}
