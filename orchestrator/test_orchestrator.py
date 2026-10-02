@@ -1655,6 +1655,16 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(nodes), 9)
         self.assertEqual(nodes[-1].capability, "notify")
 
+    def test_validate_dag_rejects_unsafe_and_oversized_node_ids(self):
+        with self.assertRaisesRegex(ValueError, "unsafe node id"):
+            o.validate_dag([
+                o.Node("../escape", "execute", "noop", []),
+            ])
+        with self.assertRaisesRegex(ValueError, "exceeds 100"):
+            o.validate_dag([
+                o.Node("n" * 101, "execute", "noop", []),
+            ])
+
     def test_cycle_is_rejected(self):
         a = o.Node("a", "x", "noop", ["b"])
         b = o.Node("b", "x", "noop", ["a"])
@@ -1664,6 +1674,23 @@ class OrchestratorTests(unittest.TestCase):
     def test_http_requires_https(self):
         with self.assertRaises(RuntimeError):
             o.http_json("http://example.com")
+
+    def test_http_response_is_bounded(self):
+        class Response:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return None
+            def read(self, limit=None):
+                return b"x" * (limit + 1)
+
+        with patch.object(o.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "HTTP response exceeds 2048 bytes"):
+                o.http_json(
+                    "https://example.test",
+                    max_response_bytes=2048,
+                )
 
     def test_live_state_does_not_require_process_env_on_resume(self):
         nodes = [o.Node("safe", "execute", "noop", [], risk="low")]
@@ -1698,6 +1725,32 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(evidence["output_sha256"]), 64)
         self.assertEqual(len(evidence["evidence_sha256"]), 64)
         self.assertEqual(workflow["evidence"]["n01"]["evidence_sha256"], evidence["evidence_sha256"])
+
+    def test_checkpoint_filename_is_bounded_and_path_safe(self):
+        workflow = {
+            "id": "../wf/../../evil",
+            "nodes": [],
+            "evidence": {},
+        }
+        node = o.Node(
+            "../node/../../escape",
+            "execute",
+            "noop",
+            [],
+            status="running",
+            input={},
+            output={},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp) / ".orchestrator" / "checkpoints"
+            checkpoint_dir.mkdir(parents=True)
+            with patch.object(o, "CHECKPOINT_DIR", checkpoint_dir):
+                o.node_success_checkpoint(workflow, node)
+            files = list(checkpoint_dir.iterdir())
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].suffix, ".json")
+            self.assertRegex(files[0].name, r"^[0-9a-f]{64}\.json$")
+            self.assertEqual(files[0].parent.resolve(), checkpoint_dir.resolve())
 
     def test_artifact_verifier_checks_local_file(self):
         node = o.Node(

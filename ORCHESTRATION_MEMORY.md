@@ -133,6 +133,12 @@ Current execution-fabric branch: `main`
 - The single-flight scope is per request identity rather than a global bridge lock, so unrelated connector actions retain concurrency.
 - This reduces thundering-herd duplicate side effects without adding a database, distributed lock service, queue, broker, paid dependency, or new runtime service. Provider-side idempotency/reconciliation remains authoritative across bridge process restarts or multiple bridge replicas.
 
+## Orchestration hardening v58 — checkpoint identity and HTTP resource bounds
+- Checkpoint filenames are derived from SHA-256(workflow_id + NUL + node_id) rather than raw identifiers, so even malformed legacy identifiers cannot escape the checkpoint directory through filename construction.
+- DAG validation now bounds node identifiers to 100 characters and allows only ASCII letters, digits, dot, underscore, and hyphen. This prevents malformed planner IDs from entering dependency, event, checkpoint, and identity paths.
+- The generic stdlib HTTP adapter now enforces a 2 MiB response cap by default; Firecrawl is explicitly allowed 4 MiB because scraped output is a larger but still bounded payload.
+- Connector and artifact adapters retain their tighter, tool-specific bounds. No external dependency, database, queue, proxy, or paid service is added.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
