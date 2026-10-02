@@ -106,10 +106,19 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+    response_fields = raw.get("response_fields", [])
+    if not isinstance(response_fields, list):
+        response_fields = []
+    normalized_response_fields = sorted({
+        str(item).strip()
+        for item in response_fields
+        if str(item).strip() and len(str(item).strip()) <= 128
+    })[:32]
     return {
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "response_fields": normalized_response_fields,
     }
 
 
