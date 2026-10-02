@@ -191,7 +191,7 @@ def mark_execution_not_applied(
 
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
-        return migrate_state({"version": 3, "workflows": {}, "last_workflow_id": None})
+        return migrate_state({"version": 4, "workflows": {}, "last_workflow_id": None})
     try:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         return migrate_state(raw)
@@ -2351,7 +2351,7 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 2,
+        "schema_version": 3,
         "plan_fingerprint": None,
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
