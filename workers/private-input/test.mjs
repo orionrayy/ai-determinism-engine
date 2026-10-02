@@ -42,6 +42,17 @@ assert.match(leaseObject, /async reserve\(/);
 assert.match(leaseObject, /async release\(/);
 assert.match(leaseObject, /async alarm\(/);
 
+assert.match(worker, /ExecutionLease/);
+assert.match(worker, /\/v1\/leases\/acquire/);
+assert.match(worker, /\/v1\/leases\/reserve-attempt/);
+assert.match(worker, /\/v1\/leases\/release/);
+assert.match(leaseObject, /export class ExecutionLease extends DurableObject/);
+assert.match(leaseObject, /retention_until/);
+assert.match(leaseObject, /attempts INTEGER NOT NULL/);
+assert.match(leaseObject, /async acquire\(/);
+assert.match(leaseObject, /async reserve\(/);
+assert.match(leaseObject, /async release\(/);
+assert.match(leaseObject, /async alarm\(/);
 assert.match(config, /"class_name": "PrivateInput"/);
 assert.match(config, /"class_name": "ExecutionLease"/);
 assert.match(config, /"storage": "sqlite"/);
