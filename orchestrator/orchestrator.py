@@ -285,6 +285,42 @@ def execution_budget(workflow: dict[str, Any]) -> dict[str, Any]:
     return budget
 
 
+def reserve_execution_steps(
+    workflow: dict[str, Any],
+    node_ids: list[str],
+) -> dict[str, int]:
+    """Atomically admit a batch against the remaining durable execution budget."""
+    ids = [str(node_id) for node_id in node_ids]
+    if not ids:
+        return {}
+    budget = execution_budget(workflow)
+    available = budget["max_steps"] - budget["used_steps"]
+    if len(ids) > available:
+        raise ExecutionBudgetExceeded(
+            f"execution step budget cannot admit batch ({len(ids)} requested, {available} available)"
+        )
+    start = budget["used_steps"]
+    reservations = {
+        node_id: start + offset
+        for offset, node_id in enumerate(ids, start=1)
+    }
+    budget["used_steps"] = start + len(ids)
+    budget["last_node_id"] = ids[-1]
+    budget["last_reserved_at"] = utc_now()
+    for node_id, used in reservations.items():
+        try:
+            append_event("workflow.budget_step_reserved", {
+                "workflow_id": workflow["id"],
+                "node_id": node_id,
+                "used_steps": used,
+                "max_steps": budget["max_steps"],
+                "batch": True,
+            })
+        except OSError:
+            pass
+    return reservations
+
+
 def reserve_execution_step(workflow: dict[str, Any], node_id: str) -> int:
     budget = execution_budget(workflow)
     if budget["used_steps"] >= budget["max_steps"]:
