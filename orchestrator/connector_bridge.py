@@ -19,6 +19,7 @@ MAX_DISCOVERY_BYTES = 48 * 1024
 MAX_DISCOVERY_CONNECTORS = 64
 MAX_DISCOVERY_ACTIONS = 128
 MAX_DISCOVERY_CAPABILITIES = 64
+MAX_RESPONSE_BYTES = 128 * 1024
 CONNECTOR_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
