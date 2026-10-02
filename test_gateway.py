@@ -64,7 +64,7 @@ class GatewayTests(unittest.TestCase):
             "payload": {"secret": "do-not-forward"},
             "source": "test",
             "attempt": 2,
-            "requested_mode": "live",
+            "requested_mode": "dry-run",
         }
         goal, metadata, event_id = gateway.build_execution_event(payload)
         self.assertEqual(
@@ -73,7 +73,7 @@ class GatewayTests(unittest.TestCase):
         )
         self.assertEqual(event_id, "evt-1")
         self.assertEqual(metadata["execution_id"], "a" * 64)
-        self.assertEqual(metadata["requested_mode"], "live")
+        self.assertEqual(metadata["requested_mode"], "dry-run")
         self.assertNotIn("secret", json.dumps(metadata))
         self.assertEqual(len(metadata["input_digest"]), 64)
 
@@ -85,6 +85,27 @@ class GatewayTests(unittest.TestCase):
                 "operation": "publication.schedule",
                 "payload": {"part_no": 1},
                 "intent_fingerprint": "0" * 64,
+            })
+
+    def test_structured_execution_defaults_to_dry_run(self):
+        goal, metadata, event_id = gateway.build_execution_event({
+            "event_id": "evt-default",
+            "domain": "wattpad-romance-publisher",
+            "operation": "chapter.produce",
+            "payload": {"story_id": "s1"},
+        })
+        self.assertEqual(metadata["requested_mode"], "dry-run")
+        self.assertEqual(event_id, "evt-default")
+        self.assertIn("wattpad-romance-publisher.chapter.produce", goal)
+
+    def test_structured_live_execution_fails_closed_without_private_channel(self):
+        with self.assertRaisesRegex(ValueError, "live_structured_requires_private_input_channel"):
+            gateway.build_execution_event({
+                "event_id": "evt-live",
+                "domain": "wattpad-romance-publisher",
+                "operation": "publication.schedule",
+                "payload": {"story_id": "s1"},
+                "requested_mode": "live",
             })
 
     def test_authorization_rejects_old_hmac_signature(self):
