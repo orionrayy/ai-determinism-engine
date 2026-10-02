@@ -771,6 +771,17 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
             continue
         labels = get_issue_labels(int(issue_number))
         if "orchestrator-rejected" in labels:
+            if not approval_event:
+                append_event(
+                    "approval.unverified_label",
+                    {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "issue": issue_number,
+                        "label": "orchestrator-rejected",
+                    },
+                )
+                continue
             node.input["approval_granted"] = False
             transition(node, "failed")
             node.error = {"type": "approval_rejected", "issue": issue_number}
