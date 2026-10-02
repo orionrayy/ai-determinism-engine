@@ -74,6 +74,18 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_unsafe_workflow_id_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "../escape": {
+                        "id": "../escape",
+                        "nodes": [],
+                    }
+                },
+            })
+
     def test_workflow_identity_mismatch_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
