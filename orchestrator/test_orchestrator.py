@@ -893,10 +893,10 @@ class OrchestratorTests(unittest.TestCase):
             with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(o.os.environ, {"ORCHESTRATOR_GITHUB_RUN_ID": "run-B"}, clear=False):
                 o.persist_workflow(workflow)
             saved = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            events = (root / "events.jsonl").read_text(encoding="utf-8")
         stored = saved["workflows"]["wf_run_binding"]
         self.assertEqual(stored["origin_github_run_id"], "run-A")
         self.assertEqual(stored["github_run_id"], "run-B")
-        events = (root / "events.jsonl").read_text(encoding="utf-8")
         self.assertIn("workflow.worker_run_rebound", events)
 
     def test_resume_scheduler_prioritizes_oldest_updated_workflow(self):
