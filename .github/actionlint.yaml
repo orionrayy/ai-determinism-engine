@@ -8,6 +8,3 @@ paths:
   .github/workflows/orchestrator-agent-federation.yml:
     ignore:
       - 'unexpected key "queue" for "concurrency" section.*'
-  .github/workflows/orchestrator-continuation.yml:
-    ignore:
-      - 'unexpected key "queue" for "concurrency" section.*'
