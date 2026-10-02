@@ -55,6 +55,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
+        workflow.setdefault("agent_team", {})
         workflow.setdefault("replan_count", 0)
         workflow.setdefault("attempts_used", 0)
         workflow["attempts_used"] = max(0, _as_int(workflow.get("attempts_used"), 0))
