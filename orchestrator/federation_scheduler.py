@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-FEDERATION_SLOTS = 4
+FEDERATION_SLOTS = 3
 DEFAULT_MAX_BATCHES_PER_WORKFLOW = 4
 MAX_BATCHES_PER_WORKFLOW = 8
 DEFAULT_MAX_TASKS_PER_WORKFLOW = 16
