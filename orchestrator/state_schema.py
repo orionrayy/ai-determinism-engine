@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import re
 from typing import Any
 
 CURRENT_STATE_VERSION = 4
@@ -14,6 +15,7 @@ NODE_STATUSES = {
     "retrying", "replanning", "reconciling", "completed", "failed", "cancelled",
 }
 WORKFLOW_STATUSES = {"planning", "ready", "running", "waiting_approval", "failed", "completed", "cancelled"}
+SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 
 class StateSchemaError(RuntimeError):
@@ -81,6 +83,10 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         if str(workflow.get("id")) != str(workflow_id):
             raise StateSchemaError(
                 f"workflow key {workflow_id!r} does not match workflow.id {workflow.get('id')!r}"
+            )
+        if not SAFE_ID_RE.fullmatch(str(workflow.get("id") or "")):
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.id contains unsafe characters"
             )
         workflow_version = _strict_schema_version(
             workflow.get("schema_version"),
