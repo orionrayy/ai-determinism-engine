@@ -215,7 +215,8 @@ def discover_capabilities(
                 action: _normalize_action_spec(
                     spec.get("action_specs", {}).get(action, {})
                     if isinstance(spec.get("action_specs", {}), dict)
-                    else {}
+                    else {},
+                    default_free_tier=bool(spec.get("free_tier", False)),
                 )
                 for action in sorted(str(item) for item in actions)
             },
@@ -228,7 +229,11 @@ def discover_capabilities(
     return normalized
 
 
-def _normalize_action_spec(raw: Any) -> dict[str, Any]:
+def _normalize_action_spec(
+    raw: Any,
+    *,
+    default_free_tier: bool = False,
+) -> dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     required = raw.get("required", [])
     if not isinstance(required, list):
@@ -246,6 +251,7 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
 
 
@@ -293,7 +299,10 @@ def validate_discovered_action(
         )
     action_specs = spec.get("action_specs", {})
     raw_action_spec = action_specs.get(action, {}) if isinstance(action_specs, dict) else {}
-    return _normalize_action_spec(raw_action_spec)
+    return _normalize_action_spec(
+        raw_action_spec,
+        default_free_tier=bool(spec.get("free_tier", False)),
+    )
 
 
 def validate_discovered_payload(
@@ -506,12 +515,25 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
 
     url, secret = bridge_config()
     inventory = discover_capabilities(url, force_refresh=True)
+    connector_spec = inventory.get(request.connector) or {}
     action_spec = validate_discovered_payload(
         request.connector,
         request.action,
         request.input,
         inventory,
     )
+    if (
+        os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
+        and (
+            connector_spec.get("free_tier") is not True
+            or action_spec.get("free_tier") is not True
+        )
+    ):
+        raise ConnectorRequestError(
+            f"connector action {request.connector}:{request.action} is not certified for free-only execution",
+            uncertain=False,
+            idempotent=bool(action_spec.get("idempotent", False)),
+        )
     try:
         response = post_request(url, secret, request)
     except ConnectorRequestError as exc:
