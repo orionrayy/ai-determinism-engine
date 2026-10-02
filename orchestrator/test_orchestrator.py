@@ -1486,6 +1486,23 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(nodes), 7)
         self.assertEqual(nodes[-1].capability, "notify")
 
+    def test_plan_validation_rejects_unbounded_retry_configuration(self):
+        node = o.Node("n01", "execute", "noop", [], max_retries=9)
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
+
+    def test_plan_validation_rejects_invalid_node_status_and_risk(self):
+        bad_status = o.Node("n01", "execute", "noop", [], status="unknown")
+        with self.assertRaises(ValueError):
+            o.validate_dag([bad_status])
+        bad_risk = o.Node("n01", "execute", "noop", [], risk="extreme")
+        with self.assertRaises(ValueError):
+            o.validate_dag([bad_risk])
+
+    def test_plan_validation_rejects_invalid_runtime_containers(self):
+        node = o.Node("n01", "execute", "noop", [], input=[])
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
     def test_unsafe_node_identifier_is_rejected(self):
         node = o.Node("../escape", "execute", "noop", [])
         with self.assertRaises(ValueError):
