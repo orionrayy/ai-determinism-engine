@@ -1132,6 +1132,42 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(count, 1)
         save_state.assert_not_called()
 
+    def test_deterministic_ingress_workflow_id_is_stable_and_namespaced(self):
+        first = o.deterministic_ingress_workflow_id("evt-1", None)
+        second = o.deterministic_ingress_workflow_id("evt-1", None)
+        idem = o.deterministic_ingress_workflow_id(None, "evt-1")
+        self.assertEqual(first, second)
+        self.assertNotEqual(first, idem)
+        self.assertTrue(first.startswith("wf-ingress-event-"))
+        self.assertTrue(idem.startswith("wf-ingress-idempotency-"))
+
+    def test_goal_ingress_uses_targeted_identity_before_global_state(self):
+        workflow = {"id": "wf-ingress-event-123", "goal": "same", "status": "running", "nodes": [], "event_id": "evt-123"}
+        with patch.object(o, "load_workflow", return_value=workflow) as load_workflow, \
+             patch.object(o, "load_state", side_effect=AssertionError("legacy full scan should not run")), \
+             patch.object(o, "print_summary"), patch.object(o, "notify_execution_callback"), \
+             patch.object(sys, "argv", ["orchestrator", "--goal", "duplicate", "--step"]), \
+             patch.dict(o.os.environ, {"ORCHESTRATOR_EVENT_ID": "evt-123"}, clear=False):
+            with patch.object(o, "deterministic_ingress_workflow_id", return_value="wf-ingress-event-123"):
+                result = o.main()
+        self.assertEqual(result, 0)
+        load_workflow.assert_called_once_with("wf-ingress-event-123")
+
+    def test_idempotency_identity_conflict_fails_closed(self):
+        workflow = {
+            "id": "wf-ingress-idempotency-123",
+            "status": "running",
+            "nodes": [],
+            "idempotency_key": "idem-1",
+            "intent_fingerprint": "a" * 64,
+        }
+        with patch.object(o, "load_workflow", return_value=workflow), \
+             patch.object(sys, "argv", ["orchestrator", "--goal", "conflict"]), \
+             patch.dict(o.os.environ, {"ORCHESTRATOR_IDEMPOTENCY_KEY": "idem-1", "ORCHESTRATOR_INTENT_FINGERPRINT": "b" * 64}, clear=False):
+            with self.assertRaises(SystemExit) as ctx:
+                o.main()
+        self.assertIn("ingress identity conflict", str(ctx.exception))
+
     def test_repository_event_workflow_id_routes_to_targeted_execution(self):
         workflow = {"id": "wf-cont", "goal": "continue", "status": "running", "nodes": []}
         with patch.object(o, "load_workflow", return_value=workflow) as load_workflow, \
