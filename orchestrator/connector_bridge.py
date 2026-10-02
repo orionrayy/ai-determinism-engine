@@ -676,7 +676,10 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "simulated": False,
         "protocol": PROTOCOL,
         "request_id": request.request_id,
-        "bridge_url": url,
+        "bridge_target_fingerprint": (
+            str(spec.get("target_fingerprint") or "").strip() or None
+        ),
+        "reconciliation_target_fingerprint": reconciliation_target_fingerprint,
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
         "action_contract_fingerprint": contract_fingerprint,
