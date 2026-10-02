@@ -66,7 +66,13 @@ class DurabilityBarrierTests(unittest.TestCase):
             )
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn(
-            ["git", "push", "origin", "HEAD:main"],
+            [
+                "git",
+                "push",
+                "--force-with-lease=refs/heads/main:same",
+                "origin",
+                "HEAD:refs/heads/main",
+            ],
             commands,
         )
         self.assertIn(
