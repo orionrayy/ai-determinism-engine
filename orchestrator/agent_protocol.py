@@ -25,6 +25,7 @@ MAX_FEDERATION_MANIFEST_BYTES = 48 * 1024
 MAX_RESULT_JSON_BYTES = 16 * 1024
 MAX_RESULT_OUTPUT_BYTES = 12 * 1024
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+ALLOWED_TASK_RISK = {'low', 'medium'}
 
 class FederationProtocolError(ValueError):
     pass
