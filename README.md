@@ -81,6 +81,12 @@ When a workflow ID is already known, the orchestrator loads only that workflow's
 
 Ingress events with an `Idempotency-Key` or `event_id` receive a deterministic internal workflow identity. New duplicate checks read that single canonical shard first; a full-state scan is retained only as a legacy compatibility fallback. Reused identities with conflicting intent/input digests fail closed. Repository-dispatch concurrency also falls back from workflow ID to event ID and idempotency key, reducing duplicate execution races before state inspection.
 
+## v53 Terminal State Lifecycle
+
+Terminal `completed` and `cancelled` workflow shards older than the configured retention window are compacted instead of deleted. Identity, status, fingerprints, input/idempotency metadata, provenance, node outcome summaries, and pre-compaction hashes remain available for targeted lookup and audit; `failed` workflows are not compacted because they can still be replanned or reconciled.
+
+The default compaction age is 30 days (bounded to 1–365 days). Scheduled recovery performs the maintenance with the same bounded Git rebase/push guard used by the state writer. This reduces current checkout/state size without rewriting Git history or introducing another service.
+
 ## Gateway
 
 Set these environment variables on the gateway service:

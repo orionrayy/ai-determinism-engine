@@ -96,6 +96,13 @@ Current execution-fabric branch: `main`
 - GitHub Actions repository-dispatch concurrency now falls back through `workflow_id`, `event_id`, and `idempotency_key`, so duplicate ingress instances are serialized before the orchestrator state check.
 - This preserves the free-first GitHub Actions + stdlib Python control plane and avoids introducing a centralized paid or remote idempotency ledger.
 
+## Orchestration hardening v53 — terminal state lifecycle/compaction
+- Terminal workflow snapshots (`completed`/`cancelled`) older than the configured retention window are compacted rather than deleted; `failed` remains fully recoverable because it can still replan/reconcile.
+- Compaction removes bulky goal/node input/output/evidence/reconciliation payloads from the active shard while preserving workflow identity, lifecycle timestamps, status, run lineage, fingerprints, digests, node outcome/error summaries, and hashes of the pre-compaction state/evidence/reconciliation records.
+- Default compaction age is 30 days, bounded to 1–365 days. The policy is executed by scheduled recovery after dispatch evaluation and commits only changed workflow shards with the existing bounded rebase/push guard.
+- This is a current-state size/lifecycle optimization; Git history remains immutable, so compaction does not rewrite repository history.
+- No deletion/purge of workflow identity is performed, preserving targeted lookups and reducing the risk of old event identities becoming silently reusable.
+- No new service, database, broker, queue, or paid dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.

@@ -291,7 +291,11 @@ jobs:
           import os
           import subprocess
           from datetime import datetime, timezone
-          from orchestrator.orchestrator import load_state
+          from orchestrator.orchestrator import (
+              DEFAULT_TERMINAL_COMPACTION_DAYS,
+              compact_terminal_workflows,
+              load_state,
+          )
 
           state = load_state()
           now = datetime.now(timezone.utc)
@@ -367,5 +371,43 @@ jobs:
                   check=True,
               )
               dispatched += 1
+          retention_raw = os.environ.get(
+              "ORCHESTRATOR_TERMINAL_COMPACTION_DAYS",
+              str(DEFAULT_TERMINAL_COMPACTION_DAYS),
+          )
+          try:
+              retention_days = int(retention_raw)
+          except ValueError:
+              retention_days = DEFAULT_TERMINAL_COMPACTION_DAYS
+          compacted = compact_terminal_workflows(
+              state,
+              now=now,
+              retention_days=retention_days,
+          )
           print(f"dispatched={dispatched}")
+          print(f"compacted={len(compacted)}")
           PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .orchestrator/workflows
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore(orchestrator): compact terminal workflow state"
+
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            if ! git rebase origin/main; then
+              git rebase --abort || true
+              echo "Terminal-state compaction rebase conflict; refusing to overwrite concurrent state."
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
+
+          echo "Terminal-state compaction push failed after bounded retries."
+          exit 1

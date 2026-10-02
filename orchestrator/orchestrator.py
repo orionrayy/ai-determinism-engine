@@ -935,6 +935,214 @@ def save_state(state: dict[str, Any]) -> None:
         raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
 
 
+TERMINAL_STATUSES = {"completed", "cancelled"}
+DEFAULT_TERMINAL_COMPACTION_DAYS = 30
+MAX_TERMINAL_COMPACTION_DAYS = 365
+
+
+def _parse_utc_timestamp(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _compact_error(error: Any) -> dict[str, Any]:
+    if not isinstance(error, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    for key in ("type", "message", "execution_uncertain"):
+        if key in error and isinstance(error[key], (str, bool)):
+            compact[key] = error[key]
+    return compact
+
+
+def compact_terminal_workflow(
+    workflow: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    retention_days: int = DEFAULT_TERMINAL_COMPACTION_DAYS,
+) -> bool:
+    """Compact an old terminal workflow without changing its identity."""
+    status = str(workflow.get("status") or "")
+    if status not in TERMINAL_STATUSES:
+        return False
+    if workflow.get("terminal_compacted_at"):
+        return False
+
+    retention_days = max(
+        1,
+        min(int(retention_days), MAX_TERMINAL_COMPACTION_DAYS),
+    )
+    current = now or datetime.now(timezone.utc)
+    updated_at = _parse_utc_timestamp(workflow.get("updated_at"))
+    if updated_at is None:
+        return False
+    if (current - updated_at).total_seconds() < retention_days * 86400:
+        return False
+
+    original = json.dumps(
+        workflow,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    compacted_nodes = []
+    for node in workflow.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        depends_on = node.get("depends_on")
+        if not isinstance(depends_on, list):
+            depends_on = []
+        contract = node.get("contract")
+        if not isinstance(contract, dict):
+            contract = {}
+        compacted_nodes.append({
+            "id": node.get("id"),
+            "capability": node.get("capability"),
+            "tool": node.get("tool"),
+            "depends_on": list(depends_on),
+            "risk": node.get("risk", "low"),
+            "status": node.get("status", "pending"),
+            "retry_count": node.get("retry_count", 0),
+            "max_retries": node.get("max_retries", 2),
+            "contract": dict(contract),
+            "error": _compact_error(node.get("error")),
+            "agent_role": node.get("agent_role", ""),
+        })
+
+    federation = workflow.get("federation")
+    federation_summary = {}
+    if isinstance(federation, dict):
+        for key in (
+            "id",
+            "status",
+            "artifact_id",
+            "artifact_digest",
+            "aggregate_sha256",
+            "completed_at",
+        ):
+            if key in federation:
+                federation_summary[key] = federation[key]
+
+    compacted = {
+        "id": workflow.get("id"),
+        "created_at": workflow.get("created_at"),
+        "updated_at": workflow.get("updated_at"),
+        "status": status,
+        "live": bool(workflow.get("live")),
+        "execution_mode": workflow.get("execution_mode"),
+        "schema_version": workflow.get("schema_version"),
+        "event_id": workflow.get("event_id"),
+        "idempotency_key": workflow.get("idempotency_key"),
+        "execution_id": workflow.get("execution_id"),
+        "external_workflow_id": workflow.get("external_workflow_id"),
+        "external_domain": workflow.get("external_domain"),
+        "external_operation": workflow.get("external_operation"),
+        "intent_fingerprint": workflow.get("intent_fingerprint"),
+        "input_digest": workflow.get("input_digest"),
+        "external_attempt": workflow.get("external_attempt"),
+        "github_run_id": workflow.get("github_run_id"),
+        "github_run_attempt": workflow.get("github_run_attempt"),
+        "origin_github_run_id": workflow.get("origin_github_run_id"),
+        "origin_github_run_attempt": workflow.get("origin_github_run_attempt"),
+        "plan_fingerprint": workflow.get("plan_fingerprint"),
+        "plan_integrity": workflow.get("plan_integrity"),
+        "checkpoint_integrity": workflow.get("checkpoint_integrity"),
+        "replan_count": workflow.get("replan_count", 0),
+        "attempts_used": workflow.get("attempts_used", 0),
+        "max_attempts": workflow.get("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW),
+        "max_parallel": workflow.get("max_parallel", DEFAULT_MAX_PARALLEL),
+        "max_federation_batches": workflow.get(
+            "max_federation_batches",
+            DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        ),
+        "max_federation_tasks": workflow.get(
+            "max_federation_tasks",
+            DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        ),
+        "federation_batches_used": workflow.get("federation_batches_used", 0),
+        "federation_tasks_used": workflow.get("federation_tasks_used", 0),
+        "trigger_issue": workflow.get("trigger_issue"),
+        "failed_node": workflow.get("failed_node"),
+        "error": _compact_error(workflow.get("error")),
+        "nodes": compacted_nodes,
+        "federation": federation_summary,
+        "goal_sha256": hashlib.sha256(
+            str(workflow.get("goal") or "").encode("utf-8")
+        ).hexdigest() if workflow.get("goal") is not None else None,
+        "original_state_sha256": hashlib.sha256(original).hexdigest(),
+        "original_evidence_sha256": hashlib.sha256(
+            json.dumps(
+                workflow.get("evidence") or {},
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "original_reconciliation_sha256": hashlib.sha256(
+            json.dumps(
+                workflow.get("reconciliations") or {},
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest(),
+        "terminal_compacted_at": current.isoformat(),
+        "terminal_compaction_version": 1,
+    }
+    workflow.clear()
+    workflow.update(compacted)
+    return True
+
+
+def compact_terminal_workflows(
+    state: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    retention_days: int = DEFAULT_TERMINAL_COMPACTION_DAYS,
+) -> list[str]:
+    compacted_ids: list[str] = []
+    current = now or datetime.now(timezone.utc)
+    for workflow_id, workflow in list((state.get("workflows") or {}).items()):
+        if not isinstance(workflow, dict):
+            continue
+        if compact_terminal_workflow(
+            workflow,
+            now=current,
+            retention_days=retention_days,
+        ):
+            compacted_ids.append(str(workflow_id))
+    return compacted_ids
+
+
+def _write_workflow_shard(workflow: dict[str, Any]) -> None:
+    workflow_id = str(workflow.get("id") or "").strip()
+    if not workflow_id:
+        raise RuntimeError("cannot write workflow shard without an id")
+    try:
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {workflow_id: workflow},
+        })
+    except StateSchemaError as exc:
+        raise RuntimeError(f"invalid workflow state: {exc}") from exc
+    write_json(
+        workflow_shard_path(workflow_id),
+        migrated["workflows"][workflow_id],
+    )
+
+
 def persist_workflow(workflow: dict[str, Any]) -> None:
     current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
     raw_attempt = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
@@ -963,18 +1171,7 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     workflow_id = str(workflow.get("id") or "").strip()
     if not workflow_id:
         raise RuntimeError("cannot persist workflow without an id")
-    try:
-        migrated = migrate_state({
-            "version": CURRENT_STATE_VERSION,
-            "workflows": {workflow_id: workflow},
-        })
-    except StateSchemaError as exc:
-        raise RuntimeError(f"invalid workflow state: {exc}") from exc
-    write_json(
-        workflow_shard_path(workflow_id),
-        migrated["workflows"][workflow_id],
-    )
-
+    _write_workflow_shard(workflow)
 
 def new_id(prefix: str) -> str:
     """Generate a collision-resistant local identifier.
