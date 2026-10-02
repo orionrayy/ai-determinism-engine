@@ -8,6 +8,7 @@ import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -23,6 +24,19 @@ _INFLIGHT: dict[str, str] = {}
 
 class BridgeRuntimeError(RuntimeError):
     pass
+
+
+class UpstreamConnectorError(BridgeRuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        uncertain: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.uncertain = uncertain
 
 
 def canonical_json(value: Any) -> bytes:
@@ -370,8 +384,23 @@ def dispatch_upstream(route: dict[str, Any], payload: dict[str, Any]) -> dict[st
         with urllib.request.urlopen(request, timeout=55) as response:
             raw = response.read().decode("utf-8", "replace")
             status = response.status
+    except urllib.error.HTTPError as exc:
+        raise UpstreamConnectorError(
+            f"upstream connector call failed: HTTP {exc.code}",
+            status_code=exc.code,
+            uncertain=exc.code >= 500,
+        ) from exc
     except Exception as exc:
-        raise BridgeRuntimeError(f"upstream connector call failed: {exc}") from exc
+        raise UpstreamConnectorError(
+            f"upstream connector call failed: {exc}",
+            uncertain=True,
+        ) from exc
+    if not (200 <= status < 300):
+        raise UpstreamConnectorError(
+            f"upstream connector returned HTTP {status}",
+            status_code=status,
+            uncertain=status >= 500,
+        )
     try:
         data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
