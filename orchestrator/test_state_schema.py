@@ -54,6 +54,49 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_malformed_state_version_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": "not-a-version",
+                "workflows": {},
+            })
+
+    def test_malformed_workflow_schema_version_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "schema_version": "broken",
+                        "nodes": [],
+                    }
+                },
+            })
+
+    def test_workflow_identity_mismatch_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf-key": {
+                        "id": "wf-other",
+                        "nodes": [],
+                    }
+                },
+            })
+
+    def test_workflow_identity_is_repaired_when_legacy_id_is_missing(self):
+        migrated = migrate_state({
+            "version": 1,
+            "workflows": {
+                "wf-key": {
+                    "nodes": [],
+                }
+            },
+        })
+        self.assertEqual(migrated["workflows"]["wf-key"]["id"], "wf-key")
+
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
