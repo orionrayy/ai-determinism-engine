@@ -1185,7 +1185,7 @@ class OrchestratorTests(unittest.TestCase):
         registry = {"research_bundle": {"side_effects": [], "free_tier": True}}
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "TOOL_HEALTH_DIR", root / "tool_health"),                  patch.object(o, "append_event"):
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "append_event"):
                 updated = o.update_tool_health(node, False, registry)
                 shard = o.tool_health_path("research_bundle")
                 self.assertTrue(shard.exists())
@@ -1203,7 +1203,7 @@ class OrchestratorTests(unittest.TestCase):
                 '{"research_bundle":{"status":"degraded","failure_streak":1}}',
                 encoding="utf-8",
             )
-            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "TOOL_HEALTH_DIR", root / "tool_health"):
+            with patch.object(o, "STATE_DIR", root):
                 self.assertEqual(
                     o.load_tool_health()["research_bundle"]["failure_streak"],
                     1,
