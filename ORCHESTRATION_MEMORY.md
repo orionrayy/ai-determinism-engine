@@ -107,6 +107,7 @@ Current execution-fabric branch: `main`
 - Connector discovery action specs can now optionally declare `result_required` and `result_types` for the sanitized upstream response object; absent fields remain backward-compatible.
 - Live connector execution validates the returned response against that output contract after transport success but before the result is returned to the orchestrator for durable node completion.
 - Connector invoke and reconciliation response bodies are bounded to 128 KiB, preventing an upstream response from causing unbounded worker memory growth.
+- Live connector output contracts are checked after transport success; if a 2xx response is oversized or violates the advertised output contract, the failure is marked uncertain because the upstream side effect may already have occurred, forcing the existing reconciliation/idempotency policy to decide recovery.
 - Contract validation remains downstream of the existing free-tier/idempotency/risk gates, so an invalid response cannot be mistaken for a successful side-effecting operation.
 - This is stdlib-only and introduces no external schema engine, database, queue, proxy, or paid service.
 ## Multi-agent coordination
