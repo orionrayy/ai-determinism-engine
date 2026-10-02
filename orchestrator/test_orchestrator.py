@@ -935,6 +935,36 @@ class OrchestratorTests(unittest.TestCase):
                 self.assertEqual(statuses[-1], 'completed')
                 self.assertEqual(workflow['status'], 'completed')
                 self.assertTrue(all(node['status'] == 'completed' for node in workflow['nodes']))
+    def test_parallel_batch_is_bounded_by_remaining_execution_budget(self):
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel_budget",
+            "goal": "parallel budget",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 2,
+            "execution_budget": {"max_steps": 1, "used_steps": 0},
+            "nodes": [o.asdict(node) for node in nodes],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value={}), \
+                 patch.object(o, "execute_node", return_value={"ok": True}) as execute:
+                o.run_workflow(workflow)
+
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(workflow["failed_node"], "n02-b")
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 1)
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(workflow["nodes"][1]["status"], "failed")
+        self.assertNotIn("running", {node["status"] for node in workflow["nodes"]})
+
     def test_free_only_rejects_paid_node_at_execution_time(self):
         node = o.Node("n01", "analyze", "openai")
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
