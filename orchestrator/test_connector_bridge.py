@@ -214,6 +214,39 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertFalse(ctx.exception.retry_allowed)
 
 
+    def test_reconciliation_blocks_target_contract_drift(self):
+        node = self.node({"title": "Hello"})
+        node.error = {
+            "connector_action_contract_fingerprint": cb.action_contract_fingerprint(
+                {"required": ["title"], "types": {"title": "string"}, "idempotent": True},
+                target_fingerprint="target-a",
+            )
+        }
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "reconciliation": True,
+                "target_fingerprint": "target-b",
+                "action_specs": {
+                    "create_page": {
+                        "required": ["title"],
+                        "types": {"title": "string"},
+                        "idempotent": True,
+                    }
+                },
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(cb, "post_reconciliation") as reconcile:
+            with self.assertRaises(cb.ConnectorReconciliationError):
+                cb.reconcile_connector_execution(node, "reconcile it", dry_run=False)
+        reconcile.assert_not_called()
+
     def test_reconciliation_result_does_not_persist_upstream_payload(self):
         inventory = {
             "notion": {
