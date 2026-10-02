@@ -24,6 +24,13 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Upstream failure boundary v33
+
+- Bridge upstream HTTP responses outside 2xx are now raised as typed upstream failures instead of being cached as successful bridge responses.
+- Upstream 5xx/network failures propagate as HTTP 502 from the bridge server so the orchestrator retains an explicit uncertain-transport signal; upstream 4xx remains a non-uncertain client/dependency failure.
+- The orchestrator connector adapter also rejects a nested upstream non-2xx status as defense-in-depth, even if a bridge implementation incorrectly returns HTTP 200 around it.
+- Failed upstream attempts release the local idempotency slot without populating the completed cache, allowing a later bounded retry to reach the upstream again.
+
 ## Connector target binding v32
 
 - Connector discovery now exposes only a SHA-256 `target_fingerprint` for each configured upstream URL; the URL itself is not persisted in discovery output.
