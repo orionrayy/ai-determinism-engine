@@ -47,8 +47,16 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_continuation_binds_to_current_worker_run(self):
         self.assertIn('workflow_run.id', self.continuation)
+        self.assertIn('workflow_run.run_attempt', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
         self.assertIn("WORKFLOW_RUN_ID", self.continuation)
+        self.assertIn('EVENT_ID', self.continuation)
+        self.assertIn('continuation:', self.continuation)
+
+    def test_continuation_has_single_flight_for_same_run_attempt(self):
+        self.assertIn('orchestrator-continuation-', self.continuation)
+        self.assertIn('queue: single', self.continuation)
+        self.assertIn('cancel-in-progress: false', self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
