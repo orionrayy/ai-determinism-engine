@@ -14,13 +14,14 @@ DIAGNOSTIC_TRACE_KEY_RE = re.compile(
     re.IGNORECASE,
 )
 SECRET_VALUE_RE = re.compile(
-    r"(?ix)"
-    r"(?:"
-    r"bearer\s+[^\s,;]+"
-    r"|(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|"
-    r"password|passwd|secret|client[_-]?secret|credential)\s*[:=]\s*"
-    r"['"]?[^\s,;'""]+"
-    r")"
+    r"""(?ix)
+    (?:
+        bearer\s+[^\s,;]+
+        |(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|
+           password|passwd|secret|client[_-]?secret|credential)\s*[:=]\s*
+           ['"]?[^\s,;'""]+
+    )
+    """
 )
 SENSITIVE_KEY_RE = re.compile(
     r"(?:authorization|password|passwd|secret|token|api[_-]?key|"
