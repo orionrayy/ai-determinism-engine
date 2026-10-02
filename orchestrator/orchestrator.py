@@ -1677,8 +1677,7 @@ def reconcile_first_uncertain(
         transition(node, "failed")
         workflow["status"] = "failed"
         workflow["failed_node"] = node.id
-        workflow.setdefault("reconciliations", {})[    execution_budget(workflow)
-node.id] = {
+        workflow.setdefault("reconciliations", {})[node.id] = {
             "state": "unknown",
             "error": str(exc),
             "checked_at": utc_now(),
@@ -1692,8 +1691,7 @@ node.id] = {
         return "failed"
 
     state = str(result.get("state") or "unknown").lower()
-    workflow.setdefault("reconciliations", {})[    execution_budget(workflow)
-node.id] = result
+    workflow.setdefault("reconciliations", {})[node.id] = result
     if state == "applied":
         node.output = {
             "reconciled": True,
@@ -1774,6 +1772,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow.setdefault('repair_feedback', {})
     workflow.setdefault('evidence', {})
     workflow.setdefault('reconciliations', {})
+    execution_budget(workflow)
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
@@ -2045,6 +2044,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow.setdefault("repair_feedback", {})
     workflow.setdefault("evidence", {})
     workflow.setdefault("reconciliations", {})
+    execution_budget(workflow)
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
