@@ -175,6 +175,20 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 )
         workflow.setdefault("policy_fingerprint", None)
         workflow.setdefault("route_snapshot", {})
+        for field_name in ("plan_fingerprint", "policy_fingerprint"):
+            value = workflow.get(field_name)
+            if value not in (None, ""):
+                if not isinstance(value, str) or not HEX64_RE.fullmatch(value):
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r}.{field_name} must be a 64-character lowercase hex digest"
+                    )
+        for field_name in ("event_id", "idempotency_key"):
+            value = workflow.get(field_name)
+            if value not in (None, ""):
+                if not isinstance(value, str) or len(value) > 128:
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r}.{field_name} must be a string of <= 128 characters"
+                    )
         for field_name in ("execution_id", "intent_fingerprint", "input_digest"):
             value = workflow.get(field_name)
             if value is not None and value != "":
