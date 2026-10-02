@@ -2,19 +2,28 @@
 
 This Worker is the zero-dollar private-input backend for the orchestration engine.
 
-It uses Cloudflare Workers Free + Workers KV. The Worker stores the private input envelope under its opaque `input_ref`; KV expiration enforces the requested TTL. Current free limits are finite: Workers allows 100,000 requests/day, while KV allows 100,000 reads/day and 1,000 writes/deletes per day with 1 GB stored data. That is suitable for a small control plane but not unlimited.
+It uses Cloudflare Workers Free + a SQLite-backed Durable Object. Each opaque `input_ref` maps to one Durable Object instance, giving the private-input boundary transactional, strongly consistent storage and per-input TTL cleanup with an alarm. This avoids the cross-region read-after-write delay of Workers KV.
+
+Current Workers Free Durable Object allowances include 100,000 requests/day, 13,000 GB-s/day, 5 million SQLite rows read/day, 100,000 rows written/day, and 5 GB total SQLite storage. These are finite free quotas, not unlimited capacity.
 
 ## Deploy
 
-Run from this directory:
+Run from the repository root through the manual GitHub Actions workflow:
 
-`npx wrangler@4.146.0 deploy`
+`Actions → Deploy private input worker → Run workflow`
 
-Wrangler can automatically provision a KV resource when the binding has no ID. Keep the shared secret as a Worker secret; never put it in `wrangler.jsonc` or source.
+The workflow requires these repository secrets:
+- `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_API_TOKEN`
+- `ORCHESTRATOR_PRIVATE_INPUT_SECRET`
 
-For GitHub Actions deployment, configure `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` as repository secrets, then run the dedicated deployment workflow.
+The deployment uses Wrangler `4.146.0` and Node `24`. The Worker URL is health-checked after deployment.
 
-After deployment, set the Worker URL as `ORCHESTRATOR_PRIVATE_INPUT_URL` in both the gateway and the orchestration workflow, and set the same `ORCHESTRATOR_PRIVATE_INPUT_SECRET` on both sides.
+After deployment, set the resulting Worker URL as `ORCHESTRATOR_PRIVATE_INPUT_URL` in:
+- the gateway service environment;
+- the AI Orchestrator GitHub Actions secret store.
+
+Keep `ORCHESTRATOR_PRIVATE_INPUT_SECRET` identical on both sides.
 
 Endpoints:
 - GET /health
@@ -22,4 +31,6 @@ Endpoints:
 - authenticated GET /v1/inputs/{input_ref}
 - authenticated DELETE /v1/inputs/{input_ref}
 
-The protocol signs HTTP method, request path, protocol version, timestamp, and exact body. Replayed POSTs are idempotent by `input_ref`; conflicting envelopes are rejected.
+The protocol signs HTTP method, request path, protocol version, timestamp, and exact body. POST is idempotent by `input_ref`; conflicting envelopes are rejected. The Durable Object rejects expired values and removes them through its alarm.
+
+The repository intentionally does not claim that the Worker is deployed until a real account deployment and authenticated health check have succeeded.
