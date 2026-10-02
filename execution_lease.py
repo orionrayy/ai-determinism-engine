@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -100,21 +101,33 @@ def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
 def acquire_execution_lease(
     workflow: dict[str, Any],
     *,
-    ttl_seconds: int = 300,
+    ttl_seconds: int = 900,
 ) -> dict[str, Any]:
     if ttl_seconds < 60 or ttl_seconds > 900:
         raise ExecutionLeaseError("execution lease TTL must be 60..900 seconds")
+    budget = workflow.get("execution_budget", {})
+    try:
+        initial_attempts = int(budget.get("used_steps", 0))
+        max_attempts = int(budget.get("max_steps", 256))
+    except (TypeError, ValueError) as exc:
+        raise ExecutionLeaseError("invalid execution budget for lease") from exc
+    if initial_attempts < 0 or max_attempts < 1 or max_attempts > 256 or initial_attempts > max_attempts:
+        raise ExecutionLeaseError("invalid execution budget for lease")
     result = _post(
         "/v1/leases/acquire",
         {
             "subject": lease_subject(workflow),
             "owner_id": lease_owner(),
             "ttl_seconds": int(ttl_seconds),
+            "max_attempts": max_attempts,
+            "initial_attempts": initial_attempts,
         },
     )
     if result.get("ok") is not True:
         if result.get("conflict"):
             raise ExecutionLeaseError("execution lease is held by another worker")
+        if result.get("budget_exhausted"):
+            raise ExecutionLeaseError("execution attempt budget already exhausted")
         raise ExecutionLeaseError("execution lease acquisition failed")
     return result
 
@@ -124,11 +137,14 @@ def reserve_remote_execution_attempt(
     *,
     count: int,
     max_attempts: int,
+    ttl_seconds: int = 900,
 ) -> dict[str, Any]:
     if count < 1 or count > 16:
         raise ExecutionLeaseError("attempt reservation count must be 1..16")
     if max_attempts < 1 or max_attempts > 256:
         raise ExecutionLeaseError("max attempts must be 1..256")
+    if ttl_seconds < 60 or ttl_seconds > 900:
+        raise ExecutionLeaseError("execution lease TTL must be 60..900 seconds")
     result = _post(
         "/v1/leases/reserve-attempt",
         {
@@ -136,6 +152,7 @@ def reserve_remote_execution_attempt(
             "owner_id": lease_owner(),
             "count": int(count),
             "max_attempts": int(max_attempts),
+            "ttl_seconds": int(ttl_seconds),
         },
     )
     if result.get("ok") is not True:
