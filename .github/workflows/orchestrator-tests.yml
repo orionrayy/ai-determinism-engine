@@ -74,4 +74,22 @@ jobs:
           /tmp/actionlint -color
 
       - name: Unit tests
-        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="/tmp/orchestrator-unit-tests.log"
+          python -m unittest discover -s orchestrator -p "test_*.py" -v 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            python -m unittest test_gateway test_actions_config test_private_input -v 2>&1 | tee -a "$log"
+            status=${PIPESTATUS[0]}
+          fi
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "## Unit test failure diagnostic"
+              echo ""
+              echo "Tail of the captured unit-test log (last 160 lines):"
+              tail -n 160 "$log"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"

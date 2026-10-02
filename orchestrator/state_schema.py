@@ -10,6 +10,7 @@ CURRENT_WORKFLOW_SCHEMA_VERSION = 6
 MAX_PARALLEL = 8
 MAX_REPLANS = 2
 MAX_NODE_RETRIES = 8
+MAX_CONTINUATION_EVENT_HISTORY = 16
 MAX_CALLBACK_ATTEMPTS = 12
 MAX_GOAL_CHARS = 4000
 MAX_NODE_INTENT_BYTES = 32 * 1024
@@ -157,6 +158,20 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             if len(goal) > MAX_GOAL_CHARS:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r}.goal exceeds {MAX_GOAL_CHARS} characters"
+                )
+        workflow.setdefault("continuation_event_history", [])
+        if not isinstance(workflow.get("continuation_event_history"), list):
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.continuation_event_history must be an array"
+            )
+        if len(workflow["continuation_event_history"]) > MAX_CONTINUATION_EVENT_HISTORY:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.continuation_event_history exceeds {MAX_CONTINUATION_EVENT_HISTORY} entries"
+            )
+        for index, event_id in enumerate(workflow["continuation_event_history"]):
+            if not isinstance(event_id, str) or not event_id.strip() or len(event_id) > 128:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.continuation_event_history[{index}] must be a non-empty string of <= 128 characters"
                 )
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})

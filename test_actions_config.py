@@ -10,6 +10,7 @@ class ActionsConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.orchestrator = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
+        cls.orchestrator_code = (ROOT / 'orchestrator' / 'orchestrator.py').read_text()
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
@@ -82,6 +83,21 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('concurrency:', self.tests)
         self.assertIn('orchestrator-tests-${{ github.event.pull_request.number || github.ref }}', self.tests)
         self.assertIn('cancel-in-progress: true', self.tests)
+
+    def test_continuation_event_is_durably_guarded(self):
+        self.assertIn('ORCHESTRATOR_EVENT_ID', self.orchestrator)
+        self.assertIn('claim_continuation_event(workflow, event_id)', self.orchestrator_code)
+        self.assertIn('continuation_event_history', self.orchestrator_code)
+
+    def test_persist_state_skips_noop_push_and_retries_remote_advance(self):
+        self.assertIn('if git diff --cached --quiet; then', self.orchestrator)
+        self.assertIn('git fetch origin "hardening/ci-failure-storm-shield-v44-clean"', self.orchestrator)
+        self.assertIn('git rebase "origin/hardening/ci-failure-storm-shield-v44-clean"', self.orchestrator)
+
+    def test_unit_test_failure_writes_step_summary_diagnostic(self):
+        self.assertIn('GITHUB_STEP_SUMMARY', self.tests)
+        self.assertIn('Unit test failure diagnostic', self.tests)
+        self.assertIn('tail -n 160', self.tests)
 
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)

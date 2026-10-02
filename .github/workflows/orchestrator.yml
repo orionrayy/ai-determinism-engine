@@ -244,12 +244,28 @@ jobs:
         if: always()
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .orchestrator
-          git diff --cached --quiet || git commit -m "chore(orchestrator): persist workflow state"
-          git push
+          if git diff --cached --quiet; then
+            echo "No orchestrator state changes to persist."
+            exit 0
+          fi
+          git commit -m "chore(orchestrator): persist workflow state"
+          branch="${GITHUB_REF_NAME:-main}"
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:${branch}"; then
+              exit 0
+            fi
+            if [ "${attempt}" -eq 3 ]; then
+              echo "Unable to push durable orchestrator state after ${attempt} attempts."
+              exit 1
+            fi
+            echo "Remote branch advanced; rebasing durable state commit (attempt ${attempt}/3)."
+            git fetch origin "${branch}"
+            git rebase "origin/${branch}"
+          done
 
       - name: Job summary
         if: always()

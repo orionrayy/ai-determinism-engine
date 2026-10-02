@@ -75,6 +75,7 @@ MAX_NODE_INTENT_BYTES = 32 * 1024
 MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
 MAX_NODE_RETRIES = 8
+MAX_CONTINUATION_EVENT_HISTORY = 16
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 NODE_STATUSES = {
     "pending", "ready", "running", "validating", "waiting_approval",
@@ -279,6 +280,51 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     state.setdefault("workflows", {})[workflow["id"]] = workflow
     state["last_workflow_id"] = workflow["id"]
     save_state(state)
+
+
+def classify_continuation_event(
+    workflow: dict[str, Any], event_id: str | None,
+) -> str:
+    """Classify a continuation trigger against the workflow's current worker identity."""
+    normalized = str(event_id or "").strip()
+    if not normalized:
+        return "none"
+    history = workflow.setdefault("continuation_event_history", [])
+    if normalized in history:
+        return "duplicate"
+    current_run_id = str(workflow.get("github_run_id") or "").strip()
+    current_attempt = workflow.get("github_run_attempt")
+    expected = (
+        f"continuation:{current_run_id}:{current_attempt}"
+        if current_run_id and current_attempt is not None
+        else ""
+    )
+    return "new" if normalized == expected else "stale"
+
+
+def claim_continuation_event(
+    workflow: dict[str, Any], event_id: str | None,
+) -> str:
+    """Durably consume one continuation event before advancing the workflow."""
+    normalized = str(event_id or "").strip()
+    status = classify_continuation_event(workflow, normalized)
+    if status != "new":
+        if normalized and status in {"duplicate", "stale"}:
+            append_event("workflow.continuation_ignored", {
+                "workflow_id": workflow.get("id"),
+                "event_id": normalized,
+                "reason": status,
+            })
+        return status
+    history = workflow.setdefault("continuation_event_history", [])
+    history.append(normalized)
+    del history[:-MAX_CONTINUATION_EVENT_HISTORY]
+    append_event("workflow.continuation_claimed", {
+        "workflow_id": workflow["id"],
+        "event_id": normalized,
+    })
+    persist_workflow(workflow)
+    return "new"
 
 class ExecutionBudgetExceeded(RuntimeError):
     pass
@@ -3137,6 +3183,12 @@ def main() -> int:
         workflow = state.get('workflows', {}).get(args.workflow_id)
         if not workflow:
             raise SystemExit(f'workflow not found: {args.workflow_id}')
+        event_id = os.environ.get("ORCHESTRATOR_EVENT_ID", "").strip() or None
+        if event_id:
+            continuation_status = claim_continuation_event(workflow, event_id)
+            if continuation_status != "new":
+                print_summary(workflow)
+                return 0
         if args.step:
             result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
             finalize_workflow_state(state, workflow)

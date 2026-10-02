@@ -1248,6 +1248,48 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIsNotNone(existing)
         self.assertEqual(existing["id"], "wf-existing")
 
+    def test_continuation_event_claim_is_exactly_once_per_event(self):
+        workflow = {
+            "id": "wf_continuation_guard",
+            "goal": "continue",
+            "status": "running",
+            "github_run_id": "1001",
+            "github_run_attempt": 2,
+            "continuation_event_history": [],
+        }
+        with patch.object(o, "persist_workflow") as persist, patch.object(o, "append_event"):
+            self.assertEqual(
+                o.claim_continuation_event(workflow, "continuation:1001:2"),
+                "new",
+            )
+            self.assertEqual(
+                o.claim_continuation_event(workflow, "continuation:1001:2"),
+                "duplicate",
+            )
+        self.assertEqual(workflow["continuation_event_history"], ["continuation:1001:2"])
+        persist.assert_called_once_with(workflow)
+
+    def test_stale_continuation_event_cannot_advance_current_worker(self):
+        workflow = {
+            "id": "wf_continuation_stale",
+            "goal": "continue",
+            "status": "running",
+            "github_run_id": "2002",
+            "github_run_attempt": 1,
+            "continuation_event_history": ["continuation:1001:2"],
+        }
+        with patch.object(o, "persist_workflow") as persist, patch.object(o, "append_event"):
+            self.assertEqual(
+                o.claim_continuation_event(workflow, "continuation:1001:2"),
+                "duplicate",
+            )
+            self.assertEqual(
+                o.claim_continuation_event(workflow, "continuation:9999:1"),
+                "stale",
+            )
+        persist.assert_not_called()
+        self.assertEqual(workflow["continuation_event_history"], ["continuation:1001:2"])
+
     def test_replay_identifier_collision_across_workflows_fails_closed(self):
         state = {
             "workflows": {
