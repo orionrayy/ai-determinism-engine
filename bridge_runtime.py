@@ -63,7 +63,11 @@ def load_routes() -> dict[str, dict[str, Any]]:
     return routes
 
 
-def _normalize_action_spec(raw: Any) -> dict[str, Any]:
+def _normalize_action_spec(
+    raw: Any,
+    *,
+    default_free_tier: bool = False,
+) -> dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     required = raw.get("required", [])
     if not isinstance(required, list):
@@ -81,6 +85,7 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
 
 
