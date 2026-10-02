@@ -715,6 +715,7 @@ def mark_execution_not_applied(
 STATE_STORAGE_FORMAT = "sharded-v1"
 MAX_WORKFLOW_SHARDS = 1024
 MAX_WORKFLOW_SHARD_BYTES = 512 * 1024
+MAX_LEGACY_STATE_BYTES = 4 * 1024 * 1024
 
 
 def workflow_state_dir() -> Path:
@@ -798,7 +799,7 @@ def _latest_workflow_id(workflows: dict[str, dict[str, Any]]) -> str | None:
 def load_state() -> dict[str, Any]:
     raw: dict[str, Any]
     if STATE_FILE.exists():
-        value = _read_json_file(STATE_FILE, MAX_WORKFLOW_SHARD_BYTES)
+        value = _read_json_file(STATE_FILE, MAX_LEGACY_STATE_BYTES)
         if not isinstance(value, dict):
             raise RuntimeError("invalid orchestrator state: root must be an object")
         raw = value
