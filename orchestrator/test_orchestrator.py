@@ -1699,6 +1699,32 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(evidence["evidence_sha256"]), 64)
         self.assertEqual(workflow["evidence"]["n01"]["evidence_sha256"], evidence["evidence_sha256"])
 
+    def test_checkpoint_filename_is_bounded_and_path_safe(self):
+        workflow = {
+            "id": "../wf/../../evil",
+            "nodes": [],
+            "evidence": {},
+        }
+        node = o.Node(
+            "../node/../../escape",
+            "execute",
+            "noop",
+            [],
+            status="running",
+            input={},
+            output={},
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp) / ".orchestrator" / "checkpoints"
+            checkpoint_dir.mkdir(parents=True)
+            with patch.object(o, "CHECKPOINT_DIR", checkpoint_dir):
+                o.node_success_checkpoint(workflow, node)
+            files = list(checkpoint_dir.iterdir())
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].suffix, ".json")
+            self.assertRegex(files[0].name, r"^[0-9a-f]{64}\.json$")
+            self.assertEqual(files[0].parent.resolve(), checkpoint_dir.resolve())
+
     def test_artifact_verifier_checks_local_file(self):
         node = o.Node(
             "n01-artifacts", "artifact_verify", "artifact_verifier", [],
