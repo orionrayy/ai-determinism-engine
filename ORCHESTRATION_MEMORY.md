@@ -519,3 +519,16 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - The reference backend now uses one SQLite-backed Durable Object instance per opaque input_ref. The object owns a private SQLite store, making POST idempotency/conflict decisions serializable for that ref and eliminating cross-region stale-read behavior for the handoff itself.
 - Input expiry is enforced twice: GET rejects expired rows, and a Durable Object alarm removes the row asynchronously at the requested expiry time. Crash/orphan cleanup is still covered by TTL/alarm behavior; gateway dispatch failures additionally attempt immediate DELETE.
 - The backend uses the modern declarative exports configuration with storage: sqlite, matching current Cloudflare guidance for new Durable Object classes.
+
+
+## v46 atomic barrier + centralized retry policy
+
+- The v45 audit was cross-checked against the actual implementation. The durability finding was valid: the old barrier checked `HEAD == origin/main` before a later push, leaving a temporal gap. The barrier now pushes with `--force-with-lease=refs/heads/main:<expected_sha>`, turning the expected remote SHA into a CAS guard at the actual use point. The pre-check remains useful for early rejection, but is no longer the sole race defense.
+- Retry responsibility is now centralized in `orchestrator/orchestrator.py`. `failure_policy.py` classifies failures and exposes only a class-level retry signal; it no longer accepts per-exception retry overrides as the final decision.
+- `connector_bridge.py` reports uncertainty and records the observed action contract as `connector_action_idempotent`; it does not decide whether to retry. The orchestrator may retry an uncertain connector execution only when that observed action contract says the operation is idempotent.
+- The workflow execution budget now counts retry attempts as well as initial attempts. Reservations are protected by an in-process re-entrant lock so parallel nodes cannot race the shared counter. The existing durable `execution_budget.max_steps` is therefore the global attempt cap for a worker execution.
+- Retry delay now uses capped exponential equal-jitter derived from a per-workflow `retry_seed` persisted in workflow state. This avoids synchronized retry spikes between workflows while keeping the delay sequence reproducible for audit.
+- `reconciling -> completed` is prohibited. Applied reconciliation must transition through `validating -> completed`; `not_applied` returns to `ready`, and unknown/failure states remain fail-closed.
+- `create_workflow` now routes the LLM planner through the same free-only gate as execution, preventing a paid Gemini model override from bypassing the $0 policy during planning.
+- The state schema persists and strictly validates `retry_seed`. Legacy workflows get a stable derived seed on migration; newly created workflows receive a random 128-bit seed.
+- CI includes model-level transition tests, seeded retry tests, CAS barrier tests, and the existing Worker/deployment checks. No paid runtime dependency is introduced.
