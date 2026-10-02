@@ -48,6 +48,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_ID: ${{ steps.target.outputs.workflow_id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         shell: bash
         run: |
           set -euo pipefail
@@ -57,7 +58,7 @@ jobs:
               "event_type": "orchestrator.continue",
               "client_payload": {
                   "workflow_id": os.environ["WORKFLOW_ID"],
-                  "approval_issue": int(os.environ["GITHUB_ISSUE_NUMBER"]),
+                  "approval_issue": int(os.environ["ISSUE_NUMBER"]),
               },
           })
           subprocess.run(
