@@ -302,6 +302,17 @@ class ConnectorBridgeTests(unittest.TestCase):
             cb.action_contract_fingerprint(spec),
             cb.action_contract_fingerprint(dict(spec)),
         )
+        self.assertEqual(
+            cb.action_contract_fingerprint(spec, "target-a"),
+            cb.action_contract_fingerprint(dict(spec), "target-a"),
+        )
+
+    def test_action_contract_fingerprint_changes_when_target_changes(self):
+        spec = {"required": ["title"], "types": {"title": "string"}, "idempotent": True}
+        self.assertNotEqual(
+            cb.action_contract_fingerprint(spec, "target-a"),
+            cb.action_contract_fingerprint(spec, "target-b"),
+        )
 
     def test_contract_drift_blocks_second_connector_attempt(self):
         node = self.node({"title": "Hello"})
@@ -310,6 +321,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             {"notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "target_fingerprint": "target-a",
                 "action_specs": {
                     "create_page": {
                         "required": ["title"],
@@ -321,11 +333,12 @@ class ConnectorBridgeTests(unittest.TestCase):
             {"notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "target_fingerprint": "target-b",
                 "action_specs": {
                     "create_page": {
                         "required": ["title"],
                         "types": {"title": "string"},
-                        "idempotent": False,
+                        "idempotent": True,
                     }
                 },
             }},
@@ -344,7 +357,13 @@ class ConnectorBridgeTests(unittest.TestCase):
                 post.assert_called_once()
             with self.assertRaises(cb.ConnectorBridgeError):
                 cb.execute_connector_bridge(node, "bridge it", dry_run=False)
-            self.assertEqual(node.error["connector_action_contract_fingerprint"], cb.action_contract_fingerprint(inventories[0]["notion"]["action_specs"]["create_page"]))
+            self.assertEqual(
+                node.error["connector_action_contract_fingerprint"],
+                cb.action_contract_fingerprint(
+                    inventories[0]["notion"]["action_specs"]["create_page"],
+                    target_fingerprint="target-a",
+                ),
+            )
 
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
