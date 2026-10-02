@@ -951,6 +951,18 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(node.status, "waiting_approval")
         self.assertEqual(workflow["status"], "waiting_approval")
 
+    def test_rejection_label_without_authenticated_event_is_ignored(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        workflow = {"id": "wf_unverified_rejection", "status": "waiting_approval", "nodes": [o.asdict(node)]}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_APPROVAL_EVENT": "false"}, clear=False),              patch.object(o, "get_issue_labels", return_value={"orchestrator-rejected"}):
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertEqual(node.status, "waiting_approval")
+        self.assertEqual(workflow["status"], "waiting_approval")
+
     def test_stale_approval_is_rearmed_instead_of_accepted(self):
         node = o.Node(
             "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
