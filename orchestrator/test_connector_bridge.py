@@ -421,8 +421,18 @@ class ConnectorBridgeTests(unittest.TestCase):
             def __exit__(self, *args): return None
             def read(self, limit=None): return b'{"bridge_job_id":123}'
 
-        inventory = {"notion": {"actions": ["create_page"], "configured": True, "free_tier": True,
-                                  "action_specs": {"create_page": {"result_types": {"bridge_job_id": "string"}}}}
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_types": {"bridge_job_id": "string"}
+                    }
+                },
+            }
+        }
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
