@@ -1365,6 +1365,50 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(second, [])
         self.assertEqual(state["workflows"]["wf-terminal"]["terminal_compaction_version"], 1)
 
+    def test_persist_workflow_redacts_sensitive_connector_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = {
+                "id": "wf-secret",
+                "status": "running",
+                "nodes": [{
+                    "id": "n01",
+                    "capability": "execute",
+                    "tool": "connector_bridge",
+                    "status": "completed",
+                    "depends_on": [],
+                    "error": {},
+                    "input": {"workflow_id": "wf-secret"},
+                    "output": {"bridge_job_id": "job-1", "access_token": "TOP-SECRET"},
+                    "contract": {},
+                    "agent_role": "operator",
+                }],
+            }
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", root / "state.json"):
+                o.persist_workflow(workflow)
+                raw = o.workflow_shard_path("wf-secret").read_text(encoding="utf-8")
+            self.assertIn("job-1", raw)
+            self.assertNotIn("TOP-SECRET", raw)
+            self.assertNotIn('"access_token": "TOP-SECRET"', raw)
+
+    def test_checkpoint_redacts_sensitive_connector_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            node = o.Node(
+                id="n01",
+                capability="execute",
+                tool="connector_bridge",
+                status="completed",
+                input={"workflow_id": "wf-checkpoint"},
+                output={"bridge_job_id": "job-2", "api_key": "TOP-SECRET-2"},
+            )
+            workflow = {"id": "wf-checkpoint", "evidence": {}, "nodes": [o.asdict(node)]}
+            checkpoint_dir = root / "checkpoints"
+            with patch.object(o, "ROOT", root), patch.object(o, "CHECKPOINT_DIR", checkpoint_dir):
+                o.node_success_checkpoint(workflow, node)
+            raw = next(checkpoint_dir.glob("*.json")).read_text(encoding="utf-8")
+            self.assertIn("job-2", raw)
+            self.assertNotIn("TOP-SECRET-2", raw)
     def test_state_migration_is_idempotent(self):
         source = {
             "version": 2,
