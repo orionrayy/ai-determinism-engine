@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import wraps
 import hashlib
 import hmac
 import json
@@ -39,6 +40,7 @@ try:
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .private_input import PrivateInputError, fetch_private_input
+    from .execution_lease import ExecutionLeaseError, acquire_execution_lease, release_execution_lease, reserve_remote_execution_attempt
 except ImportError:
     from capability_graph import (
         QUARANTINED, effective_health, free_only_enabled, load_health, record_tool_result, route_capability, save_health
@@ -57,6 +59,7 @@ except ImportError:
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from private_input import PrivateInputError, fetch_private_input
+    from execution_lease import ExecutionLeaseError, acquire_execution_lease, release_execution_lease, reserve_remote_execution_attempt
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -306,6 +309,34 @@ def configured_max_execution_steps() -> int:
     return value
 
 
+def execution_lease_required(workflow: dict[str, Any]) -> bool:
+    if not bool(workflow.get("live")):
+        return False
+    value = os.environ.get("ORCHESTRATOR_EXECUTION_LEASE_ENABLED", "false").strip().lower()
+    return value in {"1", "true", "yes", "on", "enabled"}
+
+
+def with_execution_lease(func):
+    @wraps(func)
+    def wrapped(workflow: dict[str, Any], *args, **kwargs):
+        acquired = False
+        if execution_lease_required(workflow):
+            acquire_execution_lease(
+                workflow,
+                ttl_seconds=int(os.environ.get("ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS", "900")),
+            )
+            acquired = True
+            append_event("workflow.lease_acquired", {"workflow_id": workflow["id"]})
+        try:
+            return func(workflow, *args, **kwargs)
+        finally:
+            if acquired:
+                if release_execution_lease(workflow):
+                    append_event("workflow.lease_released", {"workflow_id": workflow["id"]})
+                else:
+                    append_event("workflow.lease_release_failed", {"workflow_id": workflow["id"]})
+
+
 def execution_budget(workflow: dict[str, Any]) -> dict[str, Any]:
     budget = workflow.setdefault("execution_budget", {})
     try:
@@ -325,62 +356,80 @@ def reserve_execution_steps(
     workflow: dict[str, Any],
     node_ids: list[str],
 ) -> dict[str, int]:
-    """Atomically admit a batch against the remaining workflow attempt budget."""
+    """Admit a batch against the local or durable workflow-wide attempt budget."""
     ids = [str(node_id) for node_id in node_ids]
     if not ids:
         return {}
     with EXECUTION_BUDGET_LOCK:
         budget = execution_budget(workflow)
-        available = budget["max_steps"] - budget["used_steps"]
-        if len(ids) > available:
-            raise ExecutionBudgetExceeded(
-                f"workflow attempt budget cannot admit batch ({len(ids)} requested, {available} available)"
-            )
-        start = budget["used_steps"]
-        reservations = {
-            node_id: start + offset
-            for offset, node_id in enumerate(ids, start=1)
-        }
-        budget["used_steps"] = start + len(ids)
+        max_attempts = budget["max_steps"]
+        if execution_lease_required(workflow):
+            try:
+                remote = reserve_remote_execution_attempt(
+                    workflow,
+                    count=len(ids),
+                    max_attempts=max_attempts,
+                )
+            except ExecutionLeaseError as exc:
+                raise ExecutionBudgetExceeded(str(exc)) from exc
+            used = int(remote["used_attempts"])
+            start = int(remote["start_attempt"])
+            budget["used_steps"] = used
+        else:
+            available = max_attempts - budget["used_steps"]
+            if len(ids) > available:
+                raise ExecutionBudgetExceeded(
+                    f"workflow attempt budget cannot admit batch ({len(ids)} requested, {available} available)"
+                )
+            start = budget["used_steps"] + 1
+            budget["used_steps"] += len(ids)
         budget["last_node_id"] = ids[-1]
         budget["last_reserved_at"] = utc_now()
+        reservations = {
+            node_id: start + offset
+            for offset, node_id in enumerate(ids)
+        }
     for node_id, used in reservations.items():
-        try:
-            append_event("workflow.budget_attempt_reserved", {
-                "workflow_id": workflow["id"],
-                "node_id": node_id,
-                "used_attempts": used,
-                "max_attempts": budget["max_steps"],
-                "batch": True,
-            })
-        except OSError:
-            pass
+        append_event("workflow.budget_attempt_reserved", {
+            "workflow_id": workflow["id"],
+            "node_id": node_id,
+            "used_attempts": used,
+            "max_attempts": budget["max_steps"],
+            "batch": True,
+            "durable": execution_lease_required(workflow),
+        })
     return reservations
-
-
 def reserve_execution_step(workflow: dict[str, Any], node_id: str) -> int:
     with EXECUTION_BUDGET_LOCK:
         budget = execution_budget(workflow)
-        if budget["used_steps"] >= budget["max_steps"]:
-            raise ExecutionBudgetExceeded(
-                f"workflow attempt budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
-            )
-        budget["used_steps"] += 1
-        used_attempts = budget["used_steps"]
+        if execution_lease_required(workflow):
+            try:
+                remote = reserve_remote_execution_attempt(
+                    workflow,
+                    count=1,
+                    max_attempts=budget["max_steps"],
+                )
+            except ExecutionLeaseError as exc:
+                raise ExecutionBudgetExceeded(str(exc)) from exc
+            used_attempts = int(remote["used_attempts"])
+            budget["used_steps"] = used_attempts
+        else:
+            if budget["used_steps"] >= budget["max_steps"]:
+                raise ExecutionBudgetExceeded(
+                    f"workflow attempt budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
+                )
+            budget["used_steps"] += 1
+            used_attempts = budget["used_steps"]
         budget["last_node_id"] = str(node_id)
         budget["last_reserved_at"] = utc_now()
-    try:
-        append_event("workflow.budget_attempt_reserved", {
-            "workflow_id": workflow["id"],
-            "node_id": str(node_id),
-            "used_attempts": used_attempts,
-            "max_attempts": budget["max_steps"],
-        })
-    except OSError:
-        pass
+    append_event("workflow.budget_attempt_reserved", {
+        "workflow_id": workflow["id"],
+        "node_id": str(node_id),
+        "used_attempts": used_attempts,
+        "max_attempts": budget["max_steps"],
+        "durable": execution_lease_required(workflow),
+    })
     return used_attempts
-
-
 def new_id(prefix: str) -> str:
     return f"{prefix}_{int(time.time() * 1000)}"
 
@@ -2087,6 +2136,7 @@ def reconcile_first_uncertain(
     return "failed"
 
 
+@with_execution_lease
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
     if workflow.get('status') in {'completed', 'cancelled'}:
         return str(workflow['status'])
@@ -2381,6 +2431,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             workflow['nodes'] = [asdict(item) for item in nodes]
             persist_workflow(workflow)
             return 'failed'
+@with_execution_lease
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
     if workflow.get("status") in {"completed", "cancelled"}:
         return
