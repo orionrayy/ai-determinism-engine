@@ -271,6 +271,12 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             raise StateSchemaError(
                 f"workflow {workflow_id!r}.callback.attempts out of bounds"
             )
+        target_fingerprint = callback.get("target_fingerprint")
+        if target_fingerprint not in (None, ""):
+            if not isinstance(target_fingerprint, str) or not HEX64_RE.fullmatch(target_fingerprint):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.callback.target_fingerprint is invalid"
+                )
         callback["status"] = callback_status
         callback["attempts"] = callback_attempts
         workflow.setdefault("execution_budget", {
