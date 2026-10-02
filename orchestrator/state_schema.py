@@ -21,6 +21,7 @@ NODE_STATUSES = {
     "retrying", "replanning", "reconciling", "completed", "failed", "cancelled",
 }
 WORKFLOW_STATUSES = {"planning", "ready", "running", "waiting_approval", "failed", "completed", "cancelled"}
+EXECUTION_MODES = {"live", "dry-run"}
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 VOLATILE_INPUT_KEYS = {
     "workflow_id",
@@ -54,6 +55,28 @@ def _strict_schema_version(value: Any, *, default: int, field_name: str) -> int:
         raise StateSchemaError(f"{field_name} must be an integer") from exc
 
 
+def _strict_bounded_int(
+    value: Any,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+    field_name: str,
+) -> int:
+    if value is None:
+        parsed = default
+    else:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError) as exc:
+            raise StateSchemaError(f"{field_name} must be an integer") from exc
+    if parsed < minimum or parsed > maximum:
+        raise StateSchemaError(
+            f"{field_name} must be between {minimum} and {maximum}"
+        )
+    return parsed
+
+
 def _strict_optional_positive_int(
     value: Any,
     *,
@@ -79,6 +102,8 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         default=1,
         field_name="state.version",
     )
+    if version < 1:
+        raise StateSchemaError("state.version must be >= 1")
     if version > CURRENT_STATE_VERSION:
         raise StateSchemaError(
             f"state version {version} is newer than supported version {CURRENT_STATE_VERSION}"
@@ -109,6 +134,10 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             default=1,
             field_name=f"workflow {workflow_id!r}.schema_version",
         )
+        if workflow_version < 1:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.schema_version must be >= 1"
+            )
         if workflow_version > CURRENT_WORKFLOW_SCHEMA_VERSION:
             raise StateSchemaError(
                 f"workflow {workflow_id!r} schema version {workflow_version} "
@@ -128,6 +157,18 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
+        workflow.setdefault("executions", {})
+        for field_name in (
+            "repair_feedback",
+            "evidence",
+            "reconciliations",
+            "executions",
+            "route_snapshot",
+        ):
+            if not isinstance(workflow.get(field_name), dict):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.{field_name} must be an object"
+                )
         workflow.setdefault("policy_fingerprint", None)
         workflow.setdefault("route_snapshot", {})
         workflow.setdefault("policy_integrity", "legacy_unverified")
@@ -185,14 +226,23 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 f"workflow {workflow_id!r}.status is invalid"
             )
         workflow.setdefault("execution_mode", "live" if workflow.get("live") else "dry-run")
+        if workflow.get("live") is not None and not isinstance(workflow.get("live"), bool):
+            raise StateSchemaError(f"workflow {workflow_id!r}.live must be boolean")
+        if workflow.get("execution_mode") not in EXECUTION_MODES:
+            raise StateSchemaError(f"workflow {workflow_id!r}.execution_mode is invalid")
         workflow.setdefault("plan_fingerprint", None)
         if "plan_integrity" not in workflow:
             workflow["plan_integrity"] = (
                 "legacy_unverified" if workflow.get("plan_fingerprint") is None else "pending"
             )
 
-        raw_parallel = _as_int(workflow.get("max_parallel"), 4)
-        workflow["max_parallel"] = max(1, min(raw_parallel, MAX_PARALLEL))
+        workflow["max_parallel"] = _strict_bounded_int(
+            workflow.get("max_parallel"),
+            default=4,
+            minimum=1,
+            maximum=MAX_PARALLEL,
+            field_name=f"workflow {workflow_id!r}.max_parallel",
+        )
 
         nodes = workflow.get("nodes", [])
         if not isinstance(nodes, list):
