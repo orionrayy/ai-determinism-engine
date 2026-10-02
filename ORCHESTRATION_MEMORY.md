@@ -83,6 +83,12 @@ Current execution-fabric branch: `main`
 - Added a regression that exercises event-id deduplication with a non-empty `ORCHESTRATOR_EVENT_ID`, proving the global state load is actually executed before duplicate workflow creation can occur.
 - This is a correctness-only repair; no new service, dependency, or cost surface is introduced.
 
+## Orchestration hardening v51 — repository-event target routing
+- `main()` now promotes `ORCHESTRATOR_EVENT_WORKFLOW_ID` into the exact `--workflow-id` execution path when a repository event carries a target workflow.
+- This closes the continuation/federation lifecycle gap where `repository_dispatch` supplied a durable workflow ID but the worker previously ignored it and could create a new workflow instead of advancing the stored one.
+- Existing approval paths already pass `--workflow-id`; v51 aligns continuation/federation with the same targeted lifecycle path.
+- No new service, dependency, or cost surface is introduced.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
