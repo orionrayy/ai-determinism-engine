@@ -187,6 +187,28 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertFalse(a.get("idempotent_replay", False))
         self.assertTrue(b["idempotent_replay"])
 
+    def test_same_idempotency_key_cannot_change_request_intent(self):
+        request_id = hashlib.sha256(b"stable-intent-key").hexdigest()
+        first_payload = self.payload(request_id=request_id)
+        changed_payload = self.payload(request_id=request_id)
+        changed_payload["input"] = {"title": "Different"}
+
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+            }
+        }
+        first = {"status_code": 200, "data": {"id": "p1"}}
+        br._COMPLETED.clear()
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value=first) as dispatch:
+            result = br.handle_request(first_payload, "secret")
+            self.assertTrue(result["ok"])
+            with self.assertRaises(br.BridgeRuntimeError):
+                br.handle_request(changed_payload, "secret")
+        dispatch.assert_called_once()
+        br._COMPLETED.clear()
+
     def test_upstream_requires_https(self):
         routes = {"notion": {"actions": ["create_page"], "url": "http://bad.example.test"}}
         with patch.object(br, "load_routes", return_value=routes):
