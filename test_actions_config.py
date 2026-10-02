@@ -1,4 +1,5 @@
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -152,6 +153,22 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('load_state', recovery)
         self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
 
+
+    def test_checkout_action_sha_is_consistent_across_all_workflows(self):
+        expected = "d23441a48e516b6c34aea4fa41551a30e30af803"
+        workflow_dir = ROOT / ".github" / "workflows"
+        pins = []
+        for path in sorted(workflow_dir.glob("*.y*ml")):
+            content = path.read_text()
+            for pin in re.findall(r"actions/checkout@([0-9a-f]{40})", content):
+                pins.append((path.name, pin))
+        self.assertTrue(pins, "no pinned actions/checkout reference found")
+        for filename, pin in pins:
+            self.assertEqual(
+                pin,
+                expected,
+                f"{filename} contains a checkout SHA drift",
+            )
 
     def test_core_actions_are_pinned_to_node24_releases(self):
         expected = {
