@@ -1,3 +1,7 @@
+## Private input transport v43
+
+Structured live requests can use a separately authenticated HTTPS private-input store. GitHub receives only an opaque reference plus execution/integrity metadata; the worker fetches raw payload just-in-time for connector execution and scrubs it before durable state is persisted. No private-input backend is deployed by this repository yet, so live structured execution remains fail-closed until one is configured and health-verified.
+
 ## State-machine bounds hardening v41
 
 State migration now enforces bounded replan/retry counters and validates persisted node status, risk, identifiers, dependencies, and runtime object fields before execution. Corrupted state therefore fails closed rather than expanding the retry/replan state space.
