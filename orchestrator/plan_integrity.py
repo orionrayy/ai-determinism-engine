@@ -14,6 +14,7 @@ _VOLATILE_INPUT_KEYS = {
     "approval_fingerprint",
     "approval_actor",
     "approval_approved_at",
+    "retry_jitter_seed",
 }
 
 

@@ -85,5 +85,13 @@ def commit_side_effect_start(
         "-m",
         f"chore(orchestrator): persist execution start {execution_id}",
     )
-    _run_git(root, "push", "origin", "HEAD:main")
+    # Explicit compare-and-swap lease: if refs/heads/main moved since fetch,
+    # the START fence is rejected before any external side effect is invoked.
+    _run_git(
+        root,
+        "push",
+        f"--force-with-lease=refs/heads/main:{remote}",
+        "origin",
+        "HEAD:refs/heads/main",
+    )
     return True

@@ -194,6 +194,7 @@ jobs:
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_FREE_ONLY: "true"
           ORCHESTRATOR_MAX_PARALLEL: ${{ inputs.max_parallel || '4' }}
+          ORCHESTRATOR_MAX_ATTEMPTS: ${{ vars.ORCHESTRATOR_MAX_ATTEMPTS || '64' }}
           ORCHESTRATOR_DURABILITY_BARRIER: "true"
         run: |
           if [ "$ORCHESTRATOR_RESUME" = "true" ]; then

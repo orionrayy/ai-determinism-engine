@@ -572,6 +572,10 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(workflow["nodes"][0]["error"]["inflight_recovered"])
         self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
         execute.assert_not_called()
+    def test_reconciliation_applied_uses_validating_state(self):
+        self.assertNotIn("completed", o.TRANSITIONS["reconciling"])
+        self.assertIn("validating", o.TRANSITIONS["reconciling"])
+
     def test_uncertain_connector_reconciliation_applied_completes_without_replay(self):
         workflow = self._uncertain_connector_workflow({
             "type": "execution_uncertain",
@@ -971,6 +975,23 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][0]["input"]["approval_issue"], 123)
 
 
+    def test_workflow_attempt_budget_blocks_execution(self):
+        node = o.Node("n01", "execute", "noop", [], max_retries=999)
+        workflow = {
+            "id": "wf_budget",
+            "goal": "budget",
+            "live": False,
+            "attempts_used": 2,
+            "max_attempts": 2,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow)
+        self.assertEqual(result, "failed")
+        self.assertEqual(execute.call_count, 0)
+        self.assertEqual(workflow["nodes"][0]["error"]["type"], "attempt_budget_exhausted")
+
     def test_parallel_independent_nodes_execute_concurrently(self):
         barrier = threading.Barrier(2)
 
@@ -1135,7 +1156,7 @@ class OrchestratorTests(unittest.TestCase):
             "connector_bridge": {"free_tier": True, "side_effects": ["external_request"]},
             "webhook": {"free_tier": True, "side_effects": ["external_request"]},
         }
-        error = o.ConnectorRequestError("timeout", uncertain=True, retry_allowed=False)
+        error = o.ConnectorRequestError("timeout", uncertain=True, idempotent=False)
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=error) as execute:
                 result = o.run_one_step(workflow)
@@ -1166,8 +1187,8 @@ class OrchestratorTests(unittest.TestCase):
             "webhook": {"free_tier": True, "side_effects": ["external_request"]},
         }
         errors = [
-            o.ConnectorRequestError("timeout-1", uncertain=True, retry_allowed=True),
-            o.ConnectorRequestError("timeout-2", uncertain=True, retry_allowed=True),
+            o.ConnectorRequestError("timeout-1", uncertain=True, idempotent=True),
+            o.ConnectorRequestError("timeout-2", uncertain=True, idempotent=True),
         ]
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=errors),                  patch.object(o.time, "sleep"):

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
 
-CURRENT_STATE_VERSION = 3
-CURRENT_WORKFLOW_SCHEMA_VERSION = 2
+CURRENT_STATE_VERSION = 4
+CURRENT_WORKFLOW_SCHEMA_VERSION = 3
 MAX_PARALLEL = 8
+DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
+MAX_ATTEMPTS_PER_WORKFLOW = 128
 
 
 class StateSchemaError(RuntimeError):
@@ -53,6 +56,22 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
         workflow.setdefault("replan_count", 0)
+        workflow.setdefault("attempts_used", 0)
+        workflow["attempts_used"] = max(0, _as_int(workflow.get("attempts_used"), 0))
+        workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+        workflow["max_attempts"] = max(
+            1,
+            min(
+                _as_int(workflow.get("max_attempts"), DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW),
+                MAX_ATTEMPTS_PER_WORKFLOW,
+            ),
+        )
+        workflow.setdefault(
+            "retry_jitter_seed",
+            hashlib.sha256(
+                str(workflow.get("id") or workflow_id).encode("utf-8")
+            ).hexdigest()[:32],
+        )
         workflow.setdefault("execution_mode", "live" if workflow.get("live") else "dry-run")
         workflow.setdefault("plan_fingerprint", None)
         if "plan_integrity" not in workflow:

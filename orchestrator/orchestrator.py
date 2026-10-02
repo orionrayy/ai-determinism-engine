@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
+import secrets
 import tempfile
+import threading
 import time
 import traceback
 import urllib.error
@@ -26,9 +28,14 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence
-    from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
-    from .state_schema import StateSchemaError, migrate_state
+    from .state_schema import (
+        DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
+        MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
+        StateSchemaError,
+        migrate_state,
+    )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
 except ImportError:
@@ -40,9 +47,14 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence
-    from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
-    from state_schema import StateSchemaError, migrate_state
+    from state_schema import (
+        DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
+        MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
+        StateSchemaError,
+        migrate_state,
+    )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
 
@@ -57,20 +69,53 @@ MAX_NODES = 24
 MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
+MAX_ATTEMPTS_PER_WORKFLOW = STATE_MAX_ATTEMPTS_PER_WORKFLOW
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
-    "ready": {"running", "waiting_approval", "cancelled"},
+    "ready": {"running", "waiting_approval", "failed", "cancelled"},
     "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled", "ready"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
     "failed": {"replanning", "reconciling", "ready", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
-    "reconciling": {"completed", "ready", "failed", "cancelled"},
+    "reconciling": {"validating", "ready", "failed", "cancelled"},
     "completed": set(),
     "cancelled": set(),
 }
+
+class AttemptBudget:
+    """Workflow-scoped attempt budget shared by retries, batches, and replans."""
+
+    def __init__(self, workflow: dict[str, Any]) -> None:
+        self.workflow = workflow
+        self.max_attempts = max(
+            1,
+            min(
+                int(workflow.get("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)),
+                MAX_ATTEMPTS_PER_WORKFLOW,
+            ),
+        )
+        self.used = max(0, int(workflow.get("attempts_used", 0)))
+        self._lock = threading.Lock()
+
+    @property
+    def remaining(self) -> int:
+        with self._lock:
+            return max(0, self.max_attempts - self.used)
+
+    def acquire(self, node_id: str) -> bool:
+        with self._lock:
+            if self.used >= self.max_attempts:
+                return False
+            self.used += 1
+            return True
+
+    def sync(self) -> None:
+        self.workflow["attempts_used"] = self.used
+        self.workflow["max_attempts"] = self.max_attempts
+
 
 @dataclass
 class Node:
@@ -1182,12 +1227,6 @@ def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
     return False
 
 
-def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
-    if not isinstance(exc, ConnectorRequestError) or not exc.uncertain:
-        return True, False
-    return bool(exc.retry_allowed), True
-
-
 def execution_failure_policy(
     node: Node,
     exc: Exception,
@@ -1195,44 +1234,62 @@ def execution_failure_policy(
     *,
     dry_run: bool,
 ) -> tuple[str, bool, bool]:
-    failure_class = classify_failure(exc)
-    explicit_retry = getattr(exc, "retry_allowed", None)
-    can_retry = retry_allowed(
-        failure_class,
-        explicitly_retryable=explicit_retry,
+    decision = decide_retry(
+        classify_failure(exc),
+        explicitly_retryable=None,
+        uncertain=bool(getattr(exc, "uncertain", False)),
+        side_effect_started=side_effecting(node, registry) and not dry_run,
+        idempotent=bool(getattr(exc, "idempotent", False)),
     )
-    connector_can_retry, uncertain = connector_failure_policy(node, exc)
-    if uncertain:
-        failure_class = "uncertain"
-        can_retry = connector_can_retry
+    node.error["failure_class"] = decision["failure_class"]
+    node.error["retry_allowed"] = decision["retry_allowed"]
+    node.error["retry_reason"] = decision["reason"]
+    if decision["uncertain"]:
         node.error["execution_uncertain"] = True
         node.error["reconciliation_required"] = True
+    if decision["reason"] in {
+        "side_effect_started_requires_reconciliation",
+        "uncertain_requires_reconciliation",
+    }:
+        node.error["post_start_side_effect_failure"] = True
+        node.error["retry_blocked_after_side_effect_start"] = True
+        node.error["replan_blocked_after_side_effect_start"] = True
+    return (
+        str(decision["failure_class"]),
+        bool(decision["retry_allowed"]),
+        bool(decision["uncertain"]),
+    )
 
-    if side_effecting(node, registry) and not dry_run:
-        connector_safe_retry = (
-            isinstance(exc, ConnectorRequestError)
-            and uncertain
-            and connector_can_retry
-        )
-        if not connector_safe_retry:
-            node.error["post_start_side_effect_failure"] = True
-            node.error["retry_blocked_after_side_effect_start"] = True
-            node.error["replan_blocked_after_side_effect_start"] = True
-            can_retry = False
-            if failure_class in {"transient", "intermittent", "dependency"}:
-                failure_class = "uncertain"
-                uncertain = True
-                node.error["execution_uncertain"] = True
-                node.error["reconciliation_required"] = True
 
-    node.error["failure_class"] = failure_class
-    node.error["retry_allowed"] = can_retry
-    return failure_class, can_retry, uncertain
-
-def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, dict[str, Any] | None]:
+def execute_with_retries(
+    node: Node,
+    goal: str,
+    dry_run: bool,
+    *,
+    attempt_budget: AttemptBudget | None = None,
+    initial_attempt_reserved: bool = False,
+    before_retry: Any | None = None,
+) -> tuple[bool, dict[str, Any] | None]:
     registry = load_registry()
     attempts = node.retry_count
+    first_attempt = bool(initial_attempt_reserved)
+
     while True:
+        if not first_attempt and attempt_budget is not None:
+            if not attempt_budget.acquire(node.id):
+                node.error = {
+                    "type": "attempt_budget_exhausted",
+                    "message": (
+                        f"workflow attempt budget exhausted at "
+                        f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                    ),
+                    "failure_class": "permanent",
+                    "retry_allowed": False,
+                }
+                transition(node, "failed")
+                return False, node.error
+        first_attempt = False
+
         try:
             output = execute_node(node, goal, dry_run=dry_run)
             node.output = output
@@ -1253,13 +1310,28 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                 dry_run=dry_run,
             )
             if attempts < node.max_retries and can_retry:
-                attempts += 1
+                next_attempt = attempts + 1
+                if attempt_budget is not None and not attempt_budget.acquire(node.id):
+                    node.error = {
+                        **node.error,
+                        "type": "attempt_budget_exhausted",
+                        "message": (
+                            f"workflow attempt budget exhausted at "
+                            f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                        ),
+                        "failure_class": "permanent",
+                        "retry_allowed": False,
+                    }
+                    transition(node, "failed")
+                    return False, node.error
+                attempts = next_attempt
                 node.retry_count = attempts
                 transition(node, "retrying")
                 delay = deterministic_retry_delay(
                     str(node.input.get("workflow_id") or ""),
                     node.id,
                     attempts,
+                    jitter_seed=str(node.input.get("retry_jitter_seed") or ""),
                 )
                 append_event("node.retrying", {
                     "workflow_id": node.input.get("workflow_id"),
@@ -1267,9 +1339,13 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                     "attempt": attempts,
                     "error": str(exc),
                     "failure_class": failure_class,
+                    "execution_uncertain": uncertain,
                     "retry_delay": delay,
+                    "retry_jitter_seed": node.input.get("retry_jitter_seed"),
                 })
                 time.sleep(delay)
+                if before_retry is not None:
+                    before_retry()
                 transition(node, "ready")
                 transition(node, "running")
                 continue
@@ -1343,6 +1419,10 @@ def replan_after_failure(
 ) -> bool:
     replans = int(workflow.get("replan_count", 0))
     if replans >= MAX_REPLANS:
+        return False
+    if int(workflow.get("attempts_used", 0)) >= int(
+        workflow.get("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+    ):
         return False
 
     old_tool = failed_node.tool
@@ -1537,12 +1617,29 @@ def reconcile_first_uncertain(
         node.error["reconciled"] = True
         node.error["reconciliation_state"] = "applied"
         node.error.pop("reconciliation_required", None)
-        node.output["validation"] = {
-            "passed": True,
-            "checks": [{"check": "reconciliation_applied", "passed": True}],
-            "checked_at": utc_now(),
-        }
-        transition(node, "completed")
+        try:
+            transition(node, "validating")
+            node.output["validation"] = validate_node_output(node, node.output)
+            transition(node, "completed")
+        except Exception as exc:
+            # The provider already confirmed the side effect as applied. Record that
+            # fact before failing validation so recovery cannot replay the effect.
+            mark_execution_completed(workflow, execution_id, node.output)
+            node.error = {
+                **node.error,
+                "validation_failed_after_reconciliation": True,
+                "validation_error": str(exc),
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            append_event("node.reconciliation_validation_failed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "execution_id": execution_id,
+                "error": str(exc),
+            })
+            return "failed"
         mark_execution_completed(workflow, execution_id, node.output)
         node_success_checkpoint(workflow, node)
         update_tool_health(node, True, registry)
@@ -1606,9 +1703,21 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow.setdefault('repair_feedback', {})
     workflow.setdefault('evidence', {})
     workflow.setdefault('reconciliations', {})
+    workflow.setdefault(
+        'retry_jitter_seed',
+        hashlib.sha256(str(workflow['id']).encode('utf-8')).hexdigest()[:32],
+    )
+    workflow.setdefault('attempts_used', 0)
+    workflow.setdefault('max_attempts', DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+    workflow['max_attempts'] = max(
+        1,
+        min(int(workflow['max_attempts']), MAX_ATTEMPTS_PER_WORKFLOW),
+    )
+    attempt_budget = AttemptBudget(workflow)
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
+        node.input['retry_jitter_seed'] = workflow['retry_jitter_seed']
 
     if recover_barrier_failed_side_effects(workflow, nodes, registry):
         workflow['nodes'] = [asdict(node) for node in nodes]
@@ -1675,6 +1784,24 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return 'waiting_approval'
 
     node.input["context"] = build_node_context(nodes, node)
+    if not attempt_budget.acquire(node.id):
+        node.error = {
+            "type": "attempt_budget_exhausted",
+            "message": (
+                f"workflow attempt budget exhausted at "
+                f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+            ),
+            "failure_class": "permanent",
+            "retry_allowed": False,
+        }
+        transition(node, "failed")
+        workflow["status"] = "failed"
+        workflow["failed_node"] = node.id
+        workflow["nodes"] = [asdict(item) for item in nodes]
+        attempt_budget.sync()
+        persist_workflow(workflow)
+        return "failed"
+    attempt_budget.sync()
     transition(node, 'running')
     execution_id = execution_key(workflow, node)
     if side_effecting(node, registry):
@@ -1732,82 +1859,78 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 })
                 return 'failed'
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
-    attempts = node.retry_count
-    while True:
-        try:
-            node.output = execute_node(node, workflow['goal'], dry_run=not live)
-            node.output['validation'] = validate_node_output(node, node.output)
-            transition(node, 'validating')
-            transition(node, 'completed')
-            if side_effecting(node, registry):
-                mark_execution_completed(workflow, execution_id, node.output)
-            update_tool_health(node, True, registry)
-            node_success_checkpoint(workflow, node)
-            append_event('node.completed', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
-            notify_issue(
-                workflow,
-                'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
+    success, error = execute_with_retries(
+        node,
+        workflow['goal'],
+        dry_run=not live,
+        attempt_budget=attempt_budget,
+        initial_attempt_reserved=True,
+        before_retry=(
+            lambda: (
+                attempt_budget.sync(),
+                workflow.__setitem__('nodes', [asdict(item) for item in nodes]),
+                persist_workflow(workflow),
             )
-            workflow['nodes'] = [asdict(item) for item in nodes]
+            if side_effecting(node, registry)
+            else None
+        ),
+    )
+    attempt_budget.sync()
+
+    if success:
+        if side_effecting(node, registry):
+            mark_execution_completed(workflow, execution_id, node.output)
+        update_tool_health(node, True, registry)
+        node_success_checkpoint(workflow, node)
+        append_event('node.completed', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'tool': node.tool,
+        })
+        notify_issue(
+            workflow,
+            'Orchestrator: node ' + node.id + ' completed using ' + node.tool + '.'
+        )
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        if all(item.status == 'completed' for item in nodes):
+            workflow['status'] = 'completed'
             persist_workflow(workflow)
-            if all(item.status == 'completed' for item in nodes):
-                workflow['status'] = 'completed'
-                persist_workflow(workflow)
-                append_event('workflow.completed', {'workflow_id': workflow['id']})
-                return 'completed'
-            return 'completed_step'
-        except Exception as exc:
-            node.error = {
-                'type': type(exc).__name__,
-                'message': str(exc),
-                'trace': traceback.format_exc(limit=4),
-            }
-            failure_class, can_retry, uncertain = execution_failure_policy(
-                node,
-                exc,
-                registry,
-                dry_run=not live,
-            )
-            if attempts < node.max_retries and can_retry:
-                attempts += 1
-                node.retry_count = attempts
-                transition(node, 'retrying')
-                delay = deterministic_retry_delay(workflow['id'], node.id, attempts)
-                append_event('node.retrying', {
-                    'workflow_id': workflow['id'],
-                    'node_id': node.id,
-                    'attempt': attempts,
-                    'error': str(exc),
-                    'execution_uncertain': uncertain,
-                    'failure_class': failure_class,
-                    'retry_delay': delay,
-                })
-                time.sleep(delay)
-                transition(node, 'ready')
-                transition(node, 'running')
-                continue
-            transition(node, 'failed')
-            update_tool_health(node, False, registry)
-            if uncertain:
-                append_event('node.execution_uncertain', {
-                    'workflow_id': workflow['id'],
-                    'node_id': node.id,
-                    'error': node.error,
-                })
-            append_event('node.failed', {'workflow_id': workflow['id'], 'node_id': node.id, 'error': node.error})
-            notify_issue(
-                workflow,
-                'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
-            )
-            if not uncertain and not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
-                workflow['nodes'] = [asdict(item) for item in nodes]
-                persist_workflow(workflow)
-                return 'replanned'
-            workflow['status'] = 'failed'
-            workflow['failed_node'] = node.id
-            workflow['nodes'] = [asdict(item) for item in nodes]
-            persist_workflow(workflow)
-            return 'failed'
+            append_event('workflow.completed', {'workflow_id': workflow['id']})
+            return 'completed'
+        return 'completed_step'
+
+    update_tool_health(node, False, registry)
+    if node.error.get('execution_uncertain'):
+        append_event('node.execution_uncertain', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'error': node.error,
+        })
+    append_event('node.failed', {
+        'workflow_id': workflow['id'],
+        'node_id': node.id,
+        'error': node.error,
+    })
+    notify_issue(
+        workflow,
+        'Orchestrator: node ' + node.id + ' failed: ' + node.error.get('message', 'unknown error')
+    )
+    if (
+        not node.error.get('execution_uncertain')
+        and not node.error.get('replan_blocked_after_side_effect_start')
+        and replan_after_failure(workflow, nodes, node, registry)
+    ):
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'replanned'
+    workflow['status'] = 'failed'
+    workflow['failed_node'] = node.id
+    workflow['nodes'] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
+    return 'failed'
+
+
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
     nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
@@ -1828,12 +1951,24 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow.setdefault("repair_feedback", {})
     workflow.setdefault("evidence", {})
     workflow.setdefault("reconciliations", {})
+    workflow.setdefault(
+        "retry_jitter_seed",
+        hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
+    )
+    workflow.setdefault("attempts_used", 0)
+    workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+    workflow["max_attempts"] = max(
+        1,
+        min(int(workflow["max_attempts"]), MAX_ATTEMPTS_PER_WORKFLOW),
+    )
+    attempt_budget = AttemptBudget(workflow)
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
     for node in nodes:
         node.input["workflow_id"] = workflow["id"]
         node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
+        node.input["retry_jitter_seed"] = workflow["retry_jitter_seed"]
 
     safety = 0
     while True:
@@ -1925,6 +2060,23 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 continue
 
             node.input["context"] = build_node_context(nodes, node)
+            if not attempt_budget.acquire(node.id):
+                node.error = {
+                    "type": "attempt_budget_exhausted",
+                    "message": (
+                        f"workflow attempt budget exhausted at "
+                        f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                    ),
+                    "failure_class": "permanent",
+                    "retry_allowed": False,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                attempt_budget.sync()
+                persist_workflow(workflow)
+                return
             transition(node, "running")
 
             execution_id = execution_key(workflow, node)
@@ -2001,14 +2153,40 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
         if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
             for node, execution_id in executable:
-                results.append((node, execution_id, *execute_with_retries(node, workflow["goal"], dry_run)))
+                results.append((
+                    node,
+                    execution_id,
+                    *execute_with_retries(
+                        node,
+                        workflow["goal"],
+                        dry_run,
+                        attempt_budget=attempt_budget,
+                        initial_attempt_reserved=True,
+                        before_retry=(
+                            lambda node=node: (
+                                attempt_budget.sync(),
+                                workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
+                                persist_workflow(workflow),
+                            )
+                            if side_effecting(node, registry)
+                            else None
+                        ),
+                    ),
+                ))
         else:
             with ThreadPoolExecutor(
                 max_workers=min(workflow["max_parallel"], len(executable)),
                 thread_name_prefix="orchestrator-node",
             ) as pool:
                 futures = {
-                    pool.submit(execute_with_retries, node, workflow["goal"], dry_run): (node, execution_id)
+                    pool.submit(
+                        execute_with_retries,
+                        node,
+                        workflow["goal"],
+                        dry_run,
+                        attempt_budget=attempt_budget,
+                        initial_attempt_reserved=True,
+                    ): (node, execution_id)
                     for node, execution_id in executable
                 }
                 completed_futures = {}
@@ -2044,6 +2222,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     persist_workflow(workflow)
                     return
 
+        attempt_budget.sync()
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
 
@@ -2162,6 +2341,15 @@ def create_workflow(
         "live": live,
         "execution_mode": "dry-run",
         "replan_count": 0,
+        "attempts_used": 0,
+        "max_attempts": max(
+            1,
+            min(
+                int(os.environ.get("ORCHESTRATOR_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)),
+                MAX_ATTEMPTS_PER_WORKFLOW,
+            ),
+        ),
+        "retry_jitter_seed": secrets.token_hex(16),
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
