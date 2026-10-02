@@ -13,6 +13,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - A preflight failure can re-enter the existing bounded replan path because no side-effect durability barrier has been crossed.
 - The ready state permits a policy/dependency failure transition to failed, making pre-execution failures explicit without pretending that an external action started.
 - The AI Orchestrator workflow job explicitly accepts both [ORCHESTRATOR] source issues and [ORCHESTRATOR APPROVAL] issues so approval labels can reach the worker.
+- Approval labels are accepted only during an authenticated `issues` `labeled` event carrying an allowlisted approval/rejection label; scheduled recovery cannot bootstrap approval from an unverified label.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
