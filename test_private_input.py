@@ -53,7 +53,7 @@ class PrivateInputTests(unittest.TestCase):
             "e" * 64, pi.input_digest({"title": "Hello"}), "secret"
         ))
         self.assertIn('"payload":{"title":"Hello"}', body)
-        self.assertEqual(captured["request"].get_header("Idempotency-Key"), ref)
+        self.assertEqual(captured["request"].get_header("Idempotency-key"), ref)
         self.assertTrue(captured["request"].get_header("X-orchestrator-signature").startswith("sha256="))
 
     def test_fetch_verifies_digest_and_execution_binding(self):
