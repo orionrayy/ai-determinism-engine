@@ -89,6 +89,13 @@ Current execution-fabric branch: `main`
 - Existing approval paths already pass `--workflow-id`; v51 aligns continuation/federation with the same targeted lifecycle path.
 - No new service, dependency, or cost surface is introduced.
 
+## Orchestration hardening v52 — identity-first ingress deduplication
+- New ingress events derive a deterministic internal workflow ID from `Idempotency-Key` (preferred) or `event_id`, creating a stable canonical shard identity for duplicate requests.
+- Goal-driven ingress checks that single canonical shard before falling back to the full `load_state()` scan, so new duplicate detection is O(1)-shard while pre-v52 legacy workflows remain discoverable.
+- Reused idempotency/event identities now compare persisted intent/input digests when supplied; a mismatched request fails closed instead of being silently treated as the same operation.
+- GitHub Actions repository-dispatch concurrency now falls back through `workflow_id`, `event_id`, and `idempotency_key`, so duplicate ingress instances are serialized before the orchestrator state check.
+- This preserves the free-first GitHub Actions + stdlib Python control plane and avoids introducing a centralized paid or remote idempotency ledger.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
