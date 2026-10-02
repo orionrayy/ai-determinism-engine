@@ -27,6 +27,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn('Authorize approval actor', self.orchestrator)
 
 
+    def test_federation_has_unique_artifact_per_matrix_task(self):
+        self.assertIn("matrix.task.task_id", self.federation)
+        self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
+        self.assertIn("merge-multiple: false", self.federation)
+        self.assertIn("fail-fast: false", self.federation)
+        self.assertIn("max-parallel: 4", self.federation)
     def test_federated_matrix_is_bounded_and_read_only(self):
         self.assertIn("types: [orchestrator.federate]", self.federation)
         self.assertIn("max-parallel: 4", self.federation)
