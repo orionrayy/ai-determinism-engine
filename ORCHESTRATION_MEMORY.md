@@ -13,6 +13,15 @@ Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
 
+
+## Run-attempt continuation binding v39 (review branch)
+- Audit identified a rerun collision boundary: GitHub Actions can reuse the same workflow run ID across attempts, so continuation identity must include both run ID and run attempt.
+- The worker now persists github_run_id + github_run_attempt; first-worker provenance is preserved as origin_github_run_id + origin_github_run_attempt.
+- Continuation matching requires the exact (workflow_run.id, workflow_run.run_attempt) pair, and its dispatch event carries a deterministic continuation event identity.
+- The continuation workflow has a per-run/per-attempt concurrency group with cancel-in-progress disabled, preventing duplicate completion dispatches for the same runner attempt.
+- queue: max was removed from the control-plane workflow because the pinned Actionlint v1.7.12 rejects the key even though GitHub Actions documents it. With exact workflow identity and fail-safe continuation semantics, the default single pending slot is sufficient for the current zero-dollar control plane.
+- This checkpoint intentionally changes no default-branch state until CI verifies both the runtime and workflow invariants.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
