@@ -15,7 +15,7 @@
   ],
   "properties": {
     "schema_version": { "const": 1 },
-    "protocol": { "const": "ai-orchestrator.private-input/v1" },
+    "protocol": { "const": "ai-orchestrator.private-input/v2" },
     "input_ref": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "execution_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
     "intent_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
