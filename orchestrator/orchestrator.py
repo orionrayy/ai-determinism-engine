@@ -7,9 +7,11 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import tempfile
 import time
 import traceback
+import threading
 import urllib.error
 import urllib.parse
 import re
@@ -30,7 +32,7 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence
-    from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from .failure_policy import classify_failure, deterministic_retry_delay, retry_class_allowed
     from .plan_integrity import fingerprint_nodes
     from .policy_integrity import build_policy_snapshot, fingerprint_policy
     from .state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
@@ -48,7 +50,7 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence
-    from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from failure_policy import classify_failure, deterministic_retry_delay, retry_class_allowed
     from plan_integrity import fingerprint_nodes
     from policy_integrity import build_policy_snapshot, fingerprint_policy
     from state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
@@ -75,12 +77,15 @@ MAX_NODE_INTENT_BYTES = 32 * 1024
 MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
 MAX_NODE_RETRIES = 8
+MAX_ATTEMPTS_PER_WORKFLOW = 256
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 NODE_STATUSES = {
     "pending", "ready", "running", "validating", "waiting_approval",
     "retrying", "replanning", "reconciling", "completed", "failed", "cancelled",
 }
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+
+EXECUTION_BUDGET_LOCK = threading.RLock()
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -91,7 +96,7 @@ TRANSITIONS = {
     "retrying": {"ready", "failed"},
     "failed": {"replanning", "reconciling", "ready", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
-    "reconciling": {"completed", "ready", "failed", "cancelled"},
+    "reconciling": {"validating", "ready", "failed", "cancelled"},
     "completed": set(),
     "cancelled": set(),
 }
@@ -318,31 +323,32 @@ def reserve_execution_steps(
     workflow: dict[str, Any],
     node_ids: list[str],
 ) -> dict[str, int]:
-    """Atomically admit a batch against the remaining durable execution budget."""
+    """Atomically admit a batch against the remaining workflow attempt budget."""
     ids = [str(node_id) for node_id in node_ids]
     if not ids:
         return {}
-    budget = execution_budget(workflow)
-    available = budget["max_steps"] - budget["used_steps"]
-    if len(ids) > available:
-        raise ExecutionBudgetExceeded(
-            f"execution step budget cannot admit batch ({len(ids)} requested, {available} available)"
-        )
-    start = budget["used_steps"]
-    reservations = {
-        node_id: start + offset
-        for offset, node_id in enumerate(ids, start=1)
-    }
-    budget["used_steps"] = start + len(ids)
-    budget["last_node_id"] = ids[-1]
-    budget["last_reserved_at"] = utc_now()
+    with EXECUTION_BUDGET_LOCK:
+        budget = execution_budget(workflow)
+        available = budget["max_steps"] - budget["used_steps"]
+        if len(ids) > available:
+            raise ExecutionBudgetExceeded(
+                f"workflow attempt budget cannot admit batch ({len(ids)} requested, {available} available)"
+            )
+        start = budget["used_steps"]
+        reservations = {
+            node_id: start + offset
+            for offset, node_id in enumerate(ids, start=1)
+        }
+        budget["used_steps"] = start + len(ids)
+        budget["last_node_id"] = ids[-1]
+        budget["last_reserved_at"] = utc_now()
     for node_id, used in reservations.items():
         try:
-            append_event("workflow.budget_step_reserved", {
+            append_event("workflow.budget_attempt_reserved", {
                 "workflow_id": workflow["id"],
                 "node_id": node_id,
-                "used_steps": used,
-                "max_steps": budget["max_steps"],
+                "used_attempts": used,
+                "max_attempts": budget["max_steps"],
                 "batch": True,
             })
         except OSError:
@@ -351,21 +357,26 @@ def reserve_execution_steps(
 
 
 def reserve_execution_step(workflow: dict[str, Any], node_id: str) -> int:
-    budget = execution_budget(workflow)
-    if budget["used_steps"] >= budget["max_steps"]:
-        raise ExecutionBudgetExceeded(
-            f"execution step budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
-        )
-    budget["used_steps"] += 1
-    budget["last_node_id"] = str(node_id)
-    budget["last_reserved_at"] = utc_now()
-    append_event("workflow.budget_step_reserved", {
-        "workflow_id": workflow["id"],
-        "node_id": str(node_id),
-        "used_steps": budget["used_steps"],
-        "max_steps": budget["max_steps"],
-    })
-    return budget["used_steps"]
+    with EXECUTION_BUDGET_LOCK:
+        budget = execution_budget(workflow)
+        if budget["used_steps"] >= budget["max_steps"]:
+            raise ExecutionBudgetExceeded(
+                f"workflow attempt budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
+            )
+        budget["used_steps"] += 1
+        used_attempts = budget["used_steps"]
+        budget["last_node_id"] = str(node_id)
+        budget["last_reserved_at"] = utc_now()
+    try:
+        append_event("workflow.budget_attempt_reserved", {
+            "workflow_id": workflow["id"],
+            "node_id": str(node_id),
+            "used_attempts": used_attempts,
+            "max_attempts": budget["max_steps"],
+        })
+    except OSError:
+        pass
+    return used_attempts
 
 
 def new_id(prefix: str) -> str:
@@ -1556,8 +1567,10 @@ def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
 
 def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
     if not isinstance(exc, ConnectorRequestError) or not exc.uncertain:
-        return True, False
-    return bool(exc.retry_allowed), True
+        return False, False
+    # The bridge reports uncertainty and records the observed action contract.
+    # The orchestrator decides whether an uncertain side effect may be replayed.
+    return bool(node.input.get("connector_action_idempotent")), True
 
 
 def refresh_policy_snapshot(
@@ -1625,17 +1638,14 @@ def execution_failure_policy(
     dry_run: bool,
 ) -> tuple[str, bool, bool]:
     failure_class = classify_failure(exc)
-    explicit_retry = getattr(exc, "retry_allowed", None)
-    can_retry = retry_allowed(
-        failure_class,
-        explicitly_retryable=explicit_retry,
-    )
     connector_can_retry, uncertain = connector_failure_policy(node, exc)
     if uncertain:
         failure_class = "uncertain"
         can_retry = connector_can_retry
         node.error["execution_uncertain"] = True
         node.error["reconciliation_required"] = True
+    else:
+        can_retry = retry_class_allowed(failure_class)
 
     if side_effecting(node, registry) and not dry_run:
         connector_safe_retry = (
@@ -1658,7 +1668,12 @@ def execution_failure_policy(
     node.error["retry_allowed"] = can_retry
     return failure_class, can_retry, uncertain
 
-def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, dict[str, Any] | None]:
+def execute_with_retries(
+    workflow: dict[str, Any],
+    node: Node,
+    goal: str,
+    dry_run: bool,
+) -> tuple[bool, dict[str, Any] | None]:
     registry = load_registry()
     attempts = node.retry_count
     while True:
@@ -1682,13 +1697,21 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                 dry_run=dry_run,
             )
             if attempts < node.max_retries and can_retry:
+                try:
+                    reserve_execution_step(workflow, node.id)
+                except ExecutionBudgetExceeded:
+                    node.error["budget_exhausted"] = True
+                    node.error["retry_allowed"] = False
+                    transition(node, "failed")
+                    return False, node.error
                 attempts += 1
                 node.retry_count = attempts
                 transition(node, "retrying")
                 delay = deterministic_retry_delay(
-                    str(node.input.get("workflow_id") or ""),
+                    workflow["id"],
                     node.id,
                     attempts,
+                    retry_seed=str(workflow.get("retry_seed") or ""),
                 )
                 append_event("node.retrying", {
                     "workflow_id": node.input.get("workflow_id"),
@@ -2643,7 +2666,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
         if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
             for node, execution_id in executable:
-                results.append((node, execution_id, *execute_with_retries(node, workflow["goal"], dry_run)))
+                results.append((node, execution_id, *execute_with_retries(workflow, node, workflow["goal"], dry_run)))
         else:
             with ThreadPoolExecutor(
                 max_workers=min(workflow["max_parallel"], len(executable)),
@@ -2899,7 +2922,11 @@ def create_workflow(
                 },
             )
         ]
-    if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
+    if (
+        os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true"
+        and os.environ.get("GEMINI_API_KEY")
+        and tool_available("gemini", registry, require_env=True, enforce_free=True)
+    ):
         try:
             from llm_planner import plan_goal
             nodes = plan_goal(goal, registry, Node, validate_dag, live=live)
@@ -2928,6 +2955,7 @@ def create_workflow(
         "route_snapshot": route_snapshot,
         "policy_integrity": "initialized",
         "execution_budget": {"max_steps": configured_max_execution_steps(), "used_steps": 0},
+        "retry_seed": secrets.token_hex(16),
         "callback": {"status": "pending"} if execution_id else {"status": "disabled"},
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
