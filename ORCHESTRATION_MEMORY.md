@@ -24,6 +24,13 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Continuation chain binding v28
+
+- `github_run_id` now means the latest worker Actions run that durably touched the workflow; it is updated on workflow persistence.
+- `origin_github_run_id` preserves the first worker run for provenance and audit history.
+- This closes the chained-continuation gap where a resumed workflow kept its original run id and the next `workflow_run` event could no longer correlate to the exact persisted workflow.
+- The continuation workflow still matches the triggering run id against the exact persisted workflow and dispatches the exact `workflow_id`; it does not fall back to `last_workflow_id`.
+- Workflow schema is now v5; top-level state schema remains v4.
 ## Route snapshot + policy integrity v27
 
 - Each workflow now persists a deterministic route/policy snapshot covering the selected node tool, capability fallback candidates, risk/action context, the relevant tool policy fields, live mode, and the free-only setting.
@@ -39,7 +46,7 @@ Primary branch: `main`
 Current main baseline for this branch: execution preflight + resume plan immutability v25, on top of approval intent binding v23 plus its v24 hotfix, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; live side effects require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
-Current execution-fabric branch: `hardening/route-snapshot-policy-v27` (draft; `main` remains the merge baseline)
+Current execution-fabric branch: `hardening/continuation-chain-binding-v28` (draft; `main` remains the merge baseline)
 
 ## Architecture
 
