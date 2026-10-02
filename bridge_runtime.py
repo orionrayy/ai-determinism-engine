@@ -215,16 +215,35 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
     if payload.get("protocol") != PROTOCOL:
         raise BridgeRuntimeError("unsupported connector protocol")
     request_id = str(payload.get("request_id") or "").strip()
+    workflow_id = str(payload.get("workflow_id") or "").strip()
+    node_id = str(payload.get("node_id") or "").strip()
     connector = str(payload.get("connector") or "").strip().lower()
     action = str(payload.get("action") or "").strip().lower()
+    input_value = payload.get("input")
     if len(request_id) != 64 or any(ch not in "0123456789abcdef" for ch in request_id):
         raise BridgeRuntimeError("invalid request_id")
+    if not workflow_id or not node_id:
+        raise BridgeRuntimeError("workflow_id and node_id are required")
+    if not isinstance(input_value, dict):
+        raise BridgeRuntimeError("connector input must be an object")
     route = routes.get(connector)
     if not isinstance(route, dict):
         raise BridgeRuntimeError("connector is not allowlisted")
     allowed = route.get("actions", [])
     if action not in allowed:
         raise BridgeRuntimeError("connector action is not allowlisted")
+    expected_request_id = hashlib.sha256(
+        canonical_json({
+            "protocol": PROTOCOL,
+            "workflow_id": workflow_id,
+            "node_id": node_id,
+            "connector": connector,
+            "action": action,
+            "input": input_value,
+        })
+    ).hexdigest()
+    if request_id != expected_request_id:
+        raise BridgeRuntimeError("request_id does not match request intent")
     return request_id, connector, action
 
 
