@@ -1206,21 +1206,22 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_main_goal_ingress_deduplicates_existing_event_id(self):
         existing = {
-            "id": "wf-existing",
+            "id": "wf-ingress-event-evt123",
             "goal": "already accepted",
             "status": "running",
             "nodes": [],
             "event_id": "evt-123",
         }
-        state = {"version": CURRENT_STATE_VERSION, "workflows": {"wf-existing": existing}, "last_workflow_id": "wf-existing"}
-        with patch.object(o, "load_state", return_value=state) as load_state, \
+        with patch.object(o, "deterministic_ingress_workflow_id", return_value="wf-ingress-event-evt123"), \
+             patch.object(o, "load_workflow", return_value=existing) as load_workflow, \
+             patch.object(o, "legacy_state_has_workflows", side_effect=AssertionError("legacy scan should not run")), \
              patch.object(o, "create_workflow", side_effect=AssertionError("dedup must stop before create_workflow")), \
              patch.object(o, "print_summary"), patch.object(o, "notify_execution_callback"), \
-             patch.object(sys, "argv", ["orchestrator", "--goal", "duplicate",]), \
+             patch.object(sys, "argv", ["orchestrator", "--goal", "duplicate"]), \
              patch.dict(o.os.environ, {"ORCHESTRATOR_EVENT_ID": "evt-123"}, clear=False):
             result = o.main()
         self.assertEqual(result, 0)
-        load_state.assert_called_once()
+        load_workflow.assert_called_once_with("wf-ingress-event-evt123")
 
     def test_main_persists_new_workflow_before_execution(self):
         workflow = {"id": "wf-new", "goal": "build", "status": "planning", "live": False, "nodes": []}
