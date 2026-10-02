@@ -109,6 +109,45 @@ class StateSchemaTests(unittest.TestCase):
         })
         self.assertEqual(migrated["workflows"]["wf-key"]["id"], "wf-key")
 
+    def test_malformed_workflow_control_field_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "max_parallel": "not-an-int",
+                        "nodes": [],
+                    }
+                },
+            })
+
+    def test_invalid_workflow_live_type_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "live": "false",
+                        "nodes": [],
+                    }
+                },
+            })
+
+    def test_invalid_runtime_container_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "executions": [],
+                        "nodes": [],
+                    }
+                },
+            })
+
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
