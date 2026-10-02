@@ -110,6 +110,13 @@ Current execution-fabric branch: `main`
 - Live connector output contracts are checked after transport success; if a 2xx response is oversized or violates the advertised output contract, the failure is marked uncertain because the upstream side effect may already have occurred, forcing the existing reconciliation/idempotency policy to decide recovery.
 - Contract validation remains downstream of the existing free-tier/idempotency/risk gates, so an invalid response cannot be mistaken for a successful side-effecting operation.
 - This is stdlib-only and introduces no external schema engine, database, queue, proxy, or paid service.
+## Orchestration hardening v55 — durable connector output redaction
+- Connector responses can remain available to the current worker for downstream computation, but durable serialization now passes through `sanitize_for_durable()`.
+- Sensitive-looking mapping keys such as authorization, password, secret, token, API key, credential, and private key are replaced in durable state/checkpoints with a redaction marker plus a deterministic SHA-256 of the removed value.
+- Durable evidence summaries also use the sanitizer while `output_sha256` continues to hash the original runtime output, preserving provenance without persisting the raw secret-bearing representation.
+- String, collection, and nesting bounds cap durable representation growth; this is an additional bound beyond the v54 transport response cap.
+- The sanitizer is applied at workflow-shard and checkpoint write boundaries, so the runtime object is not mutated mid-execution and same-process downstream nodes retain access to raw connector results.
+- No external DLP service, database, proxy, or paid dependency is introduced; the privacy boundary remains stdlib-only and free-first.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.

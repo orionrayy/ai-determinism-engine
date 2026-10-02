@@ -93,6 +93,12 @@ Connector actions may optionally advertise `result_required` and `result_types` 
 
 These checks are optional for existing connectors, so the protocol remains backward-compatible. No external schema engine or paid service is required.
 
+## v55 Durable Connector Output Redaction
+
+Connector responses remain available to the current worker, but durable workflow shards and checkpoints now redact sensitive-looking keys such as tokens, secrets, passwords, authorization values, API keys, credentials, and private keys. Each redacted value keeps a deterministic SHA-256 marker for provenance. Durable evidence summaries use the same sanitizer while the full runtime output hash is preserved.
+
+The sanitizer also bounds nesting, collection size, and long string representation. No external DLP service, proxy, database, or paid dependency is required.
+
 ## Gateway
 
 Set these environment variables on the gateway service:
