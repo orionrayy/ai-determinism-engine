@@ -63,8 +63,25 @@ class OrchestratorTests(unittest.TestCase):
                 "side_effects": ["external_request"],
             },
         }
-        with patch.dict(o.os.environ, {"ORCHESTRATOR_LLM_PLANNER": "false"}, clear=False), patch.object(
-            o, "load_registry", return_value=registry
+        import sys
+        from types import SimpleNamespace
+
+        planner_called = {"value": False}
+
+        def forbidden_plan(*args, **kwargs):
+            planner_called["value"] = True
+            raise AssertionError("private structured live input must not reach the LLM planner")
+
+        fake_planner = SimpleNamespace(plan_goal=forbidden_plan)
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_LLM_PLANNER": "true",
+                "GEMINI_API_KEY": "test-key",
+            },
+            clear=False,
+        ), patch.object(o, "load_registry", return_value=registry), patch.dict(
+            sys.modules, {"llm_planner": fake_planner}
         ):
             workflow = o.create_workflow(
                 "Execute private notion.create_page",
@@ -81,6 +98,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(node["tool"], "connector_bridge")
         self.assertEqual(node["input"]["private_input_ref"], "b" * 64)
         self.assertNotIn("payload", node["input"])
+        self.assertFalse(planner_called["value"])
 
     def test_credential_free_research_prefers_wikipedia(self):
         with tempfile.TemporaryDirectory() as tmp:
