@@ -44,11 +44,13 @@ class ActionsConfigTests(unittest.TestCase):
     def test_source_issue_is_propagated(self):
         self.assertIn('ORCHESTRATOR_TRIGGER_ISSUE', self.orchestrator)
         self.assertIn('ORCHESTRATOR_GITHUB_RUN_ID', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_GITHUB_RUN_ATTEMPT', self.orchestrator)
 
     def test_continuation_binds_to_current_worker_run(self):
         self.assertIn('workflow_run.id', self.continuation)
         self.assertIn('workflow_run.run_attempt', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
+        self.assertIn("item.get('github_run_attempt')", self.continuation)
         self.assertIn("WORKFLOW_RUN_ID", self.continuation)
         self.assertIn('EVENT_ID', self.continuation)
         self.assertIn('continuation:', self.continuation)
