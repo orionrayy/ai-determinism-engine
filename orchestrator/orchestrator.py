@@ -136,7 +136,7 @@ class Node:
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
     contract: dict[str, Any] = field(default_factory=dict)
-    agent_role: str = "operator"
+    agent_role: str = ""
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -343,6 +343,7 @@ def enforce_node_policy(
     live: bool = False,
 ) -> None:
     for node in nodes:
+        assign_role(node)
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
             raise ValueError(f"unregistered tool for {node.id}: {node.tool}")
         floor = required_risk(node, registry)
