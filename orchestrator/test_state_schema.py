@@ -94,6 +94,31 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_boolean_and_float_control_fields_fail_closed(self):
+        cases = [("version", True), ("version", 1.5)]
+        for field_name, value in cases:
+            with self.subTest(field_name=field_name, value=value):
+                with self.assertRaises(StateSchemaError):
+                    migrate_state({field_name: value, "workflows": {}})
+
+        for field_name, value in (
+            ("max_parallel", True),
+            ("max_parallel", 2.5),
+            ("replan_count", True),
+        ):
+            with self.subTest(field_name=field_name, value=value):
+                with self.assertRaises(StateSchemaError):
+                    migrate_state({
+                        "version": CURRENT_STATE_VERSION,
+                        "workflows": {
+                            "wf": {
+                                "id": "wf",
+                                field_name: value,
+                                "nodes": [],
+                            }
+                        },
+                    })
+
     def test_malformed_state_version_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
