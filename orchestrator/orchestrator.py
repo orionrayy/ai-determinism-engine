@@ -2890,6 +2890,29 @@ def resume_pending_workflows(
     save_state(state)
     return resumed
 
+def validate_event_replay_identity(
+    workflow: dict[str, Any],
+    *,
+    execution_id: str | None,
+    intent_fingerprint: str | None,
+    input_digest: str | None,
+    idempotency_key: str | None,
+) -> None:
+    comparisons = (
+        ("execution_id", execution_id, workflow.get("execution_id")),
+        ("intent_fingerprint", intent_fingerprint, workflow.get("intent_fingerprint")),
+        ("input_digest", input_digest, workflow.get("input_digest")),
+        ("idempotency_key", idempotency_key, workflow.get("idempotency_key")),
+    )
+    for field_name, incoming, stored in comparisons:
+        incoming_value = str(incoming or "").strip()
+        stored_value = str(stored or "").strip()
+        if incoming_value and stored_value and incoming_value != stored_value:
+            raise SystemExit(
+                f"event_id conflicts with persisted {field_name} for workflow {workflow.get('id')}"
+            )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--goal', default=os.environ.get('ORCHESTRATOR_GOAL', ''))
@@ -2969,6 +2992,15 @@ def main() -> int:
             None,
         )
         if existing:
+            validate_event_replay_identity(
+                existing,
+                execution_id=execution_id_env,
+                intent_fingerprint=intent_fingerprint_env,
+                input_digest=input_digest,
+                idempotency_key=idempotency_key,
+            )
+            if existing.get("status") in {"completed", "failed"}:
+                notify_execution_callback(existing)
             print_summary(existing)
             return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
     workflow = create_workflow(
