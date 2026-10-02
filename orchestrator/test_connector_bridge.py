@@ -296,6 +296,56 @@ class ConnectorBridgeTests(unittest.TestCase):
         c = cb.build_request(changed_payload, "goal")
         self.assertNotEqual(a.request_id, c.request_id)
 
+    def test_action_contract_fingerprint_is_stable(self):
+        spec = {"required": ["title"], "types": {"title": "string"}, "idempotent": True}
+        self.assertEqual(
+            cb.action_contract_fingerprint(spec),
+            cb.action_contract_fingerprint(dict(spec)),
+        )
+
+    def test_contract_drift_blocks_second_connector_attempt(self):
+        node = self.node({"title": "Hello"})
+        node.error = {}
+        inventories = [
+            {"notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "action_specs": {
+                    "create_page": {
+                        "required": ["title"],
+                        "types": {"title": "string"},
+                        "idempotent": True,
+                    }
+                },
+            }},
+            {"notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "action_specs": {
+                    "create_page": {
+                        "required": ["title"],
+                        "types": {"title": "string"},
+                        "idempotent": False,
+                    }
+                },
+            }},
+        ]
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(cb, "discover_capabilities", side_effect=inventories):
+            with patch.object(
+                cb,
+                "post_request",
+                side_effect=cb.ConnectorRequestError("timeout", uncertain=True),
+            ) as post:
+                with self.assertRaises(cb.ConnectorRequestError):
+                    cb.execute_connector_bridge(node, "bridge it", dry_run=False)
+                post.assert_called_once()
+            with self.assertRaises(cb.ConnectorBridgeError):
+                cb.execute_connector_bridge(node, "bridge it", dry_run=False)
+            self.assertEqual(node.error["connector_action_contract_fingerprint"], cb.action_contract_fingerprint(inventories[0]["notion"]["action_specs"]["create_page"]))
+
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
 
