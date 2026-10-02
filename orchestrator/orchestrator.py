@@ -71,6 +71,7 @@ STATE_FILE = STATE_DIR / "state.json"
 EVENT_FILE = STATE_DIR / "events.jsonl"
 EVENT_DIR = STATE_DIR / "events"
 CHECKPOINT_DIR = STATE_DIR / "checkpoints"
+TOOL_HEALTH_DIR = STATE_DIR / "tool_health"
 REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 
 MAX_NODES = 24
@@ -739,23 +740,40 @@ def tool_available(
     env_var = spec.get("required_env")
     return not env_var or bool(os.environ.get(env_var))
 
-def tool_health_path() -> Path:
+def tool_health_path(tool: str | None = None) -> Path:
+    if tool:
+        shard = hashlib.sha256(str(tool).encode("utf-8")).hexdigest()
+        return TOOL_HEALTH_DIR / f"{shard}.json"
     return STATE_DIR / "tool_health.json"
 
 
 def load_tool_health() -> dict[str, Any]:
-    return load_health(tool_health_path())
+    health = load_health(tool_health_path())
+    if TOOL_HEALTH_DIR.exists():
+        for path in sorted(TOOL_HEALTH_DIR.glob("*.json")):
+            shard = load_health(path)
+            if shard:
+                health.update(shard)
+    return health
 
 
 def update_tool_health(node: Node, success: bool, registry: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    health = load_tool_health()
+    shard_path = tool_health_path(node.tool)
+    shard = load_health(shard_path)
+    current = shard.get(node.tool)
+    if not isinstance(current, dict):
+        legacy = load_health(tool_health_path())
+        current = legacy.get(node.tool)
+    health = {
+        node.tool: dict(current) if isinstance(current, dict) else {}
+    }
     updated = record_tool_result(
         health,
         node.tool,
         success=success,
         side_effecting=side_effecting(node, registry),
     )
-    save_health(tool_health_path(), health)
+    save_health(shard_path, health)
     append_event("tool.health", {
         "tool": node.tool,
         "status": updated.get("status"),
