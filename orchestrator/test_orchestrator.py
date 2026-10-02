@@ -1118,6 +1118,48 @@ class OrchestratorTests(unittest.TestCase):
                 idempotency_key="evt-1",
             )
 
+    def test_replay_deduplicates_by_execution_id_even_when_event_changes(self):
+        state = {
+            "workflows": {
+                "wf-existing": {
+                    "id": "wf-existing",
+                    "event_id": "evt-old",
+                    "execution_id": "a" * 64,
+                    "idempotency_key": "idem-1",
+                    "status": "running",
+                }
+            }
+        }
+        existing = o.find_existing_replay(
+            state,
+            event_id="evt-new",
+            execution_id="a" * 64,
+            idempotency_key="idem-new",
+        )
+        self.assertIsNotNone(existing)
+        self.assertEqual(existing["id"], "wf-existing")
+
+    def test_replay_identifier_collision_across_workflows_fails_closed(self):
+        state = {
+            "workflows": {
+                "wf-a": {
+                    "id": "wf-a",
+                    "execution_id": "a" * 64,
+                },
+                "wf-b": {
+                    "id": "wf-b",
+                    "idempotency_key": "idem-1",
+                },
+            }
+        }
+        with self.assertRaises(SystemExit):
+            o.find_existing_replay(
+                state,
+                event_id=None,
+                execution_id="a" * 64,
+                idempotency_key="idem-1",
+            )
+
     def test_duplicate_event_with_matching_identity_is_replay_safe(self):
         workflow = {
             "id": "wf-existing",
