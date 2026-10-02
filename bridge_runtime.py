@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
@@ -15,7 +16,9 @@ PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_SKEW_SECONDS = 300
 MAX_BODY_BYTES = 64 * 1024
 _LOCK = threading.Lock()
+_IDEMPOTENCY_CONDITION = threading.Condition(_LOCK)
 _COMPLETED: dict[str, tuple[float, str, dict[str, Any]]] = {}
+_INFLIGHT: dict[str, str] = {}
 
 
 class BridgeRuntimeError(RuntimeError):
@@ -193,7 +196,7 @@ def request_intent_fingerprint(payload: dict[str, Any]) -> str:
 
 
 def cleanup_idempotency(now: float) -> None:
-    expired = [key for key, (expires, _) in _COMPLETED.items() if expires <= now]
+    expired = [key for key, (expires, _, _) in _COMPLETED.items() if expires <= now]
     for key in expired:
         _COMPLETED.pop(key, None)
 
@@ -213,7 +216,35 @@ def cached_result(
             raise BridgeRuntimeError(
                 "idempotency key conflicts with request intent"
             )
-        return result
+        return copy.deepcopy(result)
+
+
+def acquire_idempotency_slot(
+    request_id: str,
+    intent_fingerprint: str,
+) -> dict[str, Any] | None:
+    """Return a cached response or claim exclusive execution for this request intent."""
+    with _IDEMPOTENCY_CONDITION:
+        while True:
+            cleanup_idempotency(time.time())
+            item = _COMPLETED.get(request_id)
+            if item is not None:
+                _, stored_fingerprint, result = item
+                if stored_fingerprint != intent_fingerprint:
+                    raise BridgeRuntimeError(
+                        "idempotency key conflicts with request intent"
+                    )
+                return copy.deepcopy(result)
+
+            inflight = _INFLIGHT.get(request_id)
+            if inflight is None:
+                _INFLIGHT[request_id] = intent_fingerprint
+                return None
+            if inflight != intent_fingerprint:
+                raise BridgeRuntimeError(
+                    "idempotency key conflicts with in-flight request intent"
+                )
+            _IDEMPOTENCY_CONDITION.wait()
 
 
 def cache_result(
@@ -222,13 +253,25 @@ def cache_result(
     result: dict[str, Any],
     ttl: int = 900,
 ) -> None:
-    with _LOCK:
+    with _IDEMPOTENCY_CONDITION:
         cleanup_idempotency(time.time())
         _COMPLETED[request_id] = (
             time.time() + ttl,
             intent_fingerprint,
-            result,
+            copy.deepcopy(result),
         )
+        _INFLIGHT.pop(request_id, None)
+        _IDEMPOTENCY_CONDITION.notify_all()
+
+
+def release_idempotency_slot(
+    request_id: str,
+    intent_fingerprint: str,
+) -> None:
+    with _IDEMPOTENCY_CONDITION:
+        if _INFLIGHT.get(request_id) == intent_fingerprint:
+            _INFLIGHT.pop(request_id, None)
+            _IDEMPOTENCY_CONDITION.notify_all()
 
 
 def reconciliation_url(route: dict[str, Any]) -> str:
@@ -378,20 +421,25 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     request_id, connector, action = validate_envelope(payload, routes)
 
     intent_fingerprint = request_intent_fingerprint(payload)
-    cached = cached_result(request_id, intent_fingerprint)
+    route = routes[connector]
+    validate_action_input(route, action, payload.get("input"))
+
+    cached = acquire_idempotency_slot(request_id, intent_fingerprint)
     if cached is not None:
         return {**cached, "idempotent_replay": True}
 
-    route = routes[connector]
-    validate_action_input(route, action, payload.get("input"))
-    result = dispatch_upstream(route, payload)
-    response = {
-        "ok": True,
-        "protocol": PROTOCOL,
-        "request_id": request_id,
-        "connector": connector,
-        "action": action,
-        "upstream": result,
-    }
-    cache_result(request_id, intent_fingerprint, response)
-    return response
+    try:
+        result = dispatch_upstream(route, payload)
+        response = {
+            "ok": True,
+            "protocol": PROTOCOL,
+            "request_id": request_id,
+            "connector": connector,
+            "action": action,
+            "upstream": result,
+        }
+        cache_result(request_id, intent_fingerprint, response)
+        return response
+    except Exception:
+        release_idempotency_slot(request_id, intent_fingerprint)
+        raise
