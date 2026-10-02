@@ -214,6 +214,14 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
+## Orchestration hardening v48
+- Final workflow persistence no longer re-saves a process-start snapshot after execution; execution paths persist through `persist_workflow()`, which reloads and merges against the latest repository state. This prevents one concurrent workflow from clobbering another workflow's durable state.
+- Newly-created workflows are persisted before the first execution step, closing the pre-first-persistence crash window.
+- Gateway HMAC signatures now bind timestamp, HTTP method, request path, optional `Idempotency-Key`, and raw body.
+- Gateway header lookup is case-insensitive for interoperable HTTP clients.
+- Gateway events without an explicit idempotency key receive a deterministic event identity, and gateway dispatch uses that identity as the GitHub Actions concurrency key so replay-equivalent events serialize before orchestrator-side deduplication.
+- No paid service, database, queue, or new runtime dependency was introduced; v48 remains stdlib/GitHub Actions and free-first.
+
 ## Orchestration hardening v39
 - Added `orchestrator/federation_scheduler.py`: deterministic federation slots plus per-workflow batch/task quotas for free-first backpressure.
 - Federation uses 3 fixed concurrency slots, each with matrix `max-parallel: 4`, limiting federation worker fan-out to at most 12 agent jobs at once while leaving runner headroom for supervisor/CI jobs.
