@@ -500,10 +500,10 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Structured live ingress now rejects a caller-supplied execution identity that differs from the deterministic identity derived from event id, domain, operation, and intent fingerprint.
 - Private-input fetch verifies expiry, required execution/digest/intent metadata, and bounded 404 retries to tolerate eventual consistency at a serverless KV boundary.
 - Gateway dispatch failures attempt best-effort deletion of the orphaned private input before returning the original dispatch error; cleanup failure never masks the original error.
-- Added `workers/private-input/`: a zero-dollar Cloudflare Workers + KV reference backend with authenticated POST/GET/DELETE, native TTL expiration, idempotent writes by input reference, and a public health endpoint.
+- Added `workers/private-input/`: a zero-dollar Cloudflare Workers + SQLite Durable Object reference backend with authenticated POST/GET/DELETE, strong consistency, transactional per-input_ref storage, alarm-based TTL cleanup, idempotent writes, and a public health endpoint.
 - Added a manual GitHub Actions deployment workflow using pinned Wrangler 4.146.0 and Node 24. Secrets are supplied through the workflow secret store and never committed.
-- Current Cloudflare Free limits are finite: 100,000 Worker requests/day; Workers KV 100,000 reads/day, 1,000 writes/day, 1,000 deletes/day, and 1 GB stored data. The free path is therefore usable at small scale, not unlimited.
-- Cloudflare KV was selected over Render Free Postgres and Render Free Key Value for this boundary: Render's free Postgres expires after 30 days, while Render Free Key Value is volatile across restarts.
+- Current Cloudflare Workers Free Durable Object limits are finite: 100,000 requests/day, 13,000 GB-s/day, 5 million SQLite rows read/day, 100,000 rows written/day, and 5 GB total SQLite storage. The free path is therefore usable at small scale, not unlimited.
+- SQLite Durable Objects were selected over Workers KV, Render Free Postgres, and Render Free Key Value for this boundary: Workers KV is eventually consistent across locations, Render Free Postgres expires after 30 days, and Render Free Key Value is volatile across restarts.
 - The Worker is deployable but not claimed as deployed until a real Cloudflare account deploy and authenticated `/health` check succeed. No Cloudflare connector is currently available in the connected tool catalog, so account-side deployment remains an explicit operational step.
 
 ## Private-input security follow-up
@@ -511,3 +511,11 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Do not persist raw connector payloads in GitHub state, issue bodies, workflow goals, or event logs.
 - Keep private-input transport errors sanitized; backend URLs and exception strings must not be propagated into public workflow state.
 - Preserve the existing connector response sanitizer and post-start replay fence; free hosting must not weaken side-effect safety.
+
+
+## v45 DO reliability refinement
+
+- Workers KV was removed from the authoritative private-input path after a current-docs audit showed cross-location read visibility can lag by up to roughly 60 seconds or more. A short retry loop was therefore both insufficient for correctness and wasteful in free-tier requests.
+- The reference backend now uses one SQLite-backed Durable Object instance per opaque input_ref. The object owns a private SQLite store, making POST idempotency/conflict decisions serializable for that ref and eliminating cross-region stale-read behavior for the handoff itself.
+- Input expiry is enforced twice: GET rejects expired rows, and a Durable Object alarm removes the row asynchronously at the requested expiry time. Crash/orphan cleanup is still covered by TTL/alarm behavior; gateway dispatch failures additionally attempt immediate DELETE.
+- The backend uses the modern declarative exports configuration with storage: sqlite, matching current Cloudflare guidance for new Durable Object classes.
