@@ -28,11 +28,12 @@ class StateSchemaTests(unittest.TestCase):
         migrated = migrate_state(state)
         self.assertEqual(migrated["version"], CURRENT_STATE_VERSION)
         workflow = migrated["workflows"]["wf-old"]
-        self.assertEqual(workflow["schema_version"], 4)
+        self.assertEqual(workflow["schema_version"], 5)
         self.assertEqual(workflow["reconciliations"], {})
         self.assertEqual(workflow["policy_fingerprint"], None)
         self.assertEqual(workflow["route_snapshot"], {})
         self.assertEqual(workflow["policy_integrity"], "legacy_unverified")
+        self.assertEqual(workflow["origin_github_run_id"], None)
         self.assertEqual(workflow["plan_integrity"], "legacy_unverified")
         self.assertEqual(workflow["nodes"][0]["status"], "pending")
         self.assertEqual(workflow["max_parallel"], 4)
@@ -65,7 +66,7 @@ class StateSchemaTests(unittest.TestCase):
                 "version": CURRENT_STATE_VERSION,
                 "workflows": {
                     "wf": {
-                        "schema_version": 5,
+                        "schema_version": 6,
                         "nodes": [],
                     }
                 },
