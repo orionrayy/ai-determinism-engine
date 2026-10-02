@@ -16,7 +16,6 @@ permissions:
 concurrency:
   group: agent-federation-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.manifest.federation_id || github.run_id }}
   cancel-in-progress: false
-  queue: max
 
 jobs:
   prepare:
