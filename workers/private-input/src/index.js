@@ -1,3 +1,5 @@
+import { PrivateInput } from "./private_input_object.js";
+
 const PROTOCOL = "ai-orchestrator.private-input/v2";
 const MAX_BODY_BYTES = 128 * 1024;
 const MAX_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -130,17 +132,8 @@ async function deriveRef(executionId, digest, secret) {
   return hmac(secret, PROTOCOL + "\n" + executionId + "\n" + digest);
 }
 
-async function readEnvelope(env, ref) {
-  const raw = await env.PRIVATE_INPUTS.get(ref);
-  if (raw === null) return null;
-  let envelope;
-  try {
-    envelope = JSON.parse(raw);
-  } catch {
-    throw new Error("stored_envelope_invalid_json");
-  }
-  validateEnvelope(envelope, Math.floor(Date.now() / 1000), false);
-  return { raw, envelope };
+function privateInputStub(env, ref) {
+  return env.PRIVATE_INPUTS.getByName(ref);
 }
 
 async function handlePost(request, env) {
@@ -160,54 +153,23 @@ async function handlePost(request, env) {
   if (!constantTimeEqual(fromHex(expectedRef), fromHex(envelope.input_ref))) {
     return response({ ok: false, error: "input_ref_mismatch" }, 400);
   }
-  const existing = await env.PRIVATE_INPUTS.get(envelope.input_ref);
-  const normalized = JSON.stringify(envelope);
-  if (existing !== null && existing !== normalized) {
+  const result = await privateInputStub(env, envelope.input_ref).putInput(envelope);
+  if (result.conflict) {
     return response({ ok: false, error: "input_ref_conflict" }, 409);
   }
-  if (existing === null) {
-    await env.PRIVATE_INPUTS.put(envelope.input_ref, normalized, {
-      expiration: envelope.expires_at,
-    });
-  }
-  return response({
-    ok: true,
-    input_ref: envelope.input_ref,
-    execution_id: envelope.execution_id,
-    intent_fingerprint: envelope.intent_fingerprint,
-    input_digest: envelope.input_digest,
-    expires_at: envelope.expires_at,
-  }, existing === null ? 201 : 200);
+  return response(result, result.created ? 201 : 200);
 }
 
 async function handleGet(env, ref) {
   if (!HEX64.test(ref)) return response({ ok: false, error: "input_ref_invalid" }, 400);
-  const item = await readEnvelope(env, ref);
-  if (item === null) return response({ ok: false, error: "input_not_found" }, 404);
-  const { envelope } = item;
-  const expectedRef = await deriveRef(
-    envelope.execution_id,
-    envelope.input_digest,
-    String(env.ORCHESTRATOR_PRIVATE_INPUT_SECRET),
-  );
-  if (!constantTimeEqual(fromHex(expectedRef), fromHex(ref))) {
-    return response({ ok: false, error: "stored_ref_mismatch" }, 500);
-  }
-  return response({
-    ok: true,
-    input_ref: envelope.input_ref,
-    execution_id: envelope.execution_id,
-    intent_fingerprint: envelope.intent_fingerprint,
-    input_digest: envelope.input_digest,
-    expires_at: envelope.expires_at,
-    payload: envelope.payload,
-  });
+  const result = await privateInputStub(env, ref).getInput(ref);
+  if (result === null) return response({ ok: false, error: "input_not_found" }, 404);
+  return response(result);
 }
 
 async function handleDelete(env, ref) {
   if (!HEX64.test(ref)) return response({ ok: false, error: "input_ref_invalid" }, 400);
-  await env.PRIVATE_INPUTS.delete(ref);
-  return response({ ok: true, input_ref: ref, deleted: true });
+  return response(await privateInputStub(env, ref).deleteInput(ref));
 }
 
 export default {
@@ -218,6 +180,7 @@ export default {
         ok: true,
         service: "ai-orchestrator-private-input",
         protocol: PROTOCOL,
+        storage: "durable-object-sqlite",
       });
     }
     if (!["POST", "GET", "DELETE"].includes(request.method)) {
