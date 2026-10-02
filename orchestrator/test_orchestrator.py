@@ -75,6 +75,72 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("future_paid", registry))
             self.assertTrue(o.tool_available("future_free", registry))
 
+    def test_run_workflow_does_not_reroute_persisted_plan(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_resume_full",
+            "goal": "resume full",
+            "live": False,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": o.fingerprint_nodes([node]),
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "wikipedia",
+                "fallback_tools": ["noop"],
+            },
+            "wikipedia": {"free_tier": True, "side_effects": []},
+            "noop": {"free_tier": True, "side_effects": []},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["plan_integrity"], "verified")
+        self.assertEqual(workflow["nodes"][0]["tool"], "noop")
+
+    def test_execution_budget_blocks_before_side_effect_barrier(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high",
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_budget",
+            "goal": "budget",
+            "live": True,
+            "execution_budget": {"max_steps": 1, "used_steps": 1},
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(o.os.environ, {
+                "ORCHESTRATOR_FREE_ONLY": "true",
+                "ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook",
+            }, clear=False),                  patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "commit_side_effect_start") as barrier,                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertTrue(workflow["nodes"][0]["error"]["budget_exhausted"])
+        barrier.assert_not_called()
+        execute.assert_not_called()
+
+    def test_postcondition_http_status_passes(self):
+        node = o.Node(
+            "n01", "publish", "webhook", [],
+            contract={"postconditions": [{"type": "http_status", "field": "status_code"}]},
+        )
+        result = o.validate_node_output(node, {"status_code": 201})
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["acceptance"]["passed"])
+        self.assertEqual(result["checks"][-1]["value"], 201)
+
+    def test_postcondition_field_equals_fails_closed(self):
+        node = o.Node(
+            "n01", "publish", "noop", [],
+            contract={"postconditions": [{"type": "field_equals", "field": "status", "value": "published"}]},
+        )
+        with self.assertRaises(RuntimeError):
+            o.validate_node_output(node, {"status": "queued"})
+
     def test_policy_raises_risk_for_deploy_even_if_planner_says_low(self):
         node = o.Node("n01-deploy", "deploy", "noop", [], risk="low")
         o.enforce_node_policy([node], {"noop": {"side_effects": []}})
