@@ -1404,7 +1404,7 @@ class OrchestratorTests(unittest.TestCase):
             "n01-artifacts", "artifact_verify", "artifact_verifier", [],
             input={"artifacts": [{"type": "url", "url": "https://example.test"}]},
         )
-        with patch.object(o, "http_json", return_value={"status_code": 200, "data": {"ok": True}}):
+        with patch.object(o, "safe_public_https_json", return_value={"status_code": 200, "data": {"ok": True}}):
             result = o.execute_artifact_verifier(node, "verify")
         self.assertTrue(result["checks"][0]["passed"])
 
