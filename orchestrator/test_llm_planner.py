@@ -56,7 +56,7 @@ class PlannerTests(unittest.TestCase):
         }
         planner_response = {
             "candidates": [{
-                "content": {"parts": [{"text": '{"nodes": []}'}]}
+                "content": {"parts": [{"text": '{"nodes": [{"id": "n01", "capability": "analyze", "tool": "gemini", "depends_on": [], "risk": "low", "instruction": "analyze", "contract": {}}]}'}]}
             }]
         }
         with patch.dict(os.environ, {
@@ -68,7 +68,7 @@ class PlannerTests(unittest.TestCase):
             lp, "_post", return_value=planner_response
         ) as post:
             nodes = lp.plan_goal("analyze this", registry, FakeNode, fake_validate, live=False)
-        self.assertEqual(nodes, [])
+        self.assertEqual(nodes[0].tool, "gemini")
         endpoint = post.call_args.args[0]
         self.assertIn("/models/gemini-3.8-flash:generateContent", endpoint)
         self.assertNotIn("gemini-paid-model", endpoint)
