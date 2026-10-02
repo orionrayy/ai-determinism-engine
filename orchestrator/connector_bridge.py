@@ -563,14 +563,21 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         inventory,
     )
     contract_fingerprint = action_contract_fingerprint(action_spec)
+    runtime_error = getattr(node, "error", None)
+    if not isinstance(runtime_error, dict):
+        runtime_error = {}
+        try:
+            node.error = runtime_error
+        except AttributeError:
+            pass
     previous_contract = str(
-        node.error.get("connector_action_contract_fingerprint") or ""
+        runtime_error.get("connector_action_contract_fingerprint") or ""
     ).strip()
     if previous_contract and previous_contract != contract_fingerprint:
         raise ConnectorBridgeError(
             "connector action contract changed after a failed attempt"
         )
-    node.error["connector_action_contract_fingerprint"] = contract_fingerprint
+    runtime_error["connector_action_contract_fingerprint"] = contract_fingerprint
     try:
         response = post_request(url, secret, request)
     except ConnectorRequestError as exc:
