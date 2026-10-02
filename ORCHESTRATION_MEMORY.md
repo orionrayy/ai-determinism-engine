@@ -24,6 +24,23 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Strict state identity validation v39
+
+- State/workflow schema version fields now fail closed when explicitly malformed instead of being silently coerced to legacy version `1`.
+- Each workflow dictionary key is bound to `workflow.id`; mismatches are rejected, while genuinely legacy records missing `id` are deterministically backfilled from the key.
+- Worker run-attempt fields are schema-validated as positive integers or null.
+
+## Durable output privacy v38
+
+- Connector success output no longer persists the raw bridge URL; it carries only a hashed bridge target identity and sanitized discovery data.
+- Raw connector endpoint configuration remains deployment-only data and is not written into public workflow checkpoints/evidence.
+
+## Worker attempt binding v37
+
+- Durable workflow worker identity now stores both `github_run_id` and `github_run_attempt`.
+- Continuation matching requires an exact run ID and run attempt, so a rerun of an Actions workflow cannot satisfy a continuation event from an earlier attempt.
+- `origin_github_run_id` and `origin_github_run_attempt` preserve first-worker provenance while `github_run_id`/`github_run_attempt` track the latest durable worker execution.
+
 ## Reconciliation endpoint binding v36
 
 - Reconciliation requests now carry a fingerprint of the configured reconciliation endpoint in addition to the original connector execution target fingerprint.
