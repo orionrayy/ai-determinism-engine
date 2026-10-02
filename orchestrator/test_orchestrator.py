@@ -1164,6 +1164,11 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(len(nodes), 7)
         self.assertEqual(nodes[-1].capability, "notify")
 
+    def test_unsafe_node_identifier_is_rejected(self):
+        node = o.Node("../escape", "execute", "noop", [])
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
+
     def test_cycle_is_rejected(self):
         a = o.Node("a", "x", "noop", ["b"])
         b = o.Node("b", "x", "noop", ["a"])
