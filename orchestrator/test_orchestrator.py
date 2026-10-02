@@ -1675,6 +1675,37 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             o.http_json("http://example.com")
 
+    def test_callback_includes_idempotency_key(self):
+        workflow = {
+            "id": "wf-callback",
+            "execution_id": "e" * 64,
+            "status": "completed",
+            "external_attempt": 1,
+        }
+        captured = {}
+
+        class FakeResponse:
+            status = 204
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(request, timeout=30):
+            captured["headers"] = dict(request.headers)
+            return FakeResponse()
+
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_CALLBACK_URL": "https://callback.example/hook",
+            "ORCHESTRATOR_CALLBACK_SECRET": "callback-secret",
+        }, clear=False),              patch.object(o.urllib.request, "urlopen", side_effect=fake_urlopen),              patch.object(o, "append_event"):
+            self.assertTrue(o.notify_execution_callback(workflow))
+
+        self.assertEqual(
+            captured["headers"].get("Idempotency-key"),
+            workflow["execution_id"],
+        )
+
     def test_http_response_is_bounded(self):
         class Response:
             status = 200
