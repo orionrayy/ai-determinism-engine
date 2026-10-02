@@ -232,16 +232,13 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
     allowed = route.get("actions", [])
     if action not in allowed:
         raise BridgeRuntimeError("connector action is not allowlisted")
-    expected_request_id = hashlib.sha256(
-        canonical_json({
-            "protocol": PROTOCOL,
-            "workflow_id": workflow_id,
-            "node_id": node_id,
-            "connector": connector,
-            "action": action,
-            "input": input_value,
-        })
-    ).hexdigest()
+    expected_request_id = connector_request_id(
+        workflow_id,
+        node_id,
+        connector,
+        action,
+        input_value,
+    )
     if request_id != expected_request_id:
         raise BridgeRuntimeError("request_id does not match request intent")
     return request_id, connector, action
