@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import hashlib
 import hmac
 import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -15,11 +17,38 @@ PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_SKEW_SECONDS = 300
 MAX_BODY_BYTES = 64 * 1024
 _LOCK = threading.Lock()
-_COMPLETED: dict[str, tuple[float, dict[str, Any]]] = {}
+_IDEMPOTENCY_CONDITION = threading.Condition(_LOCK)
+_COMPLETED: dict[str, tuple[float, str, dict[str, Any]]] = {}
+
+
+class _InFlight:
+    __slots__ = ("intent_fingerprint", "event", "result", "error")
+
+    def __init__(self, intent_fingerprint: str) -> None:
+        self.intent_fingerprint = intent_fingerprint
+        self.event = threading.Event()
+        self.result: dict[str, Any] | None = None
+        self.error: str | None = None
+
+
+_INFLIGHT: dict[str, _InFlight] = {}
 
 
 class BridgeRuntimeError(RuntimeError):
     pass
+
+
+class UpstreamConnectorError(BridgeRuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        uncertain: bool = True,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.uncertain = uncertain
 
 
 def canonical_json(value: Any) -> bytes:
@@ -77,10 +106,19 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+    response_fields = raw.get("response_fields", [])
+    if not isinstance(response_fields, list):
+        response_fields = []
+    normalized_response_fields = sorted({
+        str(item).strip()
+        for item in response_fields
+        if str(item).strip() and len(str(item).strip()) <= 128
+    })[:32]
     return {
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "response_fields": normalized_response_fields,
     }
 
 
@@ -125,6 +163,21 @@ def validate_action_input(route: dict[str, Any], action: str, value: Any) -> Non
             raise BridgeRuntimeError(f"connector input field {field_name} must be {type_name}")
 
 
+def route_target_fingerprint(url: str) -> str | None:
+    value = str(url or "").strip()
+    if not value:
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    normalized = urllib.parse.urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path or "/",
+        parsed.query,
+        "",
+    ))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
     routes = load_routes() if routes is None else routes
     described: dict[str, dict[str, Any]] = {}
@@ -149,6 +202,10 @@ def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str
         described[connector] = {
             "actions": normalized_actions,
             "capabilities": sorted(str(item) for item in capabilities),
+            "target_fingerprint": route_target_fingerprint(str(route.get("url") or "")),
+            "reconciliation_target_fingerprint": route_target_fingerprint(
+                str(route.get("reconciliation_url") or "")
+            ),
             "action_specs": {
                 action: _normalize_action_spec(
                     raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {}
@@ -167,37 +224,123 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
     if payload.get("protocol") != PROTOCOL:
         raise BridgeRuntimeError("unsupported connector protocol")
     request_id = str(payload.get("request_id") or "").strip()
+    workflow_id = str(payload.get("workflow_id") or "").strip()
+    node_id = str(payload.get("node_id") or "").strip()
     connector = str(payload.get("connector") or "").strip().lower()
     action = str(payload.get("action") or "").strip().lower()
+    input_value = payload.get("input")
     if len(request_id) != 64 or any(ch not in "0123456789abcdef" for ch in request_id):
         raise BridgeRuntimeError("invalid request_id")
+    if not workflow_id or not node_id:
+        raise BridgeRuntimeError("workflow_id and node_id are required")
+    if not isinstance(input_value, dict):
+        raise BridgeRuntimeError("connector input must be an object")
     route = routes.get(connector)
     if not isinstance(route, dict):
         raise BridgeRuntimeError("connector is not allowlisted")
     allowed = route.get("actions", [])
     if action not in allowed:
         raise BridgeRuntimeError("connector action is not allowlisted")
+    expected_request_id = connector_request_id(
+        workflow_id,
+        node_id,
+        connector,
+        action,
+        input_value,
+    )
+    if request_id != expected_request_id:
+        raise BridgeRuntimeError("request_id does not match request intent")
     return request_id, connector, action
 
 
+def request_intent_fingerprint(
+    payload: dict[str, Any],
+    target_fingerprint: str | None = None,
+) -> str:
+    intent = {
+        "protocol": payload.get("protocol"),
+        "workflow_id": payload.get("workflow_id"),
+        "node_id": payload.get("node_id"),
+        "connector": payload.get("connector"),
+        "action": payload.get("action"),
+        "input": payload.get("input"),
+        "target_fingerprint": target_fingerprint,
+    }
+    return hashlib.sha256(canonical_json(intent)).hexdigest()
+
+
 def cleanup_idempotency(now: float) -> None:
-    expired = [key for key, (expires, _) in _COMPLETED.items() if expires <= now]
+    expired = [key for key, (expires, _, _) in _COMPLETED.items() if expires <= now]
     for key in expired:
         _COMPLETED.pop(key, None)
 
 
-def cached_result(request_id: str) -> dict[str, Any] | None:
-    now = time.time()
-    with _LOCK:
-        cleanup_idempotency(now)
-        item = _COMPLETED.get(request_id)
-        return None if item is None else item[1]
-
-
-def cache_result(request_id: str, result: dict[str, Any], ttl: int = 900) -> None:
-    with _LOCK:
+def acquire_idempotency_slot(
+    request_id: str,
+    intent_fingerprint: str,
+) -> tuple[dict[str, Any] | None, bool]:
+    """Return a cached/replayed result or claim exclusive execution for this intent."""
+    with _IDEMPOTENCY_CONDITION:
         cleanup_idempotency(time.time())
-        _COMPLETED[request_id] = (time.time() + ttl, result)
+        item = _COMPLETED.get(request_id)
+        if item is not None:
+            _, stored_fingerprint, result = item
+            if stored_fingerprint != intent_fingerprint:
+                raise BridgeRuntimeError(
+                    "idempotency key conflicts with request intent"
+                )
+            return copy.deepcopy(result), True
+
+        inflight = _INFLIGHT.get(request_id)
+        if inflight is None:
+            _INFLIGHT[request_id] = _InFlight(intent_fingerprint)
+            return None, False
+        if inflight.intent_fingerprint != intent_fingerprint:
+            raise BridgeRuntimeError(
+                "idempotency key conflicts with in-flight request intent"
+            )
+
+    # A duplicate that arrived during the active flight must observe that flight's
+    # result or failure. It must never create a second upstream attempt implicitly.
+    inflight.event.wait()
+    if inflight.error is not None:
+        raise BridgeRuntimeError(inflight.error)
+    if inflight.result is None:
+        raise BridgeRuntimeError("idempotency flight ended without a result")
+    return copy.deepcopy(inflight.result), True
+
+
+def cache_result(
+    request_id: str,
+    intent_fingerprint: str,
+    result: dict[str, Any],
+    ttl: int = 900,
+) -> None:
+    with _IDEMPOTENCY_CONDITION:
+        cleanup_idempotency(time.time())
+        _COMPLETED[request_id] = (
+            time.time() + ttl,
+            intent_fingerprint,
+            copy.deepcopy(result),
+        )
+        inflight = _INFLIGHT.pop(request_id, None)
+        if inflight is not None and inflight.intent_fingerprint == intent_fingerprint:
+            inflight.result = copy.deepcopy(result)
+            inflight.event.set()
+        _IDEMPOTENCY_CONDITION.notify_all()
+
+
+def release_idempotency_slot(
+    request_id: str,
+    intent_fingerprint: str,
+    error: Exception | None = None,
+) -> None:
+    with _IDEMPOTENCY_CONDITION:
+        inflight = _INFLIGHT.pop(request_id, None)
+        if inflight is not None and inflight.intent_fingerprint == intent_fingerprint:
+            inflight.error = str(error or "idempotency flight failed")
+            inflight.event.set()
+        _IDEMPOTENCY_CONDITION.notify_all()
 
 
 def reconciliation_url(route: dict[str, Any]) -> str:
@@ -230,6 +373,9 @@ def dispatch_reconciliation(
         "request_id": str(payload["request_id"]),
         "connector": str(payload["connector"]),
         "action": str(payload["action"]),
+        "reconciliation_target_fingerprint": str(
+            payload.get("reconciliation_target_fingerprint") or ""
+        ),
     })
     url = urllib.parse.urlunparse(
         (parsed.scheme, parsed.netloc, parsed.path, "", urllib.parse.urlencode(query), "")
@@ -294,8 +440,23 @@ def dispatch_upstream(route: dict[str, Any], payload: dict[str, Any]) -> dict[st
         with urllib.request.urlopen(request, timeout=55) as response:
             raw = response.read().decode("utf-8", "replace")
             status = response.status
+    except urllib.error.HTTPError as exc:
+        raise UpstreamConnectorError(
+            f"upstream connector call failed: HTTP {exc.code}",
+            status_code=exc.code,
+            uncertain=exc.code >= 500,
+        ) from exc
     except Exception as exc:
-        raise BridgeRuntimeError(f"upstream connector call failed: {exc}") from exc
+        raise UpstreamConnectorError(
+            f"upstream connector call failed: {exc}",
+            uncertain=True,
+        ) from exc
+    if not (200 <= status < 300):
+        raise UpstreamConnectorError(
+            f"upstream connector returned HTTP {status}",
+            status_code=status,
+            uncertain=status >= 500,
+        )
     try:
         data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
@@ -310,6 +471,10 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
     request_id = str(payload.get("request_id") or "").strip()
     connector = str(payload.get("connector") or "").strip().lower()
     action = str(payload.get("action") or "").strip().lower()
+    target_fingerprint = str(payload.get("target_fingerprint") or "").strip() or None
+    reconciliation_target_fingerprint = str(
+        payload.get("reconciliation_target_fingerprint") or ""
+    ).strip() or None
     if len(request_id) != 64 or any(ch not in "0123456789abcdef" for ch in request_id):
         raise BridgeRuntimeError("invalid request_id")
     route = routes.get(connector)
@@ -319,12 +484,31 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         raise BridgeRuntimeError("connector reconciliation is not configured")
     if action not in route.get("actions", []):
         raise BridgeRuntimeError("connector action is not allowlisted")
+    current_target_fingerprint = route_target_fingerprint(
+        str(route.get("url") or "")
+    )
+    if target_fingerprint and target_fingerprint != current_target_fingerprint:
+        raise BridgeRuntimeError(
+            "connector reconciliation target no longer matches execution target"
+        )
+    current_reconciliation_target_fingerprint = route_target_fingerprint(
+        str(route.get("reconciliation_url") or "")
+    )
+    if (
+        reconciliation_target_fingerprint
+        and reconciliation_target_fingerprint != current_reconciliation_target_fingerprint
+    ):
+        raise BridgeRuntimeError(
+            "connector reconciliation endpoint no longer matches execution target"
+        )
     result = dispatch_reconciliation(
         route,
         {
             "request_id": request_id,
             "connector": connector,
             "action": action,
+            "target_fingerprint": target_fingerprint,
+            "reconciliation_target_fingerprint": reconciliation_target_fingerprint,
         },
     )
     return {
@@ -333,6 +517,8 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         "request_id": request_id,
         "connector": connector,
         "action": action,
+        "target_fingerprint": target_fingerprint,
+        "reconciliation_target_fingerprint": reconciliation_target_fingerprint,
         "state": result["state"],
         "upstream": result,
     }
@@ -346,20 +532,29 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     routes = load_routes()
     request_id, connector, action = validate_envelope(payload, routes)
 
-    cached = cached_result(request_id)
-    if cached is not None:
-        return {**cached, "idempotent_replay": True}
-
     route = routes[connector]
     validate_action_input(route, action, payload.get("input"))
-    result = dispatch_upstream(route, payload)
-    response = {
-        "ok": True,
-        "protocol": PROTOCOL,
-        "request_id": request_id,
-        "connector": connector,
-        "action": action,
-        "upstream": result,
-    }
-    cache_result(request_id, response)
-    return response
+    intent_fingerprint = request_intent_fingerprint(
+        payload,
+        route_target_fingerprint(str(route.get("url") or "")),
+    )
+
+    cached, replay = acquire_idempotency_slot(request_id, intent_fingerprint)
+    if cached is not None:
+        return {**cached, "idempotent_replay": replay}
+
+    try:
+        result = dispatch_upstream(route, payload)
+        response = {
+            "ok": True,
+            "protocol": PROTOCOL,
+            "request_id": request_id,
+            "connector": connector,
+            "action": action,
+            "upstream": result,
+        }
+        cache_result(request_id, intent_fingerprint, response)
+        return response
+    except Exception as exc:
+        release_idempotency_slot(request_id, intent_fingerprint, exc)
+        raise
