@@ -139,6 +139,46 @@ class GatewayTests(unittest.TestCase):
                 "requested_mode": "live",
             })
 
+    def test_structured_execution_rejects_supplied_execution_id_mismatch(self):
+        payload = {
+            "event_id": "evt-mismatch",
+            "execution_id": "f" * 64,
+            "domain": "notion",
+            "operation": "create_page",
+            "payload": {"title": "x"},
+            "requested_mode": "dry-run",
+        }
+        with self.assertRaisesRegex(ValueError, "execution_id_mismatch"):
+            gateway.build_execution_event(payload)
+
+    def test_structured_live_dispatch_failure_cleans_private_input(self):
+        payload = {
+            "event_id": "evt-cleanup",
+            "execution_id": "a" * 64,
+            "workflow_id": "wf-cleanup",
+            "domain": "notion",
+            "operation": "create_page",
+            "payload": {"title": "secret"},
+            "requested_mode": "live",
+        }
+        with patch.dict(os.environ, {
+            "GATEWAY_SHARED_SECRET": "gateway",
+            "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example.test",
+            "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
+            "GITHUB_GATEWAY_TOKEN": "token",
+            "GITHUB_REPOSITORY": "owner/repo",
+        }, clear=True), patch.object(
+            gateway, "store_private_input", return_value="b" * 64
+        ), patch.object(
+            gateway, "github_dispatch", side_effect=RuntimeError("dispatch down")
+        ), patch.object(
+            gateway, "delete_private_input", return_value=True
+        ) as cleanup:
+            with self.assertRaises(RuntimeError):
+                gateway.build_execution_event(payload)
+            # Build alone must not dispatch; cleanup belongs to Handler.do_POST.
+            cleanup.assert_not_called()
+
     def test_structured_live_execution_stores_private_payload(self):
         payload = {
             "event_id": "evt-live",
