@@ -28,6 +28,13 @@ def intent_fingerprint(domain: str, operation: str, payload: dict) -> str:
     })).hexdigest()
 
 
+def derive_unstructured_event_id(goal: str, metadata: dict) -> str:
+    return hashlib.sha256(canonical_json({
+        "schema_version": 1,
+        "goal": str(goal),
+        "metadata": metadata if isinstance(metadata, dict) else {},
+    })).hexdigest()
+
 def derive_execution_id(event_id: str, domain: str, operation: str, fingerprint: str) -> str:
     return hashlib.sha256(canonical_json({
         "schema_version": 1,
@@ -98,6 +105,7 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
     client_payload = {"goal": goal, "metadata": metadata}
     if event_id:
         client_payload["event_id"] = event_id
+        client_payload.setdefault("workflow_id", event_id)
     for field in (
         "execution_id", "workflow_id", "domain", "operation",
         "intent_fingerprint", "input_digest", "attempt", "requested_mode",
@@ -123,32 +131,68 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
     with urllib.request.urlopen(request, timeout=30) as response:
         return {"github_status": response.status}
 
-def authorized(headers: dict[str, str], raw_body: bytes | None = None) -> bool:
+def _header(headers: dict[str, str], name: str, default: str = "") -> str:
+    wanted = str(name).lower()
+    for key, value in headers.items():
+        if str(key).lower() == wanted:
+            return str(value)
+    return default
+
+
+def hmac_signature(
+    timestamp: str,
+    method: str,
+    path: str,
+    idempotency_key: str,
+    raw_body: bytes,
+    secret: str,
+) -> str:
+    signed = b"\n".join([
+        str(timestamp).encode("utf-8"),
+        str(method).upper().encode("utf-8"),
+        str(path).encode("utf-8"),
+        str(idempotency_key).encode("utf-8"),
+        raw_body,
+    ])
+    digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    return "sha256=" + digest
+
+
+def authorized(
+    headers: dict[str, str],
+    raw_body: bytes | None = None,
+    *,
+    method: str = "POST",
+    path: str = "/event",
+) -> bool:
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
     if not configured:
         return False
-    supplied = headers.get("Authorization", "")
+    supplied = _header(headers, "Authorization")
     expected = "Bearer " + configured
     if secrets.compare_digest(supplied, expected):
         return True
 
     if raw_body is None:
         return False
-    timestamp = headers.get("X-Orchestrator-Timestamp", "")
-    signature = headers.get("X-Orchestrator-Signature", "")
+    timestamp = _header(headers, "X-Orchestrator-Timestamp")
+    signature = _header(headers, "X-Orchestrator-Signature")
     try:
         ts = int(timestamp)
     except ValueError:
         return False
     if abs(int(time.time()) - ts) > 300:
         return False
-    signed = timestamp.encode("utf-8") + b"\n" + raw_body
-    expected_sig = hmac.new(
-        configured.encode("utf-8"),
-        signed,
-        hashlib.sha256,
-    ).hexdigest()
-    return secrets.compare_digest(signature, "sha256=" + expected_sig)
+    idempotency_key = _header(headers, "Idempotency-Key")
+    expected_sig = hmac_signature(
+        timestamp,
+        method,
+        path,
+        idempotency_key,
+        raw_body,
+        configured,
+    )
+    return secrets.compare_digest(signature, expected_sig)
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AIOrchestratorGateway/1.0"
@@ -190,7 +234,9 @@ class Handler(BaseHTTPRequestHandler):
             if length > 128 * 1024:
                 raise ValueError("payload too large")
             raw = self.rfile.read(length)
-            if not authorized({k: v for k, v in self.headers.items()}, raw):
+            headers = {k: v for k, v in self.headers.items()}
+            path = urllib.parse.urlsplit(self.path).path
+            if not authorized(headers, raw, method=self.command, path=path):
                 self._send(401, {"ok": False, "error": "unauthorized"})
                 return
             payload = json.loads(raw.decode("utf-8") if raw else "{}")
@@ -208,11 +254,12 @@ class Handler(BaseHTTPRequestHandler):
                 metadata = payload.get("metadata", {})
                 if not isinstance(metadata, dict):
                     metadata = {"value": str(metadata)}
-                event_id = (
+                explicit_event_id = (
                     self.headers.get("Idempotency-Key")
                     or str(payload.get("event_id") or "").strip()
-                    or None
+                    or ""
                 )
+                event_id = explicit_event_id or derive_unstructured_event_id(goal, metadata)
             result = github_dispatch(goal, metadata, event_id=event_id)
             receipt = {"ok": True, "queued": True, **result}
             if isinstance(metadata, dict):
