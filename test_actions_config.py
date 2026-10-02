@@ -35,6 +35,13 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("queue: max", self.orchestrator)
         self.assertIn("cancel-in-progress: false", self.orchestrator)
 
+    def test_continuation_carries_trigger_issue_and_uses_same_group(self):
+        self.assertIn("trigger_issue", self.continuation)
+        self.assertIn("TRIGGER_ISSUE", self.continuation)
+        self.assertIn("github.event.client_payload.trigger_issue", self.orchestrator)
+        self.assertIn("github.event.client_payload.workflow_id", self.orchestrator)
+
+
     def test_workflow_target_is_preferred_for_approval(self):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)
         self.assertIn('args=(--workflow-id "$ORCHESTRATOR_TARGET_WORKFLOW_ID" --step)', self.orchestrator)
