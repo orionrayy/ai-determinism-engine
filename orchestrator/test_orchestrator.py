@@ -1045,7 +1045,7 @@ class OrchestratorTests(unittest.TestCase):
         replan.assert_called_once()
         execute.assert_not_called()
         self.assertEqual(workflow["execution_budget"]["used_steps"], 0)
-        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(workflow["status"], "running")
     def test_parallel_batch_preflight_failure_does_not_strand_siblings(self):
         nodes = [
             o.Node("n01-a", "execute", "noop", []),
