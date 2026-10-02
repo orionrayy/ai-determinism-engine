@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -13,6 +14,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
+        cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
     def test_approval_labels_use_dedicated_dispatcher(self):
         self.assertIn('types: [labeled]', self.approval)
@@ -23,6 +25,11 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.continue', self.approval)
         self.assertNotIn('Authorize approval actor', self.orchestrator)
 
+
+    def test_committed_orchestrator_state_matches_current_schema(self):
+        from orchestrator.state_schema import CURRENT_STATE_VERSION
+        self.assertEqual(self.state.get('version'), CURRENT_STATE_VERSION)
+        self.assertIsInstance(self.state.get('workflows'), dict)
 
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
