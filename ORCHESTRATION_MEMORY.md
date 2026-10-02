@@ -30,6 +30,12 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Persisted node `retry_count`/`max_retries` are validated and bounded (`max_retries` <= 8) so corrupted state cannot create an unbounded retry loop.
 - Node status/risk/id/capability/dependency and runtime payload container types are validated during migration before recovery can execute them.
 
+## Private input signature hardening v44
+
+- Private-input request signatures now bind HTTP method, request path, timestamp, and body. This prevents reusing a valid signature for a different reference/path within the replay window.
+- Private-input execution identities are required to be 64-character lowercase hexadecimal values before an opaque reference is derived.
+- The versioned private-input envelope remains vendor-neutral. The receiver is responsible for rejecting stale timestamps, verifying HMAC in constant time, enforcing expiration, and keeping the raw payload out of logs and public stores.
+
 ## Private input transport v43
 
 - Structured live ingress can now accept live requests only when an authenticated HTTPS private-input store is configured; otherwise it fails closed with `private_input_unavailable`.
