@@ -68,6 +68,8 @@ Endpoints:
 - `GET /health`
 - `POST /event` with JSON `{"goal":"...","metadata":{...}}`
 
+With HMAC authentication, the signature covers timestamp, HTTP method, request path, optional `Idempotency-Key`, and the raw request body. Header names are treated case-insensitively. Requests without an explicit idempotency/event key receive a deterministic event identity, and that identity is used as the GitHub Actions concurrency key for replay serialization.
+
 The gateway is intentionally stateless. Do not store workflow state on its filesystem because Render Free web services have ephemeral filesystems.
 
 ## Free-hosting note
