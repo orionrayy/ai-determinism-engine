@@ -523,7 +523,7 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 
 ## v46 atomic barrier + centralized retry policy
 
-- The v45 audit was cross-checked against the actual implementation. The durability finding was valid: the old barrier checked `HEAD == origin/main` before a later push, leaving a temporal gap. The barrier now pushes with `--force-with-lease=refs/heads/main:<expected_sha>`, turning the expected remote SHA into a CAS guard at the actual use point. The pre-check remains useful for early rejection, but is no longer the sole race defense.
+- The v45 audit was cross-checked against the actual implementation. The reported temporal gap exists as a pre-check, but the original non-force git push already performs the authoritative remote fast-forward/ref-update check atomically; it rejects a competing main update before any external side effect is started. The v46 barrier keeps the early HEAD == origin/main check and explicitly treats rejection of the subsequent non-force HEAD:refs/heads/main push as a durability conflict. --force-with-lease was intentionally not retained because GitHub protected branches block force pushes by default and the stronger flag is unnecessary here.
 - Retry responsibility is now centralized in `orchestrator/orchestrator.py`. `failure_policy.py` classifies failures and exposes only a class-level retry signal; it no longer accepts per-exception retry overrides as the final decision.
 - `connector_bridge.py` reports uncertainty and records the observed action contract as `connector_action_idempotent`; it does not decide whether to retry. The orchestrator may retry an uncertain connector execution only when that observed action contract says the operation is idempotent.
 - The workflow execution budget now counts retry attempts as well as initial attempts. Reservations are protected by an in-process re-entrant lock so parallel nodes cannot race the shared counter. The existing durable `execution_budget.max_steps` is therefore the global attempt cap for a worker execution.
@@ -532,3 +532,11 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - `create_workflow` now routes the LLM planner through the same free-only gate as execution, preventing a paid Gemini model override from bypassing the $0 policy during planning.
 - The state schema persists and strictly validates `retry_seed`. Legacy workflows get a stable derived seed on migration; newly created workflows receive a random 128-bit seed.
 - CI includes model-level transition tests, seeded retry tests, CAS barrier tests, and the existing Worker/deployment checks. No paid runtime dependency is introduced.
+
+## v46 audit disposition
+
+- Finding #1 (TOCTOU): partially confirmed, but the critical-path claim was overstated. The pre-check is not itself atomic, but the authoritative non-force ref update is rejected if the remote ref has advanced. No external side effect is crossed until that push succeeds. The upgrade therefore focuses on explicit conflict handling and tests rather than introducing force pushes.
+- Finding #2 (retry split + thundering herd): confirmed. Final retry authorization now lives in the orchestrator. The bridge emits only uncertainty plus the observed action idempotency fact. Backoff is seeded per workflow and uses equal-jitter over capped exponential delay, reducing synchronized retries while preserving auditability.
+- Finding #3 (unbounded workflow retries): confirmed in the implementation. Initial batch admission alone did not consume budget for later retries. v46 makes every retry consume the same workflow-wide attempt budget; the counter is protected for parallel execution and the node-level retry limit remains a second guard.
+- Finding #3 state-machine subfinding is confirmed: reconciling -> completed was a direct edge. v46 removes it and requires reconciling -> validating -> completed for an applied reconciliation result.
+- The state machine is now checked by a finite-model test rather than relying only on individual transition examples.
