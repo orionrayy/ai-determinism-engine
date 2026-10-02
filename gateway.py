@@ -215,6 +215,7 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
     client_payload = {"goal": goal, "metadata": metadata}
     if event_id:
         client_payload["event_id"] = event_id
+        client_payload.setdefault("workflow_id", event_id)
     for field in (
         "execution_id",
         "parent_execution_id",
@@ -274,9 +275,39 @@ def normalized_headers(headers: dict[str, str]) -> dict[str, str]:
     }
 
 
+def derive_unstructured_event_id(goal: str, metadata: dict) -> str:
+    return hashlib.sha256(canonical_json({
+        "schema_version": 1,
+        "goal": str(goal),
+        "metadata": metadata if isinstance(metadata, dict) else {},
+    })).hexdigest()
+
+
+def hmac_signature(
+    timestamp: str,
+    method: str,
+    path: str,
+    idempotency_key: str,
+    raw_body: bytes,
+    secret: str,
+) -> str:
+    signed = b"\n".join([
+        str(timestamp).encode("utf-8"),
+        str(method).upper().encode("utf-8"),
+        str(path).encode("utf-8"),
+        str(idempotency_key).encode("utf-8"),
+        raw_body,
+    ])
+    digest = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    return "sha256=" + digest
+
+
 def authorized(
     headers: dict[str, str],
     raw_body: bytes | None = None,
+    *,
+    method: str = "POST",
+    path: str = "/event",
 ) -> bool:
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
     if not configured:
@@ -297,13 +328,16 @@ def authorized(
         return False
     if abs(int(time.time()) - ts) > 300:
         return False
-    signed = timestamp.encode("utf-8") + b"\n" + raw_body
-    expected_sig = hmac.new(
-        configured.encode("utf-8"),
-        signed,
-        hashlib.sha256,
-    ).hexdigest()
-    return secrets.compare_digest(signature, "sha256=" + expected_sig)
+    idempotency_key = normalized.get("idempotency-key", "")
+    expected_sig = hmac_signature(
+        timestamp,
+        method,
+        path,
+        idempotency_key,
+        raw_body,
+        configured,
+    )
+    return secrets.compare_digest(signature, expected_sig)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -344,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = parse_content_length(self.headers.get("Content-Length"))
             raw = self.rfile.read(length)
-            if not authorized(dict(self.headers.items()), raw):
+            if not authorized(dict(self.headers.items()), raw, method=self.command, path=path):
                 self._send(401, {"ok": False, "error": "unauthorized"})
                 return
 
@@ -375,11 +409,12 @@ class Handler(BaseHTTPRequestHandler):
                 metadata = payload.get("metadata", {})
                 if not isinstance(metadata, dict):
                     metadata = {"value": str(metadata)}
-                event_id = (
+                explicit_event_id = (
                     normalized_headers(dict(self.headers.items())).get("idempotency-key")
                     or str(payload.get("event_id") or "").strip()
-                    or None
+                    or ""
                 )
+                event_id = explicit_event_id or derive_unstructured_event_id(goal, metadata)
 
             result = dispatch_execution(goal, metadata, event_id=event_id)
             receipt = {"ok": True, "queued": True, **result}
