@@ -571,14 +571,18 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
     model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    role = str(node.agent_role or "operator")
     if node.capability == "validate":
         instruction = (
-            "Act as a strict workflow validator. Return only JSON with "
-            "passed (boolean), checks (array), findings (array), and next_action. "
+            role_instruction(role, node.capability) + " "
+            "Return only JSON with passed (boolean), checks (array), findings (array), and next_action. "
             "Set passed=true only when the dependency evidence satisfies the goal."
         )
     else:
-        instruction = "Act as a conservative workflow worker. Return JSON with result, risks, next_action."
+        instruction = (
+            role_instruction(role, node.capability) + " "
+            "Return JSON with result, risks, next_action."
+        )
     payload = {
         "contents": [{
             "parts": [{
