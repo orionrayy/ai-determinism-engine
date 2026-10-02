@@ -2630,12 +2630,19 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
         return
 
 def notify_execution_callback(workflow: dict[str, Any]) -> bool:
-    """Best-effort terminal callback with stable request identity."""
+    """Durable terminal callback outbox with stable request identity."""
+    callback = workflow.setdefault("callback", {})
+    if isinstance(callback, dict) and callback.get("status") == "sent":
+        return True
     url = os.environ.get("ORCHESTRATOR_CALLBACK_URL", "").strip()
     secret = os.environ.get("ORCHESTRATOR_CALLBACK_SECRET", "")
     execution_id = str(workflow.get("execution_id") or "").strip()
     if not url or not secret or not execution_id:
         return False
+    if isinstance(callback, dict):
+        callback["status"] = "pending"
+        callback["last_attempt_at"] = utc_now()
+        callback["attempts"] = int(callback.get("attempts", 0)) + 1
     if not url.startswith("https://"):
         append_event(
             "callback.skipped",
@@ -2701,6 +2708,9 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if 200 <= int(response.status) < 300:
+                    callback["status"] = "sent"
+                    callback["sent_at"] = utc_now()
+                    callback.pop("last_error", None)
                     append_event(
                         "callback.sent",
                         {
@@ -2713,6 +2723,8 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
         except Exception:
             pass
         time.sleep(1)
+    callback["status"] = "pending"
+    callback["last_error"] = "callback delivery failed after bounded retries"
     append_event(
         "callback.failed",
         {
@@ -2771,6 +2783,7 @@ def create_workflow(
         "route_snapshot": route_snapshot,
         "policy_integrity": "initialized",
         "execution_budget": {"max_steps": configured_max_execution_steps(), "used_steps": 0},
+        "callback": {"status": "pending"} if execution_id else {"status": "disabled"},
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
@@ -2878,6 +2891,18 @@ def resume_pending_workflows(
             candidates.append(workflow)
     candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
     for workflow in candidates:
+        callback = workflow.get("callback")
+        if (
+            isinstance(callback, dict)
+            and callback.get("status") == "pending"
+            and workflow.get("status") in {"completed", "failed"}
+            and workflow.get("execution_id")
+        ):
+            notify_execution_callback(workflow)
+            state["workflows"][workflow["id"]] = workflow
+            state["last_workflow_id"] = workflow["id"]
+            resumed += 1
+            continue
         if step:
             run_one_step(workflow, approve_high_risk=approve_high_risk)
         else:
