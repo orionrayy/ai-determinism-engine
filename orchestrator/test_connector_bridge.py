@@ -126,6 +126,36 @@ class ConnectorBridgeTests(unittest.TestCase):
                         dry_run=False,
                     )
 
+    def test_reconciliation_request_carries_target_bindings(self):
+        node = self.node({"title": "Hello"})
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "reconciliation": True,
+                "target_fingerprint": "target-a",
+                "reconciliation_target_fingerprint": "reconcile-a",
+                "action_specs": {"create_page": {"idempotent": True}},
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(
+            cb, "post_reconciliation",
+            return_value={"ok": True, "state": "applied"},
+        ) as reconcile:
+            result = cb.reconcile_connector_execution(node, "reconcile it", dry_run=False)
+        self.assertEqual(result["state"], "applied")
+        request = reconcile.call_args.args[2]
+        self.assertEqual(request.target_fingerprint, "target-a")
+        self.assertEqual(
+            request.reconciliation_target_fingerprint,
+            "reconcile-a",
+        )
+
     def test_reconciliation_returns_explicit_state(self):
         inventory = {
             "notion": {
@@ -228,6 +258,37 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "configured": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-b",
+                "action_specs": {
+                    "create_page": {
+                        "required": ["title"],
+                        "types": {"title": "string"},
+                        "idempotent": True,
+                    }
+                },
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(cb, "post_reconciliation") as reconcile:
+            with self.assertRaises(cb.ConnectorReconciliationError):
+                cb.reconcile_connector_execution(node, "reconcile it", dry_run=False)
+        reconcile.assert_not_called()
+
+    def test_reconciliation_blocks_endpoint_drift(self):
+        node = self.node({"title": "Hello"})
+        node.error = {
+            "connector_reconciliation_target_fingerprint": "reconcile-a"
+        }
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "reconciliation": True,
+                "target_fingerprint": "target-a",
+                "reconciliation_target_fingerprint": "reconcile-b",
                 "action_specs": {
                     "create_page": {
                         "required": ["title"],
