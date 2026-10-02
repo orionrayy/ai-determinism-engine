@@ -2082,15 +2082,17 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_event_log_redacts_durable_diagnostics(self):
         with tempfile.TemporaryDirectory() as tmp:
-            event_path = Path(tmp) / "events.jsonl"
-            with patch.object(o, "EVENT_FILE", event_path),                  patch.object(o, "EVENT_DIR", Path(tmp) / "events"):
-                o.append_event("node.failed", {
+            event_dir = Path(tmp) / "events"
+            with patch.object(o, "EVENT_FILE", Path(tmp) / "legacy-events.jsonl"),                  patch.object(o, "EVENT_DIR", event_dir):
+                payload = {
                     "workflow_id": "wf-event-redact",
                     "error": {
                         "message": "Authorization: Bearer TOPSECRET",
                         "traceback": "Traceback ... api_key=TRACESECRET",
                     },
-                })
+                }
+                o.append_event("node.failed", payload)
+                event_path = o._event_file(payload)
             content = event_path.read_text(encoding="utf-8")
 
         self.assertNotIn("TOPSECRET", content)
@@ -2102,7 +2104,7 @@ class OrchestratorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             event_path = Path(tmp) / "events.jsonl"
             with patch.object(o, "EVENT_FILE", event_path):
-                o.append_event("test.large", {"payload": "x" * (o.MAX_EVENT_PAYLOAD_BYTES + 1000)})
+                o.append_event("test.large", {"payload": ["x" * 4096] * 8})
             entry = json.loads(event_path.read_text(encoding="utf-8"))
         self.assertTrue(entry["payload"]["truncated"])
         self.assertEqual(len(entry["payload"]["sha256"]), 64)
