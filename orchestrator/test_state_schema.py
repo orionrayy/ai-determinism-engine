@@ -129,6 +129,55 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_duplicate_node_id_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "nodes": [
+                            {"id": "n01", "capability": "execute", "tool": "noop"},
+                            {"id": "n01", "capability": "validate", "tool": "noop"},
+                        ],
+                    }
+                },
+            })
+
+    def test_unknown_dependency_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "nodes": [{
+                            "id": "n01",
+                            "capability": "execute",
+                            "tool": "noop",
+                            "depends_on": ["missing"],
+                        }],
+                    }
+                },
+            })
+
+    def test_self_dependency_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "nodes": [{
+                            "id": "n01",
+                            "capability": "execute",
+                            "tool": "noop",
+                            "depends_on": ["n01"],
+                        }],
+                    }
+                },
+            })
+
     def test_oversized_goal_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
