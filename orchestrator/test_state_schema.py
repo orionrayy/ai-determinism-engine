@@ -8,6 +8,46 @@ from state_schema import (
 
 
 class StateSchemaTests(unittest.TestCase):
+    def test_legacy_execution_identity_enables_pending_callback(self):
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf": {
+                    "id": "wf",
+                    "execution_id": "a" * 64,
+                    "nodes": [],
+                }
+            },
+        })
+        self.assertEqual(
+            migrated["workflows"]["wf"]["callback"]["status"],
+            "pending",
+        )
+
+    def test_callback_status_and_attempts_are_bounded(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "callback": {"status": "unknown"},
+                        "nodes": [],
+                    }
+                },
+            })
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "callback": {"status": "pending", "attempts": 13},
+                        "nodes": [],
+                    }
+                },
+            })
+
     def test_v2_state_migrates_with_new_runtime_defaults(self):
         state = {
             "version": 2,
