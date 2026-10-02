@@ -14,9 +14,10 @@ FAILURE_CLASSES = {
     "policy",
     "uncertain",
     "permanent",
+    "unknown",
 }
 
-_NON_RETRYABLE_CLASSES = {"contract", "semantic", "policy", "permanent", "uncertain"}
+_NON_RETRYABLE_CLASSES = {"contract", "semantic", "policy", "permanent", "uncertain", "unknown"}
 _TRANSIENT_TEXT = (
     "transient",
     "timeout",
@@ -67,7 +68,7 @@ def classify_failure(exc: Exception) -> str:
         return "dependency"
     if any(token in text for token in _CONTRACT_TEXT):
         return "contract"
-    return "permanent"
+    return "unknown"
 
 
 def retry_class_allowed(failure_class: str) -> bool:
