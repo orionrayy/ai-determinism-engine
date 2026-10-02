@@ -143,10 +143,15 @@ def write_json(path: Path, value: Any) -> None:
             tmp_path.unlink()
 
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
-    EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"ts": utc_now(), "event_type": event_type, "payload": payload}
-    with EVENT_FILE.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    """Best-effort observability; event-log failure must not break durable state."""
+    try:
+        EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        entry = {"ts": utc_now(), "event_type": event_type, "payload": payload}
+        with EVENT_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            handle.flush()
+    except (OSError, TypeError, ValueError):
+        return
 
 def execution_key(workflow: dict[str, Any], node: Node) -> str:
     raw = f"{workflow['id']}:{node.id}"
