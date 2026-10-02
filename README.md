@@ -1,3 +1,7 @@
+## Private input signature hardening v44
+
+Private-input request signatures bind method, path, timestamp, and body; execution identities are validated before deterministic references are derived. This prevents signature reuse across different private-input references.
+
 ## Private input transport v43
 
 Structured live requests can use a separately authenticated HTTPS private-input store. GitHub receives only an opaque reference plus execution/integrity metadata; the worker fetches raw payload just-in-time for connector execution and scrubs it before durable state is persisted. No private-input backend is deployed by this repository yet, so live structured execution remains fail-closed until one is configured and health-verified.
