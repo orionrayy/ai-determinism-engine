@@ -203,6 +203,12 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
+## Orchestration hardening v33
+
+- Normalized the committed empty `.orchestrator/state.json` baseline from legacy state version 3 to current state version 4.
+- CI now watches `.orchestrator/state.json` and asserts its committed version matches `state_schema.CURRENT_STATE_VERSION`, preventing silent serialization-version drift.
+- This does not add a second migration system; the runtime migration remains fail-closed for future versions and idempotent for supported legacy versions.
+
 ## Orchestration hardening v32
 
 - Workflow IDs now use UUID4 rather than millisecond timestamps. This removes a collision window introduced by v30's independent workflow concurrency.
