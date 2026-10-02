@@ -203,6 +203,13 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
+## Orchestration hardening v34
+
+- Workflow-scoped audit events are now sharded into `.orchestrator/events/<sha256(workflow_id)>.jsonl`; the legacy global `events.jsonl` remains only for events without a workflow identity.
+- Sharding reduces cross-workflow Git write contention introduced by v30 while preserving synchronous flush/fsync durability.
+- Event shard filenames are derived from a SHA-256 of the workflow ID, preventing path traversal even for externally supplied identifiers.
+- The design deliberately does not make the event path asynchronous: side-effect safety still requires durable state before external execution.
+
 ## Orchestration hardening v33
 
 - Normalized the committed empty `.orchestrator/state.json` baseline from legacy state version 3 to current state version 4.
