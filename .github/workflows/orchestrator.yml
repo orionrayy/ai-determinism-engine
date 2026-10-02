@@ -271,7 +271,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<\x27PY\x27
+          python3 - <<'PY'
           import hashlib
           import json
           import os
@@ -308,7 +308,7 @@ jobs:
                   if not isinstance(node.get("id"), str):
                       continue
                   key = hashlib.sha256(
-                      f"{workflow.get(\x27id\x27)}:{node[\x27id\x27]}".encode("utf-8")
+                      f"{workflow.get('id')}:{node['id']}".encode("utf-8")
                   ).hexdigest()
                   record = executions.get(key)
                   if isinstance(record, dict) and record.get("status") == "barrier_failed":
@@ -351,7 +351,7 @@ jobs:
                   },
               }
               subprocess.run(
-                  ["gh", "api", f"repos/{os.environ[\x27REPOSITORY\x27]}/dispatches", "--input", "-"],
+                  ["gh", "api", f"repos/{os.environ['REPOSITORY']}/dispatches", "--input", "-"],
                   input=json.dumps(payload),
                   text=True,
                   check=True,
