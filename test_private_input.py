@@ -100,7 +100,16 @@ class PrivateInputTests(unittest.TestCase):
         ))
         self.assertIn('"payload":{"title":"Hello"}', body)
         self.assertEqual(captured["request"].get_header("Idempotency-key"), ref)
-        self.assertTrue(captured["request"].get_header("X-orchestrator-signature").startswith("sha256="))
+        actual_signature = captured["request"].get_header("X-orchestrator-signature")
+        timestamp = int(captured["request"].get_header("X-orchestrator-timestamp"))
+        expected_signature = pi.request_signature(
+            method="POST",
+            path="/v1/inputs",
+            timestamp=timestamp,
+            body=captured["request"].data,
+            secret="secret",
+        )
+        self.assertEqual(actual_signature, "sha256=" + expected_signature)
 
     def test_fetch_verifies_digest_and_execution_binding(self):
         payload = {"title": "Hello"}
