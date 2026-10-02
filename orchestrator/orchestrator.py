@@ -2149,6 +2149,9 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     eligible = ready_nodes(nodes)
     for node in eligible:
         transition(node, 'ready')
+    federated = delegate_ready_agents(workflow, nodes, registry, attempt_budget)
+    if federated:
+        return "waiting_agents"
     if not eligible:
         if all(node.status == 'completed' for node in nodes):
             workflow['status'] = 'completed'
@@ -2873,6 +2876,7 @@ def main() -> int:
     parser.add_argument('--list', action='store_true')
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--step', action='store_true')
+    parser.add_argument('--federation-artifact-id')
     args = parser.parse_args()
 
     state = load_state()
@@ -2893,6 +2897,55 @@ def main() -> int:
         workflow = state.get('workflows', {}).get(args.workflow_id)
         if not workflow:
             raise SystemExit(f'workflow not found: {args.workflow_id}')
+        federation_artifact_raw = (
+            args.federation_artifact_id
+            or os.environ.get("ORCHESTRATOR_FEDERATION_ARTIFACT_ID", "").strip()
+        )
+        federation_digest = os.environ.get("ORCHESTRATOR_FEDERATION_ARTIFACT_DIGEST", "").strip()
+        if federation_artifact_raw:
+            try:
+                federation_artifact_id = int(federation_artifact_raw)
+            except ValueError:
+                raise SystemExit("invalid federation artifact id")
+            registry = load_registry()
+            nodes = [Node(**node) for node in workflow.get("nodes", [])]
+            try:
+                federation_result = ingest_federation(
+                    workflow,
+                    nodes,
+                    registry,
+                    federation_artifact_id,
+                    federation_digest,
+                )
+            except Exception as exc:
+                workflow["status"] = "failed"
+                workflow["error"] = {
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                    "federation_artifact_id": federation_artifact_id,
+                }
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                append_event("federation.ingest_failed", {
+                    "workflow_id": workflow["id"],
+                    "artifact_id": federation_artifact_id,
+                    "error": str(exc),
+                })
+                state["workflows"][workflow["id"]] = workflow
+                state["last_workflow_id"] = workflow["id"]
+                save_state(state)
+                print_summary(workflow)
+                return 2
+            state["workflows"][workflow["id"]] = workflow
+            state["last_workflow_id"] = workflow["id"]
+            save_state(state)
+            if workflow.get("status") not in {"completed", "failed"}:
+                result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
+                state["workflows"][workflow["id"]] = workflow
+                state["last_workflow_id"] = workflow["id"]
+                save_state(state)
+                print_summary(workflow)
+                return 0 if result not in {"failed", "continuation_failed"} else 2
         if args.step:
             result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
             state['workflows'][workflow['id']] = workflow
