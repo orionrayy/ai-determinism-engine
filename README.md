@@ -55,6 +55,8 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+Workflow persistence uses sharded snapshots under `.orchestrator/workflows/` keyed by SHA-256(workflow_id). `state.json` remains a compact compatibility index/legacy fallback. Continuation workers use the orchestrator's canonical loader, so independent workflows do not need to rewrite one monolithic snapshot during normal execution.
+
 ## Gateway
 
 Set these environment variables on the gateway service:
