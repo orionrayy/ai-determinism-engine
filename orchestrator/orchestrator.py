@@ -64,6 +64,7 @@ MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 DEFAULT_MAX_EXECUTION_STEPS = 96
 MAX_MAX_EXECUTION_STEPS = 256
+RUNNING_RECOVERY_GRACE_SECONDS = 300
 MAX_CONTEXT_BYTES = 48 * 1024
 
 TRANSITIONS = {
@@ -2506,7 +2507,37 @@ def print_summary(workflow: dict[str, Any]) -> None:
     }, indent=2))
 
 
-def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False, step: bool = False) -> int:
+def running_recovery_due(
+    workflow: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    grace_seconds: int = RUNNING_RECOVERY_GRACE_SECONDS,
+) -> bool:
+    if workflow.get("status") != "running":
+        return True
+    if not str(workflow.get("github_run_id") or "").strip():
+        return True
+    raw_updated = str(workflow.get("updated_at") or "").strip()
+    if not raw_updated:
+        return True
+    try:
+        updated = datetime.fromisoformat(raw_updated.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    age = (current - updated).total_seconds()
+    return age >= max(0, int(grace_seconds))
+
+
+def resume_pending_workflows(
+    state: dict[str, Any],
+    approve_high_risk: bool = False,
+    step: bool = False,
+    *,
+    scheduled_recovery: bool = False,
+) -> int:
     resumed = 0
     candidates = []
     for workflow in state.get("workflows", {}).values():
@@ -2529,7 +2560,12 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
             and node.get("tool") == "connector_bridge"
             for node in workflow.get("nodes", [])
         )
-        if status in {"waiting_approval", "running"} or (status == "failed" and (uncertain or barrier_failed)):
+        if status == "running":
+            if not scheduled_recovery or running_recovery_due(workflow):
+                candidates.append(workflow)
+        elif status == "waiting_approval" or (
+            status == "failed" and (uncertain or barrier_failed)
+        ):
             candidates.append(workflow)
     candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
     for workflow in candidates:
@@ -2565,7 +2601,10 @@ def main() -> int:
 
     if args.resume:
         count = resume_pending_workflows(
-            state, approve_high_risk=args.approve_high_risk, step=args.step
+            state,
+            approve_high_risk=args.approve_high_risk,
+            step=args.step,
+            scheduled_recovery=os.environ.get("ORCHESTRATOR_RESUME", "").lower() == "true",
         )
         print(json.dumps({'resumed_workflows': count}, indent=2))
         return 0
