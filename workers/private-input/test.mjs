@@ -20,6 +20,9 @@ assert.match(durableObject, /CREATE TABLE IF NOT EXISTS inputs/);
 assert.match(durableObject, /PRIMARY KEY/);
 assert.match(durableObject, /setAlarm/);
 assert.match(durableObject, /async alarm\(/);
+assert.match(durableObject, /existing\.payload_json === payloadJson/);
+assert.doesNotMatch(durableObject, /existing\.expires_at === envelope\.expires_at/);
+
 assert.match(config, /"durable_objects"/);
 assert.match(config, /"class_name": "PrivateInput"/);
 assert.doesNotMatch(config, /ExecutionLease/);
