@@ -15,6 +15,8 @@ on:
       - "test_gateway.py"
       - "private_input.py"
       - "test_private_input.py"
+      - "execution_lease.py"
+      - "test_execution_lease.py"
       - "orchestrator/tools.json"
       - "contracts/private-input.schema.json"
       - ".github/workflows/orchestrator-tests.yml"
@@ -51,7 +53,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile
-        run: python -m py_compile orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/failure_policy.py orchestrator/plan_integrity.py orchestrator/policy_integrity.py orchestrator/state_schema.py orchestrator/checkpoint_integrity.py orchestrator/durability_barrier.py orchestrator/test_durability_barrier.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/test_failure_policy.py orchestrator/test_plan_integrity.py orchestrator/test_state_schema.py orchestrator/test_checkpoint_integrity.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
+        run: python -m py_compile execution_lease.py orchestrator/orchestrator.py orchestrator/capability_graph.py orchestrator/llm_planner.py orchestrator/research_bundle.py orchestrator/evidence.py orchestrator/failure_policy.py orchestrator/plan_integrity.py orchestrator/policy_integrity.py orchestrator/state_schema.py orchestrator/checkpoint_integrity.py orchestrator/durability_barrier.py orchestrator/test_durability_barrier.py orchestrator/test_orchestrator.py orchestrator/test_evidence.py orchestrator/test_research_bundle.py orchestrator/test_failure_policy.py orchestrator/test_plan_integrity.py orchestrator/test_state_schema.py orchestrator/test_checkpoint_integrity.py orchestrator/issue_notify.py orchestrator/connector_bridge.py orchestrator/test_connector_bridge.py bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
       - name: Actionlint
         shell: bash
         run: |
@@ -72,13 +74,14 @@ jobs:
         with:
           node-version: "24"
       - name: Unit tests
-        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
+        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input test_execution_lease -v && node workers/private-input/test.mjs
       - name: Validate private-input Worker
         shell: bash
         run: |
           set -euo pipefail
           node --check workers/private-input/src/index.js
           node --check workers/private-input/src/private_input_object.js
+          node --check workers/private-input/src/execution_lease_object.js
           printf 'ORCHESTRATOR_PRIVATE_INPUT_SECRET=ci-test-secret\n' > workers/private-input/.dev.vars
           trap 'rm -f workers/private-input/.dev.vars' EXIT
           npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --dry-run
