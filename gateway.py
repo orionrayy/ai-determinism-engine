@@ -92,6 +92,12 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
     client_payload = {"goal": goal, "metadata": metadata}
     if event_id:
         client_payload["event_id"] = event_id
+    for field in (
+        "execution_id", "workflow_id", "domain", "operation",
+        "intent_fingerprint", "input_digest", "attempt",
+    ):
+        if field in metadata and metadata[field] not in (None, ""):
+            client_payload[field] = metadata[field]
     payload = json.dumps({
         "event_type": "orchestrator.event",
         "client_payload": client_payload,
