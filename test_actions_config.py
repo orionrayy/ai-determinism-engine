@@ -55,7 +55,7 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_continuation_has_single_flight_for_same_run_attempt(self):
         self.assertIn('orchestrator-continuation-', self.continuation)
-        self.assertIn('queue: single', self.continuation)
+        self.assertNotIn('queue: single', self.continuation)
         self.assertIn('cancel-in-progress: false', self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
