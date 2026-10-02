@@ -2481,23 +2481,23 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             reserve_execution_steps(workflow, [node.id for node in batch])
         except ExecutionBudgetExceeded as budget_exc:
             node = sorted(batch, key=lambda item: item.id)[0]
-                node.error = {
-                    "type": type(budget_exc).__name__,
-                    "message": str(budget_exc),
-                    "failure_class": "dependency",
-                    "budget_exhausted": True,
-                }
-                transition(node, "failed")
-                workflow["status"] = "failed"
-                workflow["failed_node"] = node.id
-                workflow["budget_exhausted"] = {
-                    "node_id": node.id,
-                    "used_steps": execution_budget(workflow)["used_steps"],
-                    "max_steps": execution_budget(workflow)["max_steps"],
-                }
-                workflow["nodes"] = [asdict(item) for item in nodes]
-                persist_workflow(workflow)
-                return
+            node.error = {
+                "type": type(budget_exc).__name__,
+                "message": str(budget_exc),
+                "failure_class": "dependency",
+                "budget_exhausted": True,
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            workflow["budget_exhausted"] = {
+                "node_id": node.id,
+                "used_steps": execution_budget(workflow)["used_steps"],
+                "max_steps": execution_budget(workflow)["max_steps"],
+            }
+            workflow["nodes"] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return
 
             # Phase 2: only now cross runtime activation and side-effect barriers.
             executable = []
