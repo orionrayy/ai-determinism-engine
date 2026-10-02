@@ -1,12 +1,3 @@
-
-## Orchestration hardening v41 — private structured input boundary
-- Live structured connector requests now use an optional private-input service rather than putting raw payloads into GitHub-backed workflow state.
-- The gateway stores raw structured payloads behind an HMAC-derived 64-hex reference. GitHub Actions carries only execution identity, intent fingerprint, input digest, idempotency key, and opaque reference.
-- The orchestrator bypasses the LLM planner for private structured live connector operations and pins the connector/action from the signed ingress metadata.
-- The connector worker fetches the private payload just-in-time, validates reference + digest + execution identity + intent fingerprint, executes the connector, then removes the payload from node memory before validation/persistence.
-- The private-input Worker is a minimal Cloudflare SQLite-backed Durable Object implementation. It is optional for dry-run and live unconfigured mode remains fail-closed.
-- Private-input POST is idempotent across retries even when a retried request receives a different expiry timestamp; idempotency is based on execution identity, intent fingerprint, input digest, and canonical payload.
-- No database, broker, paid API, or orchestration SaaS is required by the control plane. The Worker remains $0 only within current Cloudflare free quotas and is not claimed as deployed until its manual deployment workflow reports a successful authenticated health check.
 # ORCHESTRATION MEMORY — Canonical Control-Plane Context
 
 ## Purpose
@@ -46,7 +37,7 @@ Current execution-fabric branch: `main`
 - Free-only policy now covers the complete connector lifecycle: live invocation and recovery/reconciliation.
 - Both the orchestrator connector client and the bridge runtime require connector-level and action-level `free_tier=true` before a reconciliation upstream request is allowed.
 - An uncertified reconciliation is rejected before `post_reconciliation`/`dispatch_reconciliation`, so recovery cannot create an unbudgeted vendor API charge.
-- Canonical memory layout is now header-first and the current baseline explicitly records v43/v42/v41 so historical context cannot be mistaken for the active `main` state.
+- Canonical memory layout is header-first and the current baseline explicitly records v43/v42/v41 so historical context cannot be mistaken for the active `main` state.
 - No paid dependency or service is introduced.
 
 ## Multi-agent coordination
