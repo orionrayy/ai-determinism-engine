@@ -248,6 +248,9 @@ def discover_capabilities(
         normalized[str(name)] = {
             "actions": sorted(str(item) for item in actions) if isinstance(actions, list) else [],
             "capabilities": sorted(str(item) for item in capabilities) if isinstance(capabilities, list) else [],
+            "target_fingerprint": (
+                str(spec.get("target_fingerprint") or "").strip() or None
+            ),
             "action_specs": {
                 action: _normalize_action_spec(
                     spec.get("action_specs", {}).get(action, {})
@@ -333,8 +336,16 @@ def validate_discovered_action(
     return _normalize_action_spec(raw_action_spec)
 
 
-def action_contract_fingerprint(action_spec: dict[str, Any]) -> str:
-    return hashlib.sha256(canonical_json(_normalize_action_spec(action_spec))).hexdigest()
+def action_contract_fingerprint(
+    action_spec: dict[str, Any],
+    target_fingerprint: str | None = None,
+) -> str:
+    return hashlib.sha256(
+        canonical_json({
+            "action_spec": _normalize_action_spec(action_spec),
+            "target_fingerprint": str(target_fingerprint or "").strip() or None,
+        })
+    ).hexdigest()
 
 
 def validate_discovered_payload(
@@ -562,7 +573,11 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         request.input,
         inventory,
     )
-    contract_fingerprint = action_contract_fingerprint(action_spec)
+    target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
+    contract_fingerprint = action_contract_fingerprint(
+        action_spec,
+        target_fingerprint=target_fingerprint,
+    )
     runtime_error = getattr(node, "error", None)
     if not isinstance(runtime_error, dict):
         runtime_error = {}
