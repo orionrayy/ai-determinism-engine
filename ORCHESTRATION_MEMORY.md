@@ -214,6 +214,14 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
+## Orchestration hardening v40 (review branch)
+- Scheduled recovery no longer executes workflows directly from the global schedule concurrency group; it dispatches the exact persisted workflow ID so the normal workflow-scoped concurrency gate owns execution.
+- Running workflows are dispatched by scheduled recovery only after a 5-minute staleness grace window; waiting-approval, active federation, and recoverable uncertain/barrier-failed workflows remain eligible.
+- GitHub Actions run identity now persists both github_run_id and github_run_attempt, with origin_github_run_id/origin_github_run_attempt preserving first-worker provenance.
+- Continuation matching requires the exact (workflow_run.id, workflow_run.run_attempt) pair. Continuation concurrency is scoped by that same pair and keeps the default single pending slot because duplicate resumes target the same workflow.
+- Federation and supervisor workflows retain queue: max because GitHub documents the feature and it is needed to prevent slot starvation. The pinned actionlint v1.7.12 does not recognize the field, so a narrow path-specific ignore is maintained for only those workflows; all other workflow linting remains active.
+- Changes add no service, broker, database, or paid dependency; the zero-dollar GitHub Actions execution model remains intact.
+
 ## Orchestration hardening v39
 - Added `orchestrator/federation_scheduler.py`: deterministic federation slots plus per-workflow batch/task quotas for free-first backpressure.
 - Federation uses 3 fixed concurrency slots, each with matrix `max-parallel: 4`, limiting federation worker fan-out to at most 12 agent jobs at once while leaving runner headroom for supervisor/CI jobs.

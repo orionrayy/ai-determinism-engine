@@ -37,7 +37,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("agent-federation-", self.federation)
         self.assertIn("github.event.client_payload.slot", self.federation)
         self.assertIn("cancel-in-progress: false", self.federation)
-        self.assertNotIn("queue: max", self.federation)
+        self.assertIn("queue: max", self.federation)
 
     def test_federated_matrix_is_bounded_and_read_only(self):
         self.assertIn("types: [orchestrator.federate]", self.federation)
@@ -71,8 +71,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(self.state.get('version'), CURRENT_STATE_VERSION)
         self.assertIsInstance(self.state.get('workflows'), dict)
 
-    def test_pending_runs_are_not_replaced(self):
+    def test_pending_runs_use_documented_bounded_queue(self):
         self.assertIn('queue: max', self.orchestrator)
+        self.assertIn('unexpected key "queue" for "concurrency" section', (ROOT / '.github' / 'actionlint.yaml').read_text())
 
     def test_orchestrator_concurrency_isolated_by_workflow_identity(self):
         self.assertIn(
@@ -84,6 +85,7 @@ class ActionsConfigTests(unittest.TestCase):
             self.orchestrator,
         )
         self.assertIn("github.run_id", self.orchestrator)
+        self.assertIn("github.run_attempt", self.orchestrator)
         self.assertIn("queue: max", self.orchestrator)
         self.assertIn("cancel-in-progress: false", self.orchestrator)
 
@@ -103,10 +105,20 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_continuation_binds_to_originating_run(self):
         self.assertIn('workflow_run.id', self.continuation)
+        self.assertIn('workflow_run.run_attempt', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
+        self.assertIn("item.get('github_run_attempt')", self.continuation)
+        self.assertIn("orchestrator-continuation-", self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
+
+    def test_scheduled_recovery_only_dispatches_per_workflow(self):
+        self.assertIn("schedule-recovery:", self.orchestrator)
+        self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
+        self.assertIn("github.event_name != 'schedule'", self.orchestrator)
+        self.assertIn('"workflow_id": workflow_id', self.orchestrator)
+        self.assertIn('"orchestrator.continue"', self.orchestrator)
 
 
     def test_core_actions_are_pinned_to_node24_releases(self):
