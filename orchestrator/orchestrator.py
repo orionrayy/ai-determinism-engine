@@ -4,11 +4,13 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import io
 import json
 import os
 import secrets
 import uuid
 import tempfile
+import zipfile
 import threading
 import time
 import traceback
@@ -40,6 +42,7 @@ try:
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
+    from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -60,6 +63,7 @@ except ImportError:
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
+    from agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -78,12 +82,13 @@ MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
-    "ready": {"running", "waiting_approval", "failed", "cancelled"},
+    "ready": {"running", "waiting_approval", "failed", "cancelled", "delegated"},
     "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled", "ready"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
     "retrying": {"ready", "failed"},
     "failed": {"replanning", "reconciling", "ready", "cancelled"},
+    "delegated": {"completed", "failed", "ready", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
     "reconciling": {"validating", "ready", "failed", "cancelled"},
     "completed": set(),
