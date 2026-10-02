@@ -2162,16 +2162,15 @@ def reconcile_first_uncertain(
 
 
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+    active_federation = workflow.get("federation") or {}
+    if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
+        return "waiting_agents"
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
     workflow['agent_team'] = team_manifest(workflow['id'], nodes)
-    active_federation = workflow.get("federation") or {}
-    if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
-        return "waiting_agents"
-
     if not ensure_plan_integrity(workflow, nodes):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
