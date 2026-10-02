@@ -91,6 +91,7 @@ jobs:
           EVENT_INTENT_FINGERPRINT: ${{ github.event.client_payload.intent_fingerprint }}
           EVENT_INPUT_DIGEST: ${{ github.event.client_payload.input_digest }}
           EVENT_ATTEMPT: ${{ github.event.client_payload.attempt }}
+          EVENT_REQUESTED_MODE: ${{ github.event.client_payload.requested_mode }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
@@ -185,6 +186,7 @@ jobs:
           ORCHESTRATOR_INTENT_FINGERPRINT: ${{ github.event.client_payload.intent_fingerprint }}
           ORCHESTRATOR_INPUT_DIGEST: ${{ github.event.client_payload.input_digest }}
           ORCHESTRATOR_EXTERNAL_ATTEMPT: ${{ github.event.client_payload.attempt || '1' }}
+          ORCHESTRATOR_REQUESTED_MODE: ${{ github.event.client_payload.requested_mode || 'dry-run' }}
           ORCHESTRATOR_CALLBACK_URL: ${{ secrets.ORCHESTRATOR_CALLBACK_URL }}
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
@@ -203,7 +205,7 @@ jobs:
           else
             args=(--goal "$ORCHESTRATOR_GOAL" --step)
           fi
-          if [ "$ORCHESTRATOR_LIVE" = "true" ]; then args+=(--live); fi
+          if [ "$ORCHESTRATOR_REQUESTED_MODE" = "live" ]; then args+=(--live); fi
           if [ "$ORCHESTRATOR_APPROVE_HIGH_RISK" = "true" ]; then args+=(--approve-high-risk); fi
           python3 orchestrator/orchestrator.py "${args[@]}"
 
