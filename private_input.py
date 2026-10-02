@@ -27,7 +27,6 @@ REF_RE = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
-MAX_FETCH_404_RETRIES = 2
 
 
 class PrivateInputError(RuntimeError):
@@ -232,38 +231,29 @@ def fetch_private_input(
         raise PrivateInputError("private input reference does not match execution identity")
     request_url = url + "/v1/inputs/" + urllib.parse.quote(ref, safe="")
     request_path = urllib.parse.urlparse(request_url).path or "/"
-    last_not_found = False
-    for attempt in range(MAX_FETCH_404_RETRIES + 1):
-        timestamp = int(time.time())
-        body = b""
-        request = urllib.request.Request(
-            request_url,
-            headers=_signed_headers(
-                method="GET",
-                path=request_path,
-                timestamp=timestamp,
-                body=body,
-                secret=secret,
-            ),
+    timestamp = int(time.time())
+    body = b""
+    request = urllib.request.Request(
+        request_url,
+        headers=_signed_headers(
             method="GET",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                raw = response.read(MAX_BODY_BYTES + 1)
-                status = response.status
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                last_not_found = True
-                if attempt < MAX_FETCH_404_RETRIES:
-                    time.sleep(0.25 * (attempt + 1))
-                    continue
-                break
-            raise PrivateInputError(f"private input fetch returned HTTP {exc.code}") from exc
-        except Exception as exc:
-            raise PrivateInputError("private input transport unavailable") from exc
-        break
-    if last_not_found:
-        raise PrivateInputError("private input was not found")
+            path=request_path,
+            timestamp=timestamp,
+            body=body,
+            secret=secret,
+        ),
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            raw = response.read(MAX_BODY_BYTES + 1)
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            raise PrivateInputError("private input was not found") from exc
+        raise PrivateInputError(f"private input fetch returned HTTP {exc.code}") from exc
+    except Exception as exc:
+        raise PrivateInputError("private input transport unavailable") from exc
     if not 200 <= status < 300:
         raise PrivateInputError(f"private input fetch returned HTTP {status}")
     if len(raw) > MAX_BODY_BYTES:
