@@ -3593,6 +3593,10 @@ def main() -> int:
     parser.add_argument('--federation-artifact-id')
     args = parser.parse_args()
 
+    event_workflow_id = os.environ.get("ORCHESTRATOR_EVENT_WORKFLOW_ID", "").strip()
+    if not args.workflow_id and event_workflow_id:
+        args.workflow_id = event_workflow_id
+
     if args.list:
         state = load_state()
         for workflow in state.get('workflows', {}).values():
