@@ -117,6 +117,66 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_replan_count_and_retry_budget_are_bounded(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "replan_count": 3,
+                        "nodes": [],
+                    }
+                },
+            })
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "nodes": [{
+                            "id": "n01",
+                            "capability": "execute",
+                            "tool": "noop",
+                            "max_retries": 9,
+                        }],
+                    }
+                },
+            })
+
+    def test_malformed_node_state_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "nodes": [{
+                            "id": "n01",
+                            "capability": "execute",
+                            "tool": "noop",
+                            "input": [],
+                        }],
+                    }
+                },
+            })
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "nodes": [{
+                            "id": "n01",
+                            "capability": "execute",
+                            "tool": "noop",
+                            "status": "unknown",
+                        }],
+                    }
+                },
+            })
+
     def test_malformed_workflow_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
