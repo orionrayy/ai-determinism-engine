@@ -949,6 +949,32 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(stored["origin_github_run_id"], "run-A")
         self.assertEqual(stored["origin_github_run_attempt"], 1)
 
+    def test_legacy_worker_binding_backfills_origin_attempt(self):
+        workflow = {
+            "id": "wf_legacy_attempt",
+            "goal": "legacy",
+            "status": "running",
+            "live": False,
+            "github_run_id": "run-legacy",
+            "github_run_attempt": None,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(
+                     o.os.environ,
+                     {
+                         "ORCHESTRATOR_GITHUB_RUN_ID": "run-legacy",
+                         "ORCHESTRATOR_GITHUB_RUN_ATTEMPT": "3",
+                     },
+                     clear=False,
+                 ):
+                o.persist_workflow(workflow)
+            saved = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        stored = saved["workflows"]["wf_legacy_attempt"]
+        self.assertEqual(stored["github_run_attempt"], 3)
+        self.assertEqual(stored["origin_github_run_attempt"], 3)
+
     def test_resume_scheduler_prioritizes_oldest_updated_workflow(self):
         older = {
             "id": "wf_old", "goal": "old", "live": False,
