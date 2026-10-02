@@ -873,6 +873,7 @@ class OrchestratorTests(unittest.TestCase):
             "capability:research": {"default_tool": "research_bundle", "fallback_tools": []},
         }
         captured = {}
+        events = []
         with patch.dict(
             o.os.environ,
             {"ORCHESTRATOR_FEDERATION_ENABLED": "true", "GITHUB_ACTIONS": "true", "GITHUB_TOKEN": "token"},
@@ -880,9 +881,12 @@ class OrchestratorTests(unittest.TestCase):
         ), patch.object(o, "build_node_context", return_value={}), \
              patch.object(o, "new_id", return_value="fed_test"), \
              patch.object(o, "persist_workflow"), \
+             patch.object(o, "append_event", side_effect=lambda event_type, payload: events.append((event_type, payload))), \
              patch.object(o, "dispatch_federation", side_effect=lambda manifest: captured.setdefault("manifest", manifest)):
             budget = o.AttemptBudget(workflow)
             result = o.delegate_ready_agents(workflow, nodes, registry, budget)
+        if result is None:
+            self.fail(f"federation prepare failed: {events}")
         self.assertEqual(result, "fed_test")
         self.assertEqual(workflow["status"], "waiting_agents")
         self.assertEqual(workflow["federation"]["task_count"], 2)
