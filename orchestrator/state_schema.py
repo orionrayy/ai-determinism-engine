@@ -195,13 +195,18 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                     raise StateSchemaError(
                         f"workflow {workflow_id!r}.{field_name} must be a string of <= 128 characters"
                     )
-        for field_name in ("execution_id", "intent_fingerprint", "input_digest"):
+        for field_name in ("execution_id", "intent_fingerprint", "input_digest", "private_input_ref"):
             value = workflow.get(field_name)
             if value is not None and value != "":
                 if not isinstance(value, str) or not HEX64_RE.fullmatch(value):
                     raise StateSchemaError(
                         f"workflow {workflow_id!r}.{field_name} must be a 64-character lowercase hex digest"
                     )
+        if workflow.get("private_input_ref"):
+            if not workflow.get("execution_id") or not workflow.get("input_digest"):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.private_input_ref requires execution_id and input_digest"
+                )
         for field_name in ("external_workflow_id", "parent_execution_id"):
             value = workflow.get(field_name)
             if value is not None and value != "" and not SAFE_ID_RE.fullmatch(str(value)):
