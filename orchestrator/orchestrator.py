@@ -588,6 +588,7 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
             "parts": [{
                 "text": (
                     instruction + "\n"
+                    f"AGENT_ID: {agent_id(str(node.input.get('workflow_id') or ''), node.id, role)}\n"
                     f"GOAL: {goal}\n"
                     f"INSTRUCTION: {node.input.get('instruction', '')}\n"
                     f"CONTEXT: {compact_json(node.input.get('context', {}), limit=24 * 1024)}"
