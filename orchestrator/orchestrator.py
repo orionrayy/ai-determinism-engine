@@ -999,16 +999,22 @@ def compact_terminal_workflow(
     for node in workflow.get("nodes", []):
         if not isinstance(node, dict):
             continue
+        depends_on = node.get("depends_on")
+        if not isinstance(depends_on, list):
+            depends_on = []
+        contract = node.get("contract")
+        if not isinstance(contract, dict):
+            contract = {}
         compacted_nodes.append({
             "id": node.get("id"),
             "capability": node.get("capability"),
             "tool": node.get("tool"),
-            "depends_on": list(node.get("depends_on") or []),
+            "depends_on": list(depends_on),
             "risk": node.get("risk", "low"),
             "status": node.get("status", "pending"),
             "retry_count": node.get("retry_count", 0),
             "max_retries": node.get("max_retries", 2),
-            "contract": dict(node.get("contract") or {}),
+            "contract": dict(contract),
             "error": _compact_error(node.get("error")),
             "agent_role": node.get("agent_role", ""),
         })
