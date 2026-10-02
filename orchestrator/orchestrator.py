@@ -617,6 +617,8 @@ def _node_intent_input(input_value: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_dag(nodes: list[Node]) -> None:
+    if not isinstance(nodes, list):
+        raise ValueError("nodes must be an array")
     if not nodes or len(nodes) > MAX_NODES:
         raise ValueError(f"invalid node count: {len(nodes)}")
     ids = {node.id for node in nodes}
@@ -624,6 +626,9 @@ def validate_dag(nodes: list[Node]) -> None:
         raise ValueError("duplicate node id")
     by_id = {node.id: node for node in nodes}
     for node in nodes:
+        for field_name in ("input", "output", "error", "contract"):
+            if not isinstance(getattr(node, field_name), dict):
+                raise ValueError(f"node {node.id} {field_name} must be an object")
         intent_serialized = json.dumps(
             {
                 "id": node.id,
@@ -647,10 +652,6 @@ def validate_dag(nodes: list[Node]) -> None:
             raise ValueError(f"node {node.id} has negative retry fields")
         if node.max_retries > MAX_NODE_RETRIES or node.retry_count > node.max_retries:
             raise ValueError(f"node {node.id} exceeds retry bounds")
-        for field_name in ("input", "output", "error", "contract"):
-            if not isinstance(getattr(node, field_name), dict):
-                raise ValueError(f"node {node.id} {field_name} must be an object")
-
         if len(intent_serialized.encode("utf-8")) > MAX_NODE_INTENT_BYTES:
             raise ValueError(
                 f"node {node.id} intent exceeds {MAX_NODE_INTENT_BYTES} bytes"
@@ -2475,7 +2476,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 persist_workflow(workflow)
                 return
         if admission_blocked:
-            continue
+            # A replan intentionally changes plan identity; never reuse the old
+            # admission batch in the same worker. Let the next worker/continuation
+            # validate the new plan and rebuild its ready queue from durable state.
+            return
 
         try:
             reserve_execution_steps(workflow, [node.id for node in batch])
