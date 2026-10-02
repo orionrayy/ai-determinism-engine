@@ -1132,6 +1132,20 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(count, 1)
         save_state.assert_not_called()
 
+    def test_repository_event_workflow_id_routes_to_targeted_execution(self):
+        workflow = {"id": "wf-cont", "goal": "continue", "status": "running", "nodes": []}
+        with patch.object(o, "load_workflow", return_value=workflow) as load_workflow, \
+             patch.object(o, "run_one_step", return_value="completed") as run_one_step, \
+             patch.object(o, "print_summary"), patch.dict(
+                 o.os.environ,
+                 {"ORCHESTRATOR_EVENT_WORKFLOW_ID": "wf-cont"},
+                 clear=False,
+             ), patch.object(sys, "argv", ["orchestrator", "--goal", "continue"]):
+            result = o.main()
+        self.assertEqual(result, 0)
+        load_workflow.assert_called_once_with("wf-cont")
+        run_one_step.assert_called_once()
+
     def test_main_goal_ingress_deduplicates_existing_event_id(self):
         existing = {
             "id": "wf-existing",
