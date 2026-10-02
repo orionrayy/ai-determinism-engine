@@ -67,6 +67,9 @@ DEFAULT_MAX_EXECUTION_STEPS = 96
 MAX_MAX_EXECUTION_STEPS = 256
 RUNNING_RECOVERY_GRACE_SECONDS = 300
 MAX_CONTEXT_BYTES = 48 * 1024
+MAX_GOAL_CHARS = 4000
+MAX_NODE_BYTES = 32 * 1024
+MAX_ARTIFACTS_PER_NODE = 32
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 TRANSITIONS = {
@@ -97,6 +100,15 @@ class Node:
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
     contract: dict[str, Any] = field(default_factory=dict)
+
+def normalize_goal(goal: Any) -> str:
+    value = str(goal or "").strip()
+    if not value:
+        raise ValueError("goal is required")
+    if len(value) > MAX_GOAL_CHARS:
+        raise ValueError(f"goal exceeds {MAX_GOAL_CHARS} characters")
+    return value
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -581,6 +593,19 @@ def validate_dag(nodes: list[Node]) -> None:
         raise ValueError("duplicate node id")
     by_id = {node.id: node for node in nodes}
     for node in nodes:
+        serialized = json.dumps(
+            asdict(node),
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+        if len(serialized.encode("utf-8")) > MAX_NODE_BYTES:
+            raise ValueError(f"node {node.id} exceeds {MAX_NODE_BYTES} bytes")
+        if len(node.input.get("artifacts", [])) > MAX_ARTIFACTS_PER_NODE:
+            raise ValueError(
+                f"node {node.id} exceeds {MAX_ARTIFACTS_PER_NODE} artifacts"
+            )
         if not SAFE_ID_RE.fullmatch(str(node.id or "")):
             raise ValueError(f"unsafe node id: {node.id!r}")
         if not SAFE_ID_RE.fullmatch(str(node.capability or "")):
@@ -2548,6 +2573,7 @@ def create_workflow(
     trigger_issue: int | None = None,
     event_id: str | None = None,
 ) -> dict[str, Any]:
+    goal = normalize_goal(goal)
     registry = load_registry()
     nodes = None
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
