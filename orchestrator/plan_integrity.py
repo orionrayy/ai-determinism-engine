@@ -53,6 +53,7 @@ def node_definition(node: Any) -> dict[str, Any]:
         "tool": tool,
         "depends_on": sorted(str(item) for item in depends_on),
         "risk": risk,
+        "agent_role": str(getattr(node, "agent_role", "") or "") if hasattr(node, "agent_role") else str(node.get("agent_role") or ""),
         "input": input_value,
         "contract": contract,
     }
