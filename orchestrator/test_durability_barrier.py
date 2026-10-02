@@ -44,7 +44,7 @@ class DurabilityBarrierTests(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list]
         self.assertFalse(any(command[1:3] == ["add", "--"] for command in commands))
 
-    def test_push_uses_remote_sha_as_compare_and_swap_guard(self):
+    def test_remote_update_rejection_is_treated_as_barrier_conflict(self):
         responses = iter([
             subprocess.CompletedProcess([], 0, "", ""),
             subprocess.CompletedProcess([], 0, "", ""),
@@ -65,7 +65,7 @@ class DurabilityBarrierTests(unittest.TestCase):
                 commit_side_effect_start(ROOT, execution_id="e" * 64)
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn(
-            ["git", "push", "--force-with-lease=refs/heads/main:same", "origin", "HEAD:refs/heads/main"],
+            ["git", "push", "origin", "HEAD:refs/heads/main"],
             commands,
         )
 
@@ -91,7 +91,7 @@ class DurabilityBarrierTests(unittest.TestCase):
             )
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn(
-            ["git", "push", "--force-with-lease=refs/heads/main:same", "origin", "HEAD:refs/heads/main"],
+            ["git", "push", "origin", "HEAD:refs/heads/main"],
             commands,
         )
         self.assertIn(
