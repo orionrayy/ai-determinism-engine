@@ -17,6 +17,7 @@ on:
       - "test_private_input.py"
       - "execution_lease.py"
       - "test_execution_lease.py"
+      - "contracts/execution-lease.schema.json"
       - "orchestrator/tools.json"
       - "contracts/private-input.schema.json"
       - ".github/workflows/orchestrator-tests.yml"
