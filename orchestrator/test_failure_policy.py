@@ -43,10 +43,10 @@ class FailurePolicyTests(unittest.TestCase):
         self.assertEqual(classify_failure(timeout), "transient")
         self.assertEqual(classify_failure(forbidden), "policy")
 
-    def test_explicit_retry_override_is_honored_only_for_retryable_classes(self):
-        self.assertTrue(retry_class_allowed("transient", explicitly_retryable=True))
-        self.assertFalse(retry_class_allowed("transient", explicitly_retryable=False))
-        self.assertFalse(retry_class_allowed("uncertain", explicitly_retryable=True))
+    def test_retry_class_signal_never_overrides_non_retryable_classes(self):
+        self.assertTrue(retry_class_allowed("transient"))
+        self.assertFalse(retry_class_allowed("uncertain"))
+        self.assertFalse(retry_class_allowed("semantic"))
 
     def test_deterministic_retry_delay_is_stable_and_bounded(self):
         a = deterministic_retry_delay("wf-1", "n-1", 1, retry_seed="seed-a")
