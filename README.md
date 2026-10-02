@@ -55,6 +55,12 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v62 Planner Input Bound
+
+The Gemini planner now fails closed before any model call when the goal exceeds 48 KiB. This aligns the planner input with the orchestration context budget and prevents oversized ingress from amplifying prompt size, token use, latency, and free-tier quota consumption.
+
+No dependency or service was added; free-first execution remains unchanged.
+
 ## v61 Durable Event Redaction
 
 Event payloads now pass through the same stdlib durable sanitizer used for workflow shards before they are appended to the event log. This closes the remaining path where diagnostic traces or credential-bearing exception text could bypass shard-level redaction and persist in the append-only audit stream.
