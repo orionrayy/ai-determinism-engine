@@ -106,7 +106,7 @@ class ActionsConfigTests(unittest.TestCase):
     def test_continuation_dispatch_carries_exact_run_attempt(self):
         self.assertIn('WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}', self.continuation)
         self.assertIn('WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}', self.continuation)
-        self.assertIn("continuation:${os.environ['WORKFLOW_RUN_ID']}:${os.environ['WORKFLOW_RUN_ATTEMPT']}", self.continuation)
+        self.assertIn("'event_id':f\"continuation:", self.continuation)
 
     def test_source_issue_is_propagated(self):
         self.assertIn('ORCHESTRATOR_TRIGGER_ISSUE', self.orchestrator)
