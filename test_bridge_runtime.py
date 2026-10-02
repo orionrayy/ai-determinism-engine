@@ -10,6 +10,9 @@ import bridge_runtime as br
 
 
 class BridgeRuntimeTests(unittest.TestCase):
+    def setUp(self):
+        br._COMPLETED.clear()
+
     def payload(self, request_id=None):
         request_id = request_id or hashlib.sha256(b"wf:n1").hexdigest()
         return {
@@ -209,6 +212,139 @@ class BridgeRuntimeTests(unittest.TestCase):
             urlopen.return_value = Response()
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_reconciliation(payload)
+    def test_idempotency_key_conflict_fails_closed(self):
+        payload = self.payload()
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        with patch.object(br, "load_routes", return_value=routes), \
+             patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}) as dispatch:
+            br.handle_request(payload, "secret")
+            changed = self.payload()
+            changed["input"] = {"title": "Different"}
+            with self.assertRaisesRegex(br.BridgeRuntimeError, "idempotency key conflicts"):
+                br.handle_request(changed, "secret")
+            dispatch.assert_called_once()
+
+    def test_current_free_only_policy_is_rechecked_before_cached_replay(self):
+        payload = self.payload()
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+            "free_tier": True,
+        }}
+        with patch.object(br, "load_routes", return_value=routes), \
+             patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}):
+            br.handle_request(payload, "secret")
+            routes["notion"]["free_tier"] = False
+            with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True), \
+                 self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
+                br.handle_request(payload, "secret")
+
+    def test_upstream_http_error_is_not_cached(self):
+        payload = self.payload(request_id=hashlib.sha256(b"wf:http-error").hexdigest())
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        with patch.object(br, "load_routes", return_value=routes), \
+             patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
+            with self.assertRaises(br.BridgeUpstreamError):
+                br.handle_request(payload, "secret")
+            dispatch.assert_called_once()
+
+    def test_dispatch_upstream_rejects_non_2xx(self):
+        payload = self.payload(request_id=hashlib.sha256(b"wf:non2xx").hexdigest())
+        route = {"url": "https://upstream.example.test/invoke"}
+        class Response:
+            status = 503
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None): return b'{"error":"down"}'
+        with patch.object(br.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(br.BridgeUpstreamError, "HTTP 503") as ctx:
+                br.dispatch_upstream(route, payload)
+            self.assertTrue(ctx.exception.uncertain)
+            self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_dispatch_upstream_bounds_response(self):
+        payload = self.payload(request_id=hashlib.sha256(b"wf:oversized-upstream").hexdigest())
+        route = {"url": "https://upstream.example.test/invoke"}
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None): return b"x" * (br.MAX_UPSTREAM_RESPONSE_BYTES + 1)
+        with patch.object(br.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(br.BridgeUpstreamError, "exceeds 128 KiB"):
+                br.dispatch_upstream(route, payload)
+
+    def test_idempotency_key_conflict_fails_closed(self):
+        payload = self.payload()
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}) as dispatch:
+            br.handle_request(payload, "secret")
+            changed = self.payload()
+            changed["input"] = {"title": "Different"}
+            with self.assertRaisesRegex(br.BridgeRuntimeError, "idempotency key conflicts"):
+                br.handle_request(changed, "secret")
+            dispatch.assert_called_once()
+
+    def test_current_free_only_policy_is_rechecked_before_cached_replay(self):
+        payload = self.payload()
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+            "free_tier": True,
+        }}
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}):
+            br.handle_request(payload, "secret")
+            routes["notion"]["free_tier"] = False
+            with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True):
+                with self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
+                    br.handle_request(payload, "secret")
+
+    def test_upstream_http_error_is_not_cached(self):
+        payload = self.payload(request_id=hashlib.sha256(b"wf:http-error").hexdigest())
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
+            with self.assertRaises(br.BridgeUpstreamError):
+                br.handle_request(payload, "secret")
+            dispatch.assert_called_once()
+
+    def test_dispatch_upstream_rejects_non_2xx(self):
+        payload = self.payload(request_id=hashlib.sha256(b"wf:non2xx").hexdigest())
+        route = {"url": "https://upstream.example.test/invoke"}
+        class Response:
+            status = 503
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None): return b'{"error":"down"}'
+        with patch.object(br.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(br.BridgeUpstreamError, "HTTP 503") as ctx:
+                br.dispatch_upstream(route, payload)
+            self.assertTrue(ctx.exception.uncertain)
+            self.assertEqual(ctx.exception.status_code, 502)
+
+    def test_dispatch_upstream_bounds_response(self):
+        payload = self.payload(request_id=hashlib.sha256(b"wf:oversized-upstream").hexdigest())
+        route = {"url": "https://upstream.example.test/invoke"}
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *args): return None
+            def read(self, limit=None): return b"x" * (br.MAX_UPSTREAM_RESPONSE_BYTES + 1)
+        with patch.object(br.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(br.BridgeUpstreamError, "exceeds 128 KiB"):
+                br.dispatch_upstream(route, payload)
+
     def test_idempotent_response_is_replayed(self):
         payload = self.payload()
         routes = {"notion": {

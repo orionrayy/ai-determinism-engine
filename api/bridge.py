@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler
 
 from bridge_runtime import (
     BridgeRuntimeError,
+    BridgeUpstreamError,
     describe_routes,
     handle_reconciliation,
     handle_request,
@@ -74,6 +75,11 @@ class handler(BaseHTTPRequestHandler):
             else:
                 result = handle_request(payload, secret)
             self._send(200, result)
+        except BridgeUpstreamError as exc:
+            self._send(
+                exc.status_code,
+                {"ok": False, "error": str(exc), "uncertain": exc.uncertain},
+            )
         except BridgeRuntimeError as exc:
             self._send(400, {"ok": False, "error": str(exc)})
         except Exception:

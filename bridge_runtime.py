@@ -7,6 +7,7 @@ import json
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
@@ -14,12 +15,23 @@ from typing import Any
 PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_SKEW_SECONDS = 300
 MAX_BODY_BYTES = 64 * 1024
+MAX_UPSTREAM_RESPONSE_BYTES = 128 * 1024
+IDEMPOTENCY_TTL_SECONDS = 24 * 60 * 60
+MAX_COMPLETED_ENTRIES = 128
 _LOCK = threading.Lock()
-_COMPLETED: dict[str, tuple[float, dict[str, Any]]] = {}
+# request_id -> (expires_at, semantic_request_digest, cached_response)
+_COMPLETED: dict[str, tuple[float, str, dict[str, Any]]] = {}
 
 
 class BridgeRuntimeError(RuntimeError):
     pass
+
+
+class BridgeUpstreamError(BridgeRuntimeError):
+    def __init__(self, message: str, *, status_code: int = 503, uncertain: bool = True) -> None:
+        super().__init__(message)
+        self.status_code = int(status_code)
+        self.uncertain = bool(uncertain)
 
 
 def canonical_json(value: Any) -> bytes:
@@ -195,18 +207,43 @@ def cleanup_idempotency(now: float) -> None:
         _COMPLETED.pop(key, None)
 
 
-def cached_result(request_id: str) -> dict[str, Any] | None:
+def semantic_request_digest(payload: dict[str, Any]) -> str:
+    semantic = {
+        "protocol": payload.get("protocol"),
+        "workflow_id": payload.get("workflow_id"),
+        "node_id": payload.get("node_id"),
+        "connector": str(payload.get("connector") or "").strip().lower(),
+        "action": str(payload.get("action") or "").strip().lower(),
+        "input": payload.get("input", {}),
+    }
+    return hashlib.sha256(canonical_json(semantic)).hexdigest()
+
+
+def cached_result(request_id: str, semantic_digest: str) -> dict[str, Any] | None:
     now = time.time()
     with _LOCK:
         cleanup_idempotency(now)
         item = _COMPLETED.get(request_id)
-        return None if item is None else item[1]
+        if item is None:
+            return None
+        if item[1] != semantic_digest:
+            raise BridgeRuntimeError(
+                "idempotency key conflicts with an existing request payload"
+            )
+        return item[2]
 
 
-def cache_result(request_id: str, result: dict[str, Any], ttl: int = 900) -> None:
+def cache_result(
+    request_id: str,
+    semantic_digest: str,
+    result: dict[str, Any],
+    ttl: int = IDEMPOTENCY_TTL_SECONDS,
+) -> None:
     with _LOCK:
         cleanup_idempotency(time.time())
-        _COMPLETED[request_id] = (time.time() + ttl, result)
+        while len(_COMPLETED) >= MAX_COMPLETED_ENTRIES:
+            _COMPLETED.pop(next(iter(_COMPLETED)))
+        _COMPLETED[request_id] = (time.time() + ttl, semantic_digest, result)
 
 
 def reconciliation_url(route: dict[str, Any]) -> str:
@@ -301,10 +338,33 @@ def dispatch_upstream(route: dict[str, Any], payload: dict[str, Any]) -> dict[st
     request = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=55) as response:
-            raw = response.read().decode("utf-8", "replace")
-            status = response.status
+            raw_bytes = response.read(MAX_UPSTREAM_RESPONSE_BYTES + 1)
+            status = int(response.status)
+    except urllib.error.HTTPError as exc:
+        raise BridgeUpstreamError(
+            f"upstream connector returned HTTP {exc.code}",
+            status_code=502 if exc.code >= 500 else 424,
+            uncertain=exc.code >= 500,
+        ) from exc
     except Exception as exc:
-        raise BridgeRuntimeError(f"upstream connector call failed: {exc}") from exc
+        raise BridgeUpstreamError(
+            f"upstream connector call failed: {exc}",
+            status_code=503,
+            uncertain=True,
+        ) from exc
+    if len(raw_bytes) > MAX_UPSTREAM_RESPONSE_BYTES:
+        raise BridgeUpstreamError(
+            "upstream connector response exceeds 128 KiB",
+            status_code=502,
+            uncertain=True,
+        )
+    if not (200 <= status < 300):
+        raise BridgeUpstreamError(
+            f"upstream connector returned HTTP {status}",
+            status_code=502 if status >= 500 else 424,
+            uncertain=status >= 500,
+        )
+    raw = raw_bytes.decode("utf-8", "replace")
     try:
         data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
@@ -370,10 +430,6 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     routes = load_routes()
     request_id, connector, action = validate_envelope(payload, routes)
 
-    cached = cached_result(request_id)
-    if cached is not None:
-        return {**cached, "idempotent_replay": True}
-
     route = routes[connector]
     validate_action_input(route, action, payload.get("input"))
     raw_specs = route.get("action_specs", {})
@@ -391,6 +447,10 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
         raise BridgeRuntimeError(
             "connector action is not certified for free-only execution"
         )
+    semantic_digest = semantic_request_digest(payload)
+    cached = cached_result(request_id, semantic_digest)
+    if cached is not None:
+        return {**cached, "idempotent_replay": True}
     result = dispatch_upstream(route, payload)
     response = {
         "ok": True,
@@ -400,5 +460,5 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
         "action": action,
         "upstream": result,
     }
-    cache_result(request_id, response)
+    cache_result(request_id, semantic_digest, response)
     return response
