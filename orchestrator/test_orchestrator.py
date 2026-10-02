@@ -959,7 +959,7 @@ class OrchestratorTests(unittest.TestCase):
         node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
         node.input["instruction"] = "changed after approval request"
         workflow = {"id": "wf_stale_approval", "status": "waiting_approval", "nodes": [o.asdict(node)]}
-        with patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_APPROVAL_EVENT": "true"}, clear=False),              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
             o.refresh_approvals(workflow, [node])
         self.assertFalse(node.input["approval_granted"])
         self.assertIsNone(node.input["approval_issue"])
