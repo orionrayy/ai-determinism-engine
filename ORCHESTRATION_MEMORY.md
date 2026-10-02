@@ -192,6 +192,14 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - The approving GitHub actor and approval timestamp are persisted as audit metadata.
 - `approval_fingerprint` is excluded from the plan fingerprint as runtime approval metadata; changing the actual tool/action/payload still changes the plan fingerprint and fails the existing plan-integrity check.
 
+## Orchestration hardening v27
+
+- Retry decisions are centralized in `failure_policy.py`; connector bridges report uncertainty and discovered action idempotency but do not decide whether to retry.
+- Every workflow has a bounded `max_attempts` budget (default 64, hard cap 128) shared across nodes and retries/replans. `attempts_used` is persisted with workflow state.
+- Retry jitter uses a persisted per-workflow seed. Delays remain reproducible after resume while using a substantially wider jitter window to reduce synchronized retry bursts.
+- A confirmed applied connector reconciliation follows `reconciling -> validating -> completed`; if validation fails, the execution ledger remains completed/applied so the external side effect cannot be replayed.
+- The side-effect START barrier uses an explicit Git `--force-with-lease` against the observed `refs/heads/main` SHA. A concurrent ref writer makes the barrier fail before external execution.
+
 ## Secure structured live boundary v26
 
 - Structured ingress defaults to `dry-run` when no mode is supplied.
