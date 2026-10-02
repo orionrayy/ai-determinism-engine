@@ -31,6 +31,42 @@ class CapabilityGraphTests(unittest.TestCase):
             },
         }
 
+    def test_free_only_flag_is_fail_closed_for_unrecognized_values(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "maybe"}, clear=True):
+            self.assertTrue(cg.free_only_enabled())
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "off"}, clear=True):
+            self.assertFalse(cg.free_only_enabled())
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "1"}, clear=True):
+            self.assertTrue(cg.free_only_enabled())
+
+    def test_free_only_routes_away_from_unlisted_model(self):
+        registry = {
+            "capability:analyze": {
+                "default_tool": "gemini",
+                "fallback_tools": ["free"],
+            },
+            "gemini": {
+                "free_tier": True,
+                "free_models": ["gemini-3.8-flash"],
+                "model_env": "GEMINI_MODEL",
+                "required_env": "GEMINI_API_KEY",
+                "risk": "low",
+            },
+            "free": {
+                "free_tier": True,
+                "risk": "low",
+            },
+        }
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_MODEL": "gemini-3.8-pro",
+            "GEMINI_API_KEY": "key",
+        }, clear=True):
+            self.assertEqual(
+                cg.route_capability("analyze", registry, live=False),
+                "free",
+            )
+
     def test_free_no_credential_wins_deterministically(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True):
             self.assertEqual(
