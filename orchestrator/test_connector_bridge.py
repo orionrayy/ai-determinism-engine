@@ -132,6 +132,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-a",
                 "reconciliation_target_fingerprint": "reconcile-a",
@@ -187,7 +188,7 @@ class ConnectorBridgeTests(unittest.TestCase):
         }, clear=True):
             with patch.object(
                 cb, "discover_capabilities",
-                return_value={"notion": {"actions": ["create_page"], "configured": True, "action_specs": {"create_page": {"response_fields": ["bridge_job_id"]}}}},
+                return_value={"notion": {"actions": ["create_page"], "configured": True, "free_tier": True, "action_specs": {"create_page": {"response_fields": ["bridge_job_id"]}}}},
             ) as discovery, patch.object(
                 cb, "post_request",
                 return_value={"ok": True, "bridge_job_id": "job-1"},
@@ -202,6 +203,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": True}},
             }
         }
@@ -220,11 +222,32 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertTrue(ctx.exception.uncertain)
         self.assertTrue(ctx.exception.retry_allowed)
 
+    def test_free_only_blocks_paid_discovered_connector(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "free_tier": False,
+                "action_specs": {"create_page": {"idempotent": True}},
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+            "ORCHESTRATOR_FREE_ONLY": "true",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(cb, "post_request") as post:
+            with self.assertRaisesRegex(cb.ConnectorBridgeError, "FREE_ONLY"):
+                cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        post.assert_not_called()
+
     def test_non_idempotent_uncertain_request_is_not_retryable(self):
         inventory = {
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": False}},
             }
         }
@@ -256,6 +279,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-b",
                 "action_specs": {
@@ -286,6 +310,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-a",
                 "reconciliation_target_fingerprint": "reconcile-b",
