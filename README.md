@@ -5,6 +5,7 @@
 Persisted workflow tool selection is now immutable across resume until an explicit replan. Initial creation still uses capability routing, while live execution preflights credentials, free-only policy, tool health, and HTTPS prerequisites before a side-effect durability barrier. Preflight failures can safely enter the existing bounded replan path.
 
 The GitHub Actions worker now accepts both source orchestration issues and approval issues at the job filter level, closing the approval-event delivery gap.
+Approval labels are fail-closed on recovery: `orchestrator-approved` / `orchestrator-rejected` are accepted only in the authenticated label-event path, while scheduled recovery cannot self-authorize an unlabeled-event context.
 
 Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
