@@ -8,11 +8,19 @@
       {
         "name": "PRIVATE_INPUTS",
         "class_name": "PrivateInput"
+      },
+      {
+        "name": "EXECUTION_LEASES",
+        "class_name": "ExecutionLease"
       }
     ]
   },
   "exports": {
     "PrivateInput": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
+    "ExecutionLease": {
       "type": "durable-object",
       "storage": "sqlite"
     }
