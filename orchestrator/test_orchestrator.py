@@ -10,9 +10,13 @@ from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
 
 import importlib.util
 
+_ORCHESTRATOR_DIR = Path(__file__).resolve().parent
+if str(_ORCHESTRATOR_DIR) not in sys.path:
+    sys.path.insert(0, str(_ORCHESTRATOR_DIR))
+
 _CONTROL_PLANE_SPEC = importlib.util.spec_from_file_location(
     "_control_plane_orchestrator",
-    Path(__file__).with_name("orchestrator.py"),
+    _ORCHESTRATOR_DIR / "orchestrator.py",
 )
 if _CONTROL_PLANE_SPEC is None or _CONTROL_PLANE_SPEC.loader is None:
     raise RuntimeError("cannot load control-plane module for tests")
