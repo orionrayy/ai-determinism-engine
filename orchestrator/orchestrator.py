@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import ipaddress
 import io
 import http.client
 import json
@@ -1252,6 +1253,18 @@ def safe_public_https_json(
     try:
         sock = socket.create_connection((ips[0], port), timeout=timeout)
         tls = context.wrap_socket(sock, server_hostname=host)
+        host_header = f"[{host}]" if ":" in host and not host.startswith("[") else host
+        request = (
+            f"GET {request_target} HTTP/1.1\\r\\n"
+            f"Host: {host_header}\\r\\n"
+            "Accept: application/json\\r\\n"
+            "User-Agent: ai-orchestrator-artifact-verifier/1.0\\r\\n"
+            "Connection: close\\r\\n"
+            "\\r\\n"
+        )
+        if "\\r" in request_target or "\\n" in request_target:
+            raise RuntimeError("artifact URL contains invalid control characters")
+        tls.sendall(request.encode("ascii", "strict"))
         connection = http.client.HTTPResponse(tls)
         connection.begin()
         if 300 <= connection.status < 400:
