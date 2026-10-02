@@ -2322,10 +2322,27 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 dry_run=not live,
             )
             if attempts < node.max_retries and can_retry:
+                try:
+                    reserve_execution_step(workflow, node.id)
+                except ExecutionBudgetExceeded as budget_exc:
+                    node.error["budget_exhausted"] = True
+                    node.error["retry_allowed"] = False
+                    node.error["budget_message"] = str(budget_exc)
+                    transition(node, 'failed')
+                    workflow['status'] = 'failed'
+                    workflow['failed_node'] = node.id
+                    workflow['nodes'] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    return 'failed'
                 attempts += 1
                 node.retry_count = attempts
                 transition(node, 'retrying')
-                delay = deterministic_retry_delay(workflow['id'], node.id, attempts)
+                delay = deterministic_retry_delay(
+                    workflow['id'],
+                    node.id,
+                    attempts,
+                    retry_seed=str(workflow.get("retry_seed") or ""),
+                )
                 append_event('node.retrying', {
                     'workflow_id': workflow['id'],
                     'node_id': node.id,
