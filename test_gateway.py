@@ -73,7 +73,7 @@ class GatewayTests(unittest.TestCase):
         )
         self.assertEqual(event_id, "evt-1")
         self.assertEqual(metadata["execution_id"], "a" * 64)
-        self.assertEqual(metadata["requested_mode"], "live")
+        self.assertEqual(metadata["requested_mode"], "dry-run")
         self.assertNotIn("secret", json.dumps(metadata))
         self.assertEqual(len(metadata["input_digest"]), 64)
 
