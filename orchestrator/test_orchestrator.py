@@ -1072,6 +1072,21 @@ class OrchestratorTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 o.execute_node(node, "test", dry_run=False)
 
+    def test_goal_length_is_bounded(self):
+        with self.assertRaises(ValueError):
+            o.normalize_goal("x" * 4001)
+
+    def test_node_serialized_size_is_bounded(self):
+        node = o.Node(
+            "n01",
+            "execute",
+            "noop",
+            [],
+            input={"instruction": "x" * (32 * 1024)},
+        )
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
+
     def test_workflow_creation_falls_back_without_gemini_key(self):
         with patch.dict(o.os.environ, {}, clear=True):
             workflow = o.create_workflow("build a small website", live=False)
