@@ -187,7 +187,7 @@ class ConnectorBridgeTests(unittest.TestCase):
         }, clear=True):
             with patch.object(
                 cb, "discover_capabilities",
-                return_value={"notion": {"actions": ["create_page"], "configured": True}},
+                return_value={"notion": {"actions": ["create_page"], "configured": True, "action_specs": {"create_page": {"response_fields": ["bridge_job_id"]}}}},
             ) as discovery, patch.object(
                 cb, "post_request",
                 return_value={"ok": True, "bridge_job_id": "job-1"},
@@ -560,7 +560,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 def read(self): return b'{"ok": true, "bridge_job_id": "job-1"}'
             return Response()
 
-        inventory = {"notion": {"actions": ["create_page"], "configured": True}}
+        inventory = {"notion": {"actions": ["create_page"], "configured": True, "action_specs": {"create_page": {"response_fields": ["bridge_job_id"]}}}}
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
