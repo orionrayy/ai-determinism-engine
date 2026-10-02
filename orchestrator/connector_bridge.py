@@ -573,6 +573,7 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         request.input,
         inventory,
     )
+    spec = inventory.get(request.connector, {})
     target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
     contract_fingerprint = action_contract_fingerprint(
         action_spec,
