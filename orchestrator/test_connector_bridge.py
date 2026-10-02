@@ -36,7 +36,14 @@ class ConnectorBridgeTests(unittest.TestCase):
         with patch.dict(cb.os.environ, {}, clear=True):
             result = cb.execute_connector_bridge(self.node(), "bridge it", dry_run=True)
         self.assertTrue(result["simulated"])
-        self.assertEqual(result["request_id"], cb.execution_id("wf_bridge", "n01-connector"))
+        expected = cb.connector_request_id(
+            "wf_bridge",
+            "n01-connector",
+            "notion",
+            "create_page",
+            {"title": "Hello"},
+        )
+        self.assertEqual(result["request_id"], expected)
 
     def test_discovery_url_respects_bridge_path(self):
         self.assertEqual(
@@ -275,6 +282,20 @@ class ConnectorBridgeTests(unittest.TestCase):
                     cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
                 post.assert_not_called()
 
+    def test_request_id_changes_when_connector_intent_changes(self):
+        base = self.node({"title": "Hello"})
+        changed_action = SimpleNamespace(
+            id=base.id,
+            input={**base.input, "action": "update_page"},
+        )
+        a = cb.build_request(base, "goal")
+        b = cb.build_request(changed_action, "goal")
+        self.assertNotEqual(a.request_id, b.request_id)
+
+        changed_payload = self.node({"title": "Different"})
+        c = cb.build_request(changed_payload, "goal")
+        self.assertNotEqual(a.request_id, c.request_id)
+
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
 
@@ -298,7 +319,13 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertEqual(result["response"]["bridge_job_id"], "job-1")
         self.assertEqual(
             captured["headers"]["Idempotency-key"],
-            cb.execution_id("wf_bridge", "n01-connector"),
+            cb.connector_request_id(
+                "wf_bridge",
+                "n01-connector",
+                "notion",
+                "create_page",
+                {"title": "Hello"},
+            ),
         )
         self.assertTrue(captured["headers"]["X-orchestrator-signature"].startswith("sha256="))
         self.assertEqual(result["discovery"]["count"], 1)
