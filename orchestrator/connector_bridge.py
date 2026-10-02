@@ -549,6 +549,15 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
         raise ConnectorBridgeError(
             str(result.get("error") or "connector bridge rejected request")
         )
+    upstream = result.get("upstream")
+    if isinstance(upstream, dict):
+        upstream_status = upstream.get("status_code")
+        if isinstance(upstream_status, int) and not 200 <= upstream_status < 300:
+            raise ConnectorRequestError(
+                f"connector bridge reported upstream HTTP {upstream_status}",
+                uncertain=upstream_status >= 500,
+                retry_allowed=False,
+            )
     return result
 
 
