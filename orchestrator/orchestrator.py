@@ -2401,6 +2401,8 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
         # Phase 1: preflight the entire batch before any node is persisted as running.
         # If a preflight/replan/approval gate blocks, no sibling node is stranded.
+        executable = []
+        admission_blocked = False
         for node in batch:
             try:
                 preflight_node(node, registry, live=live)
@@ -2421,6 +2423,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 if replan_after_failure(workflow, nodes, node, registry):
                     workflow["nodes"] = [asdict(item) for item in nodes]
                     persist_workflow(workflow)
+                    admission_blocked = True
                     break
                 workflow["status"] = "failed"
                 workflow["failed_node"] = node.id
@@ -2453,9 +2456,11 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
                 return
-        else:
-            try:
-                reserve_execution_steps(workflow, [node.id for node in batch])
+        if admission_blocked:
+            continue
+
+        try:
+            reserve_execution_steps(workflow, [node.id for node in batch])
             except ExecutionBudgetExceeded as budget_exc:
                 node = sorted(batch, key=lambda item: item.id)[0]
                 node.error = {
