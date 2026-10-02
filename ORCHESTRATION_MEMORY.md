@@ -55,6 +55,14 @@ Current execution-fabric branch: `main`
 - No new dependency or service is introduced.
 
 
+## Orchestration hardening v47 — continuation, ingress, and persistence race closure
+- Gateway HMAC binds timestamp, HTTP method, request path, optional `Idempotency-Key`, and raw body; header lookup is case-insensitive.
+- Unkeyed unstructured gateway requests receive a deterministic event identity, propagated as `workflow_id` so replay-equivalent repository dispatches share the same workflow concurrency group.
+- Newly-created workflows are persisted before their first execution step; execution paths no longer perform stale caller-snapshot `save_state()` writes after durable workflow persistence.
+- Source Issue handling explicitly binds `github.event.action` before bash `set -u` executes the labeled-event branch.
+- Continuation dispatch explicitly exports the originating `workflow_run.id` and `run_attempt` used by its continuation event identity.
+- No paid service, database, broker, queue, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
