@@ -241,6 +241,27 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertNotIn("private_token", encoded)
         self.assertNotIn("should-not-persist", encoded)
 
+    def test_free_only_rejects_uncertified_reconciliation(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "free_tier": True,
+                "reconciliation": True,
+                "action_specs": {"create_page": {"free_tier": False}},
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(cb, "post_reconciliation") as reconcile:
+            with self.assertRaisesRegex(cb.ConnectorReconciliationError, "not certified for free-only execution"):
+                cb.reconcile_connector_execution(self.node(), "reconcile it", dry_run=False)
+        reconcile.assert_not_called()
+
     def test_live_rejects_invalid_payload_before_post(self):
         with patch.dict(cb.os.environ, {
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
