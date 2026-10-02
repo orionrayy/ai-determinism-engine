@@ -284,10 +284,19 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in _ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+    response_fields = raw.get("response_fields", [])
+    if not isinstance(response_fields, list):
+        response_fields = []
+    normalized_response_fields = sorted({
+        str(item).strip()
+        for item in response_fields
+        if str(item).strip() and len(str(item).strip()) <= 128
+    })[:32]
     return {
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "response_fields": normalized_response_fields,
     }
 
 
@@ -348,6 +357,49 @@ def action_contract_fingerprint(
             "target_fingerprint": str(target_fingerprint or "").strip() or None,
         })
     ).hexdigest()
+
+
+def _resolve_response_path(value: Any, path: str) -> tuple[bool, Any]:
+    current = value
+    for part in str(path).split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
+
+
+def sanitize_connector_response(
+    response: dict[str, Any],
+    action_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist only bounded connector metadata plus explicitly allowlisted fields."""
+    sanitized: dict[str, Any] = {
+        "ok": response.get("ok") is not False,
+    }
+    upstream = response.get("upstream")
+    if isinstance(upstream, dict):
+        status_code = upstream.get("status_code")
+        if isinstance(status_code, int):
+            sanitized["status_code"] = status_code
+
+    allowed_fields = action_spec.get("response_fields", [])
+    if isinstance(allowed_fields, list):
+        selected: dict[str, Any] = {}
+        for field_name in allowed_fields[:32]:
+            field = str(field_name).strip()
+            if not field:
+                continue
+            found, value = _resolve_response_path(response, field)
+            if not found:
+                continue
+            encoded = canonical_json(value)
+            if len(encoded) > 4096:
+                continue
+            selected[field] = value
+        if selected:
+            sanitized["fields"] = selected
+
+    return sanitized
 
 
 def validate_discovered_payload(
@@ -683,5 +735,5 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
         "action_contract_fingerprint": contract_fingerprint,
-        "response": response,
+        "response": sanitize_connector_response(response, action_spec),
     }
