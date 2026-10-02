@@ -33,6 +33,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("merge-multiple: false", self.federation)
         self.assertIn("fail-fast: false", self.federation)
         self.assertIn("max-parallel: 4", self.federation)
+    def test_federation_uses_fixed_concurrency_slots(self):
+        self.assertIn("agent-federation-", self.federation)
+        self.assertIn("github.event.client_payload.slot", self.federation)
+        self.assertIn("cancel-in-progress: false", self.federation)
+        self.assertNotIn("queue: max", self.federation)
+
     def test_federated_matrix_is_bounded_and_read_only(self):
         self.assertIn("types: [orchestrator.federate]", self.federation)
         self.assertIn("max-parallel: 4", self.federation)
@@ -47,6 +53,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("aggregate:", self.federation)
         self.assertIn("contents: write", self.federation)
         self.assertIn("orchestrator.federation.completed", self.federation)
+
+    def test_supervisor_persists_federation_quota_defaults(self):
+        self.assertIn("ORCHESTRATOR_MAX_FEDERATION_BATCHES", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_MAX_FEDERATION_TASKS", self.orchestrator)
 
     def test_supervisor_handles_federation_completion_dispatch(self):
         self.assertIn("orchestrator.federation.completed", self.orchestrator)
