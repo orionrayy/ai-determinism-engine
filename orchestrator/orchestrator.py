@@ -340,6 +340,7 @@ def with_execution_lease(func):
                     append_event("workflow.lease_released", {"workflow_id": workflow["id"]})
                 else:
                     append_event("workflow.lease_release_failed", {"workflow_id": workflow["id"]})
+    return wrapped
 
 
 def execution_budget(workflow: dict[str, Any]) -> dict[str, Any]:
