@@ -86,6 +86,7 @@ NODE_STATUSES = {
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 EXECUTION_BUDGET_LOCK = threading.RLock()
+EVENT_LOCK = threading.RLock()
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -159,11 +160,12 @@ def write_json(path: Path, value: Any) -> None:
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
     """Best-effort observability; event-log failure must not break durable state."""
     try:
-        EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
-        entry = {"ts": utc_now(), "event_type": event_type, "payload": payload}
-        with EVENT_FILE.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
-            handle.flush()
+        with EVENT_LOCK:
+            EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+            entry = {"ts": utc_now(), "event_type": event_type, "payload": payload}
+            with EVENT_FILE.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+                handle.flush()
     except (OSError, TypeError, ValueError):
         return
 
