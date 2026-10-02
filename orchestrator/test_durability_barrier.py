@@ -44,6 +44,31 @@ class DurabilityBarrierTests(unittest.TestCase):
         commands = [call.args[0] for call in run.call_args_list]
         self.assertFalse(any(command[1:3] == ["add", "--"] for command in commands))
 
+    def test_push_uses_remote_sha_as_compare_and_swap_guard(self):
+        responses = iter([
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 0, "same\n", ""),
+            subprocess.CompletedProcess([], 0, "same\n", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 1, "", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+            subprocess.CompletedProcess([], 1, "", "lease rejected"),
+        ])
+        with patch.dict(
+            os.environ,
+            {"GITHUB_ACTIONS": "true", "ORCHESTRATOR_DURABILITY_BARRIER": "true"},
+            clear=False,
+        ), patch("durability_barrier.subprocess.run", side_effect=lambda *args, **kwargs: next(responses)) as run:
+            with self.assertRaisesRegex(DurabilityBarrierError, "CAS rejected"):
+                commit_side_effect_start(ROOT, execution_id="e" * 64)
+        commands = [call.args[0] for call in run.call_args_list]
+        self.assertIn(
+            ["git", "push", "--force-with-lease=refs/heads/main:same", "origin", "HEAD:refs/heads/main"],
+            commands,
+        )
+
     def test_success_commits_and_pushes_main(self):
         responses = iter([
             subprocess.CompletedProcess([], 0, "", ""),
@@ -66,7 +91,7 @@ class DurabilityBarrierTests(unittest.TestCase):
             )
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn(
-            ["git", "push", "origin", "HEAD:main"],
+            ["git", "push", "--force-with-lease=refs/heads/main:same", "origin", "HEAD:refs/heads/main"],
             commands,
         )
         self.assertIn(
