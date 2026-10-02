@@ -48,6 +48,7 @@ AGENTS = {
         "implementer",
         "Produce or modify repository-backed implementation artifacts.",
         frozenset({"build"}),
+        risk_ceiling="high",
     ),
     "tester": AgentProfile(
         "tester",
@@ -163,13 +164,16 @@ def team_manifest(workflow_id: str, nodes: Iterable[Any]) -> dict[str, Any]:
     independent = sum(
         1 for node in node_list if not (getattr(node, "depends_on", []) or [])
     )
+    convergent_nodes = sum(
+        1 for node in node_list if len(getattr(node, "depends_on", []) or []) >= 2
+    )
     consensus_nodes = sum(
         1
         for node in node_list
         if str(getattr(node, "agent_role", "")) in {"critic", "skeptic"}
         and len(getattr(node, "depends_on", []) or []) >= 2
     )
-    if consensus_nodes:
+    if convergent_nodes:
         pattern = "parallel_deliberation"
     elif independent > 1:
         pattern = "scatter_gather"
