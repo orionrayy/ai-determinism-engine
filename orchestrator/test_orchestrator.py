@@ -1133,6 +1133,41 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("output_sha256", record)
         self.assertNotIn("output", record)
 
+    def test_tool_health_is_sharded_by_tool(self):
+        node = o.Node(
+            "n01",
+            "research",
+            "research_bundle",
+            risk="low",
+            input={"instruction": "collect evidence"},
+        )
+        registry = {"research_bundle": {"side_effects": [], "free_tier": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "TOOL_HEALTH_DIR", root / "tool_health"),                  patch.object(o, "append_event"):
+                updated = o.update_tool_health(node, False, registry)
+                shard = o.tool_health_path("research_bundle")
+                self.assertTrue(shard.exists())
+                self.assertEqual(
+                    o.load_tool_health()["research_bundle"]["status"],
+                    updated["status"],
+                )
+                self.assertFalse((root / "tool_health.json").exists())
+
+    def test_tool_health_legacy_file_is_compatible(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = root / "tool_health.json"
+            legacy.write_text(
+                '{"research_bundle":{"status":"degraded","failure_streak":1}}',
+                encoding="utf-8",
+            )
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "TOOL_HEALTH_DIR", root / "tool_health"):
+                self.assertEqual(
+                    o.load_tool_health()["research_bundle"]["failure_streak"],
+                    1,
+                )
+
     def test_workflow_events_are_sharded(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
