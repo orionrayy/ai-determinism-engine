@@ -34,6 +34,8 @@ class StateSchemaTests(unittest.TestCase):
         self.assertEqual(workflow["route_snapshot"], {})
         self.assertEqual(workflow["policy_integrity"], "legacy_unverified")
         self.assertEqual(workflow["origin_github_run_id"], None)
+        self.assertEqual(workflow["origin_github_run_attempt"], None)
+        self.assertEqual(workflow["github_run_attempt"], None)
         self.assertEqual(workflow["plan_integrity"], "legacy_unverified")
         self.assertEqual(workflow["nodes"][0]["status"], "pending")
         self.assertEqual(workflow["max_parallel"], 4)
