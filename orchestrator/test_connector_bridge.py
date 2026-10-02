@@ -567,7 +567,7 @@ class ConnectorBridgeTests(unittest.TestCase):
         }, clear=True):
             with patch.object(cb, "discover_capabilities", return_value=inventory),                  patch.object(cb.urllib.request, "urlopen", side_effect=fake_urlopen):
                 result = cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
-        self.assertEqual(result["response"]["bridge_job_id"], "job-1")
+        self.assertEqual(result["response"]["fields"]["bridge_job_id"], "job-1")
         self.assertEqual(
             captured["headers"]["Idempotency-key"],
             cb.connector_request_id(
