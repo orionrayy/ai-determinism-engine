@@ -762,6 +762,7 @@ def get_issue_labels(issue_number: int) -> set[str]:
     return {str(label.get("name")) for label in labels if isinstance(label, dict)}
 
 def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
+    approval_event = os.environ.get("ORCHESTRATOR_APPROVAL_EVENT", "").lower() == "true"
     for node in nodes:
         if node.status != "waiting_approval":
             continue
@@ -780,6 +781,16 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
         elif "orchestrator-approved" in labels:
+            if not approval_event:
+                append_event(
+                    "approval.unverified_label",
+                    {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "issue": issue_number,
+                    },
+                )
+                continue
             approved_fingerprint = str(node.input.get("approval_fingerprint") or "").strip()
             current_fingerprint = fingerprint_nodes([node])
             if not approved_fingerprint or approved_fingerprint != current_fingerprint:
