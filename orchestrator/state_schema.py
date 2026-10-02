@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 CURRENT_STATE_VERSION = 4
-CURRENT_WORKFLOW_SCHEMA_VERSION = 4
+CURRENT_WORKFLOW_SCHEMA_VERSION = 5
 MAX_PARALLEL = 8
 
 
@@ -55,6 +55,10 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("policy_fingerprint", None)
         workflow.setdefault("route_snapshot", {})
         workflow.setdefault("policy_integrity", "legacy_unverified")
+        workflow.setdefault(
+            "origin_github_run_id",
+            workflow.get("github_run_id"),
+        )
         workflow.setdefault("execution_budget", {
             "max_steps": 96,
             "used_steps": 0,
