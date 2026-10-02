@@ -3,6 +3,7 @@ import os
 import hmac
 import json
 import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +13,7 @@ import bridge_runtime as br
 class BridgeRuntimeTests(unittest.TestCase):
     def setUp(self):
         br._COMPLETED.clear()
+        br._INFLIGHT.clear()
 
     def payload(self, request_id=None):
         request_id = request_id or hashlib.sha256(b"wf:n1").hexdigest()
@@ -279,6 +281,60 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br.urllib.request, "urlopen", return_value=Response()):
             with self.assertRaisesRegex(br.BridgeUpstreamError, "exceeds 128 KiB"):
                 br.dispatch_upstream(route, payload)
+
+    def test_concurrent_duplicate_requests_single_flight_upstream(self):
+        payload = self.payload(
+            request_id=hashlib.sha256(b"wf:concurrent-single-flight").hexdigest()
+        )
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+                "free_tier": True,
+            }
+        }
+        started = threading.Event()
+        release = threading.Event()
+        calls = {"count": 0}
+        calls_lock = threading.Lock()
+        results = []
+        errors = []
+
+        def fake_dispatch(route, value):
+            with calls_lock:
+                calls["count"] += 1
+            started.set()
+            if not release.wait(2):
+                raise br.BridgeUpstreamError(
+                    "test upstream release timeout",
+                    status_code=503,
+                    uncertain=True,
+                )
+            return {"status_code": 200, "data": {"id": "p1"}}
+
+        def invoke():
+            try:
+                results.append(br.handle_request(payload, "secret"))
+            except Exception as exc:
+                errors.append(exc)
+
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=fake_dispatch):
+            first = threading.Thread(target=invoke)
+            second = threading.Thread(target=invoke)
+            first.start()
+            self.assertTrue(started.wait(1))
+            second.start()
+            release.set()
+            first.join(3)
+            second.join(3)
+
+        self.assertFalse(errors, errors)
+        self.assertEqual(calls["count"], 1)
+        self.assertEqual(len(results), 2)
+        self.assertEqual(
+            sorted(bool(result.get("idempotent_replay")) for result in results),
+            [False, True],
+        )
 
     def test_idempotent_response_is_replayed(self):
         payload = self.payload()
