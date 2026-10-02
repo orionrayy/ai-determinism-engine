@@ -13,6 +13,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
+        cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
 
     def test_approval_labels_trigger_worker(self):
         self.assertIn('types: [opened, edited, labeled]', self.orchestrator)
@@ -99,7 +100,7 @@ class ActionsConfigTests(unittest.TestCase):
             "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97",
             "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
         }
-        combined = "\n".join((self.orchestrator, self.continuation, self.tests, self.bridge_deploy))
+        combined = "\n".join((self.orchestrator, self.continuation, self.tests, self.bridge_deploy, self.private_input_deploy))
         for ref in expected:
             self.assertIn(ref, combined)
 
@@ -123,6 +124,15 @@ class ActionsConfigTests(unittest.TestCase):
     def test_render_runtime_matches_ci_python(self):
         self.assertEqual((ROOT / ".python-version").read_text().strip(), "3.12")
 
+    def test_private_input_deploy_is_pinned_and_manual(self):
+        self.assertIn("workflow_dispatch:", self.private_input_deploy)
+        self.assertIn('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', self.private_input_deploy)
+        self.assertIn('node-version: "24"', self.private_input_deploy)
+        self.assertIn("wrangler@4.146.0", self.private_input_deploy)
+        self.assertIn("CLOUDFLARE_ACCOUNT_ID", self.private_input_deploy)
+        self.assertIn("CLOUDFLARE_API_TOKEN", self.private_input_deploy)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.private_input_deploy)
+
     def test_private_input_contract_is_versioned(self):
         contract = json.loads(
             (ROOT / "contracts" / "private-input.schema.json").read_text()
@@ -130,7 +140,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
         self.assertEqual(
             contract["properties"]["protocol"]["const"],
-            "ai-orchestrator.private-input/v1",
+            "ai-orchestrator.private-input/v2",
         )
         self.assertIn("payload", contract["required"])
         self.assertEqual(contract["properties"]["payload"]["type"], "object")
