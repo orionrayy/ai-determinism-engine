@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-CURRENT_STATE_VERSION = 3
-CURRENT_WORKFLOW_SCHEMA_VERSION = 2
+CURRENT_STATE_VERSION = 4
+CURRENT_WORKFLOW_SCHEMA_VERSION = 3
 MAX_PARALLEL = 8
 
 
@@ -52,6 +52,26 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
+        workflow.setdefault("execution_budget", {
+            "max_steps": 96,
+            "used_steps": 0,
+        })
+        if not isinstance(workflow.get("execution_budget"), dict):
+            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget must be an object")
+        budget = workflow["execution_budget"]
+        try:
+            max_steps = int(budget.get("max_steps", 96))
+            used_steps = int(budget.get("used_steps", 0))
+        except (TypeError, ValueError) as exc:
+            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget contains non-integer values") from exc
+        if max_steps < 1 or max_steps > 256:
+            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.max_steps out of bounds")
+        if used_steps < 0 or used_steps > 256:
+            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.used_steps out of bounds")
+        if used_steps > max_steps:
+            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.used_steps exceeds max_steps")
+        budget["max_steps"] = max_steps
+        budget["used_steps"] = used_steps
         workflow.setdefault("replan_count", 0)
         workflow.setdefault("execution_mode", "live" if workflow.get("live") else "dry-run")
         workflow.setdefault("plan_fingerprint", None)
