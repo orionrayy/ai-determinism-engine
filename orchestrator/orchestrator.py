@@ -1809,7 +1809,8 @@ def reconcile_first_uncertain(
         node.output = {
             "reconciled": True,
             "reconciliation": result,
-            "request_id": execution_id,
+            "request_id": result.get("request_id"),
+            "execution_id": execution_id,
         }
         node.error["reconciled"] = True
         node.error["reconciliation_state"] = "applied"
