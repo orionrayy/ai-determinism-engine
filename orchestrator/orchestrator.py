@@ -2695,7 +2695,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 thread_name_prefix="orchestrator-node",
             ) as pool:
                 futures = {
-                    pool.submit(execute_with_retries, node, workflow["goal"], dry_run): (node, execution_id)
+                    pool.submit(execute_with_retries, workflow, node, workflow["goal"], dry_run): (node, execution_id)
                     for node, execution_id in executable
                 }
                 completed_futures = {}
