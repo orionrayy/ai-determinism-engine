@@ -822,6 +822,81 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(calls[:2], ["persist", "run"])
         save_state.assert_not_called()
 
+    def test_persist_workflow_writes_only_its_shard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            state_file.write_text(
+                json.dumps({"version": CURRENT_STATE_VERSION, "workflows": {}, "last_workflow_id": None}),
+                encoding="utf-8",
+            )
+            workflow = {"id": "wf-shard", "status": "running", "nodes": []}
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file):
+                before = state_file.read_bytes()
+                o.persist_workflow(workflow)
+                self.assertEqual(before, state_file.read_bytes())
+                shard = o.workflow_shard_path("wf-shard")
+                self.assertTrue(shard.exists())
+                loaded = o.load_state()
+                self.assertEqual(loaded["workflows"]["wf-shard"]["status"], "running")
+
+    def test_load_state_prefers_canonical_workflow_shard_over_legacy_copy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            legacy = {
+                "id": "wf-legacy",
+                "status": "running",
+                "updated_at": "2026-10-02T00:00:00+00:00",
+                "nodes": [],
+            }
+            state_file.write_text(
+                json.dumps({"version": CURRENT_STATE_VERSION, "workflows": {"wf-legacy": legacy}}),
+                encoding="utf-8",
+            )
+            shard = root / "workflows" / (o.hashlib.sha256(b"wf-legacy").hexdigest() + ".json")
+            shard.parent.mkdir(parents=True, exist_ok=True)
+            shard.write_text(
+                json.dumps({**legacy, "status": "completed", "updated_at": "2026-10-02T01:00:00+00:00"}),
+                encoding="utf-8",
+            )
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file):
+                loaded = o.load_state()
+            self.assertEqual(loaded["workflows"]["wf-legacy"]["status"], "completed")
+
+    def test_load_state_rejects_mismatched_workflow_shard_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            shard_dir = root / "workflows"
+            shard_dir.mkdir(parents=True, exist_ok=True)
+            (shard_dir / ("0" * 64 + ".json")).write_text(
+                json.dumps({"id": "wf-other", "nodes": []}),
+                encoding="utf-8",
+            )
+            state_file = root / "state.json"
+            state_file.write_text(
+                json.dumps({"version": CURRENT_STATE_VERSION, "workflows": {}}),
+                encoding="utf-8",
+            )
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file):
+                with self.assertRaisesRegex(RuntimeError, "workflow shard identity mismatch"):
+                    o.load_state()
+
+    def test_save_state_migrates_workflows_to_compact_shards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            workflow = {"id": "wf-migrate", "status": "completed", "nodes": []}
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file):
+                o.save_state({
+                    "version": CURRENT_STATE_VERSION,
+                    "workflows": {"wf-migrate": workflow},
+                    "last_workflow_id": "wf-migrate",
+                })
+                compact = json.loads(state_file.read_text(encoding="utf-8"))
+                self.assertEqual(compact["storage_format"], o.STATE_STORAGE_FORMAT)
+                self.assertEqual(compact["workflows"], {})
+                self.assertTrue(o.workflow_shard_path("wf-migrate").exists())
     def test_state_migration_is_idempotent(self):
         source = {
             "version": 2,
