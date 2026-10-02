@@ -1014,6 +1014,38 @@ class OrchestratorTests(unittest.TestCase):
                 self.assertEqual(statuses[-1], 'completed')
                 self.assertEqual(workflow['status'], 'completed')
                 self.assertTrue(all(node['status'] == 'completed' for node in workflow['nodes']))
+    def test_parallel_preflight_replan_does_not_reuse_executable_batch(self):
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel_replan",
+            "goal": "parallel replan",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 2,
+            "execution_budget": {"max_steps": 4, "used_steps": 0},
+            "replan_count": 0,
+            "nodes": [o.asdict(node) for node in nodes],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value={}), \
+                 patch.object(
+                     o,
+                     "preflight_node",
+                     side_effect=[RuntimeError("first unavailable"), None],
+                 ), \
+                 patch.object(o, "replan_after_failure", return_value=True) as replan, \
+                 patch.object(o, "execute_node") as execute:
+                o.run_workflow(workflow)
+        replan.assert_called_once()
+        execute.assert_not_called()
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 0)
+        self.assertEqual(workflow["status"], "failed")
     def test_parallel_batch_preflight_failure_does_not_strand_siblings(self):
         nodes = [
             o.Node("n01-a", "execute", "noop", []),
