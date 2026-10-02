@@ -582,6 +582,7 @@ def build_result(
         agent_id=task.agent_id,
         role=task.role,
         capability=task.capability,
+        tool=task.tool,
         attempt=task.attempt,
         input_digest=task.input_digest,
         status=status,
@@ -616,6 +617,7 @@ def validate_result(
             "agent_id",
             "role",
             "capability",
+            "tool",
             "attempt",
             "input_digest",
         )
