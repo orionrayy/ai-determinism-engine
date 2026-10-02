@@ -215,6 +215,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "reconciliation": True,
             }
         }
