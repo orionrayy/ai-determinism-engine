@@ -73,6 +73,10 @@ The gateway HMAC covers timestamp, HTTP method, request path, optional `Idempote
 
 New workflows are durably persisted before their first execution step. Execution paths no longer perform stale final `save_state()` writes after `persist_workflow()`, preventing one workflow worker from clobbering unrelated state loaded earlier in the process. Source Issue triggers explicitly bind the GitHub Issue action, and continuation dispatch exports the exact `workflow_run.id` and `run_attempt` used by its event identity.
 
+## v49 Targeted Workflow Hydration
+
+When a workflow ID is already known, the orchestrator loads only that workflow's canonical shard instead of hydrating every workflow snapshot. Global resume/list and event-id deduplication continue to use the full loader because those operations require repository-wide visibility.
+
 ## Gateway
 
 Set these environment variables on the gateway service:
