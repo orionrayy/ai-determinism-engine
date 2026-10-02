@@ -3494,6 +3494,7 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
                 "Accept": "application/json",
                 "X-Engine-Timestamp": timestamp,
                 "X-Engine-Signature": signature,
+                "Idempotency-Key": execution_id,
             },
             method="POST",
         )

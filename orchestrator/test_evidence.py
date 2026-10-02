@@ -26,6 +26,20 @@ class EvidenceTests(unittest.TestCase):
         self.assertNotIn("SECRET-2", item["output_summary"])
         self.assertIn("redacted", item["output_summary"])
 
+    def test_durable_trace_is_redacted_and_secret_patterns_are_removed(self):
+        from evidence import sanitize_for_durable
+
+        value = {
+            "message": "request failed Authorization: Bearer TOPSECRET",
+            "traceback": "Traceback ... api_key=TRACESECRET",
+            "nested": {"secret": "VALUE"},
+        }
+        sanitized = sanitize_for_durable(value)
+        self.assertNotIn("TOPSECRET", str(sanitized))
+        self.assertNotIn("TRACESECRET", str(sanitized))
+        self.assertEqual(sanitized["traceback"]["reason"], "diagnostic_trace")
+        self.assertEqual(sanitized["nested"]["secret"]["redacted"], True)
+
     def test_evidence_contains_output_and_record_hashes(self):
         item = build_evidence(
             "wf1",

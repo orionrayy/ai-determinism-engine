@@ -12,6 +12,11 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+try:
+    from orchestrator.http_safety import read_response_limited
+except ImportError:
+    from http_safety import read_response_limited
+
 PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_SKEW_SECONDS = 300
 MAX_BODY_BYTES = 64 * 1024
@@ -337,7 +342,11 @@ def dispatch_reconciliation(
     request = urllib.request.Request(url, headers=headers, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=45) as response:
-            raw = response.read().decode("utf-8", "replace")
+            raw = read_response_limited(
+                response,
+                MAX_UPSTREAM_RESPONSE_BYTES,
+                error_message="reconciliation upstream response exceeds 128 KiB",
+            ).decode("utf-8", "replace")
             status = response.status
     except Exception as exc:
         raise BridgeRuntimeError(f"reconciliation upstream call failed: {exc}") from exc

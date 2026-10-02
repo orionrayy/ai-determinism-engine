@@ -55,6 +55,16 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v59 Resource-Safety and Durable-Diagnostics Hardening
+
+All outbound HTTP response bodies now pass through one stdlib bounded-reader helper. The LLM planner and credential-free research providers are capped at 512 KiB, while the connector bridge reconciliation path keeps its tighter 128 KiB limit. This prevents an unexpectedly large remote body from bypassing the existing resource-safety controls.
+
+Durable workflow serialization now removes raw diagnostic traces from persistent state and redacts common credential-bearing patterns in exception text. The runtime keeps the original exception in-process for immediate handling, while durable state retains only bounded, non-secret diagnostics.
+
+Execution callbacks now send a stable Idempotency-Key derived from the workflow execution identity, so bounded callback retries expose the receiver-side deduplication contract explicitly.
+
+No database, broker, proxy, paid service, or runtime dependency is introduced; the execution path remains GitHub Actions + stdlib Python and free-first.
+
 ## v57 Connector Concurrent Idempotency
 
 The connector bridge uses a per-request single-flight guard. Concurrent duplicates with the same semantic request identity wait for the original upstream execution instead of issuing a second call. A conflicting payload for the same identity fails closed. The wait is bounded; failure does not trigger a second upstream execution.

@@ -86,6 +86,20 @@ class PlannerTests(unittest.TestCase):
         prompt = post.call_args.args[1]["contents"][0]["parts"][0]["text"]
         self.assertIn("notion", prompt)
 
+    def test_post_bounds_response_body(self):
+        class FakeResponse:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+            def read(self, size=-1):
+                return b"x" * (size if size > 0 else 1)
+
+        with patch.object(lp.urllib.request, "urlopen", return_value=FakeResponse()):
+            with self.assertRaisesRegex(RuntimeError, "planner response exceeds 512 KiB"):
+                lp._post("https://planner.example", {}, "key")
+
     def test_rejects_non_json(self):
         with self.assertRaises(ValueError):
             lp._object_from_text('no json here')

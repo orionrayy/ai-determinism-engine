@@ -9,6 +9,21 @@ MAX_SUMMARY_BYTES = 16 * 1024
 MAX_DURABLE_DEPTH = 8
 MAX_DURABLE_ITEMS = 128
 MAX_DURABLE_STRING_BYTES = 4096
+DIAGNOSTIC_TRACE_KEY_RE = re.compile(
+    r"^(?:trace|traceback|stack|stack_trace)$",
+    re.IGNORECASE,
+)
+SECRET_VALUE_RE = re.compile(
+    r"""(?ix)
+    (?:
+        bearer\s+[^\s,;]+
+        |(?:authorization)\s*[:=]\s*(?:bearer\s+)?[^\s,;'""]+
+        |(?:api[_-]?key|access[_-]?token|refresh[_-]?token|
+           password|passwd|secret|client[_-]?secret|credential)\s*[:=]\s*
+           ['"]?[^\s,;'""]+
+    )
+    """
+)
 SENSITIVE_KEY_RE = re.compile(
     r"(?:authorization|password|passwd|secret|token|api[_-]?key|"
     r"access[_-]?token|refresh[_-]?token|cookie|set-cookie|private[_-]?key|"
@@ -44,6 +59,13 @@ def sanitize_for_durable(
                 result["_truncated_items"] = len(items) - MAX_DURABLE_ITEMS
                 break
             key = str(raw_key)
+            if DIAGNOSTIC_TRACE_KEY_RE.fullmatch(key):
+                result[key] = {
+                    "redacted": True,
+                    "reason": "diagnostic_trace",
+                    "sha256": sha256_value(raw_value),
+                }
+                continue
             if SENSITIVE_KEY_RE.search(key):
                 result[key] = {
                     "redacted": True,
@@ -68,6 +90,10 @@ def sanitize_for_durable(
         return result
 
     if isinstance(value, str):
+        value = SECRET_VALUE_RE.sub(
+            lambda match: "[REDACTED]",
+            value,
+        )
         encoded = value.encode("utf-8")
         if len(encoded) <= MAX_DURABLE_STRING_BYTES:
             return value
