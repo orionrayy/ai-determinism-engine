@@ -8,9 +8,16 @@ from unittest.mock import patch
 
 from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
 
-import importlib
+import importlib.util
 
-o = importlib.import_module("orchestrator.orchestrator")
+_CONTROL_PLANE_SPEC = importlib.util.spec_from_file_location(
+    "_control_plane_orchestrator",
+    Path(__file__).with_name("orchestrator.py"),
+)
+if _CONTROL_PLANE_SPEC is None or _CONTROL_PLANE_SPEC.loader is None:
+    raise RuntimeError("cannot load control-plane module for tests")
+o = importlib.util.module_from_spec(_CONTROL_PLANE_SPEC)
+_CONTROL_PLANE_SPEC.loader.exec_module(o)
 
 
 class OrchestratorTests(unittest.TestCase):
