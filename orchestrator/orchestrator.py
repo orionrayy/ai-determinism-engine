@@ -47,6 +47,7 @@ try:
         DEFAULT_MAX_BATCHES_PER_WORKFLOW,
         DEFAULT_MAX_TASKS_PER_WORKFLOW,
         FEDERATION_SLOTS,
+        MAX_TASKS_PER_BATCH,
         can_reserve as can_reserve_federation,
         federation_slot,
         refund as refund_federation_quota,
@@ -77,6 +78,7 @@ except ImportError:
         DEFAULT_MAX_BATCHES_PER_WORKFLOW,
         DEFAULT_MAX_TASKS_PER_WORKFLOW,
         FEDERATION_SLOTS,
+        MAX_TASKS_PER_BATCH,
         can_reserve as can_reserve_federation,
         federation_slot,
         refund as refund_federation_quota,
@@ -448,7 +450,7 @@ def delegate_ready_agents(
     limit = min(
         len(eligible),
         int(workflow.get("max_parallel") or DEFAULT_MAX_PARALLEL),
-        8,
+        MAX_TASKS_PER_BATCH,
     )
     selected = eligible[:limit]
     federation_id = new_id("fed")
