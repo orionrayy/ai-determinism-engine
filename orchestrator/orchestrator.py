@@ -321,10 +321,15 @@ def with_execution_lease(func):
     def wrapped(workflow: dict[str, Any], *args, **kwargs):
         acquired = False
         if execution_lease_required(workflow):
-            acquire_execution_lease(
+            lease = acquire_execution_lease(
                 workflow,
                 ttl_seconds=int(os.environ.get("ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS", "900")),
             )
+            budget = execution_budget(workflow)
+            remote_attempts = int(lease.get("attempts", budget["used_steps"]))
+            if remote_attempts > budget["max_steps"]:
+                raise ExecutionLeaseError("durable attempt ledger exceeds workflow budget")
+            budget["used_steps"] = remote_attempts
             acquired = True
             append_event("workflow.lease_acquired", {"workflow_id": workflow["id"]})
         try:
@@ -369,6 +374,7 @@ def reserve_execution_steps(
                     workflow,
                     count=len(ids),
                     max_attempts=max_attempts,
+                    ttl_seconds=int(os.environ.get("ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS", "900")),
                 )
             except ExecutionLeaseError as exc:
                 raise ExecutionBudgetExceeded(str(exc)) from exc
@@ -408,6 +414,7 @@ def reserve_execution_step(workflow: dict[str, Any], node_id: str) -> int:
                     workflow,
                     count=1,
                     max_attempts=budget["max_steps"],
+                    ttl_seconds=int(os.environ.get("ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS", "900")),
                 )
             except ExecutionLeaseError as exc:
                 raise ExecutionBudgetExceeded(str(exc)) from exc
