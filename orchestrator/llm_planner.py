@@ -12,6 +12,7 @@ try:
         discover_capabilities,
         validate_discovered_payload,
     )
+    from .http_safety import read_response_limited
 except ImportError:
     from agent_fabric import assign_role, role_instruction
     from connector_bridge import (
@@ -19,7 +20,10 @@ except ImportError:
         discover_capabilities,
         validate_discovered_payload,
     )
+    from http_safety import read_response_limited
 
+
+MAX_PLANNER_RESPONSE_BYTES = 512 * 1024
 
 def _post(url: str, payload: dict, api_key: str) -> dict:
     request = urllib.request.Request(
@@ -34,7 +38,12 @@ def _post(url: str, payload: dict, api_key: str) -> dict:
         method='POST',
     )
     with urllib.request.urlopen(request, timeout=90) as response:
-        return json.loads(response.read().decode('utf-8'))
+        raw = read_response_limited(
+            response,
+            MAX_PLANNER_RESPONSE_BYTES,
+            error_message="planner response exceeds 512 KiB safety limit",
+        )
+        return json.loads(raw.decode('utf-8'))
 
 
 def _object_from_text(text: str) -> dict:
