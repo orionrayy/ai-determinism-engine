@@ -30,6 +30,15 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Persisted node `retry_count`/`max_retries` are validated and bounded (`max_retries` <= 8) so corrupted state cannot create an unbounded retry loop.
 - Node status/risk/id/capability/dependency and runtime payload container types are validated during migration before recovery can execute them.
 
+## Executor activation + dependency boundary hardening v42
+
+- Fixed a regression in the two-phase parallel executor where the Phase 2 activation block was accidentally nested under the execution-budget exception path; successful budget admission now actually activates and executes the admitted batch.
+- A preflight replan now returns to the worker/continuation boundary instead of reusing the stale in-memory admission batch. The durable replanned plan is therefore revalidated before another execution batch is built.
+- DAG validation rejects malformed node runtime containers before intent serialization so invalid objects fail with an explicit contract error rather than an incidental attribute error.
+- Test fixtures now match the strict schema, exact approval-issue binding, sanitized connector-response contract, and current workflow schema.
+- The root dependency manifest is reserved for the stdlib control plane; legacy ML dependencies are isolated in `requirements-legacy.txt` so deployment/runtime environments do not inherit the unrelated ML stack.
+- Render is pinned to Python 3.12 to match the control-plane CI runtime.
+
 ## Approval trust-boundary hardening v40
 
 - Approval labels are now accepted only when the actor has `admin`, `maintain`, or `push` repository permission; `triage` is excluded even though it can manage issues/labels.
@@ -127,15 +136,15 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - A policy mismatch fails closed as `workflow.policy_drift`; the runner does not silently re-route a persisted plan or continue under changed side-effect/free-tier semantics.
 - Legacy workflows without a policy fingerprint initialize one on their first post-v27 resume before any node execution; subsequent resumes are protected by the fingerprint.
 - Explicit replanning refreshes both the route snapshot and policy fingerprint because the tool choice intentionally changes.
-- Historical note: at v27, the durable route/policy fields were introduced before the workflow schema advanced to v6 in this hardening line; the current workflow schema is v5 and the top-level state schema remains v4.
+- Historical note: at v27, the durable route/policy fields were introduced before the workflow schema advanced to v6 in this hardening line; the top-level state schema remains v4.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline for this branch: execution preflight + resume plan immutability v25, on top of approval intent binding v23 plus its v24 hotfix, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; live side effects require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
-Execution model: GitHub Actions + stdlib Python
-Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
-Current execution-fabric branch: `hardening/connector-intent-idempotency-v29` (draft; `main` remains the merge baseline)
+Main remains the production merge baseline at v26; the active hardening branch has advanced through v42. Always verify the current `main` ref before modifying.
+Execution model: GitHub Actions + stdlib Python control plane.
+Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow.
+Current execution-fabric branch: `hardening/connector-intent-idempotency-v29` (draft; main remains separate until the full hardening line is reviewed/merged).
 
 ## Architecture
 
