@@ -1,3 +1,12 @@
+
+## Orchestration hardening v41 — private structured input boundary
+- Live structured connector requests now use an optional private-input service rather than putting raw payloads into GitHub-backed workflow state.
+- The gateway stores raw structured payloads behind an HMAC-derived 64-hex reference. GitHub Actions carries only execution identity, intent fingerprint, input digest, idempotency key, and opaque reference.
+- The orchestrator bypasses the LLM planner for private structured live connector operations and pins the connector/action from the signed ingress metadata.
+- The connector worker fetches the private payload just-in-time, validates reference + digest + execution identity + intent fingerprint, executes the connector, then removes the payload from node memory before validation/persistence.
+- The private-input Worker is a minimal Cloudflare SQLite-backed Durable Object implementation. It is optional for dry-run and live unconfigured mode remains fail-closed.
+- Private-input POST is idempotent across retries even when a retried request receives a different expiry timestamp; idempotency is based on execution identity, intent fingerprint, input digest, and canonical payload.
+- No database, broker, paid API, or orchestration SaaS is required by the control plane. The Worker remains $0 only within current Cloudflare free quotas and is not claimed as deployed until its manual deployment workflow reports a successful authenticated health check.
 # ORCHESTRATION MEMORY — Canonical Control-Plane Context
 
 ## Purpose
@@ -8,7 +17,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v39 federation fairness/backpressure on top of v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v40 recovery routing + exact Actions run-attempt binding + federation fairness/backpressure on top of v39, v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
