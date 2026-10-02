@@ -1219,6 +1219,39 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["plan_integrity"], "verified")
         self.assertEqual(workflow["nodes"][0]["tool"], "noop")
 
+    def test_preflight_allows_explicit_webhook_url_without_env(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high",
+            input={"url": "https://example.test/hook", "approval_granted": True},
+        )
+        registry = {
+            "webhook": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_WEBHOOK_URL",
+                "side_effects": ["external_request"],
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_WEBHOOK_URL": "",
+        }, clear=False):
+            o.preflight_node(node, registry, live=True)
+
+    def test_terminal_workflow_resume_is_idempotent(self):
+        node = o.Node("n01", "execute", "noop", [], status="completed")
+        workflow = {
+            "id": "wf_terminal",
+            "goal": "already done",
+            "status": "completed",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with patch.object(o, "persist_workflow") as persist,              patch.object(o, "execute_node") as execute:
+            self.assertEqual(o.run_one_step(workflow), "completed")
+            o.run_workflow(workflow)
+        execute.assert_not_called()
+        persist.assert_not_called()
+
     def test_preflight_failure_happens_before_side_effect_barrier(self):
         node = o.Node(
             "n01-publish", "publish", "webhook", [], risk="high",
