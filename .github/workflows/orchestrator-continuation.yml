@@ -8,7 +8,6 @@ on:
 concurrency:
   group: orchestrator-continuation-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
   cancel-in-progress: false
-  queue: max
 
 permissions:
   contents: write
