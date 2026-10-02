@@ -13,6 +13,11 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Any
 
+try:
+    from .capability_graph import free_only_enabled
+except ImportError:
+    from capability_graph import free_only_enabled
+
 PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_PAYLOAD_BYTES = 64 * 1024
 MAX_DISCOVERY_BYTES = 48 * 1024
@@ -562,7 +567,7 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
         raise ConnectorReconciliationError(
             f"connector {node.input.get('connector')!r} does not advertise reconciliation"
         )
-    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true" and not bool(spec.get("free_tier", False)):
+    if free_only_enabled() and not bool(spec.get("free_tier", False)):
         raise ConnectorReconciliationError(
             f"connector {node.input.get('connector')!r} is disabled by ORCHESTRATOR_FREE_ONLY=true"
         )
