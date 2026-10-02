@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
+Current main baseline before this branch: orchestration hardening v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -139,6 +139,14 @@ Current execution-fabric branch: `main`
 - The generic stdlib HTTP adapter now enforces a 2 MiB response cap by default; Firecrawl is explicitly allowed 4 MiB because scraped output is a larger but still bounded payload.
 - Connector and artifact adapters retain their tighter, tool-specific bounds. No external dependency, database, queue, proxy, or paid service is added.
 
+## Orchestration hardening v59 — resource safety and durable diagnostics
+- Added orchestrator/http_safety.py, a stdlib bounded-response reader used across planner/research/bridge call sites to remove duplicated ad-hoc response reads.
+- The Gemini planner response is bounded to 512 KiB. Credential-free Wikipedia/Crossref/Arxiv responses are bounded to 512 KiB. Connector reconciliation retains the existing 128 KiB bound.
+- Durable serialization now treats trace, traceback, stack, and stack_trace fields as diagnostic material: only a deterministic hash and redaction marker are persisted.
+- Durable string sanitization also removes common bearer/API-key/password/secret credential patterns before persistence, while runtime exception objects remain available to the current process.
+- Execution callbacks now include Idempotency-Key: execution_id, making the existing three-attempt delivery loop explicitly compatible with idempotent receivers.
+- Regression tests cover bounded planner/research responses, the shared reader, durable trace redaction, secret-pattern removal, and callback idempotency headers.
+- No database, broker, proxy, paid service, or additional runtime dependency was introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
