@@ -901,25 +901,28 @@ def get_issue_labels(issue_number: int) -> set[str]:
 
 def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
     approval_event = os.environ.get("ORCHESTRATOR_APPROVAL_EVENT", "").lower() == "true"
+    approval_issue_raw = os.environ.get("ORCHESTRATOR_APPROVAL_ISSUE", "").strip()
+    approval_issue = int(approval_issue_raw) if approval_issue_raw.isdigit() else None
     for node in nodes:
         if node.status != "waiting_approval":
             continue
         issue_number = node.input.get("approval_issue")
         if not issue_number:
             continue
+        if approval_event and approval_issue != int(issue_number):
+            continue
+        if not approval_event:
+            append_event(
+                "approval.unverified_label",
+                {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "issue": issue_number,
+                },
+            )
+            continue
         labels = get_issue_labels(int(issue_number))
         if "orchestrator-rejected" in labels:
-            if not approval_event:
-                append_event(
-                    "approval.unverified_label",
-                    {
-                        "workflow_id": workflow["id"],
-                        "node_id": node.id,
-                        "issue": issue_number,
-                        "label": "orchestrator-rejected",
-                    },
-                )
-                continue
             node.input["approval_granted"] = False
             transition(node, "failed")
             node.error = {"type": "approval_rejected", "issue": issue_number}
@@ -930,16 +933,6 @@ def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
                 {"workflow_id": workflow["id"], "node_id": node.id, "issue": issue_number},
             )
         elif "orchestrator-approved" in labels:
-            if not approval_event:
-                append_event(
-                    "approval.unverified_label",
-                    {
-                        "workflow_id": workflow["id"],
-                        "node_id": node.id,
-                        "issue": issue_number,
-                    },
-                )
-                continue
             approved_fingerprint = str(node.input.get("approval_fingerprint") or "").strip()
             current_fingerprint = fingerprint_nodes([node])
             if not approved_fingerprint or approved_fingerprint != current_fingerprint:
