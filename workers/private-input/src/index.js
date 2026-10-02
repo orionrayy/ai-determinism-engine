@@ -147,9 +147,9 @@ function validateLeaseRequest(value, kind) {
   }
   const allowed = new Set(
     kind === "acquire"
-      ? ["subject", "owner_id", "ttl_seconds"]
+      ? ["subject", "owner_id", "ttl_seconds", "max_attempts", "initial_attempts"]
       : kind === "reserve"
-        ? ["subject", "owner_id", "count", "max_attempts"]
+        ? ["subject", "owner_id", "count", "max_attempts", "ttl_seconds"]
         : ["subject", "owner_id"],
   );
   for (const key of Object.keys(value)) {
@@ -167,6 +167,14 @@ function validateLeaseRequest(value, kind) {
         value.ttl_seconds > MAX_LEASE_TTL_SECONDS) {
       throw new Error("lease_ttl_invalid");
     }
+    if (!Number.isInteger(value.max_attempts) ||
+        value.max_attempts < 1 ||
+        value.max_attempts > 256 ||
+        !Number.isInteger(value.initial_attempts) ||
+        value.initial_attempts < 0 ||
+        value.initial_attempts > value.max_attempts) {
+      throw new Error("lease_attempt_budget_invalid");
+    }
   }
   if (kind === "reserve") {
     if (!Number.isInteger(value.count) || value.count < 1 || value.count > MAX_ATTEMPT_RESERVATION) {
@@ -174,6 +182,11 @@ function validateLeaseRequest(value, kind) {
     }
     if (!Number.isInteger(value.max_attempts) || value.max_attempts < 1 || value.max_attempts > 256) {
       throw new Error("lease_max_attempts_invalid");
+    }
+    if (!Number.isInteger(value.ttl_seconds) ||
+        value.ttl_seconds < MIN_LEASE_TTL_SECONDS ||
+        value.ttl_seconds > MAX_LEASE_TTL_SECONDS) {
+      throw new Error("lease_ttl_invalid");
     }
   }
 }
@@ -202,6 +215,8 @@ async function leaseRequest(request, env, kind) {
       value.owner_id,
       now,
       value.ttl_seconds,
+      value.max_attempts,
+      value.initial_attempts,
     );
     return response(result, result.conflict ? 409 : 200);
   }
@@ -212,6 +227,7 @@ async function leaseRequest(request, env, kind) {
       now,
       value.count,
       value.max_attempts,
+      value.ttl_seconds,
     );
     return response(result, result.ok ? 200 : 409);
   }
