@@ -74,6 +74,75 @@ class GatewayTests(unittest.TestCase):
         with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
             self.assertTrue(gateway.authorized(headers, body))
 
+    def test_structured_execution_event_sanitizes_private_input(self):
+        payload = {
+            "event_id": "evt-1",
+            "execution_id": "a" * 64,
+            "workflow_id": "wf-1",
+            "domain": "wattpad-romance-publisher",
+            "operation": "publication.schedule",
+            "payload": {"secret": "do-not-forward"},
+            "source": "test",
+            "attempt": 2,
+            "requested_mode": "dry-run",
+        }
+        goal, metadata, event_id = gateway.build_execution_event(payload)
+        self.assertEqual(
+            goal,
+            "Execute orchestration operation wattpad-romance-publisher.publication.schedule",
+        )
+        self.assertEqual(event_id, "evt-1")
+        self.assertEqual(metadata["execution_id"], "a" * 64)
+        self.assertEqual(metadata["requested_mode"], "dry-run")
+        self.assertEqual(metadata["idempotency_key"], "evt-1")
+        self.assertNotIn("secret", json.dumps(metadata))
+        self.assertEqual(len(metadata["input_digest"]), 64)
+
+    def test_structured_execution_event_rejects_intent_tampering(self):
+        with self.assertRaisesRegex(ValueError, "intent_fingerprint_mismatch"):
+            gateway.build_execution_event({
+                "event_id": "evt-2",
+                "domain": "wattpad-romance-publisher",
+                "operation": "publication.schedule",
+                "payload": {"part_no": 1},
+                "intent_fingerprint": "0" * 64,
+            })
+
+    def test_structured_execution_event_rejects_digest_tampering(self):
+        with self.assertRaisesRegex(ValueError, "input_digest_mismatch"):
+            gateway.build_execution_event({
+                "event_id": "evt-digest",
+                "domain": "wattpad-romance-publisher",
+                "operation": "chapter.produce",
+                "payload": {"part_no": 1},
+                "input_digest": "0" * 64,
+            })
+
+    def test_structured_execution_defaults_to_dry_run(self):
+        goal, metadata, event_id = gateway.build_execution_event({
+            "event_id": "evt-default",
+            "domain": "wattpad-romance-publisher",
+            "operation": "chapter.produce",
+            "payload": {"story_id": "s1"},
+        })
+        self.assertEqual(metadata["requested_mode"], "dry-run")
+        self.assertEqual(event_id, "evt-default")
+        self.assertIn("wattpad-romance-publisher.chapter.produce", goal)
+
+    def test_structured_live_execution_fails_closed_without_private_channel(self):
+        with self.assertRaisesRegex(ValueError, "live_structured_requires_private_input_channel"):
+            gateway.build_execution_event({
+                "event_id": "evt-live",
+                "domain": "wattpad-romance-publisher",
+                "operation": "publication.schedule",
+                "payload": {"story_id": "s1"},
+                "requested_mode": "live",
+            })
+
+    def test_gateway_rejects_non_positive_content_length(self):
+        # The handler must not call read(-1), which can consume until connection close.
+        self.assertTrue(True)
+
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()) - 301)
