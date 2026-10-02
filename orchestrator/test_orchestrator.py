@@ -116,6 +116,36 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
 
+    def test_free_only_blocks_unlisted_paid_gemini_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "free_models": ["gemini-3.8-flash"],
+                "required_env": "GEMINI_API_KEY",
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_MODEL": "gemini-3.8-pro",
+            "GEMINI_API_KEY": "key",
+        }, clear=False):
+            self.assertFalse(o.tool_available("gemini", registry))
+
+    def test_free_only_allows_verified_gemini_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "free_models": ["gemini-3.8-flash"],
+                "required_env": "GEMINI_API_KEY",
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_MODEL": "gemini-3.8-flash",
+            "GEMINI_API_KEY": "key",
+        }, clear=False):
+            self.assertTrue(o.tool_available("gemini", registry))
+
     def test_event_log_failure_does_not_break_execution(self):
         with patch.object(
             type(o.EVENT_FILE),
