@@ -1,10 +1,13 @@
 import { DurableObject } from "cloudflare:workers";
 
+const RETENTION_SECONDS = 7 * 24 * 60 * 60;
+
 const CREATE_SQL = `
   CREATE TABLE IF NOT EXISTS lease_state (
     subject TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL,
     lease_until INTEGER NOT NULL,
+    retention_until INTEGER NOT NULL,
     attempts INTEGER NOT NULL
   )
 `;
@@ -15,49 +18,69 @@ export class ExecutionLease extends DurableObject {
     this.ctx.storage.sql.exec(CREATE_SQL);
   }
 
-  async acquire(subject, ownerId, now, ttlSeconds) {
+  async acquire(subject, ownerId, now, ttlSeconds, maxAttempts, initialAttempts) {
     const row = this.ctx.storage.sql
       .exec(
-        "SELECT subject, owner_id, lease_until, attempts FROM lease_state WHERE subject = ?",
+        "SELECT subject, owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
         subject,
       )
       .toArray()[0];
+
+    const previousAttempts = row ? row.attempts : Math.max(0, initialAttempts || 0);
+    if (previousAttempts > maxAttempts) {
+      return {
+        ok: false,
+        budget_exhausted: true,
+        attempts: previousAttempts,
+        max_attempts: maxAttempts,
+      };
+    }
 
     if (row && row.lease_until > now && row.owner_id !== ownerId) {
       return {
         ok: false,
         conflict: true,
         lease_until: row.lease_until,
-        attempts: row.attempts,
+        attempts: previousAttempts,
       };
     }
 
-    const previousAttempts = row ? row.attempts : 0;
     const leaseUntil = now + ttlSeconds;
+    const retentionUntil = Math.max(
+      row ? row.retention_until : 0,
+      leaseUntil + RETENTION_SECONDS,
+      now + RETENTION_SECONDS,
+    );
+
     this.ctx.storage.sql.exec(
-      `INSERT INTO lease_state (subject, owner_id, lease_until, attempts)
-       VALUES (?, ?, ?, ?)
+      `INSERT INTO lease_state
+         (subject, owner_id, lease_until, retention_until, attempts)
+       VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(subject) DO UPDATE SET
          owner_id = excluded.owner_id,
          lease_until = excluded.lease_until,
+         retention_until = excluded.retention_until,
          attempts = excluded.attempts`,
       subject,
       ownerId,
       leaseUntil,
+      retentionUntil,
       previousAttempts,
     );
     await this.ctx.storage.setAlarm(leaseUntil * 1000);
+
     return {
       ok: true,
       lease_until: leaseUntil,
+      retention_until: retentionUntil,
       attempts: previousAttempts,
     };
   }
 
-  async reserve(subject, ownerId, now, count, maxAttempts) {
+  async reserve(subject, ownerId, now, count, maxAttempts, ttlSeconds) {
     const row = this.ctx.storage.sql
       .exec(
-        "SELECT subject, owner_id, lease_until, attempts FROM lease_state WHERE subject = ?",
+        "SELECT subject, owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
         subject,
       )
       .toArray()[0];
@@ -77,43 +100,92 @@ export class ExecutionLease extends DurableObject {
     }
 
     const next = current + count;
+    const leaseUntil = now + ttlSeconds;
+    const retentionUntil = Math.max(row.retention_until, leaseUntil + RETENTION_SECONDS);
     this.ctx.storage.sql.exec(
-      "UPDATE lease_state SET attempts = ? WHERE subject = ? AND owner_id = ?",
+      `UPDATE lease_state
+          SET attempts = ?, lease_until = ?, retention_until = ?
+        WHERE subject = ? AND owner_id = ? AND lease_until > ?`,
       next,
+      leaseUntil,
+      retentionUntil,
       subject,
       ownerId,
+      now,
     );
+    await this.ctx.storage.setAlarm(leaseUntil * 1000);
+
     return {
       ok: true,
       start_attempt: current + 1,
       used_attempts: next,
       max_attempts: maxAttempts,
+      lease_until: leaseUntil,
+      retention_until: retentionUntil,
     };
   }
 
-  async release(subject, ownerId) {
+  async release(subject, ownerId, now) {
     const row = this.ctx.storage.sql
       .exec(
-        "SELECT owner_id FROM lease_state WHERE subject = ?",
+        "SELECT owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
         subject,
       )
       .toArray()[0];
+
     if (!row || row.owner_id !== ownerId) {
       return { ok: true, released: false };
     }
+
+    const retentionUntil = Math.max(
+      row.retention_until,
+      now + RETENTION_SECONDS,
+    );
     this.ctx.storage.sql.exec(
-      "DELETE FROM lease_state WHERE subject = ? AND owner_id = ?",
+      `UPDATE lease_state
+          SET owner_id = '', lease_until = 0, retention_until = ?
+        WHERE subject = ? AND owner_id = ?`,
+      retentionUntil,
       subject,
       ownerId,
     );
-    await this.ctx.storage.deleteAlarm();
-    return { ok: true, released: true };
+    await this.ctx.storage.setAlarm(retentionUntil * 1000);
+    return {
+      ok: true,
+      released: true,
+      retention_until: retentionUntil,
+      attempts: row.attempts,
+    };
   }
 
   async alarm() {
+    const now = Math.floor(Date.now() / 1000);
+    const rows = this.ctx.storage.sql
+      .exec(
+        "SELECT owner_id, lease_until, retention_until, attempts FROM lease_state WHERE subject = ?",
+      )
+      .toArray();
+
+    if (!rows.length) return;
+
+    const row = rows[0];
+    if (row.lease_until > now) {
+      await this.ctx.storage.setAlarm(row.lease_until * 1000);
+      return;
+    }
+    if (row.retention_until > now) {
+      this.ctx.storage.sql.exec(
+        `UPDATE lease_state SET owner_id = '', lease_until = 0
+          WHERE subject = ?`,
+        this.ctx.id.toString(),
+      );
+      await this.ctx.storage.setAlarm(row.retention_until * 1000);
+      return;
+    }
+
     this.ctx.storage.sql.exec(
-      "DELETE FROM lease_state WHERE lease_until <= ?",
-      Math.floor(Date.now() / 1000),
+      "DELETE FROM lease_state WHERE subject = ?",
+      this.ctx.id.toString(),
     );
     await this.ctx.storage.deleteAlarm();
   }
