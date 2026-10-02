@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
+
 import orchestrator as o
 
 
@@ -775,6 +777,36 @@ class OrchestratorTests(unittest.TestCase):
             workflow = o.create_workflow("build a small website", live=False)
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
         self.assertEqual(workflow["status"], "planning")
+
+    def test_state_migration_is_idempotent(self):
+        source = {
+            "version": 2,
+            "workflows": {
+                "wf_1": {
+                    "id": "wf_1",
+                    "schema_version": 2,
+                    "nodes": [
+                        {"id": "n01", "capability": "execute", "tool": "noop"}
+                    ],
+                }
+            },
+        }
+        first = o.migrate_state(source)
+        snapshot = json.loads(json.dumps(first))
+        second = o.migrate_state(first)
+        self.assertEqual(second, snapshot)
+        self.assertEqual(second["version"], CURRENT_STATE_VERSION)
+        self.assertEqual(
+            second["workflows"]["wf_1"]["schema_version"],
+            CURRENT_WORKFLOW_SCHEMA_VERSION,
+        )
+
+    def test_future_state_version_fails_closed(self):
+        with self.assertRaises(o.StateSchemaError):
+            o.migrate_state({
+                "version": CURRENT_STATE_VERSION + 1,
+                "workflows": {},
+            })
 
     def test_duplicate_event_id_is_not_recreated(self):
         existing = {

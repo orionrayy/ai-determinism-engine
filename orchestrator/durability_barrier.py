@@ -53,10 +53,21 @@ def commit_side_effect_start(
         "user.email",
         "41898282+github-actions[bot]@users.noreply.github.com",
     )
-    _run_git(root, "fetch", "--no-tags", "origin", "main")
-
+    # Read the remote ref directly instead of fetching repository objects.
+    # The final force-with-lease still acts as the compare-and-swap fence, so a
+    # ref move between ls-remote and push remains fail-closed.
+    remote_result = _run_git(
+        root,
+        "ls-remote",
+        "--refs",
+        "origin",
+        "refs/heads/main",
+    )
+    remote_lines = remote_result.stdout.strip().splitlines()
+    if not remote_lines or not remote_lines[0].split()[0]:
+        raise DurabilityBarrierError("unable to read remote main ref")
+    remote = remote_lines[0].split()[0]
     current = _run_git(root, "rev-parse", "HEAD").stdout.strip()
-    remote = _run_git(root, "rev-parse", "origin/main").stdout.strip()
     if current != remote:
         raise DurabilityBarrierError(
             "main changed after checkout; refusing side-effect start until a fresh worker resumes"

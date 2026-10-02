@@ -1,0 +1,76 @@
+name: Orchestrator Approval Dispatcher
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: read
+
+jobs:
+  dispatch:
+    if: >-
+      startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]')
+      && (github.event.label.name == 'orchestrator-approved'
+          || github.event.label.name == 'orchestrator-rejected')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authorize approval actor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          permission="$(gh api "repos/$REPOSITORY/collaborators/$ACTOR/permission" --jq '.permission' 2>/dev/null || true)"
+          case "$permission" in
+            admin|maintain|push|triage) exit 0 ;;
+            *) echo "Actor lacks repository permission to approve orchestration"; exit 1 ;;
+          esac
+
+      - name: Resolve workflow identity
+        id: target
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          meta="${ISSUE_TITLE#"[ORCHESTRATOR APPROVAL] "}"
+          workflow_id="${meta%% / *}"
+          if [ -z "$workflow_id" ] || [ "$workflow_id" = "$meta" ]; then
+            echo "Approval issue does not contain a valid workflow identity"; exit 1
+          fi
+          echo "workflow_id=$workflow_id" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch exact workflow continuation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_ID: ${{ steps.target.outputs.workflow_id }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, subprocess
+          payload = json.dumps({
+              "event_type": "orchestrator.continue",
+              "client_payload": {
+                  "workflow_id": os.environ["WORKFLOW_ID"],
+                  "approval_issue": int(os.environ["ISSUE_NUMBER"]),
+              },
+          })
+          subprocess.run(
+              [
+                  "gh",
+                  "api",
+                  f"repos/{os.environ['GITHUB_REPOSITORY']}/dispatches",
+                  "--input",
+                  "-",
+              ],
+              input=payload,
+              text=True,
+              check=True,
+          )
+          PY

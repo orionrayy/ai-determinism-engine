@@ -10,14 +10,19 @@ class ActionsConfigTests(unittest.TestCase):
     def setUpClass(cls):
         cls.orchestrator = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
+        cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
 
-    def test_approval_labels_trigger_worker(self):
-        self.assertIn('types: [opened, edited, labeled]', self.orchestrator)
-        self.assertIn('orchestrator-approved|orchestrator-rejected', self.orchestrator)
-        self.assertIn('Authorize approval actor', self.orchestrator)
-        self.assertIn('github.actor', self.orchestrator)
+    def test_approval_labels_use_dedicated_dispatcher(self):
+        self.assertIn('types: [labeled]', self.approval)
+        self.assertIn('orchestrator-approved', self.approval)
+        self.assertIn('orchestrator-rejected', self.approval)
+        self.assertIn('Authorize approval actor', self.approval)
+        self.assertIn('workflow_id', self.approval)
+        self.assertIn('orchestrator.continue', self.approval)
+        self.assertNotIn('Authorize approval actor', self.orchestrator)
+
 
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
@@ -34,6 +39,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("github.run_id", self.orchestrator)
         self.assertIn("queue: max", self.orchestrator)
         self.assertIn("cancel-in-progress: false", self.orchestrator)
+
+    def test_continuation_carries_exact_workflow_identity(self):
+        self.assertIn("WORKFLOW_ID", self.continuation)
+        self.assertIn("'workflow_id':os.environ['WORKFLOW_ID']", self.continuation)
+        self.assertIn("github.event.client_payload.workflow_id", self.orchestrator)
+
 
     def test_workflow_target_is_preferred_for_approval(self):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)

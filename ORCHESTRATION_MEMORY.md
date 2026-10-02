@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v28 on top of secure structured live boundary v26, execution-envelope ingress v25, approval intent binding v23/v24, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; cross-service requests carry execution identity, intent fingerprint, input digest, attempt, and requested mode; structured live requests fail closed until a private input channel exists.
+Current main baseline: orchestration hardening v31 on top of v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -202,6 +202,16 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `AI Orchestrator` concurrency is scoped by workflow identity when available, so independent workflows no longer serialize behind one global lock.
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
+
+## Orchestration hardening v31
+
+Audit cross-check outcomes:
+- The reported execution-ledger thread race was not confirmed: the thread pool mutates distinct `Node` objects and does not write `workflow["executions"]`; side effects are explicitly serialized. DAG validation also rejects duplicate node IDs, preventing duplicate execution keys within a valid plan.
+- `max_attempts` is already centralized in `state_schema.py`; `orchestrator.py` retains compatibility aliases rather than an independent configuration source.
+- State migration intentionally fails closed on unsupported future versions rather than performing an unsafe downgrade. Migration is deterministic and now covered by idempotence/future-version tests.
+- A real cross-trigger race was identified: approval issue runs used the approval-issue number while continuation runs used workflow ID. Approval handling is now isolated in `.github/workflows/orchestrator-approval.yml`, which validates the actor and dispatches the exact `workflow_id`; the main worker therefore uses one canonical concurrency key for all resumptions.
+- The durability barrier still uses a Git commit/push as the hard pre-side-effect fence; it was not replaced by an asynchronous WAL because an async-only local log would weaken crash durability. The remote check is optimized from full `git fetch` to `git ls-remote`, while the final `--force-with-lease` remains the CAS fence.
+- Per-node state persistence remains intentionally synchronous for side effects because `started` must reach durable storage before an external effect. Safe parallel nodes are persisted as a batch after execution, avoiding per-thread state writes.
 
 ## Orchestration hardening v29
 
