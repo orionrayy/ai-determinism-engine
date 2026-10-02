@@ -121,6 +121,24 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
 
+    def test_free_only_rejects_unlisted_gemini_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+                "required_env": "GEMINI_API_KEY",
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_MODEL": "gemini-3.8-pro",
+            "GEMINI_API_KEY": "key",
+        }, clear=False):
+            self.assertFalse(o.tool_available("gemini", registry))
+            self.assertFalse(o.tool_available("gemini", registry, model="gemini-3.8-pro"))
+            self.assertTrue(o.tool_available("gemini", registry, model="gemini-3.8-flash"))
+
     def test_atomic_json_write_replaces_existing_file_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
