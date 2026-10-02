@@ -343,7 +343,6 @@ def enforce_node_policy(
     live: bool = False,
 ) -> None:
     for node in nodes:
-        assign_role(node)
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
             raise ValueError(f"unregistered tool for {node.id}: {node.tool}")
         floor = required_risk(node, registry)
@@ -359,6 +358,7 @@ def enforce_node_policy(
             floor = required_risk(node, registry)
             if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
                 node.risk = floor
+        assign_role(node)
 
 def load_registry() -> dict[str, dict[str, Any]]:
     if REGISTRY_FILE.exists():
