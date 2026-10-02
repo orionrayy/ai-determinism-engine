@@ -250,6 +250,23 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
         return {"github_status": response.status}
 
 
+def dispatch_execution(goal: str, metadata: dict, event_id: str | None = None) -> dict:
+    try:
+        return github_dispatch(goal, metadata, event_id=event_id)
+    except Exception:
+        private_ref = str(metadata.get("private_input_ref") or "").strip()
+        if private_ref:
+            try:
+                delete_private_input(private_ref)
+            except Exception as cleanup_exc:
+                print(
+                    "private input cleanup unavailable after dispatch failure",
+                    type(cleanup_exc).__name__,
+                    flush=True,
+                )
+        raise
+
+
 def normalized_headers(headers: dict[str, str]) -> dict[str, str]:
     return {
         str(key).lower(): str(value).strip()
@@ -364,20 +381,7 @@ class Handler(BaseHTTPRequestHandler):
                     or None
                 )
 
-            try:
-                result = github_dispatch(goal, metadata, event_id=event_id)
-            except Exception:
-                private_ref = str(metadata.get("private_input_ref") or "").strip()
-                if private_ref:
-                    try:
-                        delete_private_input(private_ref)
-                    except Exception as cleanup_exc:
-                        print(
-                            "private input cleanup unavailable after dispatch failure",
-                            type(cleanup_exc).__name__,
-                            flush=True,
-                        )
-                raise
+            result = dispatch_execution(goal, metadata, event_id=event_id)
             receipt = {"ok": True, "queued": True, **result}
             for field in (
                 "request_id",
