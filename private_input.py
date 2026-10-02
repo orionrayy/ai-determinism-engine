@@ -127,7 +127,7 @@ def _signed_headers(
     return {
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "ai-orchestrator-private-input/1.0",
+        "User-Agent": "ai-orchestrator-private-input/2.0",
         "X-Orchestrator-Protocol": PROTOCOL,
         "X-Orchestrator-Timestamp": str(timestamp),
         "X-Orchestrator-Signature": "sha256=" + signature,
