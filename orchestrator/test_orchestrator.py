@@ -1101,6 +1101,39 @@ class OrchestratorTests(unittest.TestCase):
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
         self.assertEqual(workflow["status"], "planning")
 
+    def test_duplicate_event_rejects_intent_fingerprint_conflict(self):
+        workflow = {
+            "id": "wf-existing",
+            "execution_id": "a" * 64,
+            "intent_fingerprint": "b" * 64,
+            "input_digest": "c" * 64,
+            "idempotency_key": "evt-1",
+        }
+        with self.assertRaises(SystemExit):
+            o.validate_event_replay_identity(
+                workflow,
+                execution_id="a" * 64,
+                intent_fingerprint="d" * 64,
+                input_digest="c" * 64,
+                idempotency_key="evt-1",
+            )
+
+    def test_duplicate_event_with_matching_identity_is_replay_safe(self):
+        workflow = {
+            "id": "wf-existing",
+            "execution_id": "a" * 64,
+            "intent_fingerprint": "b" * 64,
+            "input_digest": "c" * 64,
+            "idempotency_key": "evt-1",
+        }
+        o.validate_event_replay_identity(
+            workflow,
+            execution_id="a" * 64,
+            intent_fingerprint="b" * 64,
+            input_digest="c" * 64,
+            idempotency_key="evt-1",
+        )
+
     def test_duplicate_event_id_is_not_recreated(self):
         existing = {
             "id": "wf_existing",
