@@ -197,6 +197,12 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - The approving GitHub actor and approval timestamp are persisted as audit metadata.
 - `approval_fingerprint` is excluded from the plan fingerprint as runtime approval metadata; changing the actual tool/action/payload still changes the plan fingerprint and fails the existing plan-integrity check.
 
+## Orchestration hardening v29
+
+- The `Persist state` workflow step now treats the final state commit as an optimistic-concurrency update: push to `main`, fetch/rebase if `main` advanced, retry at most three times, and fail closed on merge conflicts.
+- This recovery is intentionally limited to Git-backed state persistence; it never force-pushes or overwrites a concurrent `main` history.
+- The state commit path remains zero-dollar and requires no external database or queue.
+
 ## Orchestration hardening v28
 
 - Audit events are bounded to 16 KiB payloads and are written with flush/fsync before the worker proceeds.
