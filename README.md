@@ -61,6 +61,12 @@ The gateway HMAC covers timestamp, HTTP method, request path, optional `Idempote
 
 The orchestrator persists a newly created workflow before its first execution step and no longer writes a stale caller snapshot after execution. Continuations carry the exact GitHub Actions run ID and run attempt into the dispatch step, and source Issue triggers explicitly bind the Issue action event.
 
+## v46 Reliability Hardening
+
+The gateway HMAC covers timestamp, HTTP method, request path, optional `Idempotency-Key`, and the raw body, with case-insensitive header lookup. Unkeyed unstructured events receive a deterministic event identity that is propagated as `workflow_id` for replay serialization.
+
+New workflows are durably persisted before their first execution step. Execution paths no longer perform stale final `save_state()` writes after `persist_workflow()`, preventing one workflow worker from clobbering unrelated state loaded earlier in the process. Source Issue triggers explicitly bind the GitHub Issue action, and continuation dispatch exports the exact `workflow_run.id` and `run_attempt` used by its event identity.
+
 ## Gateway
 
 Set these environment variables on the gateway service:
