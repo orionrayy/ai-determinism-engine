@@ -13,6 +13,11 @@ on:
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
       - "test_gateway.py"
+      - "private_input.py"
+      - "test_private_input.py"
+      - "contracts/private-input.schema.json"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-deploy.yml"
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/actionlint.yaml"
       - ".github/workflows/orchestrator-agent-federation.yml"
@@ -28,6 +33,11 @@ on:
       - ".orchestrator/state.json"
   pull_request:
     paths:
+      - "private_input.py"
+      - "test_private_input.py"
+      - "contracts/private-input.schema.json"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-deploy.yml"
       - ".github/actionlint.yaml"
       - "orchestrator/**"
       - ".github/workflows/bridge-deploy.yml"
@@ -70,3 +80,13 @@ jobs:
 
       - name: Unit tests
         run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config -v
+      - name: Validate private-input Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check workers/private-input/src/index.js
+          node --check workers/private-input/src/private_input_object.js
+          printf 'ORCHESTRATOR_PRIVATE_INPUT_SECRET=ci-test-secret
+' > workers/private-input/.dev.vars
+          trap 'rm -f workers/private-input/.dev.vars' EXIT
+          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --dry-run
