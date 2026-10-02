@@ -19,6 +19,8 @@ on:
       - ".github/workflows/orchestrator-continuation.yml"
       - ".github/workflows/orchestrator.yml"
       - ".github/workflows/bridge-deploy.yml"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-deploy.yml"
   pull_request:
     paths:
       - "orchestrator/**"
@@ -27,6 +29,8 @@ on:
       - "test_gateway.py"
       - "ORCHESTRATION_MEMORY.md"
       - ".github/workflows/orchestrator-tests.yml"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-deploy.yml"
   workflow_dispatch:
 
 permissions:
@@ -62,4 +66,4 @@ jobs:
         with:
           node-version: "24"
       - name: Unit tests
-run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
+        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
