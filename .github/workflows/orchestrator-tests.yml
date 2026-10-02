@@ -73,3 +73,12 @@ jobs:
           node-version: "24"
       - name: Unit tests
         run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
+      - name: Validate private-input Worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check workers/private-input/src/index.js
+          node --check workers/private-input/src/private_input_object.js
+          printf 'ORCHESTRATOR_PRIVATE_INPUT_SECRET=ci-test-secret\n' > workers/private-input/.dev.vars
+          trap 'rm -f workers/private-input/.dev.vars' EXIT
+          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --dry-run
