@@ -1184,18 +1184,27 @@ MAX_ARTIFACT_RESPONSE_BYTES = 256 * 1024
 
 
 def _validated_public_https_target(url: str) -> tuple[str, int, str]:
-    parsed = urllib.parse.urlsplit(str(url).strip())
+    raw = str(url).strip()
+    if not raw or any(char in raw for char in "\r\n"):
+        raise RuntimeError("artifact URL is invalid")
+    parsed = urllib.parse.urlsplit(raw)
     if parsed.scheme.lower() != "https":
         raise RuntimeError("artifact URL must use HTTPS")
     if parsed.username is not None or parsed.password is not None:
         raise RuntimeError("artifact URL must not contain embedded credentials")
     if parsed.fragment:
         raise RuntimeError("artifact URL must not contain a fragment")
-    if parsed.port not in (None, 443):
+    try:
+        parsed_port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError("artifact URL port is invalid") from exc
+    if parsed_port not in (None, 443):
         raise RuntimeError("artifact URL must use port 443")
     host = parsed.hostname
     if not host:
         raise RuntimeError("artifact URL hostname is required")
+    if "\\" in host:
+        raise RuntimeError("artifact URL hostname is invalid")
     try:
         ascii_host = host.encode("idna").decode("ascii").lower()
     except UnicodeError as exc:
@@ -1212,13 +1221,16 @@ def _validated_public_https_target(url: str) -> tuple[str, int, str]:
         normalized = literal.ipv4_mapped if getattr(literal, "ipv4_mapped", None) else literal
         if not normalized.is_global:
             raise RuntimeError("artifact URL resolves to a non-public IP")
-        connect_host = ascii_host
-    else:
-        connect_host = ascii_host
-    path = parsed.path or "/"
-    if parsed.query:
-        path += "?" + parsed.query
-    return connect_host, 443, path
+    encoded_path = urllib.parse.quote(
+        parsed.path or "/",
+        safe="/%:@-._~!$&'()*+,;=",
+    )
+    encoded_query = urllib.parse.quote(
+        parsed.query,
+        safe="=&%:@-._~!$'()*+,;/?",
+    )
+    request_target = encoded_path + (("?" + encoded_query) if parsed.query else "")
+    return ascii_host, 443, request_target
 
 
 def safe_public_https_json(
@@ -1255,15 +1267,13 @@ def safe_public_https_json(
         tls = context.wrap_socket(sock, server_hostname=host)
         host_header = f"[{host}]" if ":" in host and not host.startswith("[") else host
         request = (
-            f"GET {request_target} HTTP/1.1\\r\\n"
-            f"Host: {host_header}\\r\\n"
-            "Accept: application/json\\r\\n"
-            "User-Agent: ai-orchestrator-artifact-verifier/1.0\\r\\n"
-            "Connection: close\\r\\n"
-            "\\r\\n"
+            f"GET {request_target} HTTP/1.1\r\n"
+            f"Host: {host_header}\r\n"
+            "Accept: application/json\r\n"
+            "User-Agent: ai-orchestrator-artifact-verifier/1.0\r\n"
+            "Connection: close\r\n"
+            "\r\n"
         )
-        if "\\r" in request_target or "\\n" in request_target:
-            raise RuntimeError("artifact URL contains invalid control characters")
         tls.sendall(request.encode("ascii", "strict"))
         connection = http.client.HTTPResponse(tls)
         connection.begin()
