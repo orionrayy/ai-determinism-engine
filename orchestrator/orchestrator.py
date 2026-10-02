@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import hmac
 import json
 import os
 import tempfile
@@ -11,6 +12,7 @@ import time
 import traceback
 import urllib.error
 import urllib.parse
+import re
 import urllib.request
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
@@ -18,7 +20,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .capability_graph import load_health, record_tool_result, route_capability, save_health
+    from .capability_graph import (
+        QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
+    )
     from .connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -28,11 +32,15 @@ try:
     from .evidence import build_evidence
     from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from .plan_integrity import fingerprint_nodes
-    from .state_schema import StateSchemaError, migrate_state
+    from .policy_integrity import build_policy_snapshot, fingerprint_policy
+    from .state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .private_input import PrivateInputError, fetch_private_input
 except ImportError:
-    from capability_graph import load_health, record_tool_result, route_capability, save_health
+    from capability_graph import (
+        QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
+    )
     from connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -42,9 +50,11 @@ except ImportError:
     from evidence import build_evidence
     from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from plan_integrity import fingerprint_nodes
-    from state_schema import StateSchemaError, migrate_state
+    from policy_integrity import build_policy_snapshot, fingerprint_policy
+    from state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from private_input import PrivateInputError, fetch_private_input
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -56,11 +66,25 @@ REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 MAX_NODES = 24
 MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
+DEFAULT_MAX_EXECUTION_STEPS = 96
+MAX_MAX_EXECUTION_STEPS = 256
+RUNNING_RECOVERY_GRACE_SECONDS = 300
 MAX_CONTEXT_BYTES = 48 * 1024
+MAX_GOAL_CHARS = 4000
+MAX_NODE_INTENT_BYTES = 32 * 1024
+MAX_NODE_STATE_BYTES = 128 * 1024
+MAX_ARTIFACTS_PER_NODE = 32
+MAX_NODE_RETRIES = 8
+RISK_LEVELS = {"low", "medium", "high", "critical"}
+NODE_STATUSES = {
+    "pending", "ready", "running", "validating", "waiting_approval",
+    "retrying", "replanning", "reconciling", "completed", "failed", "cancelled",
+}
+SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
-    "ready": {"running", "waiting_approval", "cancelled"},
+    "ready": {"running", "waiting_approval", "cancelled", "failed"},
     "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled", "ready"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
@@ -86,6 +110,15 @@ class Node:
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
     contract: dict[str, Any] = field(default_factory=dict)
+
+def normalize_goal(goal: Any) -> str:
+    value = str(goal or "").strip()
+    if not value:
+        raise ValueError("goal is required")
+    if len(value) > MAX_GOAL_CHARS:
+        raise ValueError(f"goal exceeds {MAX_GOAL_CHARS} characters")
+    return value
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -119,10 +152,15 @@ def write_json(path: Path, value: Any) -> None:
             tmp_path.unlink()
 
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
-    EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    entry = {"ts": utc_now(), "event_type": event_type, "payload": payload}
-    with EVENT_FILE.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    """Best-effort observability; event-log failure must not break durable state."""
+    try:
+        EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        entry = {"ts": utc_now(), "event_type": event_type, "payload": payload}
+        with EVENT_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            handle.flush()
+    except (OSError, TypeError, ValueError):
+        return
 
 def execution_key(workflow: dict[str, Any], node: Node) -> str:
     raw = f"{workflow['id']}:{node.id}"
@@ -185,7 +223,7 @@ def mark_execution_not_applied(
 
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
-        return migrate_state({"version": 3, "workflows": {}, "last_workflow_id": None})
+        return migrate_state({"version": 4, "workflows": {}, "last_workflow_id": None})
     try:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         return migrate_state(raw)
@@ -200,10 +238,135 @@ def save_state(state: dict[str, Any]) -> None:
 
 def persist_workflow(workflow: dict[str, Any]) -> None:
     state = load_state()
+    current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
+    current_run_attempt_raw = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
+    current_run_attempt = (
+        int(current_run_attempt_raw) if current_run_attempt_raw.isdigit() else None
+    )
+    if current_run_id:
+        previous_run_id = str(workflow.get("github_run_id") or "").strip() or None
+        previous_run_attempt = workflow.get("github_run_attempt")
+        origin_run_id = (
+            str(workflow.get("origin_github_run_id") or "").strip()
+            or previous_run_id
+            or current_run_id
+        )
+        origin_run_attempt = workflow.get("origin_github_run_attempt")
+        if origin_run_attempt is None:
+            origin_run_attempt = (
+                previous_run_attempt
+                if previous_run_attempt is not None
+                else current_run_attempt
+            )
+        workflow["origin_github_run_id"] = origin_run_id
+        workflow["origin_github_run_attempt"] = origin_run_attempt
+        workflow["github_run_id"] = current_run_id
+        workflow["github_run_attempt"] = current_run_attempt
+        if (
+            previous_run_id != current_run_id
+            or previous_run_attempt != current_run_attempt
+        ):
+            append_event("workflow.worker_run_rebound", {
+                "workflow_id": workflow["id"],
+                "previous_run_id": previous_run_id,
+                "previous_run_attempt": previous_run_attempt,
+                "current_run_id": current_run_id,
+                "current_run_attempt": current_run_attempt,
+                "origin_run_id": origin_run_id,
+                "origin_run_attempt": origin_run_attempt,
+            })
     workflow["updated_at"] = utc_now()
     state.setdefault("workflows", {})[workflow["id"]] = workflow
     state["last_workflow_id"] = workflow["id"]
     save_state(state)
+
+class ExecutionBudgetExceeded(RuntimeError):
+    pass
+
+
+def configured_max_execution_steps() -> int:
+    raw = os.environ.get("ORCHESTRATOR_MAX_EXECUTION_STEPS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_EXECUTION_STEPS
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("ORCHESTRATOR_MAX_EXECUTION_STEPS must be an integer") from exc
+    if value < 1 or value > MAX_MAX_EXECUTION_STEPS:
+        raise ValueError(
+            f"ORCHESTRATOR_MAX_EXECUTION_STEPS must be between 1 and {MAX_MAX_EXECUTION_STEPS}"
+        )
+    return value
+
+
+def execution_budget(workflow: dict[str, Any]) -> dict[str, Any]:
+    budget = workflow.setdefault("execution_budget", {})
+    try:
+        maximum = int(budget.get("max_steps", DEFAULT_MAX_EXECUTION_STEPS))
+    except (TypeError, ValueError):
+        maximum = DEFAULT_MAX_EXECUTION_STEPS
+    try:
+        used = int(budget.get("used_steps", 0))
+    except (TypeError, ValueError):
+        used = 0
+    budget["max_steps"] = max(1, min(maximum, MAX_MAX_EXECUTION_STEPS))
+    budget["used_steps"] = max(0, min(used, MAX_MAX_EXECUTION_STEPS))
+    return budget
+
+
+def reserve_execution_steps(
+    workflow: dict[str, Any],
+    node_ids: list[str],
+) -> dict[str, int]:
+    """Atomically admit a batch against the remaining durable execution budget."""
+    ids = [str(node_id) for node_id in node_ids]
+    if not ids:
+        return {}
+    budget = execution_budget(workflow)
+    available = budget["max_steps"] - budget["used_steps"]
+    if len(ids) > available:
+        raise ExecutionBudgetExceeded(
+            f"execution step budget cannot admit batch ({len(ids)} requested, {available} available)"
+        )
+    start = budget["used_steps"]
+    reservations = {
+        node_id: start + offset
+        for offset, node_id in enumerate(ids, start=1)
+    }
+    budget["used_steps"] = start + len(ids)
+    budget["last_node_id"] = ids[-1]
+    budget["last_reserved_at"] = utc_now()
+    for node_id, used in reservations.items():
+        try:
+            append_event("workflow.budget_step_reserved", {
+                "workflow_id": workflow["id"],
+                "node_id": node_id,
+                "used_steps": used,
+                "max_steps": budget["max_steps"],
+                "batch": True,
+            })
+        except OSError:
+            pass
+    return reservations
+
+
+def reserve_execution_step(workflow: dict[str, Any], node_id: str) -> int:
+    budget = execution_budget(workflow)
+    if budget["used_steps"] >= budget["max_steps"]:
+        raise ExecutionBudgetExceeded(
+            f"execution step budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
+        )
+    budget["used_steps"] += 1
+    budget["last_node_id"] = str(node_id)
+    budget["last_reserved_at"] = utc_now()
+    append_event("workflow.budget_step_reserved", {
+        "workflow_id": workflow["id"],
+        "node_id": str(node_id),
+        "used_steps": budget["used_steps"],
+        "max_steps": budget["max_steps"],
+    })
+    return budget["used_steps"]
+
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{int(time.time() * 1000)}"
@@ -235,6 +398,8 @@ def enforce_node_policy(
     nodes: list[Node],
     registry: dict[str, dict[str, Any]],
     live: bool = False,
+    *,
+    route: bool = True,
 ) -> None:
     for node in nodes:
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
@@ -242,7 +407,11 @@ def enforce_node_policy(
         floor = required_risk(node, registry)
         if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
             node.risk = floor
-        if registry.get(f"capability:{node.capability}"):
+        if (
+            route
+            and registry.get(f"capability:{node.capability}")
+            and not node.input.get("tool_selection_pinned")
+        ):
             node.tool = route_tool(
                 node.capability,
                 registry,
@@ -322,6 +491,47 @@ def route_tool(
     )
 
 
+def preflight_node(
+    node: Node,
+    registry: dict[str, dict[str, Any]],
+    *,
+    live: bool,
+) -> None:
+    """Validate local execution prerequisites before crossing any side-effect barrier."""
+    if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
+        raise RuntimeError(f"tool {node.tool} is not registered")
+    if not live:
+        return
+
+    spec = registry.get(node.tool, {})
+    is_free = bool(spec.get("free_tier", False))
+    if not spec and node.tool in BUILTIN_FREE_TOOLS:
+        is_free = True
+    if free_only() and not is_free:
+        raise RuntimeError(f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true")
+
+    env_name = spec.get("required_env")
+    if env_name and not os.environ.get(env_name):
+        if not (node.tool == "webhook" and node.input.get("url")):
+            raise RuntimeError(f"{env_name} is required for tool {node.tool}")
+    secret_env = spec.get("secret_env")
+    if secret_env and not os.environ.get(secret_env):
+        raise RuntimeError(f"{secret_env} is required for tool {node.tool}")
+
+    health = load_tool_health()
+    if effective_health(health, node.tool) == QUARANTINED:
+        raise RuntimeError(f"tool {node.tool} is quarantined by the capability health policy")
+
+    if node.tool == "webhook":
+        url = str(node.input.get("url") or os.environ.get("ORCHESTRATOR_WEBHOOK_URL") or "").strip()
+        if urllib.parse.urlparse(url).scheme != "https":
+            raise RuntimeError("webhook execution requires an HTTPS URL")
+    if node.tool == "connector_bridge":
+        url = str(os.environ.get("ORCHESTRATOR_CONNECTOR_BRIDGE_URL") or "").strip()
+        if urllib.parse.urlparse(url).scheme != "https":
+            raise RuntimeError("connector bridge execution requires an HTTPS URL")
+
+
 def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
     if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
@@ -394,7 +604,27 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
         previous = [node.id]
     return nodes
 
+def _node_intent_input(input_value: dict[str, Any]) -> dict[str, Any]:
+    volatile = {
+        "workflow_id",
+        "context",
+        "repair_feedback",
+        "approval_issue",
+        "approval_granted",
+        "approval_fingerprint",
+        "approval_actor",
+        "approval_approved_at",
+    }
+    return {
+        key: value
+        for key, value in input_value.items()
+        if key not in volatile
+    }
+
+
 def validate_dag(nodes: list[Node]) -> None:
+    if not isinstance(nodes, list):
+        raise ValueError("nodes must be an array")
     if not nodes or len(nodes) > MAX_NODES:
         raise ValueError(f"invalid node count: {len(nodes)}")
     ids = {node.id for node in nodes}
@@ -402,6 +632,57 @@ def validate_dag(nodes: list[Node]) -> None:
         raise ValueError("duplicate node id")
     by_id = {node.id: node for node in nodes}
     for node in nodes:
+        for field_name in ("input", "output", "error", "contract"):
+            if not isinstance(getattr(node, field_name), dict):
+                raise ValueError(f"node {node.id} {field_name} must be an object")
+        intent_serialized = json.dumps(
+            {
+                "id": node.id,
+                "capability": node.capability,
+                "tool": node.tool,
+                "depends_on": list(node.depends_on),
+                "risk": node.risk,
+                "input": _node_intent_input(node.input),
+                "contract": node.contract,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+        if node.risk not in RISK_LEVELS:
+            raise ValueError(f"node {node.id} has invalid risk")
+        if node.status not in NODE_STATUSES:
+            raise ValueError(f"node {node.id} has invalid status")
+        if node.retry_count < 0 or node.max_retries < 0:
+            raise ValueError(f"node {node.id} has negative retry fields")
+        if node.max_retries > MAX_NODE_RETRIES or node.retry_count > node.max_retries:
+            raise ValueError(f"node {node.id} exceeds retry bounds")
+        if len(intent_serialized.encode("utf-8")) > MAX_NODE_INTENT_BYTES:
+            raise ValueError(
+                f"node {node.id} intent exceeds {MAX_NODE_INTENT_BYTES} bytes"
+            )
+        state_serialized = json.dumps(
+            asdict(node),
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+        if len(state_serialized.encode("utf-8")) > MAX_NODE_STATE_BYTES:
+            raise ValueError(
+                f"node {node.id} runtime state exceeds {MAX_NODE_STATE_BYTES} bytes"
+            )
+        if len(node.input.get("artifacts", [])) > MAX_ARTIFACTS_PER_NODE:
+            raise ValueError(
+                f"node {node.id} exceeds {MAX_ARTIFACTS_PER_NODE} artifacts"
+            )
+        if not SAFE_ID_RE.fullmatch(str(node.id or "")):
+            raise ValueError(f"unsafe node id: {node.id!r}")
+        if not SAFE_ID_RE.fullmatch(str(node.capability or "")):
+            raise ValueError(f"unsafe capability name: {node.capability!r}")
+        if not SAFE_ID_RE.fullmatch(str(node.tool or "")):
+            raise ValueError(f"unsafe tool name: {node.tool!r}")
         if node.tool not in {"noop"} and node.tool == "":
             raise ValueError(f"empty tool for {node.id}")
         for dependency in node.depends_on:
@@ -715,11 +996,26 @@ def get_issue_labels(issue_number: int) -> set[str]:
     return {str(label.get("name")) for label in labels if isinstance(label, dict)}
 
 def refresh_approvals(workflow: dict[str, Any], nodes: list[Node]) -> None:
+    approval_event = os.environ.get("ORCHESTRATOR_APPROVAL_EVENT", "").lower() == "true"
+    approval_issue_raw = os.environ.get("ORCHESTRATOR_APPROVAL_ISSUE", "").strip()
+    approval_issue = int(approval_issue_raw) if approval_issue_raw.isdigit() else None
     for node in nodes:
         if node.status != "waiting_approval":
             continue
         issue_number = node.input.get("approval_issue")
         if not issue_number:
+            continue
+        if approval_event and approval_issue != int(issue_number):
+            continue
+        if not approval_event:
+            append_event(
+                "approval.unverified_label",
+                {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "issue": issue_number,
+                },
+            )
             continue
         labels = get_issue_labels(int(issue_number))
         if "orchestrator-rejected" in labels:
@@ -1086,7 +1382,63 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         if not ok:
             raise RuntimeError("semantic validation failed")
 
-    return {"passed": True, "checks": checks, "checked_at": utc_now()}
+    postconditions = contract.get("postconditions", [])
+    if postconditions:
+        if not isinstance(postconditions, list):
+            raise RuntimeError("contract.postconditions must be an array")
+        for index, condition in enumerate(postconditions):
+            if not isinstance(condition, dict):
+                raise RuntimeError(f"contract.postconditions[{index}] must be an object")
+            kind = str(condition.get("type") or "").strip().lower()
+            field = str(condition.get("field") or "").strip()
+            current: Any = output
+            if field:
+                for part in field.split("."):
+                    if isinstance(current, dict) and part in current:
+                        current = current[part]
+                    else:
+                        current = None
+                        break
+            if kind == "field_exists":
+                passed = bool(field) and current is not None
+            elif kind == "field_equals":
+                passed = bool(field) and current == condition.get("value")
+            elif kind == "field_in":
+                values = condition.get("values")
+                if not isinstance(values, list):
+                    raise RuntimeError(f"contract.postconditions[{index}].values must be an array")
+                passed = bool(field) and current in values
+            elif kind == "non_empty":
+                passed = bool(field) and bool(current)
+            elif kind == "http_status":
+                if not isinstance(current, int):
+                    raise RuntimeError(
+                        f"postcondition {index} field {field or '<root>'} is not an integer HTTP status"
+                    )
+                minimum = int(condition.get("min", 200))
+                maximum = int(condition.get("max", 299))
+                passed = minimum <= current <= maximum
+            else:
+                raise RuntimeError(f"unsupported postcondition type: {kind or 'missing'}")
+            check = {
+                "check": f"postcondition:{index}:{kind}",
+                "field": field,
+                "passed": passed,
+            }
+            if kind == "http_status":
+                check["value"] = current
+            checks.append(check)
+            if not passed:
+                raise RuntimeError(f"postcondition {index} failed: {kind}")
+    return {
+        "passed": True,
+        "checks": checks,
+        "acceptance": {
+            "postconditions": postconditions,
+            "passed": True,
+        },
+        "checked_at": utc_now(),
+    }
 
 
 def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
@@ -1107,6 +1459,8 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
         "node": asdict(node),
         "ts": utc_now(),
     }
+    if not SAFE_ID_RE.fullmatch(str(workflow.get("id") or "")):
+        raise RuntimeError("unsafe workflow id for checkpoint path")
     checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
     write_json(checkpoint_path, checkpoint)
     checkpoint_bytes = checkpoint_path.read_bytes()
@@ -1186,6 +1540,63 @@ def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
     if not isinstance(exc, ConnectorRequestError) or not exc.uncertain:
         return True, False
     return bool(exc.retry_allowed), True
+
+
+def refresh_policy_snapshot(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    *,
+    status: str = "refreshed",
+) -> None:
+    snapshot = build_policy_snapshot(
+        registry,
+        nodes,
+        live=bool(workflow.get("live")),
+    )
+    workflow["route_snapshot"] = snapshot
+    workflow["policy_fingerprint"] = fingerprint_policy(snapshot)
+    workflow["policy_integrity"] = status
+
+
+def ensure_policy_integrity(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> bool:
+    snapshot = build_policy_snapshot(
+        registry,
+        nodes,
+        live=bool(workflow.get("live")),
+    )
+    fingerprint = fingerprint_policy(snapshot)
+    previous = str(workflow.get("policy_fingerprint") or "").strip()
+    if not previous:
+        workflow["route_snapshot"] = snapshot
+        workflow["policy_fingerprint"] = fingerprint
+        workflow["policy_integrity"] = "initialized"
+        append_event("workflow.policy_initialized", {
+            "workflow_id": workflow["id"],
+            "policy_fingerprint": fingerprint,
+        })
+        return True
+    if previous != fingerprint:
+        workflow["policy_integrity"] = "drift_detected"
+        workflow["policy_drift"] = {
+            "expected": previous,
+            "actual": fingerprint,
+            "detected_at": utc_now(),
+        }
+        workflow["status"] = "failed"
+        append_event("workflow.policy_drift", {
+            "workflow_id": workflow["id"],
+            "expected": previous,
+            "actual": fingerprint,
+        })
+        return False
+    workflow["route_snapshot"] = snapshot
+    workflow["policy_integrity"] = "verified"
+    return True
 
 
 def execution_failure_policy(
@@ -1310,6 +1721,25 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     if node.tool == "github":
         return execute_github(node)
     if node.tool == "connector_bridge":
+        private_ref = str(node.input.get("private_input_ref") or "").strip()
+        if private_ref:
+            if not str(node.input.get("private_input_execution_id") or "").strip():
+                raise PrivateInputError("private input execution identity is missing")
+            if "payload" in node.input:
+                raise PrivateInputError("private connector node must not persist a payload")
+            try:
+                payload = fetch_private_input(
+                    input_ref=private_ref,
+                    execution_id=str(node.input["private_input_execution_id"]),
+                    expected_digest=str(node.input.get("private_input_digest") or ""),
+                    expected_intent_fingerprint=(
+                        str(node.input.get("private_input_intent_fingerprint") or "").strip() or None
+                    ),
+                )
+                node.input["payload"] = payload
+                return execute_connector_bridge(node, goal, dry_run)
+            finally:
+                node.input.pop("payload", None)
         return execute_connector_bridge(node, goal, dry_run)
     if node.tool == "artifact_verifier":
         return execute_artifact_verifier(node, goal)
@@ -1395,6 +1825,7 @@ def replan_after_failure(
     })
     workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
     workflow["plan_integrity"] = "replanned"
+    refresh_policy_snapshot(workflow, nodes, registry, status="replanned")
     transition(failed_node, "ready")
     workflow["status"] = "running"
     return True
@@ -1478,6 +1909,27 @@ def recover_inflight_side_effects(
             "execution_id": execution_id,
         })
 
+def recover_inflight_non_side_effects(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> bool:
+    """Rearm durable non-side-effect executions after a runner interruption."""
+    recovered = False
+    for node in nodes:
+        if node.status != "running" or side_effecting(node, registry):
+            continue
+        transition(node, "ready")
+        append_event("node.non_side_effect_execution_rearmed", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+        })
+        recovered = True
+    if recovered:
+        workflow["status"] = "running"
+    return recovered
+
+
 def reconcile_first_uncertain(
     workflow: dict[str, Any],
     nodes: list[Node],
@@ -1532,7 +1984,8 @@ def reconcile_first_uncertain(
         node.output = {
             "reconciled": True,
             "reconciliation": result,
-            "request_id": execution_id,
+            "request_id": result.get("request_id"),
+            "execution_id": execution_id,
         }
         node.error["reconciled"] = True
         node.error["reconciliation_state"] = "applied"
@@ -1587,12 +2040,18 @@ def reconcile_first_uncertain(
 
 
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+    if workflow.get('status') in {'completed', 'cancelled'}:
+        return str(workflow['status'])
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get('live'))
-    enforce_node_policy(nodes, registry, live=live)
+    enforce_node_policy(nodes, registry, live=live, route=False)
     if not ensure_plan_integrity(workflow, nodes):
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return 'failed'
+    if not ensure_policy_integrity(workflow, nodes, registry):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return 'failed'
@@ -1606,6 +2065,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     workflow.setdefault('repair_feedback', {})
     workflow.setdefault('evidence', {})
     workflow.setdefault('reconciliations', {})
+    execution_budget(workflow)
     for node in nodes:
         node.input['workflow_id'] = workflow['id']
         node.input['repair_feedback'] = workflow.get('repair_feedback', {}).get(node.id, {})
@@ -1615,6 +2075,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return 'rearmed_pre_side_effect'
     recover_inflight_side_effects(workflow, nodes, registry)
+    recover_inflight_non_side_effects(workflow, nodes, registry)
     reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
     if reconciliation is not None:
         workflow['nodes'] = [asdict(node) for node in nodes]
@@ -1646,6 +2107,31 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return workflow['status']
 
     node = sorted(eligible, key=lambda item: item.id)[0]
+    try:
+        preflight_node(node, registry, live=live)
+    except Exception as preflight_exc:
+        node.error = {
+            'type': type(preflight_exc).__name__,
+            'message': str(preflight_exc),
+            'failure_class': 'dependency',
+            'preflight_failed': True,
+        }
+        transition(node, 'failed')
+        workflow['status'] = 'failed'
+        workflow['failed_node'] = node.id
+        append_event('node.preflight_failed', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'tool': node.tool,
+            'error': str(preflight_exc),
+        })
+        if replan_after_failure(workflow, nodes, node, registry):
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return 'replanned'
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'failed'
     if live and node.risk in {'high', 'critical'} and not approve_high_risk and not node.input.get('approval_granted'):
         transition(node, 'waiting_approval')
         workflow['status'] = 'waiting_approval'
@@ -1674,6 +2160,28 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return 'waiting_approval'
 
+    try:
+        reserve_execution_step(workflow, node.id)
+    except ExecutionBudgetExceeded as budget_exc:
+        node.error = {
+            'type': type(budget_exc).__name__,
+            'message': str(budget_exc),
+            'failure_class': 'dependency',
+            'budget_exhausted': True,
+        }
+        transition(node, 'failed')
+        workflow['status'] = 'failed'
+        workflow['failed_node'] = node.id
+        workflow['budget_exhausted'] = {
+            'node_id': node.id,
+            'used_steps': execution_budget(workflow)['used_steps'],
+            'max_steps': execution_budget(workflow)['max_steps'],
+        }
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'failed'
+    workflow['nodes'] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
     node.input["context"] = build_node_context(nodes, node)
     transition(node, 'running')
     execution_id = execution_key(workflow, node)
@@ -1809,12 +2317,18 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             persist_workflow(workflow)
             return 'failed'
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
+    if workflow.get("status") in {"completed", "cancelled"}:
+        return
     nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get("live"))
-    enforce_node_policy(nodes, registry, live=live)
+    enforce_node_policy(nodes, registry, live=live, route=False)
     if not ensure_plan_integrity(workflow, nodes):
+        workflow["nodes"] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return
+    if not ensure_policy_integrity(workflow, nodes, registry):
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return
@@ -1828,6 +2342,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow.setdefault("repair_feedback", {})
     workflow.setdefault("evidence", {})
     workflow.setdefault("reconciliations", {})
+    execution_budget(workflow)
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
@@ -1846,6 +2361,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             persist_workflow(workflow)
             return
         recover_inflight_side_effects(workflow, nodes, registry)
+        recover_inflight_non_side_effects(workflow, nodes, registry)
         reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
         if reconciliation == "failed":
             workflow["nodes"] = [asdict(node) for node in nodes]
@@ -1897,8 +2413,67 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
         )
 
+        # Admission control is performed before any node is persisted as running.
+        # Never partially activate a parallel batch and then fail a later reservation:
+        # otherwise an earlier safe node could be stranded as running in a failed workflow.
+        budget = execution_budget(workflow)
+        available_steps = budget["max_steps"] - budget["used_steps"]
+        if available_steps <= 0:
+            node = sorted(batch, key=lambda item: item.id)[0]
+            budget_exc = ExecutionBudgetExceeded(
+                f"execution step budget exhausted ({budget['used_steps']}/{budget['max_steps']})"
+            )
+            node.error = {
+                "type": type(budget_exc).__name__,
+                "message": str(budget_exc),
+                "failure_class": "dependency",
+                "budget_exhausted": True,
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            workflow["budget_exhausted"] = {
+                "node_id": node.id,
+                "used_steps": budget["used_steps"],
+                "max_steps": budget["max_steps"],
+            }
+            workflow["nodes"] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return
+        if len(batch) > available_steps:
+            batch = batch[:available_steps]
+
+        # Phase 1: preflight the entire batch before any node is persisted as running.
+        # If a preflight/replan/approval gate blocks, no sibling node is stranded.
         executable = []
+        admission_blocked = False
         for node in batch:
+            try:
+                preflight_node(node, registry, live=live)
+            except Exception as preflight_exc:
+                node.error = {
+                    "type": type(preflight_exc).__name__,
+                    "message": str(preflight_exc),
+                    "failure_class": "dependency",
+                    "preflight_failed": True,
+                }
+                transition(node, "failed")
+                append_event("node.preflight_failed", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                    "error": str(preflight_exc),
+                })
+                if replan_after_failure(workflow, nodes, node, registry):
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    admission_blocked = True
+                    break
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return
             if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
                 transition(node, "waiting_approval")
                 workflow["status"] = "waiting_approval"
@@ -1922,75 +2497,124 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "risk": node.risk,
                     "issue": node.input.get("approval_issue"),
                 })
-                continue
-
-            node.input["context"] = build_node_context(nodes, node)
-            transition(node, "running")
-
-            execution_id = execution_key(workflow, node)
-            if side_effecting(node, registry):
-                record = workflow.setdefault("executions", {}).get(execution_id)
-                if record and record.get("status") == "started":
-                    node.error = {
-                        "type": "execution_uncertain",
-                        "message": "A prior run may have completed an external side effect before state persistence.",
-                        "execution_id": execution_id,
-                    }
-                    transition(node, "failed")
-                    workflow["status"] = "failed"
-                    workflow["failed_node"] = node.id
-                    append_event("node.execution_uncertain", {
-                        "workflow_id": workflow["id"],
-                        "node_id": node.id,
-                        "execution_id": execution_id,
-                    })
-                    workflow["nodes"] = [asdict(item) for item in nodes]
-                    persist_workflow(workflow)
-                    return
-
-                mark_execution_prepared(workflow, node)
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
-                mark_execution_started(workflow, node, execution_id)
+                return
+        if admission_blocked:
+            # A replan intentionally changes plan identity; never reuse the old
+            # admission batch in the same worker. Let the next worker/continuation
+            # validate the new plan and rebuild its ready queue from durable state.
+            return
+
+        try:
+            reserve_execution_steps(workflow, [node.id for node in batch])
+        except ExecutionBudgetExceeded as budget_exc:
+            node = sorted(batch, key=lambda item: item.id)[0]
+            node.error = {
+                "type": type(budget_exc).__name__,
+                "message": str(budget_exc),
+                "failure_class": "dependency",
+                "budget_exhausted": True,
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            workflow["budget_exhausted"] = {
+                "node_id": node.id,
+                "used_steps": execution_budget(workflow)["used_steps"],
+                "max_steps": execution_budget(workflow)["max_steps"],
+            }
+            workflow["nodes"] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return
+
+        # Phase 2: only now cross runtime activation and side-effect barriers.
+        executable = []
+        if all(not side_effecting(node, registry) for node in batch):
+            # Safe independent nodes share one durable activation record. This avoids
+            # persisting a reserved budget before any node is actually activated.
+            for node in batch:
+                node.input["context"] = build_node_context(nodes, node)
+                transition(node, "running")
+            workflow["nodes"] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            for node in batch:
+                append_event("node.started", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                })
+                executable.append((node, execution_key(workflow, node)))
+        else:
+            for node in batch:
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
-                if live and side_effecting(node, registry):
-                    try:
-                        commit_side_effect_start(
-                            ROOT,
-                            execution_id=execution_id,
-                        )
-                    except DurabilityBarrierError as barrier_exc:
-                        record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
-                        record["status"] = "barrier_failed"
-                        record["barrier_error"] = str(barrier_exc)
+                node.input["context"] = build_node_context(nodes, node)
+                transition(node, "running")
+
+                execution_id = execution_key(workflow, node)
+                if side_effecting(node, registry):
+                    record = workflow.setdefault("executions", {}).get(execution_id)
+                    if record and record.get("status") == "started":
                         node.error = {
-                            "type": type(barrier_exc).__name__,
-                            "message": str(barrier_exc),
-                            "failure_class": "dependency",
-                            "durability_barrier_failed": True,
+                            "type": "execution_uncertain",
+                            "message": "A prior run may have completed an external side effect before state persistence.",
                             "execution_id": execution_id,
                         }
                         transition(node, "failed")
                         workflow["status"] = "failed"
                         workflow["failed_node"] = node.id
-                        workflow["nodes"] = [asdict(item) for item in nodes]
-                        persist_workflow(workflow)
-                        append_event("node.durability_barrier_failed", {
+                        append_event("node.execution_uncertain", {
                             "workflow_id": workflow["id"],
                             "node_id": node.id,
                             "execution_id": execution_id,
-                            "error": str(barrier_exc),
                         })
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
                         return
 
-            append_event("node.started", {
-                "workflow_id": workflow["id"],
-                "node_id": node.id,
-                "tool": node.tool,
-            })
-            executable.append((node, execution_id))
+                    mark_execution_prepared(workflow, node)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    mark_execution_started(workflow, node, execution_id)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    if live and side_effecting(node, registry):
+                        try:
+                            commit_side_effect_start(
+                                ROOT,
+                                execution_id=execution_id,
+                            )
+                        except DurabilityBarrierError as barrier_exc:
+                            record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
+                            record["status"] = "barrier_failed"
+                            record["barrier_error"] = str(barrier_exc)
+                            node.error = {
+                                "type": type(barrier_exc).__name__,
+                                "message": str(barrier_exc),
+                                "failure_class": "dependency",
+                                "durability_barrier_failed": True,
+                                "execution_id": execution_id,
+                            }
+                            transition(node, "failed")
+                            workflow["status"] = "failed"
+                            workflow["failed_node"] = node.id
+                            workflow["nodes"] = [asdict(item) for item in nodes]
+                            persist_workflow(workflow)
+                            append_event("node.durability_barrier_failed", {
+                                "workflow_id": workflow["id"],
+                                "node_id": node.id,
+                                "execution_id": execution_id,
+                                "error": str(barrier_exc),
+                            })
+                            return
 
+                append_event("node.started", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                })
+                executable.append((node, execution_id))
         if not executable:
             workflow["nodes"] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
@@ -2057,20 +2681,68 @@ def notify_issue(workflow: dict[str, Any], message: str) -> None:
     except Exception:
         return
 
+def callback_target_fingerprint(url: str) -> str | None:
+    value = str(url or "").strip()
+    if not value:
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme.lower() != "https" or not parsed.netloc:
+        return None
+    normalized = urllib.parse.urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path or "/",
+        parsed.query,
+        "",
+    ))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def notify_execution_callback(workflow: dict[str, Any]) -> bool:
+    """Durable terminal callback outbox with stable request identity."""
+    callback = workflow.setdefault("callback", {})
+    if isinstance(callback, dict) and callback.get("status") in {"sent", "dead_letter", "disabled"}:
+        return callback.get("status") == "sent"
     url = os.environ.get("ORCHESTRATOR_CALLBACK_URL", "").strip()
     secret = os.environ.get("ORCHESTRATOR_CALLBACK_SECRET", "")
     execution_id = str(workflow.get("execution_id") or "").strip()
     if not url or not secret or not execution_id:
         return False
-    if not url.startswith("https://"):
-        append_event("callback.skipped", {"workflow_id": workflow.get("id"), "reason": "https_required"})
+    current_target_fingerprint = callback_target_fingerprint(url)
+    if current_target_fingerprint is None:
+        if isinstance(callback, dict):
+            callback["status"] = "dead_letter"
+            callback["last_error"] = "callback endpoint must use HTTPS"
         return False
-
-    callback_status = "failed"
-    if workflow.get("status") == "completed":
-        callback_status = "completed"
-    else:
+    previous_target_fingerprint = (
+        str(callback.get("target_fingerprint") or "").strip()
+        if isinstance(callback, dict)
+        else ""
+    )
+    if (
+        previous_target_fingerprint
+        and previous_target_fingerprint != current_target_fingerprint
+    ):
+        if isinstance(callback, dict):
+            callback["status"] = "dead_letter"
+            callback["last_error"] = "callback endpoint changed"
+        append_event(
+            "callback.endpoint_drift",
+            {
+                "workflow_id": workflow.get("id"),
+                "execution_id": execution_id,
+            },
+        )
+        return False
+    if isinstance(callback, dict):
+        callback["target_fingerprint"] = current_target_fingerprint
+    if isinstance(callback, dict):
+        callback["status"] = "pending"
+        callback["last_attempt_at"] = utc_now()
+        callback["attempts"] = int(callback.get("attempts", 0)) + 1
+    status = str(workflow.get("status") or "failed")
+    callback_status = "completed" if status == "completed" else "failed"
+    if status != "completed":
         for item in workflow.get("nodes", []):
             error = item.get("error") if isinstance(item, dict) else {}
             if isinstance(error, dict) and error.get("execution_uncertain"):
@@ -2079,25 +2751,45 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
 
     result = {
         "workflow_id": str(workflow.get("id") or ""),
+        "external_workflow_id": str(workflow.get("external_workflow_id") or ""),
         "external_domain": str(workflow.get("external_domain") or ""),
         "external_operation": str(workflow.get("external_operation") or ""),
         "input_digest": str(workflow.get("input_digest") or ""),
         "attempt": int(workflow.get("external_attempt") or 1),
     }
     payload = {
+        "schema_version": 1,
         "request_id": execution_id,
         "execution_id": execution_id,
         "intent_fingerprint": str(workflow.get("intent_fingerprint") or ""),
         "status": callback_status,
         "result": result if callback_status == "completed" else {},
-        "error": str(workflow.get("failed_node") or "engine_failed") if callback_status != "completed" else "",
+        "error": (
+            str(workflow.get("failed_node") or "engine_failed")
+            if callback_status != "completed"
+            else ""
+        ),
     }
-    body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    for _attempt in range(3):
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    attempts = int(callback.get("attempts", 0)) if isinstance(callback, dict) else 0
+    remaining_attempts = min(3, max(0, 12 - attempts))
+    if remaining_attempts == 0:
+        if isinstance(callback, dict):
+            callback["status"] = "dead_letter"
+            callback["last_error"] = "callback retry budget exhausted"
+        return False
+    for _ in range(remaining_attempts):
         timestamp = str(int(time.time()))
-        # HMAC construction is explicit to avoid depending on a second auth helper.
-        import hmac
-        signature = "sha256=" + hmac.new(secret.encode("utf-8"), timestamp.encode("utf-8") + b"\n" + body, hashlib.sha256).hexdigest()
+        signature = "sha256=" + hmac.new(
+            secret.encode("utf-8"),
+            timestamp.encode("utf-8") + b"\n" + body,
+            hashlib.sha256,
+        ).hexdigest()
         request = urllib.request.Request(
             url,
             data=body,
@@ -2106,26 +2798,42 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
                 "Accept": "application/json",
                 "X-Engine-Timestamp": timestamp,
                 "X-Engine-Signature": signature,
+                "Idempotency-Key": execution_id,
             },
             method="POST",
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if 200 <= int(response.status) < 300:
-                    append_event("callback.sent", {
-                        "workflow_id": workflow.get("id"),
-                        "execution_id": execution_id,
-                        "status": callback_status,
-                    })
+                    callback["status"] = "sent"
+                    callback["sent_at"] = utc_now()
+                    callback.pop("last_error", None)
+                    append_event(
+                        "callback.sent",
+                        {
+                            "workflow_id": workflow.get("id"),
+                            "execution_id": execution_id,
+                            "status": callback_status,
+                        },
+                    )
                     return True
         except Exception:
             pass
         time.sleep(1)
-    append_event("callback.failed", {
-        "workflow_id": workflow.get("id"),
-        "execution_id": execution_id,
-        "status": callback_status,
-    })
+    callback["status"] = (
+        "dead_letter"
+        if int(callback.get("attempts", 0)) >= 12
+        else "pending"
+    )
+    callback["last_error"] = "callback delivery failed after bounded retries"
+    append_event(
+        "callback.failed",
+        {
+            "workflow_id": workflow.get("id"),
+            "execution_id": execution_id,
+            "status": callback_status,
+        },
+    )
     return False
 
 
@@ -2135,15 +2843,44 @@ def create_workflow(
     trigger_issue: int | None = None,
     event_id: str | None = None,
     execution_id: str | None = None,
+    parent_execution_id: str | None = None,
     external_workflow_id: str | None = None,
     external_domain: str | None = None,
     external_operation: str | None = None,
     intent_fingerprint: str | None = None,
     input_digest: str | None = None,
+    idempotency_key: str | None = None,
     external_attempt: int | None = None,
+    private_input_ref: str | None = None,
 ) -> dict[str, Any]:
+    goal = normalize_goal(goal)
     registry = load_registry()
     nodes = None
+    if live and private_input_ref and external_domain and external_operation:
+        # Structured live connector operations never send raw private input to an LLM.
+        nodes = [
+            Node(
+                id="n01-private-execute",
+                capability="execute",
+                tool="connector_bridge",
+                depends_on=[],
+                risk="high",
+                input={
+                    "goal": goal,
+                    "instruction": (
+                        f"Execute private structured connector operation "
+                        f"{external_domain}.{external_operation}."
+                    ),
+                    "connector": str(external_domain).strip().lower(),
+                    "action": str(external_operation).strip().lower(),
+                    "private_input_ref": private_input_ref,
+                    "private_input_digest": str(input_digest or ""),
+                    "private_input_intent_fingerprint": str(intent_fingerprint or ""),
+                    "private_input_execution_id": str(execution_id or ""),
+                    "tool_selection_pinned": True,
+                },
+            )
+        ]
     if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
         try:
             from llm_planner import plan_goal
@@ -2154,6 +2891,8 @@ def create_workflow(
     if nodes is None:
         nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
+    enforce_node_policy(nodes, registry, live=live, route=True)
+    route_snapshot = build_policy_snapshot(registry, nodes, live=live)
     return {
         "id": new_id("wf"),
         "created_at": utc_now(),
@@ -2165,21 +2904,40 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 2,
+        "schema_version": CURRENT_WORKFLOW_SCHEMA_VERSION,
         "plan_fingerprint": None,
+        "policy_fingerprint": fingerprint_policy(route_snapshot),
+        "route_snapshot": route_snapshot,
+        "policy_integrity": "initialized",
+        "execution_budget": {"max_steps": configured_max_execution_steps(), "used_steps": 0},
+        "callback": {"status": "pending"} if execution_id else {"status": "disabled"},
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
         "trigger_issue": trigger_issue,
         "event_id": event_id,
-        "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
         "execution_id": execution_id,
+        "parent_execution_id": parent_execution_id,
         "external_workflow_id": external_workflow_id,
         "external_domain": external_domain,
         "external_operation": external_operation,
         "intent_fingerprint": intent_fingerprint,
         "input_digest": input_digest,
+        "idempotency_key": idempotency_key,
         "external_attempt": int(external_attempt or 1),
+        "private_input_ref": private_input_ref,
+        "origin_github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
+        "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
+        "github_run_attempt": (
+            int(os.environ["ORCHESTRATOR_GITHUB_RUN_ATTEMPT"])
+            if os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").isdigit()
+            else None
+        ),
+        "origin_github_run_attempt": (
+            int(os.environ["ORCHESTRATOR_GITHUB_RUN_ATTEMPT"])
+            if os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").isdigit()
+            else None
+        ),
         "nodes": [asdict(node) for node in nodes],
     }
 
@@ -2199,7 +2957,37 @@ def print_summary(workflow: dict[str, Any]) -> None:
     }, indent=2))
 
 
-def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = False, step: bool = False) -> int:
+def running_recovery_due(
+    workflow: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    grace_seconds: int = RUNNING_RECOVERY_GRACE_SECONDS,
+) -> bool:
+    if workflow.get("status") != "running":
+        return True
+    if not str(workflow.get("github_run_id") or "").strip():
+        return True
+    raw_updated = str(workflow.get("updated_at") or "").strip()
+    if not raw_updated:
+        return True
+    try:
+        updated = datetime.fromisoformat(raw_updated.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    age = (current - updated).total_seconds()
+    return age >= max(0, int(grace_seconds))
+
+
+def resume_pending_workflows(
+    state: dict[str, Any],
+    approve_high_risk: bool = False,
+    step: bool = False,
+    *,
+    scheduled_recovery: bool = False,
+) -> int:
     resumed = 0
     candidates = []
     for workflow in state.get("workflows", {}).values():
@@ -2222,10 +3010,27 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
             and node.get("tool") == "connector_bridge"
             for node in workflow.get("nodes", [])
         )
-        if status in {"waiting_approval", "running"} or (status == "failed" and (uncertain or barrier_failed)):
+        if status == "running":
+            if not scheduled_recovery or running_recovery_due(workflow):
+                candidates.append(workflow)
+        elif status == "waiting_approval" or (
+            status == "failed" and (uncertain or barrier_failed)
+        ):
             candidates.append(workflow)
     candidates.sort(key=lambda item: item.get("updated_at") or item.get("created_at") or "")
     for workflow in candidates:
+        callback = workflow.get("callback")
+        if (
+            isinstance(callback, dict)
+            and callback.get("status") == "pending"
+            and workflow.get("status") in {"completed", "failed"}
+            and workflow.get("execution_id")
+        ):
+            notify_execution_callback(workflow)
+            state["workflows"][workflow["id"]] = workflow
+            state["last_workflow_id"] = workflow["id"]
+            resumed += 1
+            continue
         if step:
             run_one_step(workflow, approve_high_risk=approve_high_risk)
         else:
@@ -2237,6 +3042,68 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
             break
     save_state(state)
     return resumed
+
+def find_existing_replay(
+    state: dict[str, Any],
+    *,
+    event_id: str | None,
+    execution_id: str | None,
+    idempotency_key: str | None,
+) -> dict[str, Any] | None:
+    identifiers = (
+        ("event_id", event_id),
+        ("execution_id", execution_id),
+        ("idempotency_key", idempotency_key),
+    )
+    matches: dict[str, dict[str, Any]] = {}
+    for workflow in state.get("workflows", {}).values():
+        if not isinstance(workflow, dict):
+            continue
+        for field_name, value in identifiers:
+            normalized = str(value or "").strip()
+            if normalized and normalized == str(workflow.get(field_name) or "").strip():
+                matches[str(workflow.get("id") or "")] = workflow
+                break
+    if len(matches) > 1:
+        raise SystemExit("replay identifiers map to multiple persisted workflows")
+    return next(iter(matches.values()), None) if matches else None
+
+
+
+def validate_event_replay_identity(
+    workflow: dict[str, Any],
+    *,
+    execution_id: str | None,
+    intent_fingerprint: str | None,
+    input_digest: str | None,
+    idempotency_key: str | None,
+) -> None:
+    comparisons = (
+        ("execution_id", execution_id, workflow.get("execution_id")),
+        ("intent_fingerprint", intent_fingerprint, workflow.get("intent_fingerprint")),
+        ("input_digest", input_digest, workflow.get("input_digest")),
+        ("idempotency_key", idempotency_key, workflow.get("idempotency_key")),
+    )
+    for field_name, incoming, stored in comparisons:
+        incoming_value = str(incoming or "").strip()
+        stored_value = str(stored or "").strip()
+        if incoming_value and stored_value and incoming_value != stored_value:
+            raise SystemExit(
+                f"event_id conflicts with persisted {field_name} for workflow {workflow.get('id')}"
+            )
+
+
+def finalize_workflow_state(
+    state: dict[str, Any],
+    workflow: dict[str, Any],
+) -> None:
+    state["workflows"][workflow["id"]] = workflow
+    state["last_workflow_id"] = workflow["id"]
+    if workflow.get("status") in {"completed", "failed"}:
+        notify_execution_callback(workflow)
+    save_state(state)
+
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -2258,7 +3125,10 @@ def main() -> int:
 
     if args.resume:
         count = resume_pending_workflows(
-            state, approve_high_risk=args.approve_high_risk, step=args.step
+            state,
+            approve_high_risk=args.approve_high_risk,
+            step=args.step,
+            scheduled_recovery=os.environ.get("ORCHESTRATOR_RESUME", "").lower() == "true",
         )
         print(json.dumps({'resumed_workflows': count}, indent=2))
         return 0
@@ -2269,15 +3139,11 @@ def main() -> int:
             raise SystemExit(f'workflow not found: {args.workflow_id}')
         if args.step:
             result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-            state['workflows'][workflow['id']] = workflow
-            state['last_workflow_id'] = workflow['id']
-            save_state(state)
+            finalize_workflow_state(state, workflow)
             print_summary(workflow)
             return 0 if result not in {'failed', 'continuation_failed'} else 2
         run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-        state['workflows'][workflow['id']] = workflow
-        state['last_workflow_id'] = workflow['id']
-        save_state(state)
+        finalize_workflow_state(state, workflow)
         print_summary(workflow)
         return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
@@ -2285,30 +3151,43 @@ def main() -> int:
         raise SystemExit('provide --goal or --workflow-id')
 
     live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
+    requested_mode = os.environ.get("ORCHESTRATOR_REQUESTED_MODE", "").strip().lower()
+    if requested_mode:
+        if requested_mode not in {"dry-run", "live"}:
+            raise SystemExit("invalid requested execution mode")
+        live = requested_mode == "live"
     trigger_issue_raw = os.environ.get('ORCHESTRATOR_TRIGGER_ISSUE', '').strip()
     trigger_issue = int(trigger_issue_raw) if trigger_issue_raw.isdigit() else None
     event_id = os.environ.get("ORCHESTRATOR_EVENT_ID", "").strip() or None
     execution_id_env = os.environ.get("ORCHESTRATOR_EXECUTION_ID", "").strip() or None
+    parent_execution_id = os.environ.get("ORCHESTRATOR_PARENT_EXECUTION_ID", "").strip() or None
     external_workflow_id = os.environ.get("ORCHESTRATOR_EXTERNAL_WORKFLOW_ID", "").strip() or None
     external_domain = os.environ.get("ORCHESTRATOR_EXTERNAL_DOMAIN", "").strip() or None
     external_operation = os.environ.get("ORCHESTRATOR_EXTERNAL_OPERATION", "").strip() or None
     intent_fingerprint_env = os.environ.get("ORCHESTRATOR_INTENT_FINGERPRINT", "").strip() or None
     input_digest = os.environ.get("ORCHESTRATOR_INPUT_DIGEST", "").strip() or None
+    idempotency_key = os.environ.get("ORCHESTRATOR_IDEMPOTENCY_KEY", "").strip() or None
     try:
         external_attempt = int(os.environ.get("ORCHESTRATOR_EXTERNAL_ATTEMPT", "1"))
     except ValueError:
         raise SystemExit("invalid external attempt")
-    if event_id:
-        existing = next(
-            (
-                item for item in state.get("workflows", {}).values()
-                if item.get("event_id") == event_id
-            ),
-            None,
+    if event_id or execution_id_env or idempotency_key:
+        existing = find_existing_replay(
+            state,
+            event_id=event_id,
+            execution_id=execution_id_env,
+            idempotency_key=idempotency_key,
         )
         if existing:
+            validate_event_replay_identity(
+                existing,
+                execution_id=execution_id_env,
+                intent_fingerprint=intent_fingerprint_env,
+                input_digest=input_digest,
+                idempotency_key=idempotency_key,
+            )
             if existing.get("status") in {"completed", "failed"}:
-                notify_execution_callback(existing)
+                finalize_workflow_state(state, existing)
             print_summary(existing)
             return 0 if existing.get("status") in {"completed", "waiting_approval", "running"} else 2
     workflow = create_workflow(
@@ -2317,12 +3196,15 @@ def main() -> int:
         trigger_issue=trigger_issue,
         event_id=event_id,
         execution_id=execution_id_env,
+        parent_execution_id=parent_execution_id,
         external_workflow_id=external_workflow_id,
         external_domain=external_domain,
         external_operation=external_operation,
         intent_fingerprint=intent_fingerprint_env,
         input_digest=input_digest,
+        idempotency_key=idempotency_key,
         external_attempt=external_attempt,
+        private_input_ref=os.environ.get("ORCHESTRATOR_PRIVATE_INPUT_REF", "").strip() or None,
     )
     workflow['status'] = 'ready'
     state['workflows'][workflow['id']] = workflow
@@ -2334,18 +3216,12 @@ def main() -> int:
 
     if args.step:
         result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-        state['workflows'][workflow['id']] = workflow
-        state['last_workflow_id'] = workflow['id']
-        save_state(state)
+        finalize_workflow_state(state, workflow)
         print_summary(workflow)
         return 0 if result not in {'failed', 'continuation_failed'} else 2
 
     run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-    state['workflows'][workflow['id']] = workflow
-    state['last_workflow_id'] = workflow['id']
-    save_state(state)
-    if workflow.get("status") in {"completed", "failed"}:
-        notify_execution_callback(workflow)
+    finalize_workflow_state(state, workflow)
     print_summary(workflow)
     return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 

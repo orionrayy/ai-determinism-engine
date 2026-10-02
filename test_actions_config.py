@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -19,6 +20,49 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('Authorize approval actor', self.orchestrator)
         self.assertIn('github.actor', self.orchestrator)
 
+    def test_approval_issue_prefix_is_allowed_by_job_filter(self):
+        self.assertIn("startsWith(github.event.issue.title, '[ORCHESTRATOR]')", self.orchestrator)
+        self.assertIn("startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]')", self.orchestrator)
+
+    def test_approval_authority_excludes_triage_role(self):
+        self.assertIn("admin|maintain|push) ;;", self.orchestrator)
+        self.assertNotIn("admin|maintain|push|triage)", self.orchestrator)
+
+    def test_approval_target_id_is_validated_before_resume(self):
+        self.assertIn('Approval event does not identify a target workflow', self.orchestrator)
+        self.assertIn('Approval workflow ID contains unsafe characters', self.orchestrator)
+
+    def test_approval_worker_requires_authenticated_label_event(self):
+        self.assertIn('ORCHESTRATOR_APPROVAL_EVENT:', self.orchestrator)
+        self.assertIn("github.event.action == 'labeled'", self.orchestrator)
+        self.assertIn("github.event.label.name == 'orchestrator-approved'", self.orchestrator)
+        self.assertIn("github.event.label.name == 'orchestrator-rejected'", self.orchestrator)
+
+    def test_execution_envelope_contract_is_versioned(self):
+        contract = json.loads(
+            (ROOT / "contracts" / "execution-envelope.schema.json").read_text()
+        )
+        self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
+        self.assertIn("execution_id", contract["required"])
+        self.assertIn("intent_fingerprint", contract["required"])
+        self.assertEqual(contract["properties"]["requested_mode"]["enum"], ["dry-run", "live"])
+
+    def test_execution_callback_contract_is_versioned(self):
+        contract = json.loads(
+            (ROOT / "contracts" / "execution-callback.schema.json").read_text()
+        )
+        self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(
+            contract["properties"]["status"]["enum"],
+            ["completed", "failed", "uncertain"],
+        )
+        self.assertIn("execution_id", contract["required"])
+
+    def test_execution_budget_input_is_wired_to_worker(self):
+        self.assertIn('max_steps:', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_MAX_EXECUTION_STEPS:', self.orchestrator)
+        self.assertIn("inputs.max_steps || '96'", self.orchestrator)
+
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
 
@@ -29,10 +73,21 @@ class ActionsConfigTests(unittest.TestCase):
     def test_source_issue_is_propagated(self):
         self.assertIn('ORCHESTRATOR_TRIGGER_ISSUE', self.orchestrator)
         self.assertIn('ORCHESTRATOR_GITHUB_RUN_ID', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_GITHUB_RUN_ATTEMPT', self.orchestrator)
 
-    def test_continuation_binds_to_originating_run(self):
+    def test_continuation_binds_to_current_worker_run(self):
         self.assertIn('workflow_run.id', self.continuation)
+        self.assertIn('workflow_run.run_attempt', self.continuation)
         self.assertIn("item.get('github_run_id')", self.continuation)
+        self.assertIn("item.get('github_run_attempt')", self.continuation)
+        self.assertIn("WORKFLOW_RUN_ID", self.continuation)
+        self.assertIn('EVENT_ID', self.continuation)
+        self.assertIn('continuation:', self.continuation)
+
+    def test_continuation_has_single_flight_for_same_run_attempt(self):
+        self.assertIn('orchestrator-continuation-', self.continuation)
+        self.assertNotIn('queue: single', self.continuation)
+        self.assertIn('cancel-in-progress: false', self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
@@ -56,6 +111,36 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn('vercel@latest', self.bridge_deploy)
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
+
+
+    def test_control_plane_dependency_boundary_is_lightweight(self):
+        requirements = (ROOT / "requirements.txt").read_text()
+        legacy = (ROOT / "requirements-legacy.txt").read_text()
+        for package in ("torch", "numpy", "pillow", "zstandard"):
+            self.assertNotIn(package, requirements.lower())
+            self.assertIn(package, legacy.lower())
+
+    def test_render_runtime_matches_ci_python(self):
+        self.assertEqual((ROOT / ".python-version").read_text().strip(), "3.12")
+
+    def test_private_input_contract_is_versioned(self):
+        contract = json.loads(
+            (ROOT / "contracts" / "private-input.schema.json").read_text()
+        )
+        self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(
+            contract["properties"]["protocol"]["const"],
+            "ai-orchestrator.private-input/v1",
+        )
+        self.assertIn("payload", contract["required"])
+        self.assertEqual(contract["properties"]["payload"]["type"], "object")
+
+    def test_private_input_channel_is_not_bypassed_in_structured_live_mode(self):
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_REF", self.orchestrator)
+        self.assertIn("private_input_unavailable", (ROOT / "gateway.py").read_text())
+        self.assertIn("test_private_input.py", self.tests)
 
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)

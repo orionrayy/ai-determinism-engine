@@ -18,6 +18,83 @@ class OrchestratorTests(unittest.TestCase):
         self._actions_env.start()
         self.addCleanup(self._actions_env.stop)
 
+    def test_private_connector_payload_is_fetched_just_in_time_and_scrubbed(self):
+        node = o.Node(
+            id="n01-private",
+            capability="execute",
+            tool="connector_bridge",
+            risk="high",
+            input={
+                "workflow_id": "wf-private",
+                "connector": "notion",
+                "action": "create_page",
+                "private_input_ref": "b" * 64,
+                "private_input_digest": "d" * 64,
+                "private_input_intent_fingerprint": "f" * 64,
+                "private_input_execution_id": "e" * 64,
+            },
+        )
+        seen = {}
+
+        def fake_execute(runtime_node, goal, dry_run):
+            seen["payload"] = dict(runtime_node.input["payload"])
+            return {"ok": True}
+
+        with patch.object(
+            o,
+            "fetch_private_input",
+            return_value={"title": "Secret"},
+        ) as fetch, patch.object(
+            o,
+            "execute_connector_bridge",
+            side_effect=fake_execute,
+        ):
+            result = o.execute_node(node, "private goal", dry_run=False)
+
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(seen["payload"], {"title": "Secret"})
+        self.assertNotIn("payload", node.input)
+        fetch.assert_called_once()
+
+    def test_private_structured_live_plan_avoids_llm_and_persists_only_reference(self):
+        registry = {
+            "capability:execute": {
+                "default_tool": "webhook",
+                "fallback_tools": [],
+            },
+            "connector_bridge": {
+                "required_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_URL",
+                "secret_env": "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET",
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_MAX_EXECUTION_STEPS": "8",
+            "ORCHESTRATOR_MAX_PARALLEL": "1",
+            "ORCHESTRATOR_FREE_ONLY": "true",
+        }, clear=False), patch.object(
+            o,
+            "load_registry",
+            return_value=registry,
+        ):
+            workflow = o.create_workflow(
+                "Execute orchestration operation notion.create_page",
+                live=True,
+                execution_id="e" * 64,
+                external_domain="notion",
+                external_operation="create_page",
+                intent_fingerprint="f" * 64,
+                input_digest="d" * 64,
+                private_input_ref="b" * 64,
+            )
+        self.assertEqual(len(workflow["nodes"]), 1)
+        node = workflow["nodes"][0]
+        self.assertEqual(node["tool"], "connector_bridge")
+        self.assertTrue(node["input"]["tool_selection_pinned"])
+        self.assertEqual(node["input"]["private_input_ref"], "b" * 64)
+        self.assertNotIn("payload", node["input"])
+
     def test_credential_free_research_prefers_wikipedia(self):
         with tempfile.TemporaryDirectory() as tmp:
             registry = {
@@ -38,6 +115,14 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {"free_tier": False}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
+
+    def test_event_log_failure_does_not_break_execution(self):
+        with patch.object(
+            type(o.EVENT_FILE),
+            "open",
+            side_effect=OSError("event log unavailable"),
+        ):
+            o.append_event("test.event", {"ok": True})
 
     def test_atomic_json_write_replaces_existing_file_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -74,6 +159,148 @@ class OrchestratorTests(unittest.TestCase):
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
             self.assertFalse(o.tool_available("future_paid", registry))
             self.assertTrue(o.tool_available("future_free", registry))
+
+    def test_run_workflow_does_not_reroute_persisted_plan(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_resume_full",
+            "goal": "resume full",
+            "live": False,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": o.fingerprint_nodes([node]),
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "wikipedia",
+                "fallback_tools": ["noop"],
+            },
+            "wikipedia": {"free_tier": True, "side_effects": []},
+            "noop": {"free_tier": True, "side_effects": []},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["plan_integrity"], "verified")
+        self.assertEqual(workflow["nodes"][0]["tool"], "noop")
+
+    def test_resume_fails_closed_when_tool_policy_drifts(self):
+        node = o.Node("n01", "execute", "noop", [])
+        old_registry = {
+            "capability:execute": {"default_tool": "noop", "fallback_tools": []},
+            "noop": {"free_tier": True, "side_effects": [], "risk": "low"},
+        }
+        new_registry = {
+            "capability:execute": {"default_tool": "noop", "fallback_tools": []},
+            "noop": {
+                "free_tier": True,
+                "side_effects": [],
+                "risk": "low",
+                "allowed_actions": ["validate"],
+            },
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            snapshot = o.build_policy_snapshot(old_registry, [node], live=False)
+        workflow = {
+            "id": "wf_policy_drift",
+            "goal": "resume policy drift",
+            "live": False,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": o.fingerprint_nodes([node]),
+            "policy_fingerprint": o.fingerprint_policy(snapshot),
+            "route_snapshot": snapshot,
+            "policy_integrity": "verified",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False),                  patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=new_registry),                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["policy_integrity"], "drift_detected")
+        self.assertTrue(workflow["policy_drift"])
+        execute.assert_not_called()
+
+    def test_running_safe_node_is_rearmed_after_runner_interruption(self):
+        node = o.Node("n01", "execute", "noop", [], status="running")
+        workflow = {
+            "id": "wf_safe_recovery",
+            "goal": "recover safe node",
+            "status": "running",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}),                  patch.object(o, "execute_node", return_value={"ok": True}) as execute:
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 1)
+
+    def test_postcondition_failure_after_side_effect_does_not_replan(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", max_retries=2,
+            input={"approval_granted": True, "url": "https://example.test/hook"},
+            contract={"postconditions": [{"type": "field_equals", "field": "status", "value": "published"}]},
+        )
+        workflow = {
+            "id": "wf_postcondition_fence",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(o.os.environ, {
+                "ORCHESTRATOR_FREE_ONLY": "true",
+                "ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook",
+            }, clear=False),                  patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "commit_side_effect_start", return_value=True),                  patch.object(o, "execute_node", return_value={"status": "queued"}) as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["replan_count"], 0)
+        self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
+        self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
+
+    def test_execution_budget_blocks_before_side_effect_barrier(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high",
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_budget",
+            "goal": "budget",
+            "live": True,
+            "execution_budget": {"max_steps": 1, "used_steps": 1},
+            "nodes": [o.asdict(node)],
+        }
+        registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(o.os.environ, {
+                "ORCHESTRATOR_FREE_ONLY": "true",
+                "ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook",
+            }, clear=False),                  patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "commit_side_effect_start") as barrier,                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertTrue(workflow["nodes"][0]["error"]["budget_exhausted"])
+        barrier.assert_not_called()
+        execute.assert_not_called()
+
+    def test_postcondition_http_status_passes(self):
+        node = o.Node(
+            "n01", "publish", "webhook", [],
+            contract={"postconditions": [{"type": "http_status", "field": "status_code"}]},
+        )
+        result = o.validate_node_output(node, {"status_code": 201})
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["acceptance"]["passed"])
+        self.assertEqual(result["checks"][-1]["value"], 201)
+
+    def test_postcondition_field_equals_fails_closed(self):
+        node = o.Node(
+            "n01", "publish", "noop", [],
+            contract={"postconditions": [{"type": "field_equals", "field": "status", "value": "published"}]},
+        )
+        with self.assertRaises(RuntimeError):
+            o.validate_node_output(node, {"status": "queued"})
 
     def test_policy_raises_risk_for_deploy_even_if_planner_says_low(self):
         node = o.Node("n01-deploy", "deploy", "noop", [], risk="low")
@@ -214,7 +441,7 @@ class OrchestratorTests(unittest.TestCase):
             "goal": "run",
             "live": False,
             "nodes": [o.asdict(node)],
-            "plan_fingerprint": "not-the-current-plan",
+            "plan_fingerprint": "f" * 64,
         }
         with patch.object(o, "execute_node") as execute:
             result = o.run_one_step(workflow)
@@ -358,21 +585,22 @@ class OrchestratorTests(unittest.TestCase):
             "nodes": [o.asdict(node)],
         }
         registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(o, "STATE_DIR", Path(tmp)), \
-                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
-                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
-                 patch.object(o, "load_registry", return_value=registry), \
-                 patch.object(o, "execute_node", side_effect=TimeoutError("upstream timeout")) as execute:
-                result = o.run_one_step(workflow, approve_high_risk=False)
-        self.assertEqual(result, "failed")
-        self.assertEqual(execute.call_count, 1)
-        self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
-        self.assertEqual(workflow["replan_count"], 0)
-        self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
-        self.assertTrue(workflow["nodes"][0]["error"]["retry_blocked_after_side_effect_start"])
-        self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
-        self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook"}, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                     patch.object(o, "load_registry", return_value=registry), \
+                     patch.object(o, "execute_node", side_effect=TimeoutError("upstream timeout")) as execute:
+                    result = o.run_one_step(workflow, approve_high_risk=False)
+            self.assertEqual(result, "failed")
+            self.assertEqual(execute.call_count, 1)
+            self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
+            self.assertEqual(workflow["replan_count"], 0)
+            self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
+            self.assertTrue(workflow["nodes"][0]["error"]["retry_blocked_after_side_effect_start"])
+            self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
+            self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
 
     def test_started_side_effect_permanent_error_does_not_replan(self):
         node = o.Node(
@@ -386,17 +614,18 @@ class OrchestratorTests(unittest.TestCase):
             "nodes": [o.asdict(node)],
         }
         registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(o, "STATE_DIR", Path(tmp)), \
-                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
-                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
-                 patch.object(o, "load_registry", return_value=registry), \
-                 patch.object(o, "execute_node", side_effect=RuntimeError("provider rejected response")) as execute:
-                result = o.run_one_step(workflow, approve_high_risk=False)
-        self.assertEqual(result, "failed")
-        self.assertEqual(execute.call_count, 1)
-        self.assertEqual(workflow["replan_count"], 0)
-        self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook"}, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                     patch.object(o, "load_registry", return_value=registry), \
+                     patch.object(o, "execute_node", side_effect=RuntimeError("provider rejected response")) as execute:
+                    result = o.run_one_step(workflow, approve_high_risk=False)
+            self.assertEqual(result, "failed")
+            self.assertEqual(execute.call_count, 1)
+            self.assertEqual(workflow["replan_count"], 0)
+            self.assertTrue(workflow["nodes"][0]["error"]["replan_blocked_after_side_effect_start"])
     def test_workflow_started_side_effect_timeout_is_not_retried(self):
         node = o.Node(
             "n01-write", "publish", "webhook", [], risk="high", max_retries=2,
@@ -409,18 +638,19 @@ class OrchestratorTests(unittest.TestCase):
             "nodes": [o.asdict(node)],
         }
         registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
-        with tempfile.TemporaryDirectory() as tmp:
-            with patch.object(o, "STATE_DIR", Path(tmp)), \
-                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
-                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
-                 patch.object(o, "load_registry", return_value=registry), \
-                 patch.object(o, "execute_node", side_effect=TimeoutError("upstream timeout")) as execute:
-                o.run_workflow(workflow, approve_high_risk=False)
-        self.assertEqual(workflow["status"], "failed")
-        self.assertEqual(execute.call_count, 1)
-        self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
-        self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
-        self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook"}, clear=False):
+            with tempfile.TemporaryDirectory() as tmp:
+                with patch.object(o, "STATE_DIR", Path(tmp)), \
+                     patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                     patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                     patch.object(o, "load_registry", return_value=registry), \
+                     patch.object(o, "execute_node", side_effect=TimeoutError("upstream timeout")) as execute:
+                    o.run_workflow(workflow, approve_high_risk=False)
+            self.assertEqual(workflow["status"], "failed")
+            self.assertEqual(execute.call_count, 1)
+            self.assertEqual(workflow["nodes"][0]["retry_count"], 0)
+            self.assertTrue(workflow["nodes"][0]["error"]["post_start_side_effect_failure"])
+            self.assertTrue(workflow["nodes"][0]["error"]["execution_uncertain"])
     def test_barrier_failed_side_effect_is_rearmed_for_fresh_worker(self):
         node = o.Node(
             "n01-webhook", "publish", "webhook", [], risk="high", status="failed",
@@ -503,7 +733,10 @@ class OrchestratorTests(unittest.TestCase):
             "nodes": [o.asdict(node)],
         }
         registry = {"webhook": {"free_tier": True, "side_effects": ["external_request"]}}
-        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_WEBHOOK_URL": "https://example.test/hook",
+        }, clear=False), \
              patch.object(o, "load_registry", return_value=registry), \
              patch.object(o, "execute_node", return_value={"ok": True}) as execute:
             with tempfile.TemporaryDirectory() as tmp:
@@ -607,6 +840,11 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "reconciled")
         self.assertEqual(workflow["nodes"][0]["status"], "completed")
         self.assertTrue(workflow["nodes"][0]["output"]["reconciled"])
+        self.assertEqual(workflow["nodes"][0]["output"]["request_id"], reconciliation["request_id"])
+        self.assertEqual(
+            workflow["nodes"][0]["output"]["execution_id"],
+            o.hashlib.sha256(b"wf_reconcile:n01-connector").hexdigest(),
+        )
 
     def test_uncertain_connector_reconciliation_not_applied_allows_new_attempt(self):
         workflow = self._uncertain_connector_workflow({
@@ -730,6 +968,98 @@ class OrchestratorTests(unittest.TestCase):
                     result = o.run_one_step(workflow, approve_high_risk=False)
         self.assertEqual(result, "completed")
         self.assertEqual(workflow["status"], "completed")
+    def test_persist_rebinds_latest_worker_run_and_preserves_origin(self):
+        workflow = {
+            "id": "wf_run_binding",
+            "goal": "chain",
+            "status": "running",
+            "live": False,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(
+                o, "STATE_DIR", root
+            ), patch.object(
+                o, "STATE_FILE", root / "state.json"
+            ), patch.object(
+                o, "EVENT_FILE", root / "events.jsonl"
+            ), patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_GITHUB_RUN_ID": "run-A", "ORCHESTRATOR_GITHUB_RUN_ATTEMPT": "1"},
+                clear=False,
+            ):
+                o.persist_workflow(workflow)
+            with patch.object(
+                o, "STATE_DIR", root
+            ), patch.object(
+                o, "STATE_FILE", root / "state.json"
+            ), patch.object(
+                o, "EVENT_FILE", root / "events.jsonl"
+            ), patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_GITHUB_RUN_ID": "run-B", "ORCHESTRATOR_GITHUB_RUN_ATTEMPT": "2"},
+                clear=False,
+            ):
+                o.persist_workflow(workflow)
+            saved = json.loads((root / "state.json").read_text(encoding="utf-8"))
+            events = (root / "events.jsonl").read_text(encoding="utf-8")
+        stored = saved["workflows"]["wf_run_binding"]
+        self.assertEqual(stored["origin_github_run_id"], "run-A")
+        self.assertEqual(stored["origin_github_run_attempt"], 1)
+        self.assertEqual(stored["github_run_id"], "run-B")
+        self.assertEqual(stored["github_run_attempt"], 2)
+        self.assertIn("workflow.worker_run_rebound", events)
+
+    def test_persist_updates_attempt_for_same_worker_run(self):
+        workflow = {
+            "id": "wf_run_attempt",
+            "goal": "rerun",
+            "status": "running",
+            "live": False,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            env = {"ORCHESTRATOR_GITHUB_RUN_ID": "run-A", "ORCHESTRATOR_GITHUB_RUN_ATTEMPT": "1"}
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(o.os.environ, env, clear=False):
+                o.persist_workflow(workflow)
+            env["ORCHESTRATOR_GITHUB_RUN_ATTEMPT"] = "2"
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(o.os.environ, env, clear=False):
+                o.persist_workflow(workflow)
+            saved = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        stored = saved["workflows"]["wf_run_attempt"]
+        self.assertEqual(stored["github_run_id"], "run-A")
+        self.assertEqual(stored["github_run_attempt"], 2)
+        self.assertEqual(stored["origin_github_run_id"], "run-A")
+        self.assertEqual(stored["origin_github_run_attempt"], 1)
+
+    def test_legacy_worker_binding_backfills_origin_attempt(self):
+        workflow = {
+            "id": "wf_legacy_attempt",
+            "goal": "legacy",
+            "status": "running",
+            "live": False,
+            "github_run_id": "run-legacy",
+            "github_run_attempt": None,
+            "nodes": [o.asdict(o.Node("n01", "execute", "noop"))],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "STATE_DIR", root),                  patch.object(o, "STATE_FILE", root / "state.json"),                  patch.object(o, "EVENT_FILE", root / "events.jsonl"),                  patch.dict(
+                     o.os.environ,
+                     {
+                         "ORCHESTRATOR_GITHUB_RUN_ID": "run-legacy",
+                         "ORCHESTRATOR_GITHUB_RUN_ATTEMPT": "3",
+                     },
+                     clear=False,
+                 ):
+                o.persist_workflow(workflow)
+            saved = json.loads((root / "state.json").read_text(encoding="utf-8"))
+        stored = saved["workflows"]["wf_legacy_attempt"]
+        self.assertEqual(stored["github_run_attempt"], 3)
+        self.assertEqual(stored["origin_github_run_attempt"], 3)
+
     def test_resume_scheduler_prioritizes_oldest_updated_workflow(self):
         older = {
             "id": "wf_old", "goal": "old", "live": False,
@@ -748,7 +1078,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(state["last_workflow_id"], "wf_old")
     def test_one_step_advances_dag_incrementally(self):
-        workflow = o.create_workflow('build a website', live=False)
+        with patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow('build a website', live=False)
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, 'STATE_DIR', Path(tmp)), \
                  patch.object(o, 'EVENT_FILE', Path(tmp) / 'events.jsonl'), \
@@ -760,17 +1091,199 @@ class OrchestratorTests(unittest.TestCase):
                 self.assertEqual(statuses[-1], 'completed')
                 self.assertEqual(workflow['status'], 'completed')
                 self.assertTrue(all(node['status'] == 'completed' for node in workflow['nodes']))
+    def test_parallel_preflight_replan_does_not_reuse_executable_batch(self):
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel_replan",
+            "goal": "parallel replan",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 2,
+            "execution_budget": {"max_steps": 4, "used_steps": 0},
+            "replan_count": 0,
+            "nodes": [o.asdict(node) for node in nodes],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value={}), \
+                 patch.object(
+                     o,
+                     "preflight_node",
+                     side_effect=[RuntimeError("first unavailable"), None],
+                 ), \
+                 patch.object(o, "replan_after_failure", return_value=True) as replan, \
+                 patch.object(o, "execute_node") as execute:
+                o.run_workflow(workflow)
+        replan.assert_called_once()
+        execute.assert_not_called()
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 0)
+        self.assertEqual(workflow["status"], "running")
+    def test_parallel_batch_preflight_failure_does_not_strand_siblings(self):
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel_preflight",
+            "goal": "parallel preflight",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 2,
+            "execution_budget": {"max_steps": 4, "used_steps": 0},
+            "nodes": [o.asdict(node) for node in nodes],
+        }
+        registry = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(
+                     o,
+                     "preflight_node",
+                     side_effect=[None, RuntimeError("second node unavailable")],
+                 ),                  patch.object(o, "replan_after_failure", return_value=False),                  patch.object(o, "execute_node") as execute:
+                o.run_workflow(workflow)
+
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(workflow["failed_node"], "n02-b")
+        self.assertEqual(workflow["nodes"][0]["status"], "ready")
+        self.assertEqual(workflow["nodes"][1]["status"], "failed")
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 0)
+        execute.assert_not_called()
+
+    def test_parallel_batch_is_bounded_by_remaining_execution_budget(self):
+        nodes = [
+            o.Node("n01-a", "execute", "noop", []),
+            o.Node("n02-b", "execute", "noop", []),
+        ]
+        workflow = {
+            "id": "wf_parallel_budget",
+            "goal": "parallel budget",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 2,
+            "execution_budget": {"max_steps": 1, "used_steps": 0},
+            "nodes": [o.asdict(node) for node in nodes],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), \
+                 patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
+                 patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"), \
+                 patch.object(o, "load_registry", return_value={}), \
+                 patch.object(o, "execute_node", return_value={"ok": True}) as execute:
+                o.run_workflow(workflow)
+
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(workflow["failed_node"], "n02-b")
+        self.assertEqual(workflow["execution_budget"]["used_steps"], 1)
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(workflow["nodes"][1]["status"], "failed")
+        self.assertNotIn("running", {node["status"] for node in workflow["nodes"]})
+
     def test_free_only_rejects_paid_node_at_execution_time(self):
         node = o.Node("n01", "analyze", "openai")
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
             with self.assertRaises(RuntimeError):
                 o.execute_node(node, "test", dry_run=False)
 
+    def test_goal_length_is_bounded(self):
+        with self.assertRaises(ValueError):
+            o.normalize_goal("x" * 4001)
+
+    def test_node_serialized_size_is_bounded(self):
+        node = o.Node(
+            "n01",
+            "execute",
+            "noop",
+            [],
+            input={"instruction": "x" * (32 * 1024)},
+        )
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
+
     def test_workflow_creation_falls_back_without_gemini_key(self):
         with patch.dict(o.os.environ, {}, clear=True):
             workflow = o.create_workflow("build a small website", live=False)
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
         self.assertEqual(workflow["status"], "planning")
+
+    def test_duplicate_event_rejects_intent_fingerprint_conflict(self):
+        workflow = {
+            "id": "wf-existing",
+            "execution_id": "a" * 64,
+            "intent_fingerprint": "b" * 64,
+            "input_digest": "c" * 64,
+            "idempotency_key": "evt-1",
+        }
+        with self.assertRaises(SystemExit):
+            o.validate_event_replay_identity(
+                workflow,
+                execution_id="a" * 64,
+                intent_fingerprint="d" * 64,
+                input_digest="c" * 64,
+                idempotency_key="evt-1",
+            )
+
+    def test_replay_deduplicates_by_execution_id_even_when_event_changes(self):
+        state = {
+            "workflows": {
+                "wf-existing": {
+                    "id": "wf-existing",
+                    "event_id": "evt-old",
+                    "execution_id": "a" * 64,
+                    "idempotency_key": "idem-1",
+                    "status": "running",
+                }
+            }
+        }
+        existing = o.find_existing_replay(
+            state,
+            event_id="evt-new",
+            execution_id="a" * 64,
+            idempotency_key="idem-new",
+        )
+        self.assertIsNotNone(existing)
+        self.assertEqual(existing["id"], "wf-existing")
+
+    def test_replay_identifier_collision_across_workflows_fails_closed(self):
+        state = {
+            "workflows": {
+                "wf-a": {
+                    "id": "wf-a",
+                    "execution_id": "a" * 64,
+                },
+                "wf-b": {
+                    "id": "wf-b",
+                    "idempotency_key": "idem-1",
+                },
+            }
+        }
+        with self.assertRaises(SystemExit):
+            o.find_existing_replay(
+                state,
+                event_id=None,
+                execution_id="a" * 64,
+                idempotency_key="idem-1",
+            )
+
+    def test_duplicate_event_with_matching_identity_is_replay_safe(self):
+        workflow = {
+            "id": "wf-existing",
+            "execution_id": "a" * 64,
+            "intent_fingerprint": "b" * 64,
+            "input_digest": "c" * 64,
+            "idempotency_key": "evt-1",
+        }
+        o.validate_event_replay_identity(
+            workflow,
+            execution_id="a" * 64,
+            intent_fingerprint="b" * 64,
+            input_digest="c" * 64,
+            idempotency_key="evt-1",
+        )
 
     def test_duplicate_event_id_is_not_recreated(self):
         existing = {
@@ -794,12 +1307,253 @@ class OrchestratorTests(unittest.TestCase):
             )
             self.assertIsNotNone(duplicate)
 
+    def test_scheduled_recovery_defers_fresh_running_workflow(self):
+        now = o.datetime(2026, 10, 2, 9, 10, tzinfo=o.timezone.utc)
+        workflow = {
+            "status": "running",
+            "github_run_id": "123",
+            "updated_at": "2026-10-02T09:08:00+00:00",
+        }
+        self.assertFalse(o.running_recovery_due(workflow, now=now))
+
+    def test_scheduled_recovery_picks_stale_running_workflow(self):
+        now = o.datetime(2026, 10, 2, 9, 10, tzinfo=o.timezone.utc)
+        workflow = {
+            "status": "running",
+            "github_run_id": "123",
+            "updated_at": "2026-10-02T09:00:00+00:00",
+        }
+        self.assertTrue(o.running_recovery_due(workflow, now=now))
+
+    def test_manual_resume_can_still_process_fresh_running_workflow(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_fresh_manual",
+            "goal": "manual resume",
+            "status": "running",
+            "live": False,
+            "github_run_id": "123",
+            "updated_at": "2026-10-02T09:09:30+00:00",
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}):
+                with patch.object(o, "run_workflow", return_value=None) as runner:
+                    state = {"workflows": {workflow["id"]: workflow}}
+                    o.resume_pending_workflows(state, scheduled_recovery=False)
+        runner.assert_called_once()
+
+    def test_workflow_creation_persists_execution_envelope_identity(self):
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "17"},
+            clear=False,
+        ):
+            workflow = o.create_workflow(
+                "structured work",
+                live=False,
+                execution_id="a" * 64,
+                parent_execution_id="parent-1",
+                external_workflow_id="external-wf",
+                external_domain="publisher",
+                external_operation="chapter.produce",
+                intent_fingerprint="b" * 64,
+                input_digest="c" * 64,
+                idempotency_key="evt-1",
+                external_attempt=2,
+            )
+        self.assertEqual(workflow["execution_id"], "a" * 64)
+        self.assertEqual(workflow["parent_execution_id"], "parent-1")
+        self.assertEqual(workflow["external_workflow_id"], "external-wf")
+        self.assertEqual(workflow["external_domain"], "publisher")
+        self.assertEqual(workflow["external_operation"], "chapter.produce")
+        self.assertEqual(workflow["intent_fingerprint"], "b" * 64)
+        self.assertEqual(workflow["input_digest"], "c" * 64)
+        self.assertEqual(workflow["idempotency_key"], "evt-1")
+        self.assertEqual(workflow["external_attempt"], 2)
+
+    def test_finalize_workflow_persists_callback_outcome_after_terminal_send(self):
+        workflow = {
+            "id": "wf_finalize_callback",
+            "execution_id": "1" * 64,
+            "status": "completed",
+            "callback": {"status": "pending", "attempts": 0},
+        }
+        state = {"workflows": {workflow["id"]: workflow}, "last_workflow_id": None}
+        def fake_callback(wf):
+            wf["callback"]["status"] = "sent"
+            return True
+        def fake_save(current):
+            self.assertEqual(
+                current["workflows"][workflow["id"]]["callback"]["status"],
+                "sent",
+            )
+        with patch.object(o, "notify_execution_callback", side_effect=fake_callback), \
+             patch.object(o, "save_state", side_effect=fake_save):
+            o.finalize_workflow_state(state, workflow)
+        self.assertEqual(state["last_workflow_id"], workflow["id"])
+
+    def test_terminal_execution_callback_is_hmac_signed_and_idempotent(self):
+        workflow = {
+            "id": "wf_callback",
+            "execution_id": "d" * 64,
+            "status": "completed",
+            "external_workflow_id": "external-wf",
+            "external_domain": "publisher",
+            "external_operation": "chapter.produce",
+            "intent_fingerprint": "e" * 64,
+            "input_digest": "f" * 64,
+            "external_attempt": 3,
+            "nodes": [],
+        }
+        captured = {}
+
+        def fake_urlopen(request, timeout=30):
+            captured["body"] = request.data
+            captured["headers"] = dict(request.header_items())
+            captured["method"] = request.method
+            captured["url"] = request.full_url
+
+            class Response:
+                status = 204
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+            return Response()
+
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "https://callback.example.test/terminal",
+                "ORCHESTRATOR_CALLBACK_SECRET": "secret",
+            },
+            clear=False,
+        ), patch.object(
+            o.urllib.request, "urlopen", side_effect=fake_urlopen
+        ) as send:
+            self.assertTrue(o.notify_execution_callback(workflow))
+
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(captured["method"], "POST")
+        self.assertEqual(
+            captured["headers"]["Idempotency-key"],
+            workflow["execution_id"],
+        )
+        body = json.loads(captured["body"].decode("utf-8"))
+        self.assertEqual(body["execution_id"], workflow["execution_id"])
+        self.assertEqual(body["status"], "completed")
+        self.assertEqual(body["result"]["attempt"], 3)
+        self.assertTrue(captured["headers"]["X-engine-signature"].startswith("sha256="))
+
+    def test_terminal_callback_success_is_durable_and_not_sent_twice(self):
+        workflow = {
+            "id": "wf_callback_sent",
+            "execution_id": "d" * 64,
+            "status": "completed",
+            "callback": {"status": "pending", "attempts": 0},
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "https://callback.example.test/terminal",
+                "ORCHESTRATOR_CALLBACK_SECRET": "secret",
+            },
+            clear=False,
+        ), patch.object(o.urllib.request, "urlopen") as send:
+            class Response:
+                status = 204
+                def __enter__(self): return self
+                def __exit__(self, *args): return None
+            send.return_value = Response()
+            self.assertTrue(o.notify_execution_callback(workflow))
+            self.assertTrue(o.notify_execution_callback(workflow))
+        self.assertEqual(send.call_count, 1)
+        self.assertEqual(workflow["callback"]["status"], "sent")
+        self.assertEqual(workflow["callback"]["attempts"], 1)
+
+    def test_terminal_callback_rejects_endpoint_drift(self):
+        workflow = {
+            "id": "wf_callback_drift",
+            "execution_id": "f" * 64,
+            "status": "completed",
+            "callback": {
+                "status": "pending",
+                "attempts": 1,
+                "target_fingerprint": o.callback_target_fingerprint(
+                    "https://callback-a.example.test/terminal"
+                ),
+            },
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "https://callback-b.example.test/terminal",
+                "ORCHESTRATOR_CALLBACK_SECRET": "secret",
+            },
+            clear=False,
+        ), patch.object(o.urllib.request, "urlopen") as send:
+            self.assertFalse(o.notify_execution_callback(workflow))
+        self.assertEqual(workflow["callback"]["status"], "dead_letter")
+        send.assert_not_called()
+
+    def test_terminal_callback_failure_eventually_dead_letters(self):
+        workflow = {
+            "id": "wf_callback_dead",
+            "execution_id": "e" * 64,
+            "status": "failed",
+            "failed_node": "n01",
+            "callback": {"status": "pending", "attempts": 11},
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "https://callback.example.test/terminal",
+                "ORCHESTRATOR_CALLBACK_SECRET": "secret",
+            },
+            clear=False,
+        ), patch.object(
+            o.urllib.request, "urlopen", side_effect=OSError("offline")
+        ):
+            with patch.object(o.time, "sleep"):
+                self.assertFalse(o.notify_execution_callback(workflow))
+        self.assertEqual(workflow["callback"]["status"], "dead_letter")
+        self.assertEqual(workflow["callback"]["attempts"], 12)
+
+    def test_terminal_execution_callback_does_not_send_without_private_channel(self):
+        workflow = {
+            "id": "wf_callback_missing",
+            "execution_id": "d" * 64,
+            "status": "completed",
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "",
+                "ORCHESTRATOR_CALLBACK_SECRET": "",
+            },
+            clear=False,
+        ), patch.object(o.urllib.request, "urlopen") as send:
+            self.assertFalse(o.notify_execution_callback(workflow))
+        send.assert_not_called()
+
     def test_workflow_creation_is_persistable(self):
         workflow = o.create_workflow("build a small website", live=False)
         self.assertTrue(workflow["id"].startswith("wf_"))
         self.assertEqual(workflow["status"], "planning")
         self.assertEqual(workflow["execution_mode"], "dry-run")
+        self.assertEqual(workflow["schema_version"], 6)
+        self.assertEqual(workflow["execution_budget"], {"max_steps": 96, "used_steps": 0})
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
+
+    def test_workflow_creation_persists_requested_execution_budget(self):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "17"}, clear=False):
+            workflow = o.create_workflow("research something", live=False)
+        self.assertEqual(workflow["schema_version"], 6)
+        self.assertEqual(workflow["execution_budget"], {"max_steps": 17, "used_steps": 0})
+
+    def test_invalid_requested_execution_budget_fails_closed(self):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "0"}, clear=False):
+            with self.assertRaises(ValueError):
+                o.create_workflow("research something", live=False)
 
     def test_plan_is_acyclic(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -808,6 +1562,28 @@ class OrchestratorTests(unittest.TestCase):
         o.validate_dag(nodes)
         self.assertEqual(len(nodes), 7)
         self.assertEqual(nodes[-1].capability, "notify")
+
+    def test_plan_validation_rejects_unbounded_retry_configuration(self):
+        node = o.Node("n01", "execute", "noop", [], max_retries=9)
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
+
+    def test_plan_validation_rejects_invalid_node_status_and_risk(self):
+        bad_status = o.Node("n01", "execute", "noop", [], status="unknown")
+        with self.assertRaises(ValueError):
+            o.validate_dag([bad_status])
+        bad_risk = o.Node("n01", "execute", "noop", [], risk="extreme")
+        with self.assertRaises(ValueError):
+            o.validate_dag([bad_risk])
+
+    def test_plan_validation_rejects_invalid_runtime_containers(self):
+        node = o.Node("n01", "execute", "noop", [], input=[])
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
+    def test_unsafe_node_identifier_is_rejected(self):
+        node = o.Node("../escape", "execute", "noop", [])
+        with self.assertRaises(ValueError):
+            o.validate_dag([node])
 
     def test_cycle_is_rejected(self):
         a = o.Node("a", "x", "noop", ["b"])
@@ -891,7 +1667,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("contract field missing: answer", workflow["nodes"][0]["error"]["message"])
 
     def test_dry_run_end_to_end_completes_without_credentials(self):
-        workflow = o.create_workflow("research an offline technical topic", live=False)
+        with patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow("research an offline technical topic", live=False)
         self.assertEqual(workflow["status"], "planning")
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)), \
@@ -923,7 +1700,7 @@ class OrchestratorTests(unittest.TestCase):
         )
         node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
         workflow = {"id": "wf_approval_bind", "status": "waiting_approval", "nodes": [o.asdict(node)]}
-        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer"}, clear=False), \
+        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer", "ORCHESTRATOR_APPROVAL_EVENT": "true", "ORCHESTRATOR_APPROVAL_ISSUE": "42"}, clear=False), \
              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
             o.refresh_approvals(workflow, [node])
         self.assertTrue(node.input["approval_granted"])
@@ -931,6 +1708,86 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(node.input["approval_approved_at"])
         self.assertEqual(node.status, "ready")
         self.assertEqual(workflow["status"], "running")
+
+    def test_approval_event_only_accepts_its_exact_issue(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [],
+            risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {
+            "id": "wf_exact_approval",
+            "status": "waiting_approval",
+            "nodes": [o.asdict(node)],
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_APPROVAL_EVENT": "true",
+                "ORCHESTRATOR_APPROVAL_ISSUE": "99",
+            },
+            clear=False,
+        ), patch.object(
+            o, "get_issue_labels", return_value={"orchestrator-approved"}
+        ) as labels:
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertEqual(node.status, "waiting_approval")
+        labels.assert_not_called()
+
+    def test_approval_event_accepts_matching_issue_only_after_fingerprint_check(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [],
+            risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {
+            "id": "wf_matching_approval",
+            "status": "waiting_approval",
+            "nodes": [o.asdict(node)],
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_APPROVAL_EVENT": "true",
+                "ORCHESTRATOR_APPROVAL_ISSUE": "42",
+                "GITHUB_ACTOR": "maintainer",
+            },
+            clear=False,
+        ), patch.object(
+            o, "get_issue_labels", return_value={"orchestrator-approved"}
+        ):
+            o.refresh_approvals(workflow, [node])
+        self.assertTrue(node.input["approval_granted"])
+        self.assertEqual(node.status, "ready")
+        self.assertEqual(node.input["approval_actor"], "maintainer")
+
+    def test_approval_label_without_authenticated_event_is_ignored(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
+        workflow = {"id": "wf_unverified_approval", "status": "waiting_approval", "nodes": [o.asdict(node)]}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_APPROVAL_EVENT": "false"}, clear=False),              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertEqual(node.status, "waiting_approval")
+        self.assertEqual(workflow["status"], "waiting_approval")
+
+    def test_rejection_label_without_authenticated_event_is_ignored(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
+            input={"approval_issue": 42, "approval_granted": False},
+        )
+        workflow = {"id": "wf_unverified_rejection", "status": "waiting_approval", "nodes": [o.asdict(node)]}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_APPROVAL_EVENT": "false"}, clear=False),              patch.object(o, "get_issue_labels", return_value={"orchestrator-rejected"}):
+            o.refresh_approvals(workflow, [node])
+        self.assertFalse(node.input["approval_granted"])
+        self.assertEqual(node.status, "waiting_approval")
+        self.assertEqual(workflow["status"], "waiting_approval")
 
     def test_stale_approval_is_rearmed_instead_of_accepted(self):
         node = o.Node(
@@ -940,7 +1797,7 @@ class OrchestratorTests(unittest.TestCase):
         node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
         node.input["instruction"] = "changed after approval request"
         workflow = {"id": "wf_stale_approval", "status": "waiting_approval", "nodes": [o.asdict(node)]}
-        with patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_APPROVAL_EVENT": "true", "ORCHESTRATOR_APPROVAL_ISSUE": "42"}, clear=False),              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
             o.refresh_approvals(workflow, [node])
         self.assertFalse(node.input["approval_granted"])
         self.assertIsNone(node.input["approval_issue"])
@@ -1194,6 +2051,92 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "failed")
         self.assertIn("500", workflow["nodes"][0]["error"]["message"])
 
+
+    def test_resume_preserves_persisted_tool_selection_until_replan(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_resume_plan",
+            "goal": "resume",
+            "live": True,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": o.fingerprint_nodes([node]),
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "wikipedia",
+                "fallback_tools": ["noop"],
+            },
+            "wikipedia": {"free_tier": True, "side_effects": []},
+            "noop": {"free_tier": True, "side_effects": []},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["plan_integrity"], "verified")
+        self.assertEqual(workflow["nodes"][0]["tool"], "noop")
+
+    def test_preflight_allows_explicit_webhook_url_without_env(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high",
+            input={"url": "https://example.test/hook", "approval_granted": True},
+        )
+        registry = {
+            "webhook": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_WEBHOOK_URL",
+                "side_effects": ["external_request"],
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_WEBHOOK_URL": "",
+        }, clear=False):
+            o.preflight_node(node, registry, live=True)
+
+    def test_terminal_workflow_resume_is_idempotent(self):
+        node = o.Node("n01", "execute", "noop", [], status="completed")
+        workflow = {
+            "id": "wf_terminal",
+            "goal": "already done",
+            "status": "completed",
+            "live": False,
+            "nodes": [o.asdict(node)],
+        }
+        with patch.object(o, "persist_workflow") as persist,              patch.object(o, "execute_node") as execute:
+            self.assertEqual(o.run_one_step(workflow), "completed")
+            o.run_workflow(workflow)
+        execute.assert_not_called()
+        persist.assert_not_called()
+
+    def test_preflight_failure_happens_before_side_effect_barrier(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high",
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_preflight_barrier",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "webhook": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_WEBHOOK_URL",
+                "side_effects": ["external_request"],
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.dict(o.os.environ, {
+                     "ORCHESTRATOR_FREE_ONLY": "true",
+                     "ORCHESTRATOR_WEBHOOK_URL": "",
+                 }, clear=False),                  patch.object(o, "commit_side_effect_start") as barrier,                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertTrue(workflow["nodes"][0]["error"]["preflight_failed"])
+        barrier.assert_not_called()
+        execute.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()

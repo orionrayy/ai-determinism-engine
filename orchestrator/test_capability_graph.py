@@ -89,6 +89,20 @@ class CapabilityGraphTests(unittest.TestCase):
         self.assertEqual(health["webhook"]["status"], cg.QUARANTINED)
         self.assertEqual(health["webhook"]["cooldown_until"], 910)
 
+    def test_corrupt_health_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tool_health.json"
+            path.write_text("{not-json", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                cg.load_health(path)
+
+    def test_non_object_health_state_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tool_health.json"
+            path.write_text("[]", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                cg.load_health(path)
+
     def test_health_round_trip(self):
         health = {"free": {"status": cg.HEALTHY, "failure_streak": 0}}
         with tempfile.TemporaryDirectory() as tmp:

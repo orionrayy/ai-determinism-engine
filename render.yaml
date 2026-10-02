@@ -15,6 +15,12 @@ services:
         sync: false
       - key: GATEWAY_SHARED_SECRET
         sync: false
+      - key: ORCHESTRATOR_PRIVATE_INPUT_URL
+        sync: false
+      - key: ORCHESTRATOR_PRIVATE_INPUT_SECRET
+        sync: false
+      - key: ORCHESTRATOR_PRIVATE_INPUT_TTL_SECONDS
+        value: "86400"
 
   - type: web
     name: ai-orchestrator-connector-bridge

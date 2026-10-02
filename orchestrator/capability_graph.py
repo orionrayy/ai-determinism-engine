@@ -189,9 +189,13 @@ def load_health(path: Path) -> dict[str, Any]:
         return {}
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
+    except OSError as exc:
+        raise RuntimeError(f"tool health state is unreadable: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"tool health state is invalid JSON: {path}") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"tool health state must be an object: {path}")
+    return value
 
 
 def save_health(path: Path, health: dict[str, Any]) -> None:
