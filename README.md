@@ -1,3 +1,7 @@
+## State-machine bounds hardening v41
+
+State migration now enforces bounded replan/retry counters and validates persisted node status, risk, identifiers, dependencies, and runtime object fields before execution. Corrupted state therefore fails closed rather than expanding the retry/replan state space.
+
 ## Approval trust-boundary hardening v40
 
 High-risk orchestration approval now requires a write-capable repository role (`push`, `maintain`, or `admin`). The `triage` role is excluded because it can manage issues and labels without code-write access.
