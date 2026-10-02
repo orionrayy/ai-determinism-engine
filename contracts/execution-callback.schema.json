@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Orchestrator Execution Callback",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "request_id",
+    "execution_id",
+    "intent_fingerprint",
+    "status",
+    "result",
+    "error"
+  ],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 1 },
+    "request_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "execution_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "intent_fingerprint": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "status": { "enum": ["completed", "failed", "uncertain"] },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "workflow_id": { "type": "string", "maxLength": 128 },
+        "external_workflow_id": { "type": "string", "maxLength": 128 },
+        "external_domain": { "type": "string", "maxLength": 64 },
+        "external_operation": { "type": "string", "maxLength": 128 },
+        "input_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "attempt": { "type": "integer", "minimum": 1, "maximum": 1000 }
+      }
+    },
+    "error": { "type": "string", "maxLength": 128 }
+  },
+  "additionalProperties": false
+}

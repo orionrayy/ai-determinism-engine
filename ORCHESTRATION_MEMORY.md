@@ -4,14 +4,163 @@
 
 This file is the durable, version-controlled memory of the AI orchestration control plane. Before modifying the orchestrator, treat this document and the current source tree as the source of truth. Do not assume older conversation state is still accurate without checking the repository.
 
+## Execution preflight + resume plan immutability v25
+- Terminal `completed` and `cancelled` workflows are idempotent on resume: the worker does not re-enter execution or emit a duplicate side effect.
+
+- Persisted workflow plans are no longer re-routed during resume before plan-integrity verification. Tool selection is treated as part of the durable intent and changes only during explicit replanning or initial plan construction.
+- Initial workflow creation still routes each node through the capability graph so free-tier, credential availability, risk, and health are considered before the plan is persisted.
+- Live execution performs a local preflight before approval/barrier handling: tool registration, free-only policy, required credentials/secrets, quarantined health state, and HTTPS endpoint prerequisites are checked before any external side-effect START fence.
+- A preflight failure can re-enter the existing bounded replan path because no side-effect durability barrier has been crossed.
+- The ready state permits a policy/dependency failure transition to failed, making pre-execution failures explicit without pretending that an external action started.
+- The AI Orchestrator workflow job explicitly accepts both [ORCHESTRATOR] source issues and [ORCHESTRATOR APPROVAL] issues so approval labels can reach the worker.
+- Approval labels are accepted only during an authenticated `issues` `labeled` event carrying an allowlisted approval/rejection label; scheduled recovery cannot bootstrap approval from an unverified label.
+## Lifecycle control plane v26
+
+- Both run_one_step() and run_workflow() preserve the persisted node tool choice during resume; capability routing is reserved for initial plan construction or explicit replanning.
+- Every logical node activation consumes one durable workflow execution-budget step before entering running or crossing the side-effect barrier.
+- Default workflow budget is 96 logical steps with a hard maximum of 256; exhausted budgets fail closed and do not trigger another replan.
+- The budget is persisted and schema-validated so crash recovery cannot silently reset the runaway-loop guard.
+- Node contracts may declare deterministic postconditions: field_exists, field_equals, field_in, non_empty, or bounded http_status. These checks execute before a node is marked completed.
+- Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
+- Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
+- Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## State-machine bounds hardening v41
+
+- Workflow `replan_count` is now schema-bounded to 0–2, matching the runtime replan ceiling; malformed or excessive values fail closed instead of enabling unbounded replanning.
+- Persisted node `retry_count`/`max_retries` are validated and bounded (`max_retries` <= 8) so corrupted state cannot create an unbounded retry loop.
+- Node status/risk/id/capability/dependency and runtime payload container types are validated during migration before recovery can execute them.
+
+## Private input signature hardening v44
+
+- Private-input request signatures now bind HTTP method, request path, timestamp, and body. This prevents reusing a valid signature for a different reference/path within the replay window.
+- Private-input execution identities are required to be 64-character lowercase hexadecimal values before an opaque reference is derived.
+- The versioned private-input envelope remains vendor-neutral. The receiver is responsible for rejecting stale timestamps, verifying HMAC in constant time, enforcing expiration, and keeping the raw payload out of logs and public stores.
+
+## Private input transport v43
+
+- Structured live ingress can now accept live requests only when an authenticated HTTPS private-input store is configured; otherwise it fails closed with `private_input_unavailable`.
+- The gateway stores the raw structured input in the private store and sends GitHub Actions only an opaque HMAC-derived `private_input_ref`, execution identity, intent fingerprint, and digest. Raw structured input is not copied into repository-backed state.
+- The worker passes the private reference into the persisted workflow. For structured live connector operations, the planner is bypassed so private payload content is never sent to Gemini/OpenAI; the worker executes `external_domain.external_operation` through the connector bridge and fetches the payload just-in-time.
+- Private connector payloads are injected only into the in-memory node during the upstream call and are removed from node input in a `finally` block before validation/persistence. The connector request ID and intent fingerprint therefore still bind to the actual payload while durable state retains only the reference/digest.
+- The private-input protocol uses HTTPS, HMAC request signing, a deterministic secret-bound reference, bounded envelope/input size, digest verification, execution-identity binding, and a bounded TTL (24 hours by default, configurable up to 7 days).
+- `contracts/private-input.schema.json` is the versioned envelope contract. The protocol is vendor-neutral; the backend must implement `POST /v1/inputs` and `GET /v1/inputs/{input_ref}`.
+- No private-input backend is deployed or health-verified in this repository yet. Structured live execution remains operationally unavailable until a private store is provisioned, configured in the gateway/worker secrets, and verified end-to-end.
+
+## Executor activation + dependency boundary hardening v42
+
+- Fixed a regression in the two-phase parallel executor where the Phase 2 activation block was accidentally nested under the execution-budget exception path; successful budget admission now actually activates and executes the admitted batch.
+- A preflight replan now returns to the worker/continuation boundary instead of reusing the stale in-memory admission batch. The durable replanned plan is therefore revalidated before another execution batch is built.
+- DAG validation rejects malformed node runtime containers before intent serialization so invalid objects fail with an explicit contract error rather than an incidental attribute error.
+- Test fixtures now match the strict schema, exact approval-issue binding, sanitized connector-response contract, and current workflow schema.
+- The root dependency manifest is reserved for the stdlib control plane; legacy ML dependencies are isolated in `requirements-legacy.txt` so deployment/runtime environments do not inherit the unrelated ML stack.
+- Render is pinned to Python 3.12 to match the control-plane CI runtime.
+
+## Approval trust-boundary hardening v40
+
+- Approval labels are now accepted only when the actor has `admin`, `maintain`, or `push` repository permission; `triage` is excluded even though it can manage issues/labels.
+- This keeps issue/label moderation power separate from the authority to authorize high-risk orchestrator actions.
+
+## Strict state identity validation v39
+
+- State/workflow schema version fields now fail closed when explicitly malformed instead of being silently coerced to legacy version `1`.
+- Each workflow dictionary key is bound to `workflow.id`; mismatches are rejected, while genuinely legacy records missing `id` are deterministically backfilled from the key.
+- Worker run-attempt fields are schema-validated as positive integers or null.
+
+## Durable output privacy v38
+
+- Connector success output no longer persists the raw bridge URL; it carries only a hashed bridge target identity and sanitized discovery data.
+- Raw connector endpoint configuration remains deployment-only data and is not written into public workflow checkpoints/evidence.
+
+## Worker attempt binding v37
+
+- Durable workflow worker identity now stores both `github_run_id` and `github_run_attempt`.
+- Continuation matching requires an exact run ID and run attempt, so a rerun of an Actions workflow cannot satisfy a continuation event from an earlier attempt.
+- `origin_github_run_id` and `origin_github_run_attempt` preserve first-worker provenance while `github_run_id`/`github_run_attempt` track the latest durable worker execution.
+
+## Reconciliation endpoint binding v36
+
+- Reconciliation requests now carry a fingerprint of the configured reconciliation endpoint in addition to the original connector execution target fingerprint.
+- The orchestrator records that reconciliation-endpoint fingerprint on the failed connector node and refuses recovery when the endpoint changes before reconciliation.
+- The bridge runtime independently verifies both execution target and reconciliation endpoint fingerprints before dispatching the recovery lookup.
+- This keeps recovery fail-closed across connector migrations or routing changes instead of interpreting a new backend's answer as the outcome of the original side effect.
+
+## Concurrent single-flight failure semantics v35
+
+- Bridge-runtime single-flight now propagates the first flight's result or failure to requests that actually overlapped that flight; a waiting duplicate never starts an implicit second upstream attempt.
+- After a failed flight is released, a later fresh request may retry normally; failures are not stored as completed idempotency results.
+- This prevents concurrent duplicate callers from turning an uncertain/non-idempotent upstream failure into a second external attempt while retaining normal retry behavior for a new request cycle.
+
+## Reconciliation target binding v34
+
+- Connector reconciliation now re-discovers the current connector action contract and target fingerprint before contacting the reconciliation endpoint.
+- If the saved execution contract fingerprint differs from the current action contract/target, reconciliation fails closed and does not query or mutate the connector target.
+- The reconciliation request carries the target fingerprint; the bridge runtime independently compares it with the currently configured upstream target before dispatching reconciliation.
+- Legacy workflows without a saved contract fingerprint remain compatible, while newly hardened executions are protected against target drift during recovery.
+
+## Upstream failure boundary v33
+
+- Bridge upstream HTTP responses outside 2xx are now raised as typed upstream failures instead of being cached as successful bridge responses.
+- Upstream 5xx/network failures propagate as HTTP 502 from the bridge server so the orchestrator retains an explicit uncertain-transport signal; upstream 4xx remains a non-uncertain client/dependency failure.
+- The orchestrator connector adapter also rejects a nested upstream non-2xx status as defense-in-depth, even if a bridge implementation incorrectly returns HTTP 200 around it.
+- Failed upstream attempts release the local idempotency slot without populating the completed cache, allowing a later bounded retry to reach the upstream again.
+
+## Connector target binding v32
+
+- Connector discovery now exposes only a SHA-256 `target_fingerprint` for each configured upstream URL; the URL itself is not persisted in discovery output.
+- The connector action contract fingerprint now binds both the normalized action contract and the discovered target fingerprint, so a route-target change after an uncertain connector failure fails closed before another POST.
+- Bridge-runtime idempotency fingerprints also bind the target fingerprint, preventing a process-local cached response from being replayed against a different configured upstream target under the same request ID.
+- This remains bounded by the upstream/provider idempotency boundary across bridge process restarts: the bridge itself has no durable cross-process cache.
+
+## Parallel budget admission v31
+
+- Parallel safe-node batches are now admitted against the remaining durable execution-step budget before any node in the batch is persisted as `running`.
+- When fewer budget slots remain than the proposed safe parallel batch, the batch is deterministically truncated to the available capacity instead of partially reserving nodes and failing a later reservation.
+- When no execution slots remain, the first deterministically selected ready node is failed at the admission boundary; no other node is left stranded in `running`.
+- This keeps budget exhaustion compatible with scheduled recovery and preserves the durable redrive invariant that completed work is retained while only executable unfinished work is retried.
+
+## Control-plane hardening v30
+
+- Workflow creation now persists execution_budget.max_steps from ORCHESTRATOR_MAX_EXECUTION_STEPS, bounded to 1–256, instead of wiring the input only through YAML.
+- New workflows use CURRENT_WORKFLOW_SCHEMA_VERSION (currently v6) rather than a stale hard-coded schema number.
+- Connector bridge idempotency is single-flight per request ID inside a bridge process; identical concurrent requests wait for the first result instead of launching duplicate upstream calls.
+- Idempotency cache entries are intent-bound and returned as defensive copies. Same-key/different-intent and same-key/different-in-flight-intent collisions fail closed.
+- Continuation events are keyed as continuation:<workflow_run_id>:<run_attempt> and dispatched with the exact workflow ID. The continuation workflow uses a per-run/per-attempt concurrency group. The pinned actionlint version does not understand an explicit queue key, so the default single-pending behavior is retained.
+- Reconciliation output now exposes the connector request ID separately from the durable internal execution ID.
+- Discovered connector action specs are fingerprinted and pinned across retry attempts. Contract drift after an uncertain failure stops before the next upstream POST.
+- The bridge idempotency cache remains process-local and best-effort. Upstream/provider-side idempotency remains the durable boundary across process restarts or multiple bridge replicas.
+- No control-plane change in v30 executes a production side effect automatically.
+- Scheduled recovery now treats a recently persisted running workflow with a current worker run ID as fresh: for five minutes it defers that workflow instead of competing with continuation. Manual `--resume` remains able to process a fresh running workflow. Missing/malformed worker timestamps fail open to recovery rather than silently suppressing it.
+
+## Connector intent-bound idempotency v29
+
+- Connector bridge `request_id` is now derived from protocol, workflow id, node id, connector, action, and payload, while transient goal/timestamp fields remain outside the identity.
+- This separates the durable internal `execution_id` used for workflow recovery from the external connector idempotency key used for request deduplication.
+- The bridge runtime records the request-intent fingerprint with its cached result and rejects reuse of the same idempotency key for a different intent instead of returning the wrong cached response.
+- Retries of the exact same connector intent reuse the same request id; a replan that changes connector/action/payload gets a different request id.
+- This follows the durable-redrive pattern where an execution identity and a request/client token have distinct purposes. citeturn897311search2turn897311search6
+## Continuation chain binding v28
+
+- `github_run_id` now means the latest worker Actions run that durably touched the workflow; it is updated on workflow persistence.
+- `origin_github_run_id` preserves the first worker run for provenance and audit history.
+- This closes the chained-continuation gap where a resumed workflow kept its original run id and the next `workflow_run` event could no longer correlate to the exact persisted workflow.
+- The continuation workflow still matches the triggering run id against the exact persisted workflow and dispatches the exact `workflow_id`; it does not fall back to `last_workflow_id`.
+- Workflow schema is now v6; top-level state schema remains v4.
+## Route snapshot + policy integrity v27
+
+- Each workflow now persists a deterministic route/policy snapshot covering the selected node tool, capability fallback candidates, risk/action context, the relevant tool policy fields, live mode, and the free-only setting.
+- A SHA-256 `policy_fingerprint` binds that snapshot to the workflow. Resume checks the current registry/policy against the durable fingerprint before checkpoint recovery or node execution.
+- A policy mismatch fails closed as `workflow.policy_drift`; the runner does not silently re-route a persisted plan or continue under changed side-effect/free-tier semantics.
+- Legacy workflows without a policy fingerprint initialize one on their first post-v27 resume before any node execution; subsequent resumes are protected by the fingerprint.
+- Explicit replanning refreshes both the route snapshot and policy fingerprint because the tool choice intentionally changes.
+- Historical note: at v27, the durable route/policy fields were introduced before the workflow schema advanced to v6 in this hardening line; the top-level state schema remains v4.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: secure structured live boundary v26, on top of execution-envelope ingress v25, approval intent binding v23/v24, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; cross-service requests carry execution identity, intent fingerprint, input digest, attempt, and requested mode; structured live requests fail closed until a private input channel exists.
-Execution model: GitHub Actions + stdlib Python
-Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
-Current execution-fabric branch: `main`
+Main remains the production merge baseline at v26; the active hardening branch has advanced through v42. Always verify the current `main` ref before modifying.
+Execution model: GitHub Actions + stdlib Python control plane.
+Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow.
+Current execution-fabric branch: `hardening/connector-intent-idempotency-v29` (draft; main remains separate until the full hardening line is reviewed/merged).
 
 ## Architecture
 
@@ -191,22 +340,6 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - Stale or missing approval fingerprints are fail-closed: the old approval is cleared, the old issue reference is discarded, and the node returns to `ready` so a fresh approval issue is created.
 - The approving GitHub actor and approval timestamp are persisted as audit metadata.
 - `approval_fingerprint` is excluded from the plan fingerprint as runtime approval metadata; changing the actual tool/action/payload still changes the plan fingerprint and fails the existing plan-integrity check.
-
-## Secure structured live boundary v26
-
-- Structured ingress defaults to `dry-run` when no mode is supplied.
-- Structured `live` ingress is rejected until a private input transport exists because the public repository dispatch path intentionally carries only bounded execution metadata and digests.
-- This prevents the engine from executing an underspecified live operation after the raw input has been withheld from public repository state.
-
-## Execution envelope v25
-
-- `gateway.py` accepts the structured cross-service envelope fields used by the automation core: event id, execution id, workflow id, domain, operation, intent fingerprint, attempt, requested mode, and input digest.
-- The gateway validates the supplied intent fingerprint against the structured input before dispatch and rejects malformed execution identities or attempts outside the bounded range.
-- Raw structured input is not copied into the public repository-backed metadata; only bounded identity, fingerprint, digest, and mode fields cross the GitHub `repository_dispatch` boundary.
-- The orchestrator persists the external execution identity in workflow state and returns it in terminal callback receipts.
-- Terminal callbacks are HTTPS-only and HMAC authenticated; repeated terminal callbacks are handled idempotently by the automation-core ledger.
-- The engine workflow preserves the requested live/dry-run mode across `repository_dispatch` instead of falling back to local workflow-input defaults.
-- Canonical contract: `contracts/execution-envelope.schema.json`.
 
 ## Durability barrier recovery v22
 

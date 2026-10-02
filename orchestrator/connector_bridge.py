@@ -62,6 +62,8 @@ class ReconciliationRequest:
     node_id: str
     connector: str
     action: str
+    target_fingerprint: str | None
+    reconciliation_target_fingerprint: str | None
     sent_at: int
 
 
@@ -80,6 +82,37 @@ def canonical_json(value: Any) -> bytes:
 def execution_id(workflow_id: str, node_id: str) -> str:
     return hashlib.sha256(
         f"{workflow_id}:{node_id}".encode("utf-8")
+    ).hexdigest()
+
+
+def request_intent(
+    workflow_id: str,
+    node_id: str,
+    connector: str,
+    action: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "protocol": PROTOCOL,
+        "workflow_id": str(workflow_id),
+        "node_id": str(node_id),
+        "connector": str(connector).strip().lower(),
+        "action": str(action).strip().lower(),
+        "input": payload,
+    }
+
+
+def connector_request_id(
+    workflow_id: str,
+    node_id: str,
+    connector: str,
+    action: str,
+    payload: dict[str, Any],
+) -> str:
+    return hashlib.sha256(
+        canonical_json(
+            request_intent(workflow_id, node_id, connector, action, payload)
+        )
     ).hexdigest()
 
 
@@ -103,7 +136,13 @@ def build_request(node: Any, goal: str) -> ConnectorRequest:
 
     request = ConnectorRequest(
         protocol=PROTOCOL,
-        request_id=execution_id(workflow_id, node_id),
+        request_id=connector_request_id(
+            workflow_id,
+            node_id,
+            connector,
+            action,
+            payload,
+        ),
         workflow_id=workflow_id,
         node_id=node_id,
         connector=connector,
@@ -211,6 +250,9 @@ def discover_capabilities(
         normalized[str(name)] = {
             "actions": sorted(str(item) for item in actions) if isinstance(actions, list) else [],
             "capabilities": sorted(str(item) for item in capabilities) if isinstance(capabilities, list) else [],
+            "target_fingerprint": (
+                str(spec.get("target_fingerprint") or "").strip() or None
+            ),
             "action_specs": {
                 action: _normalize_action_spec(
                     spec.get("action_specs", {}).get(action, {})
@@ -242,10 +284,19 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in _ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+    response_fields = raw.get("response_fields", [])
+    if not isinstance(response_fields, list):
+        response_fields = []
+    normalized_response_fields = sorted({
+        str(item).strip()
+        for item in response_fields
+        if str(item).strip() and len(str(item).strip()) <= 128
+    })[:32]
     return {
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "response_fields": normalized_response_fields,
     }
 
 
@@ -296,6 +347,61 @@ def validate_discovered_action(
     return _normalize_action_spec(raw_action_spec)
 
 
+def action_contract_fingerprint(
+    action_spec: dict[str, Any],
+    target_fingerprint: str | None = None,
+) -> str:
+    return hashlib.sha256(
+        canonical_json({
+            "action_spec": _normalize_action_spec(action_spec),
+            "target_fingerprint": str(target_fingerprint or "").strip() or None,
+        })
+    ).hexdigest()
+
+
+def _resolve_response_path(value: Any, path: str) -> tuple[bool, Any]:
+    current = value
+    for part in str(path).split("."):
+        if not isinstance(current, dict) or part not in current:
+            return False, None
+        current = current[part]
+    return True, current
+
+
+def sanitize_connector_response(
+    response: dict[str, Any],
+    action_spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Persist only bounded connector metadata plus explicitly allowlisted fields."""
+    sanitized: dict[str, Any] = {
+        "ok": response.get("ok") is not False,
+    }
+    upstream = response.get("upstream")
+    if isinstance(upstream, dict):
+        status_code = upstream.get("status_code")
+        if isinstance(status_code, int):
+            sanitized["status_code"] = status_code
+
+    allowed_fields = action_spec.get("response_fields", [])
+    if isinstance(allowed_fields, list):
+        selected: dict[str, Any] = {}
+        for field_name in allowed_fields[:32]:
+            field = str(field_name).strip()
+            if not field:
+                continue
+            found, value = _resolve_response_path(response, field)
+            if not found:
+                continue
+            encoded = canonical_json(value)
+            if len(encoded) > 4096:
+                continue
+            selected[field] = value
+        if selected:
+            sanitized["fields"] = selected
+
+    return sanitized
+
+
 def validate_discovered_payload(
     connector: str,
     action: str,
@@ -336,7 +442,12 @@ def reconciliation_url(bridge_url: str) -> str:
     )
 
 
-def build_reconciliation_request(node: Any) -> ReconciliationRequest:
+def build_reconciliation_request(
+    node: Any,
+    *,
+    target_fingerprint: str | None = None,
+    reconciliation_target_fingerprint: str | None = None,
+) -> ReconciliationRequest:
     workflow_id = str(node.input.get("workflow_id") or "").strip()
     node_id = str(node.id or "").strip()
     connector = str(node.input.get("connector") or "").strip().lower()
@@ -347,13 +458,26 @@ def build_reconciliation_request(node: Any) -> ReconciliationRequest:
         raise ConnectorReconciliationError("invalid reconciliation connector name")
     if not ACTION_RE.fullmatch(action):
         raise ConnectorReconciliationError("invalid reconciliation action")
+    payload = node.input.get("payload", {})
+    if not isinstance(payload, dict):
+        payload = {}
     return ReconciliationRequest(
         protocol=PROTOCOL,
-        request_id=execution_id(workflow_id, node_id),
+        request_id=connector_request_id(
+            workflow_id,
+            node_id,
+            connector,
+            action,
+            payload,
+        ),
         workflow_id=workflow_id,
         node_id=node_id,
         connector=connector,
         action=action,
+        target_fingerprint=str(target_fingerprint or "").strip() or None,
+        reconciliation_target_fingerprint=(
+            str(reconciliation_target_fingerprint or "").strip() or None
+        ),
         sent_at=int(time.time()),
     )
 
@@ -414,8 +538,8 @@ def post_reconciliation(
 
 
 def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[str, Any]:
-    request = build_reconciliation_request(node)
     if dry_run:
+        request = build_reconciliation_request(node)
         return {
             "simulated": True,
             "protocol": PROTOCOL,
@@ -424,13 +548,58 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
             "action": request.action,
             "state": "unknown",
         }
+
     url, secret = bridge_config()
     inventory = discover_capabilities(url, force_refresh=True)
-    spec = inventory.get(request.connector)
-    if not isinstance(spec, dict) or not spec.get("reconciliation", False):
+    spec = inventory.get(
+        str(node.input.get("connector") or "").strip().lower()
+    )
+    if not isinstance(spec, dict):
         raise ConnectorReconciliationError(
-            f"connector {request.connector!r} does not advertise reconciliation"
+            f"connector {node.input.get('connector')!r} is not advertised by the bridge"
         )
+    if not spec.get("reconciliation", False):
+        raise ConnectorReconciliationError(
+            f"connector {node.input.get('connector')!r} does not advertise reconciliation"
+        )
+    connector = str(node.input.get("connector") or "").strip().lower()
+    action = str(node.input.get("action") or "").strip().lower()
+    action_spec = validate_discovered_action(connector, action, inventory)
+    target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
+    current_reconciliation_target = (
+        str(spec.get("reconciliation_target_fingerprint") or "").strip() or None
+    )
+    current_contract = action_contract_fingerprint(
+        action_spec,
+        target_fingerprint=target_fingerprint,
+    )
+    runtime_error = getattr(node, "error", None)
+    previous_contract = (
+        str(runtime_error.get("connector_action_contract_fingerprint") or "").strip()
+        if isinstance(runtime_error, dict)
+        else ""
+    )
+    if previous_contract and previous_contract != current_contract:
+        raise ConnectorReconciliationError(
+            "connector action contract changed before reconciliation"
+        )
+    previous_reconciliation_target = (
+        str(runtime_error.get("connector_reconciliation_target_fingerprint") or "").strip()
+        if isinstance(runtime_error, dict)
+        else ""
+    )
+    if (
+        previous_reconciliation_target
+        and previous_reconciliation_target != current_reconciliation_target
+    ):
+        raise ConnectorReconciliationError(
+            "connector reconciliation endpoint changed before reconciliation"
+        )
+    request = build_reconciliation_request(
+        node,
+        target_fingerprint=target_fingerprint,
+        reconciliation_target_fingerprint=current_reconciliation_target,
+    )
     result = post_reconciliation(url, secret, request)
     # Never persist arbitrary upstream reconciliation data into public workflow state.
     return {
@@ -439,6 +608,8 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
         "request_id": request.request_id,
         "connector": request.connector,
         "action": request.action,
+        "target_fingerprint": request.target_fingerprint,
+        "action_contract_fingerprint": current_contract,
         "discovery": build_discovery_snapshot(inventory),
         "state": result["state"],
         "checked_at": int(time.time()),
@@ -488,6 +659,15 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
         raise ConnectorBridgeError(
             str(result.get("error") or "connector bridge rejected request")
         )
+    upstream = result.get("upstream")
+    if isinstance(upstream, dict):
+        upstream_status = upstream.get("status_code")
+        if isinstance(upstream_status, int) and not 200 <= upstream_status < 300:
+            raise ConnectorRequestError(
+                f"connector bridge reported upstream HTTP {upstream_status}",
+                uncertain=upstream_status >= 500,
+                retry_allowed=False,
+            )
     return result
 
 
@@ -512,6 +692,33 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         request.input,
         inventory,
     )
+    spec = inventory.get(request.connector, {})
+    target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
+    reconciliation_target_fingerprint = (
+        str(spec.get("reconciliation_target_fingerprint") or "").strip() or None
+    )
+    contract_fingerprint = action_contract_fingerprint(
+        action_spec,
+        target_fingerprint=target_fingerprint,
+    )
+    runtime_error = getattr(node, "error", None)
+    if not isinstance(runtime_error, dict):
+        runtime_error = {}
+        try:
+            node.error = runtime_error
+        except AttributeError:
+            pass
+    previous_contract = str(
+        runtime_error.get("connector_action_contract_fingerprint") or ""
+    ).strip()
+    if previous_contract and previous_contract != contract_fingerprint:
+        raise ConnectorBridgeError(
+            "connector action contract changed after a failed attempt"
+        )
+    runtime_error["connector_action_contract_fingerprint"] = contract_fingerprint
+    runtime_error["connector_reconciliation_target_fingerprint"] = (
+        reconciliation_target_fingerprint
+    )
     try:
         response = post_request(url, secret, request)
     except ConnectorRequestError as exc:
@@ -521,8 +728,12 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "simulated": False,
         "protocol": PROTOCOL,
         "request_id": request.request_id,
-        "bridge_url": url,
+        "bridge_target_fingerprint": (
+            str(spec.get("target_fingerprint") or "").strip() or None
+        ),
+        "reconciliation_target_fingerprint": reconciliation_target_fingerprint,
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
-        "response": response,
+        "action_contract_fingerprint": contract_fingerprint,
+        "response": sanitize_connector_response(response, action_spec),
     }

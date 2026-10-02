@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI Orchestrator Private Input Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "protocol",
+    "input_ref",
+    "execution_id",
+    "intent_fingerprint",
+    "input_digest",
+    "expires_at",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "protocol": { "const": "ai-orchestrator.private-input/v1" },
+    "input_ref": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "execution_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "intent_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "input_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "expires_at": { "type": "integer", "minimum": 1 },
+    "payload": { "type": "object" }
+  }
+}

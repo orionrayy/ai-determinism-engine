@@ -1,5 +1,8 @@
 # AI Orchestrator Core — Free Execution Path
 
+The control plane, gateway, and connector bridge use Python's standard library only. The legacy `ai_determinism_engine.py` ML application has a separate dependency manifest in `requirements-legacy.txt`; install that file only when using the legacy ML engine.
+
+
 This is a no-builder-quota control plane.
 
 Architecture: **goal → DAG planner → state machine → execution adapters → validation → retry → checkpoint → persistent state**
@@ -28,6 +31,10 @@ A ChatGPT subscription does not itself provide an OpenAI API key or API billing.
 - Manual: Actions → AI Orchestrator → Run workflow.
 - Event-driven: `repository_dispatch` type `orchestrator.event` with payload `{ "goal": "..." }`.
 - Scheduled: every 15 minutes for recovery of stalled/running workflows.
+
+## Private input transport v43
+
+The structured live path uses a separate authenticated HTTPS private-input store. The gateway persists raw input there and GitHub receives only an opaque reference plus integrity metadata. The worker resolves the payload just-in-time for connector execution and scrubs it before durable state is written. The private-input backend is vendor-neutral and must expose `POST /v1/inputs` and `GET /v1/inputs/{input_ref}`. No backend is deployed by this repository yet.
 
 ## Connector boundary
 
