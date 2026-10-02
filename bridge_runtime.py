@@ -15,7 +15,7 @@ PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_SKEW_SECONDS = 300
 MAX_BODY_BYTES = 64 * 1024
 _LOCK = threading.Lock()
-_COMPLETED: dict[str, tuple[float, dict[str, Any]]] = {}
+_COMPLETED: dict[str, tuple[float, str, dict[str, Any]]] = {}
 
 
 class BridgeRuntimeError(RuntimeError):
@@ -180,24 +180,55 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
     return request_id, connector, action
 
 
+def request_intent_fingerprint(payload: dict[str, Any]) -> str:
+    intent = {
+        "protocol": payload.get("protocol"),
+        "workflow_id": payload.get("workflow_id"),
+        "node_id": payload.get("node_id"),
+        "connector": payload.get("connector"),
+        "action": payload.get("action"),
+        "input": payload.get("input"),
+    }
+    return hashlib.sha256(canonical_json(intent)).hexdigest()
+
+
 def cleanup_idempotency(now: float) -> None:
     expired = [key for key, (expires, _) in _COMPLETED.items() if expires <= now]
     for key in expired:
         _COMPLETED.pop(key, None)
 
 
-def cached_result(request_id: str) -> dict[str, Any] | None:
+def cached_result(
+    request_id: str,
+    intent_fingerprint: str,
+) -> dict[str, Any] | None:
     now = time.time()
     with _LOCK:
         cleanup_idempotency(now)
         item = _COMPLETED.get(request_id)
-        return None if item is None else item[1]
+        if item is None:
+            return None
+        _, stored_fingerprint, result = item
+        if stored_fingerprint != intent_fingerprint:
+            raise BridgeRuntimeError(
+                "idempotency key conflicts with request intent"
+            )
+        return result
 
 
-def cache_result(request_id: str, result: dict[str, Any], ttl: int = 900) -> None:
+def cache_result(
+    request_id: str,
+    intent_fingerprint: str,
+    result: dict[str, Any],
+    ttl: int = 900,
+) -> None:
     with _LOCK:
         cleanup_idempotency(time.time())
-        _COMPLETED[request_id] = (time.time() + ttl, result)
+        _COMPLETED[request_id] = (
+            time.time() + ttl,
+            intent_fingerprint,
+            result,
+        )
 
 
 def reconciliation_url(route: dict[str, Any]) -> str:
@@ -346,7 +377,8 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     routes = load_routes()
     request_id, connector, action = validate_envelope(payload, routes)
 
-    cached = cached_result(request_id)
+    intent_fingerprint = request_intent_fingerprint(payload)
+    cached = cached_result(request_id, intent_fingerprint)
     if cached is not None:
         return {**cached, "idempotent_replay": True}
 
@@ -361,5 +393,5 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
         "action": action,
         "upstream": result,
     }
-    cache_result(request_id, response)
+    cache_result(request_id, intent_fingerprint, response)
     return response
