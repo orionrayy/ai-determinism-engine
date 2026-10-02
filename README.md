@@ -89,7 +89,7 @@ The default compaction age is 30 days (bounded to 1–365 days). Scheduled recov
 
 ## v54 Connector Output Verification
 
-Connector actions may optionally advertise `result_required` and `result_types` alongside their input contract. Live responses are validated against that contract before being accepted by the orchestrator. Connector invoke and reconciliation responses are also capped at 128 KiB, preventing oversized upstream responses from becoming an unbounded memory surface.
+Connector actions may optionally advertise `result_required` and `result_types` alongside their input contract. Live responses are validated against that contract before acceptance by the orchestrator. Connector invoke and reconciliation response bodies are capped at 128 KiB. If a response is oversized or violates the declared output contract after a successful upstream call, the result is treated as uncertain so the existing idempotency and reconciliation policy remains in control.
 
 These checks are optional for existing connectors, so the protocol remains backward-compatible. No external schema engine or paid service is required.
 
