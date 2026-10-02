@@ -440,7 +440,12 @@ def post_reconciliation(
     )
     try:
         with urllib.request.urlopen(http, timeout=60) as response:
-            raw = response.read().decode("utf-8", "replace")
+            raw_bytes = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw_bytes) > MAX_RESPONSE_BYTES:
+                raise ConnectorReconciliationError(
+                    "connector reconciliation response exceeds 128 KiB safety limit"
+                )
+            raw = raw_bytes.decode("utf-8", "replace")
             status = response.status
     except urllib.error.HTTPError as exc:
         raise ConnectorReconciliationError(
@@ -535,7 +540,13 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
     http = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(http, timeout=60) as response:
-            raw = response.read().decode("utf-8", "replace")
+            raw_bytes = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw_bytes) > MAX_RESPONSE_BYTES:
+                raise ConnectorRequestError(
+                    "connector bridge response exceeds 128 KiB safety limit",
+                    uncertain=False,
+                )
+            raw = raw_bytes.decode("utf-8", "replace")
             status = response.status
     except urllib.error.HTTPError as exc:
         raise ConnectorRequestError(
@@ -602,6 +613,12 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         )
     try:
         response = post_request(url, secret, request)
+        validate_discovered_result(
+            request.connector,
+            request.action,
+            response,
+            inventory,
+        )
     except ConnectorRequestError as exc:
         # The bridge reports uncertainty plus the discovered action contract.
         # Retry policy remains centralized in the orchestrator.
