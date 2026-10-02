@@ -38,6 +38,7 @@ jobs:
           wid=wf.get('id') if wf else ''
           print(f'workflow_id={wid}')
           print('continue=' + ('true' if status == 'running' else 'false'))
+          print(f'trigger_issue={wf.get("trigger_issue","") if wf else ""}')
           print(f'status={status}')
           PY
 
@@ -46,12 +47,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           WORKFLOW_ID: ${{ steps.decision.outputs.workflow_id }}
+          TRIGGER_ISSUE: ${{ steps.decision.outputs.trigger_issue }}
         run: |
           python3 - <<'PY'
           import json, os, subprocess
           payload=json.dumps({
             'event_type':'orchestrator.continue',
-            'client_payload':{'workflow_id':os.environ['WORKFLOW_ID']},
+            'client_payload':{
+              'workflow_id':os.environ['WORKFLOW_ID'],
+              'trigger_issue':os.environ.get('TRIGGER_ISSUE') or '',
+            },
           })
           subprocess.run(
             ['gh','api',f"repos/{os.environ['GITHUB_REPOSITORY']}/dispatches",'--input','-'],
