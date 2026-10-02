@@ -129,6 +129,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('node workers/private-input/test.mjs', self.tests)
         self.assertIn('node-version: "24"', self.tests)
 
+    def test_execution_lease_contract_is_present(self):
+        contract = (ROOT / "contracts" / "execution-lease.schema.json").read_text()
+        self.assertIn('"additionalProperties": false', contract)
+        self.assertIn('"maximum": 256', contract)
+        self.assertIn('"maximum": 900', contract)
+
     def test_orchestrator_enables_durable_execution_lease(self):
         self.assertIn('ORCHESTRATOR_EXECUTION_LEASE_ENABLED: "true"', self.orchestrator)
         self.assertIn('ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS: "900"', self.orchestrator)
