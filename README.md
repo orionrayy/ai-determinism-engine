@@ -102,15 +102,15 @@ Free execution path: GitHub Actions + stdlib Python control plane.
 
 ## Private input backend v45 — free-first $0 path
 
-Structured live connector inputs now have a deployable zero-dollar reference backend at `workers/private-input/`. It uses Cloudflare Workers Free with Workers KV, so raw payloads stay outside the public GitHub repository and expire automatically.
+Structured live connector inputs now have a deployable zero-dollar reference backend at `workers/private-input/`. It uses Cloudflare Workers Free with a SQLite-backed Durable Object. Each opaque `input_ref` maps to one Durable Object instance, keeping raw payloads outside public GitHub state while providing strongly consistent, transactional storage and per-input TTL cleanup.
 
-The client/backend protocol is v2 and signs the HTTP method, request path, protocol version, timestamp, and exact body. The worker validates the HMAC-bound opaque reference, execution identity, digest, intent fingerprint, and TTL. POST is idempotent by `input_ref`; GET is read-only; DELETE provides best-effort cleanup after a failed GitHub dispatch.
+Current Workers Free Durable Object allowances include 100,000 requests/day, 13,000 GB-s/day, 5 million SQLite rows read/day, 100,000 rows written/day, and 5 GB total SQLite storage. These are finite free quotas, not unlimited capacity. citeturn182528search0turn182683search0
 
-The free tier is finite, not unlimited: current Cloudflare documentation lists 100,000 Worker requests/day and Workers KV limits of 100,000 reads/day, 1,000 writes/day, 1,000 deletes/day, and 1 GB stored data. Exceeding a KV daily limit causes operations of that type to fail. This is intended for a small control plane, not unrestricted production volume.
+The design intentionally avoids Workers KV for the authoritative ingress path. KV is free and persistent, but reads are eventually consistent and a write may take up to about 60 seconds or more to become visible in another global location; that is a poor fit for a short-lived request handoff. citeturn593529search0
 
-Deployment is manual through `.github/workflows/private-input-deploy.yml`, with the Wrangler CLI pinned to `4.146.0`. The workflow requires Cloudflare account/token credentials and the private-input HMAC secret. The repository does not currently claim that the Worker is deployed or health-verified.
+Deployment is manual through `.github/workflows/private-input-deploy.yml`, with Wrangler pinned to `4.146.0`. The workflow requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and `ORCHESTRATOR_PRIVATE_INPUT_SECRET`. The repository does not claim the Worker is deployed until a real account deployment and `/health` check succeed.
 
-Render Free remains suitable for the stateless gateway/connector bridge, but Render Free Postgres has a 30-day lifetime and Render Free Key Value loses state on restart, so neither is the canonical private-input store.
+After deployment, set the resulting Worker URL as `ORCHESTRATOR_PRIVATE_INPUT_URL` in both the gateway environment and the GitHub Actions secret store. Keep the HMAC secret identical on both sides.
 
 ## Connector idempotency-aware execution fabric v8
 
