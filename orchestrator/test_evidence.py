@@ -10,6 +10,22 @@ class EvidenceTests(unittest.TestCase):
             sha256_value({"a": 1, "b": 2}),
         )
 
+    def test_evidence_summary_redacts_sensitive_keys_but_keeps_raw_hash(self):
+        output = {
+            "bridge_job_id": "job-1",
+            "access_token": "TOP-SECRET",
+            "nested": {"api_key": "SECRET-2", "value": 7},
+        }
+        item = build_evidence(
+            "wf1", "n1", "execute", "connector_bridge", output,
+            {"passed": True}, artifacts=[],
+        )
+        self.assertEqual(item["output_sha256"], sha256_value(output))
+        self.assertIn("job-1", item["output_summary"])
+        self.assertNotIn("TOP-SECRET", item["output_summary"])
+        self.assertNotIn("SECRET-2", item["output_summary"])
+        self.assertIn("redacted", item["output_summary"])
+
     def test_evidence_contains_output_and_record_hashes(self):
         item = build_evidence(
             "wf1",
