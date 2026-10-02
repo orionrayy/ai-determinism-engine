@@ -43,6 +43,15 @@ try:
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
+    from .federation_scheduler import (
+        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        FEDERATION_SLOTS,
+        can_reserve as can_reserve_federation,
+        federation_slot,
+        refund as refund_federation_quota,
+        reserve as reserve_federation_quota,
+    )
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -64,6 +73,15 @@ except ImportError:
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
+    from federation_scheduler import (
+        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+        FEDERATION_SLOTS,
+        can_reserve as can_reserve_federation,
+        federation_slot,
+        refund as refund_federation_quota,
+        reserve as reserve_federation_quota,
+    )
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
