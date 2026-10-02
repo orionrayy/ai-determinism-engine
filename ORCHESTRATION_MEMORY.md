@@ -24,6 +24,13 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Parallel budget admission v31
+
+- Parallel safe-node batches are now admitted against the remaining durable execution-step budget before any node in the batch is persisted as `running`.
+- When fewer budget slots remain than the proposed safe parallel batch, the batch is deterministically truncated to the available capacity instead of partially reserving nodes and failing a later reservation.
+- When no execution slots remain, the first deterministically selected ready node is failed at the admission boundary; no other node is left stranded in `running`.
+- This keeps budget exhaustion compatible with scheduled recovery and preserves the durable redrive invariant that completed work is retained while only executable unfinished work is retried.
+
 ## Control-plane hardening v30
 
 - Workflow creation now persists execution_budget.max_steps from ORCHESTRATOR_MAX_EXECUTION_STEPS, bounded to 1–256, instead of wiring the input only through YAML.
@@ -58,7 +65,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - A policy mismatch fails closed as `workflow.policy_drift`; the runner does not silently re-route a persisted plan or continue under changed side-effect/free-tier semantics.
 - Legacy workflows without a policy fingerprint initialize one on their first post-v27 resume before any node execution; subsequent resumes are protected by the fingerprint.
 - Explicit replanning refreshes both the route snapshot and policy fingerprint because the tool choice intentionally changes.
-- The workflow schema is now v4 for the durable route/policy fields; top-level state schema remains v4.
+- Historical note: at v27, the durable route/policy fields were introduced before the workflow schema advanced to v5 in v28/v30; the current workflow schema is v5 and the top-level state schema remains v4.
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
