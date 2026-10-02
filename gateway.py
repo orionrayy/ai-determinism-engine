@@ -130,6 +130,14 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
     with urllib.request.urlopen(request, timeout=30) as response:
         return {"github_status": response.status}
 
+def _header(headers: dict[str, str], name: str, default: str = "") -> str:
+    wanted = str(name).lower()
+    for key, value in headers.items():
+        if str(key).lower() == wanted:
+            return str(value)
+    return default
+
+
 def hmac_signature(
     timestamp: str,
     method: str,
@@ -159,22 +167,22 @@ def authorized(
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
     if not configured:
         return False
-    supplied = headers.get("Authorization", "")
+    supplied = _header(headers, "Authorization")
     expected = "Bearer " + configured
     if secrets.compare_digest(supplied, expected):
         return True
 
     if raw_body is None:
         return False
-    timestamp = headers.get("X-Orchestrator-Timestamp", "")
-    signature = headers.get("X-Orchestrator-Signature", "")
+    timestamp = _header(headers, "X-Orchestrator-Timestamp")
+    signature = _header(headers, "X-Orchestrator-Signature")
     try:
         ts = int(timestamp)
     except ValueError:
         return False
     if abs(int(time.time()) - ts) > 300:
         return False
-    idempotency_key = headers.get("Idempotency-Key", "")
+    idempotency_key = _header(headers, "Idempotency-Key")
     expected_sig = hmac_signature(
         timestamp,
         method,
@@ -251,6 +259,10 @@ class Handler(BaseHTTPRequestHandler):
                     or ""
                 )
                 event_id = explicit_event_id or derive_unstructured_event_id(goal, metadata)
+                if isinstance(metadata, dict) and not str(metadata.get("workflow_id") or "").strip():
+                    # Use the idempotency identity as the Actions concurrency key so
+                    # replay-equivalent requests cannot race before state deduplication.
+                    metadata["workflow_id"] = event_id
             result = github_dispatch(goal, metadata, event_id=event_id)
             receipt = {"ok": True, "queued": True, **result}
             if isinstance(metadata, dict):
