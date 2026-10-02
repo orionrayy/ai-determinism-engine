@@ -545,7 +545,7 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
             if len(raw_bytes) > MAX_RESPONSE_BYTES:
                 raise ConnectorRequestError(
                     "connector bridge response exceeds 128 KiB safety limit",
-                    uncertain=False,
+                    uncertain=True,
                 )
             raw = raw_bytes.decode("utf-8", "replace")
             status = response.status
@@ -614,17 +614,27 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         )
     try:
         response = post_request(url, secret, request)
+    except ConnectorRequestError as exc:
+        # The bridge reports uncertainty plus the discovered action contract.
+        # Retry policy remains centralized in the orchestrator.
+        exc.idempotent = bool(action_spec.get("idempotent"))
+        raise
+    try:
         validate_discovered_result(
             request.connector,
             request.action,
             response,
             inventory,
         )
-    except ConnectorRequestError as exc:
-        # The bridge reports uncertainty plus the discovered action contract.
-        # Retry policy remains centralized in the orchestrator.
-        exc.idempotent = bool(action_spec.get("idempotent"))
-        raise
+    except ConnectorBridgeError as exc:
+        # A 2xx transport response can still follow a side effect. If the
+        # returned object violates the advertised contract, the effect is
+        # uncertain and must flow through reconciliation/idempotency policy.
+        raise ConnectorRequestError(
+            f"connector response contract failed: {exc}",
+            uncertain=True,
+            idempotent=bool(action_spec.get("idempotent")),
+        ) from exc
     return {
         "simulated": False,
         "protocol": PROTOCOL,
