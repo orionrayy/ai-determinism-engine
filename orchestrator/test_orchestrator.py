@@ -874,7 +874,7 @@ class OrchestratorTests(unittest.TestCase):
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
                 nodes = o.deterministic_plan("build and deploy a web app", {})
         o.validate_dag(nodes)
-        self.assertEqual(len(nodes), 7)
+        self.assertEqual(len(nodes), 9)
         self.assertEqual(nodes[-1].capability, "notify")
 
     def test_cycle_is_rejected(self):
