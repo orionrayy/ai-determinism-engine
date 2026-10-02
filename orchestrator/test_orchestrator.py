@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from state_schema import CURRENT_STATE_VERSION
+from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
 
 import orchestrator as o
 
@@ -798,7 +798,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(second["version"], CURRENT_STATE_VERSION)
         self.assertEqual(
             second["workflows"]["wf_1"]["schema_version"],
-            o.CURRENT_WORKFLOW_SCHEMA_VERSION,
+            CURRENT_WORKFLOW_SCHEMA_VERSION,
         )
 
     def test_future_state_version_fails_closed(self):
