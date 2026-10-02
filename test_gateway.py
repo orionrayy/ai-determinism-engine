@@ -54,6 +54,37 @@ class GatewayTests(unittest.TestCase):
         payload = json.loads(captured["body"].decode())
         self.assertEqual(payload["client_payload"]["event_id"], "evt-123")
 
+    def test_structured_execution_event_sanitizes_private_input(self):
+        payload = {
+            "event_id": "evt-1",
+            "execution_id": "a" * 64,
+            "workflow_id": "wf-1",
+            "domain": "wattpad-romance-publisher",
+            "operation": "publication.schedule",
+            "payload": {"secret": "do-not-forward"},
+            "source": "test",
+            "attempt": 2,
+        }
+        goal, metadata, event_id = gateway.build_execution_event(payload)
+        self.assertEqual(
+            goal,
+            "Execute orchestration operation wattpad-romance-publisher.publication.schedule",
+        )
+        self.assertEqual(event_id, "evt-1")
+        self.assertEqual(metadata["execution_id"], "a" * 64)
+        self.assertNotIn("secret", json.dumps(metadata))
+        self.assertEqual(len(metadata["input_digest"]), 64)
+
+    def test_structured_execution_event_rejects_intent_tampering(self):
+        with self.assertRaisesRegex(ValueError, "intent_fingerprint_mismatch"):
+            gateway.build_execution_event({
+                "event_id": "evt-2",
+                "domain": "wattpad-romance-publisher",
+                "operation": "publication.schedule",
+                "payload": {"part_no": 1},
+                "intent_fingerprint": "0" * 64,
+            })
+
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()) - 301)
