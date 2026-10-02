@@ -1642,6 +1642,27 @@ def recover_inflight_side_effects(
             "execution_id": execution_id,
         })
 
+def recover_inflight_non_side_effects(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> bool:
+    """Rearm durable non-side-effect executions after a runner interruption."""
+    recovered = False
+    for node in nodes:
+        if node.status != "running" or side_effecting(node, registry):
+            continue
+        transition(node, "ready")
+        append_event("node.non_side_effect_execution_rearmed", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+        })
+        recovered = True
+    if recovered:
+        workflow["status"] = "running"
+    return recovered
+
+
 def reconcile_first_uncertain(
     workflow: dict[str, Any],
     nodes: list[Node],
@@ -1782,6 +1803,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return 'rearmed_pre_side_effect'
     recover_inflight_side_effects(workflow, nodes, registry)
+    recover_inflight_non_side_effects(workflow, nodes, registry)
     reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
     if reconciliation is not None:
         workflow['nodes'] = [asdict(node) for node in nodes]
