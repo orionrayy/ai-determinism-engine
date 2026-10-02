@@ -61,7 +61,7 @@ class DurabilityBarrierTests(unittest.TestCase):
             {"GITHUB_ACTIONS": "true", "ORCHESTRATOR_DURABILITY_BARRIER": "true"},
             clear=False,
         ), patch("durability_barrier.subprocess.run", side_effect=lambda *args, **kwargs: next(responses)) as run:
-            with self.assertRaisesRegex(DurabilityBarrierError, "CAS rejected"):
+            with self.assertRaisesRegex(DurabilityBarrierError, "remote update rejected"):
                 commit_side_effect_start(ROOT, execution_id="e" * 64)
         commands = [call.args[0] for call in run.call_args_list]
         self.assertIn(
