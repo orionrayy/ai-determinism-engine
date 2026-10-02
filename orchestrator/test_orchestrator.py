@@ -841,15 +841,40 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(workflow["id"].startswith("wf_"))
         self.assertEqual(workflow["status"], "planning")
         self.assertEqual(workflow["execution_mode"], "dry-run")
-        self.assertEqual(workflow["schema_version"], 3)
+        self.assertEqual(workflow["schema_version"], CURRENT_WORKFLOW_SCHEMA_VERSION)
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
+
+    def test_deterministic_research_plan_uses_multi_agent_scatter_gather(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
+                nodes = o.deterministic_plan("research AI safety", {})
+        self.assertEqual(nodes[0].agent_role, "researcher")
+        self.assertEqual(nodes[1].agent_role, "skeptic")
+        self.assertEqual(nodes[1].depends_on, [])
+        self.assertEqual(nodes[2].agent_role, "analyst")
+        self.assertEqual(
+            nodes[2].depends_on,
+            ["n01-research", "n02-skeptic"],
+        )
+        self.assertEqual(nodes[4].agent_role, "critic")
+
+    def test_workflow_creation_persists_agent_team_manifest(self):
+        with patch.dict(o.os.environ, {}, clear=True):
+            workflow = o.create_workflow("research AI safety", live=False)
+        self.assertEqual(workflow["schema_version"], CURRENT_WORKFLOW_SCHEMA_VERSION)
+        self.assertEqual(workflow["agent_team"]["supervisor"], "orchestrator")
+        self.assertEqual(
+            workflow["agent_team"]["pattern"],
+            "parallel_deliberation",
+        )
+        self.assertTrue(workflow["agent_team"]["members"])
 
     def test_plan_is_acyclic(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
                 nodes = o.deterministic_plan("build and deploy a web app", {})
         o.validate_dag(nodes)
-        self.assertEqual(len(nodes), 7)
+        self.assertEqual(len(nodes), 9)
         self.assertEqual(nodes[-1].capability, "notify")
 
     def test_cycle_is_rejected(self):

@@ -37,6 +37,7 @@ def node_definition(node: Any) -> dict[str, Any]:
         depends_on = list(node.depends_on or [])
         risk = str(node.risk)
         contract = dict(node.contract or {})
+        agent_role = str(getattr(node, "agent_role", "") or "")
     else:
         input_value = dict(node.get("input") or {})
         node_id = str(node.get("id") or "")
@@ -45,6 +46,7 @@ def node_definition(node: Any) -> dict[str, Any]:
         depends_on = list(node.get("depends_on") or [])
         risk = str(node.get("risk") or "low")
         contract = dict(node.get("contract") or {})
+        agent_role = str(node.get("agent_role") or "")
     for key in _VOLATILE_INPUT_KEYS:
         input_value.pop(key, None)
     return {
@@ -53,6 +55,7 @@ def node_definition(node: Any) -> dict[str, Any]:
         "tool": tool,
         "depends_on": sorted(str(item) for item in depends_on),
         "risk": risk,
+        "agent_role": agent_role,
         "input": input_value,
         "contract": contract,
     }

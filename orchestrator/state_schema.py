@@ -5,7 +5,7 @@ from typing import Any
 import hashlib
 
 CURRENT_STATE_VERSION = 4
-CURRENT_WORKFLOW_SCHEMA_VERSION = 3
+CURRENT_WORKFLOW_SCHEMA_VERSION = 4
 MAX_PARALLEL = 8
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
@@ -55,6 +55,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
+        workflow.setdefault("agent_team", {})
         workflow.setdefault("replan_count", 0)
         workflow.setdefault("attempts_used", 0)
         workflow["attempts_used"] = max(0, _as_int(workflow.get("attempts_used"), 0))
@@ -97,6 +98,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             node.setdefault("output", {})
             node.setdefault("error", {})
             node.setdefault("contract", {})
+            node.setdefault("agent_role", "")
 
     state["workflows"] = workflows
     state.setdefault("last_workflow_id", None)

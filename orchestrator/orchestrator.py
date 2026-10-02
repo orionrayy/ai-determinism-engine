@@ -39,6 +39,7 @@ try:
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -58,6 +59,7 @@ except ImportError:
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -134,6 +136,7 @@ class Node:
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
     contract: dict[str, Any] = field(default_factory=dict)
+    agent_role: str = ""
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -355,6 +358,7 @@ def enforce_node_policy(
             floor = required_risk(node, registry)
             if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
                 node.risk = floor
+        assign_role(node)
 
 def load_registry() -> dict[str, dict[str, Any]]:
     if REGISTRY_FILE.exists():
@@ -427,74 +431,79 @@ def route_tool(
 
 def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
+    fallback_tools = {
+        "research": "research_bundle",
+        "analyze": "gemini",
+        "draft": "gemini",
+        "spec": "gemini",
+        "build": "github",
+        "test": "github",
+        "deploy": "webhook",
+        "validate": "local_validator",
+        "publish": "webhook",
+        "notify": "webhook",
+        "execute": "webhook",
+    }
+
     if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
-        sequence = [
-            ("research", "Collect requirements and constraints."),
-            ("spec", "Produce an implementation specification."),
-            ("build", "Implement the requested system."),
-            ("test", "Run deterministic tests."),
-            ("deploy", "Deploy only after validation."),
-            ("validate", "Verify the deployed result."),
-            ("notify", "Report state and artifacts."),
+        plan = [
+            ("n01-research", "research", "Collect requirements, constraints, and acceptance criteria.", [], "researcher"),
+            ("n02-skeptic", "research", "Independently search for missing requirements, risks, counterexamples, and edge cases.", [], "skeptic"),
+            ("n03-spec", "spec", "Synthesize both research lanes into an implementation specification.", ["n01-research", "n02-skeptic"], "architect"),
+            ("n04-build", "build", "Implement the requested system from the approved specification.", ["n03-spec"], "implementer"),
+            ("n05-test", "test", "Run deterministic tests against the implementation.", ["n04-build"], "tester"),
+            ("n06-validate", "validate", "Critically verify implementation and tests against the goal and specification.", ["n04-build", "n05-test"], "critic"),
+            ("n07-deploy", "deploy", "Deploy only after critic validation succeeds.", ["n06-validate"], "operator"),
+            ("n08-postvalidate", "validate", "Verify the deployed result and declared artifacts.", ["n07-deploy"], "critic"),
+            ("n09-notify", "notify", "Report outcome, evidence, artifacts, and remaining uncertainty.", ["n08-postvalidate"], "communicator"),
         ]
     elif any(k in g for k in ("research", "compare", "literature", "study", "analysis")):
-        sequence = [
-            ("research", "Collect evidence and primary sources."),
-            ("analyze", "Synthesize evidence and uncertainty."),
-            ("draft", "Produce the requested research output."),
-            ("validate", "Check citations and consistency."),
-            ("notify", "Report the completed result."),
+        plan = [
+            ("n01-research", "research", "Collect primary evidence and relevant sources.", [], "researcher"),
+            ("n02-skeptic", "research", "Independently seek counterevidence, contradictions, and limitations.", [], "skeptic"),
+            ("n03-analyze", "analyze", "Compare both evidence lanes and synthesize uncertainty.", ["n01-research", "n02-skeptic"], "analyst"),
+            ("n04-draft", "draft", "Produce the requested research output from the synthesized evidence.", ["n03-analyze"], "analyst"),
+            ("n05-validate", "validate", "Critique the draft for factuality, citation coverage, consistency, and unsupported claims.", ["n03-analyze", "n04-draft"], "critic"),
+            ("n06-notify", "notify", "Report the final result and evidence state.", ["n05-validate"], "communicator"),
         ]
     elif any(k in g for k in ("content", "post", "instagram", "youtube", "publish")):
-        sequence = [
-            ("research", "Collect source material and constraints."),
-            ("draft", "Create the content draft."),
-            ("validate", "Check factuality and format."),
-            ("publish", "Publish only after validation."),
-            ("notify", "Report publication status."),
+        plan = [
+            ("n01-research", "research", "Collect source material, factual constraints, and audience requirements.", [], "researcher"),
+            ("n02-skeptic", "research", "Independently identify factual, legal, format, and audience risks.", [], "skeptic"),
+            ("n03-draft", "draft", "Synthesize source material and risk findings into the content draft.", ["n01-research", "n02-skeptic"], "analyst"),
+            ("n04-validate", "validate", "Critique the draft for factuality, format, policy, and evidence.", ["n03-draft"], "critic"),
+            ("n05-publish", "publish", "Publish only the validated artifact.", ["n04-validate"], "publisher"),
+            ("n06-notify", "notify", "Report publication status and artifact references.", ["n05-publish"], "communicator"),
         ]
     else:
-        sequence = [
-            ("research", "Gather minimum required information."),
-            ("execute", "Perform the requested operation."),
-            ("validate", "Validate output against the goal."),
-            ("notify", "Report the result and artifacts."),
+        plan = [
+            ("n01-research", "research", "Gather the minimum required information.", [], "researcher"),
+            ("n02-execute", "execute", "Perform the requested operation.", ["n01-research"], "operator"),
+            ("n03-validate", "validate", "Validate output against the goal.", ["n02-execute"], "critic"),
+            ("n04-notify", "notify", "Report the result and artifacts.", ["n03-validate"], "communicator"),
         ]
 
     nodes: list[Node] = []
-    previous: list[str] = []
-    for index, (capability, instruction) in enumerate(sequence, start=1):
+    for node_id, capability, instruction, dependencies, role in plan:
         cap_spec = registry.get(f"capability:{capability}", {})
         if cap_spec:
             preferred = route_tool(capability, registry, live=live)
         else:
-            preferred = {
-                "research": "research_bundle",
-                "analyze": "gemini",
-                "draft": "gemini",
-                "spec": "gemini",
-                "build": "github",
-                "test": "github",
-                "deploy": "webhook",
-                "validate": "local_validator",
-                "publish": "webhook",
-                "notify": "webhook",
-                "execute": "webhook",
-            }.get(capability, "noop")
+            preferred = fallback_tools.get(capability, "noop")
         node = Node(
-            id=f"n{index:02d}-{capability}",
+            id=node_id,
             capability=capability,
             tool=preferred,
-            depends_on=list(previous),
+            depends_on=list(dependencies),
             risk=classify_risk(capability),
             input={
                 "goal": goal,
                 "instruction": instruction,
                 "query": goal if capability == "research" else "",
             },
+            agent_role=role,
         )
         nodes.append(node)
-        previous = [node.id]
     return nodes
 
 def validate_dag(nodes: list[Node]) -> None:
@@ -562,19 +571,24 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
     model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    role = str(node.agent_role or "operator")
     if node.capability == "validate":
         instruction = (
-            "Act as a strict workflow validator. Return only JSON with "
-            "passed (boolean), checks (array), findings (array), and next_action. "
+            role_instruction(role, node.capability) + " "
+            "Return only JSON with passed (boolean), checks (array), findings (array), and next_action. "
             "Set passed=true only when the dependency evidence satisfies the goal."
         )
     else:
-        instruction = "Act as a conservative workflow worker. Return JSON with result, risks, next_action."
+        instruction = (
+            role_instruction(role, node.capability) + " "
+            "Return JSON with result, risks, next_action."
+        )
     payload = {
         "contents": [{
             "parts": [{
                 "text": (
                     instruction + "\n"
+                    f"AGENT_ID: {agent_id(str(node.input.get('workflow_id') or ''), node.id, role)}\n"
                     f"GOAL: {goal}\n"
                     f"INSTRUCTION: {node.input.get('instruction', '')}\n"
                     f"CONTEXT: {compact_json(node.input.get('context', {}), limit=24 * 1024)}"
@@ -1747,6 +1761,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     registry = load_registry()
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
+    workflow['agent_team'] = team_manifest(workflow['id'], nodes)
     if not ensure_plan_integrity(workflow, nodes):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
@@ -1917,6 +1932,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 })
                 return 'failed'
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
+    append_event('agent.started', {
+        'workflow_id': workflow['id'],
+        'node_id': node.id,
+        'agent_id': agent_id(workflow['id'], node.id, node.agent_role),
+        'role': node.agent_role,
+    })
     success, error = execute_with_retries(
         node,
         workflow['goal'],
@@ -1944,6 +1965,13 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             'workflow_id': workflow['id'],
             'node_id': node.id,
             'tool': node.tool,
+        })
+        append_event('agent.completed', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'agent_id': agent_id(workflow['id'], node.id, node.agent_role),
+            'role': node.agent_role,
+            'status': 'completed',
         })
         notify_issue(
             workflow,
@@ -2199,6 +2227,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 "node_id": node.id,
                 "tool": node.tool,
             })
+            append_event("agent.started", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
+                "role": node.agent_role,
+            })
             executable.append((node, execution_id))
 
         if not executable:
@@ -2264,6 +2298,13 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "workflow_id": workflow["id"],
                     "node_id": node.id,
                     "tool": node.tool,
+                })
+                append_event("agent.completed", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
+                    "role": node.agent_role,
+                    "status": "completed",
                 })
                 notify_issue(
                     workflow,
@@ -2391,8 +2432,11 @@ def create_workflow(
     if nodes is None:
         nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
+    for node in nodes:
+        assign_role(node)
+    workflow_id = new_id("wf")
     return {
-        "id": new_id("wf"),
+        "id": workflow_id,
         "created_at": utc_now(),
         "goal": goal,
         "status": "planning",
@@ -2411,7 +2455,8 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 3,
+        "schema_version": 4,
+        "agent_team": team_manifest(workflow_id, nodes),
         "plan_fingerprint": None,
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",

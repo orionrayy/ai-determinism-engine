@@ -6,12 +6,14 @@ import urllib.parse
 import urllib.request
 
 try:
+    from .agent_fabric import assign_role, role_instruction
     from .connector_bridge import (
         ConnectorBridgeError,
         discover_capabilities,
         validate_discovered_payload,
     )
 except ImportError:
+    from agent_fabric import assign_role, role_instruction
     from connector_bridge import (
         ConnectorBridgeError,
         discover_capabilities,
@@ -78,9 +80,9 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
 
     prompt = (
         'Create a minimal executable workflow DAG for this goal. Return only JSON with '
-        'nodes[]. Each node has id, capability, tool, depends_on, risk, instruction, contract, artifacts. '
+        'nodes[]. Each node has id, capability, tool, agent_role, depends_on, risk, instruction, contract, artifacts. '
         'Connector-bridge nodes may additionally set connector, action, and payload. '
-        'Maximum 24 nodes. Dependencies must reference node ids. Build a true DAG: maximize independent nodes that can run in parallel when dependencies allow. '
+        'Maximum 24 nodes. Dependencies must reference node ids. Build a true DAG: maximize independent nodes that can run in parallel when dependencies allow. For complex goals, prefer scatter-gather or parallel deliberation with distinct roles (researcher, skeptic, analyst, architect, implementer, tester, critic, publisher, communicator). Converge through a synthesis or critic node and avoid fake duplication. '
         'Use only these capabilities: ' + ', '.join(capabilities) + '. '
         'Use only these tools: ' + ', '.join(tools) + '. '
         'Use low/medium/high/critical risk and mark external side effects high or critical. '
@@ -138,6 +140,7 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         deps = item.get('depends_on', [])
         connector = str(item.get('connector', '')).strip().lower()
         action = str(item.get('action', '')).strip().lower()
+        agent_role = str(item.get('agent_role', '')).strip().lower()
         payload = item.get('payload', {})
         if not node_id or capability not in allowed_caps or tool not in allowed_tools:
             raise ValueError('planner produced unsupported node fields')
@@ -164,20 +167,30 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
                     raise ValueError(str(exc)) from exc
         if risk not in {'low', 'medium', 'high', 'critical'}:
             raise ValueError('planner produced invalid risk')
-        nodes.append(Node(
-            id=node_id,
-            capability=capability,
-            tool=tool,
-            depends_on=[str(dep) for dep in deps],
-            risk=risk,
-            input={
+        node_kwargs = {
+            'id': node_id,
+            'capability': capability,
+            'tool': tool,
+            'depends_on': [str(dep) for dep in deps],
+            'risk': risk,
+            'input': {
                 'goal': goal,
                 'instruction': instruction,
                 'artifacts': artifacts,
                 **({'connector': connector, 'action': action, 'payload': payload}
                    if tool == 'connector_bridge' else {}),
             },
-            contract=contract,
-        ))
+            'contract': contract,
+        }
+        try:
+            node = Node(**node_kwargs, agent_role=agent_role)
+        except TypeError as exc:
+            if 'agent_role' not in str(exc):
+                raise
+            node = Node(**node_kwargs)
+            setattr(node, 'agent_role', agent_role)
+        assign_role(node)
+        role_instruction(node.agent_role, node.capability)
+        nodes.append(node)
     validate_dag(nodes)
     return nodes
