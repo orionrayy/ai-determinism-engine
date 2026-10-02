@@ -32,6 +32,21 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual(value["nodes"][0]["id"], "n01")
 
 
+    def test_planner_rejects_oversized_goal_before_api_call(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            }
+        }
+        with patch.dict(os.environ, {
+            "GEMINI_API_KEY": "planner-key",
+        }, clear=True), patch.object(lp, "_post") as post:
+            with self.assertRaisesRegex(ValueError, "planner goal exceeds 48 KiB"):
+                lp.plan_goal("x" * (lp.MAX_PLANNER_GOAL_BYTES + 1), registry, FakeNode, fake_validate)
+        post.assert_not_called()
+
     def test_free_only_rejects_unlisted_planner_model(self):
         registry = {
             "gemini": {
