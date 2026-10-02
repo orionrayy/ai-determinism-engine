@@ -1372,6 +1372,31 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["callback"]["status"], "sent")
         self.assertEqual(workflow["callback"]["attempts"], 1)
 
+    def test_terminal_callback_rejects_endpoint_drift(self):
+        workflow = {
+            "id": "wf_callback_drift",
+            "execution_id": "f" * 64,
+            "status": "completed",
+            "callback": {
+                "status": "pending",
+                "attempts": 1,
+                "target_fingerprint": o.callback_target_fingerprint(
+                    "https://callback-a.example.test/terminal"
+                ),
+            },
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CALLBACK_URL": "https://callback-b.example.test/terminal",
+                "ORCHESTRATOR_CALLBACK_SECRET": "secret",
+            },
+            clear=False,
+        ), patch.object(o.urllib.request, "urlopen") as send:
+            self.assertFalse(o.notify_execution_callback(workflow))
+        self.assertEqual(workflow["callback"]["status"], "dead_letter")
+        send.assert_not_called()
+
     def test_terminal_callback_failure_eventually_dead_letters(self):
         workflow = {
             "id": "wf_callback_dead",
