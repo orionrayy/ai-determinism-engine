@@ -54,6 +54,26 @@ class GatewayTests(unittest.TestCase):
         payload = json.loads(captured["body"].decode())
         self.assertEqual(payload["client_payload"]["event_id"], "evt-123")
 
+    def test_authorization_is_case_insensitive_for_http_headers(self):
+        body = b'{"goal":"hello"}'
+        timestamp = str(int(time.time()))
+        digest = hmac.new(
+            b"test-secret",
+            timestamp.encode() + b"\n" + body,
+            hashlib.sha256,
+        ).hexdigest()
+        headers = {
+            "authorization": "Bearer test-secret",
+        }
+        with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
+            self.assertTrue(gateway.authorized(headers))
+        headers = {
+            "x-orchestrator-timestamp": timestamp,
+            "x-orchestrator-signature": "sha256=" + digest,
+        }
+        with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
+            self.assertTrue(gateway.authorized(headers, body))
+
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
         timestamp = str(int(time.time()) - 301)
