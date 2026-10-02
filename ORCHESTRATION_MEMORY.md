@@ -31,6 +31,16 @@ Current execution-fabric branch: `main`
 - Current Google pricing documentation lists Gemini 3.8 Flash, 3.7 Flash, 3.6 Flash, and 3.5 Flash with free-tier standard input/output pricing; the registry is intentionally explicit so future pricing/model changes require a deliberate policy update.
 - No additional dependency or paid service was introduced.
 
+
+## Orchestration hardening v43 — connector upstream cost gate
+- `connector_bridge` remains free-hostable, but its upstream vendor cost is not assumed free.
+- Bridge discovery now carries `free_tier` at both connector and action level. An action inherits the connector certification unless its action spec explicitly overrides it.
+- When `ORCHESTRATOR_FREE_ONLY=true`, live connector execution requires both the connector and selected action to be explicitly certified `free_tier=true`; otherwise the request is rejected before any upstream call.
+- Dry-run connector execution remains credential-free and does not require upstream cost certification.
+- The connector free-only gate is intentionally performed after discovery and payload validation but before `post_request`, so it cannot create an upstream side effect when certification is absent.
+- v47 execution lease was not ported: audit found it lacked provider-side fencing and contained a concrete release signature bug. Attempt counts already have a durable source of truth in Git-backed workflow state, so duplicating them in a remote attempt ledger would add another consistency domain without exactly-once guarantees.
+- No new paid service or runtime dependency was added.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.

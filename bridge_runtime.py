@@ -63,7 +63,11 @@ def load_routes() -> dict[str, dict[str, Any]]:
     return routes
 
 
-def _normalize_action_spec(raw: Any) -> dict[str, Any]:
+def _normalize_action_spec(
+    raw: Any,
+    *,
+    default_free_tier: bool = False,
+) -> dict[str, Any]:
     raw = raw if isinstance(raw, dict) else {}
     required = raw.get("required", [])
     if not isinstance(required, list):
@@ -81,6 +85,7 @@ def _normalize_action_spec(raw: Any) -> dict[str, Any]:
         "required": normalized_required,
         "types": normalized_types,
         "idempotent": bool(raw.get("idempotent", False)),
+        "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
 
 
@@ -112,7 +117,10 @@ def _matches_payload_type(value: Any, type_name: str) -> bool:
 def validate_action_input(route: dict[str, Any], action: str, value: Any) -> None:
     action_specs = route.get("action_specs", {})
     raw_spec = action_specs.get(action, {}) if isinstance(action_specs, dict) else {}
-    spec = _normalize_action_spec(raw_spec)
+    spec = _normalize_action_spec(
+        raw_spec,
+        default_free_tier=bool(route.get("free_tier", False)),
+    )
     if not isinstance(value, dict):
         raise BridgeRuntimeError("connector input must be an object")
     for field_name in spec["required"]:
@@ -151,7 +159,8 @@ def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str
             "capabilities": sorted(str(item) for item in capabilities),
             "action_specs": {
                 action: _normalize_action_spec(
-                    raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {}
+                    raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {},
+                    default_free_tier=bool(route.get("free_tier", False)),
                 )
                 for action in normalized_actions
             },

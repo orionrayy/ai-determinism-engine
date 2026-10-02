@@ -162,6 +162,16 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("configured_gemini_model", Path("orchestrator/orchestrator.py").read_text())
         self.assertIn("not allowed by the free-only model registry", Path("orchestrator/llm_planner.py").read_text())
 
+    def test_connector_bridge_free_hosting_is_not_upstream_certification(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        bridge = registry["connector_bridge"]
+        self.assertTrue(bridge["free_tier"])
+        self.assertIn("cost_model", bridge)
+        self.assertIn("upstream vendor costs depend on configuration", bridge["cost_model"])
+        connector_bridge = Path("orchestrator/connector_bridge.py").read_text()
+        self.assertIn("is not certified for free-only execution", connector_bridge)
+        self.assertIn('"free_tier": bool(raw.get("free_tier", default_free_tier))', Path("orchestrator/connector_bridge.py").read_text())
+
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 

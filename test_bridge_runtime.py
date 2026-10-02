@@ -71,6 +71,21 @@ class BridgeRuntimeTests(unittest.TestCase):
             {"required": [], "types": {}, "idempotent": False},
         )
 
+    def test_action_free_tier_inherits_and_can_be_overridden(self):
+        routes = {
+            "notion": {
+                "url": "https://upstream.example/notion",
+                "actions": ["read_page", "write_page"],
+                "free_tier": True,
+                "action_specs": {
+                    "write_page": {"free_tier": False},
+                },
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertTrue(discovered["notion"]["action_specs"]["read_page"]["free_tier"])
+        self.assertFalse(discovered["notion"]["action_specs"]["write_page"]["free_tier"])
+
     def test_capability_discovery_reports_configured_secret_without_exposing_it(self):
         routes = {
             "notion": {
@@ -106,6 +121,7 @@ class BridgeRuntimeTests(unittest.TestCase):
                 "required": ["properties.name", "title"],
                 "types": {"properties.name": "string", "title": "string"},
                 "idempotent": True,
+                "free_tier": False,
             },
         )
         with patch.object(br, "load_routes", return_value=routes), patch.object(
