@@ -3291,6 +3291,29 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
     return False
 
 
+def deterministic_ingress_workflow_id(
+    event_id: str | None,
+    idempotency_key: str | None,
+) -> str | None:
+    """Derive a stable internal workflow identity for ingress deduplication."""
+    value = str(idempotency_key or "").strip()
+    kind = "idempotency"
+    if not value:
+        value = str(event_id or "").strip()
+        kind = "event"
+    if not value:
+        return None
+    digest = hashlib.sha256(
+        json.dumps(
+            {"kind": kind, "value": value},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    return f"wf-ingress-{kind}-{digest}"
+
+
 def create_workflow(
     goal: str,
     live: bool,
@@ -3305,6 +3328,7 @@ def create_workflow(
     idempotency_key: str | None = None,
     private_input_ref: str | None = None,
     external_attempt: int | None = None,
+    workflow_id: str | None = None,
 ) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
@@ -3353,7 +3377,9 @@ def create_workflow(
     validate_dag(nodes)
     for node in nodes:
         assign_role(node)
-    workflow_id = new_id("wf")
+    workflow_id = str(workflow_id or new_id("wf")).strip()
+    if not workflow_id:
+        raise RuntimeError("workflow id cannot be empty")
     return {
         "id": workflow_id,
         "created_at": utc_now(),
