@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 import hashlib
+import re
 
 try:
     from .federation_scheduler import (
@@ -79,9 +80,15 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             value = workflow.get(field_name)
             if value in (None, ""):
                 continue
-            if not isinstance(value, str) or not __import__("re").fullmatch(r"[0-9a-f]{64}", value):
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
                 raise StateSchemaError(
                     f"workflow {workflow_id!r}.{field_name} must be a 64-character lowercase hexadecimal string"
+                )
+        private_ref = workflow.get("private_input_ref")
+        if private_ref not in (None, ""):
+            if workflow.get("execution_id") in (None, "") or workflow.get("input_digest") in (None, ""):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} private_input_ref requires execution_id and input_digest"
                 )
         if workflow.get("idempotency_key") not in (None, ""):
             if not isinstance(workflow["idempotency_key"], str) or len(workflow["idempotency_key"]) > 128:
