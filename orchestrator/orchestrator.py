@@ -63,6 +63,7 @@ ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
 STATE_FILE = STATE_DIR / "state.json"
 EVENT_FILE = STATE_DIR / "events.jsonl"
+EVENT_DIR = STATE_DIR / "events"
 CHECKPOINT_DIR = STATE_DIR / "checkpoints"
 REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 
@@ -165,8 +166,23 @@ def write_json(path: Path, value: Any) -> None:
         if tmp_path.exists():
             tmp_path.unlink()
 
+def _event_file(payload: dict[str, Any]) -> Path:
+    """Route workflow events to an isolated append-only shard.
+    
+    Workflow IDs are hashed before becoming filenames so externally supplied
+    identifiers cannot escape EVENT_DIR. Events without workflow identity retain
+    the legacy global file for planner/startup diagnostics.
+    """
+    workflow_id = payload.get("workflow_id")
+    if workflow_id in (None, ""):
+        return EVENT_FILE
+    shard = hashlib.sha256(str(workflow_id).encode("utf-8")).hexdigest()
+    return EVENT_DIR / f"{shard}.jsonl"
+
+
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
-    EVENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    event_file = _event_file(payload)
+    event_file.parent.mkdir(parents=True, exist_ok=True)
     raw_payload = json.dumps(
         payload,
         ensure_ascii=False,
@@ -189,7 +205,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     encoded = (
         json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "\n"
     ).encode("utf-8")
-    with EVENT_FILE.open("ab") as handle:
+    with event_file.open("ab") as handle:
         handle.write(encoded)
         handle.flush()
         os.fsync(handle.fileno())
