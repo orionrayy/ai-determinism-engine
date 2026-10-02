@@ -55,6 +55,11 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v61 Durable Event Redaction
+
+Event payloads now pass through the same stdlib durable sanitizer used for workflow shards before they are appended to the event log. This closes the remaining path where diagnostic traces or credential-bearing exception text could bypass shard-level redaction and persist in the append-only audit stream.
+
+Regression coverage verifies that bearer/API-key material is absent from durable event output while the diagnostic redaction marker remains auditable.
 ## v60 Attempt-Budget Accounting Hardening
 
 Retry scheduling no longer consumes the workflow attempt budget ahead of the actual retry execution. The budget is charged exactly once at the execution boundary, preventing double charging and preserving retry/replan capacity under small workflow budgets.
