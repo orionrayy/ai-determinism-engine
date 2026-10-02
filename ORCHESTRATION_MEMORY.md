@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v31 on top of v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v32 on top of v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -202,6 +202,12 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `AI Orchestrator` concurrency is scoped by workflow identity when available, so independent workflows no longer serialize behind one global lock.
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
+
+## Orchestration hardening v32
+
+- Workflow IDs now use UUID4 rather than millisecond timestamps. This removes a collision window introduced by v30's independent workflow concurrency.
+- UUID identity is intentionally non-deterministic; replay-sensitive retry inputs continue to derive from the persisted workflow ID and state.
+- Added a 256-ID uniqueness regression test.
 
 ## Orchestration hardening v31
 
