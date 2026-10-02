@@ -17,7 +17,7 @@ except ImportError:
     from agent_fabric import AGENT_PROTOCOL_VERSION, AGENTS, RISK_RANK, agent_id, validate_role
 
 
-FEDERATION_PROTOCOL_VERSION = 1
+FEDERATION_PROTOCOL_VERSION = 2
 MAX_FEDERATED_TASKS = 8
 MAX_TASK_JSON_BYTES = 8 * 1024
 MAX_FEDERATION_MANIFEST_BYTES = 48 * 1024
@@ -52,6 +52,7 @@ class AgentTask:
     agent_id: str
     role: str
     capability: str
+    tool: str
     risk: str
     instruction: str
     context: dict[str, Any]
@@ -69,6 +70,7 @@ class AgentTask:
             "agent_id": self.agent_id,
             "role": self.role,
             "capability": self.capability,
+            "tool": self.tool,
             "risk": self.risk,
             "instruction": self.instruction,
             "context": self.context,
@@ -129,6 +131,7 @@ def build_task(
     task_id: str,
     role: str,
     capability: str,
+    tool: str,
     risk: str,
     instruction: str,
     context: dict[str, Any] | None = None,
@@ -137,6 +140,7 @@ def build_task(
 ) -> AgentTask:
     risk = str(risk)
     capability = str(capability)
+    tool = str(tool)
     role = str(role)
     if risk not in ALLOWED_TASK_RISK:
         raise FederationProtocolError(
@@ -166,6 +170,7 @@ def build_task(
         "task_id": task_id,
         "role": role,
         "capability": capability,
+        "tool": tool,
         "risk": risk,
         "instruction": instruction,
         "context": context,
@@ -179,6 +184,7 @@ def build_task(
         agent_id=agent_id(str(workflow_id), str(task_id), role),
         role=role,
         capability=capability,
+        tool=tool,
         risk=risk,
         instruction=instruction,
         context=context,
@@ -207,6 +213,7 @@ def validate_task(task: AgentTask) -> None:
         "task_id": task.task_id,
         "role": task.role,
         "capability": task.capability,
+        "tool": task.tool,
         "risk": task.risk,
         "instruction": task.instruction,
         "context": task.context,
@@ -226,6 +233,7 @@ def task_from_dict(value: dict[str, Any]) -> AgentTask:
         agent_id=str(value.get("agent_id") or ""),
         role=str(value.get("role") or ""),
         capability=str(value.get("capability") or ""),
+        tool=str(value.get("tool") or ""),
         risk=str(value.get("risk") or ""),
         instruction=str(value.get("instruction") or ""),
         context=dict(value.get("context") or {}),
