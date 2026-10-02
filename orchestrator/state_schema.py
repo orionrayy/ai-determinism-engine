@@ -50,13 +50,22 @@ def _as_int(value: Any, default: int) -> int:
         return default
 
 
+def _strict_int(value: Any, *, field_name: str) -> int:
+    if isinstance(value, bool):
+        raise StateSchemaError(f"{field_name} must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if re.fullmatch(r"[+-]?\\d+", stripped):
+            return int(stripped)
+    raise StateSchemaError(f"{field_name} must be an integer")
+
+
 def _strict_schema_version(value: Any, *, default: int, field_name: str) -> int:
     if value is None:
         return default
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise StateSchemaError(f"{field_name} must be an integer") from exc
+    return _strict_int(value, field_name=field_name)
 
 
 def _strict_bounded_int(
@@ -67,13 +76,7 @@ def _strict_bounded_int(
     maximum: int,
     field_name: str,
 ) -> int:
-    if value is None:
-        parsed = default
-    else:
-        try:
-            parsed = int(value)
-        except (TypeError, ValueError) as exc:
-            raise StateSchemaError(f"{field_name} must be an integer") from exc
+    parsed = default if value is None else _strict_int(value, field_name=field_name)
     if parsed < minimum or parsed > maximum:
         raise StateSchemaError(
             f"{field_name} must be between {minimum} and {maximum}"
@@ -88,10 +91,7 @@ def _strict_optional_positive_int(
 ) -> int | None:
     if value is None:
         return None
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError) as exc:
-        raise StateSchemaError(f"{field_name} must be an integer or null") from exc
+    parsed = _strict_int(value, field_name=field_name)
     if parsed < 1:
         raise StateSchemaError(f"{field_name} must be >= 1")
     return parsed
