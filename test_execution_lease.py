@@ -73,6 +73,31 @@ class ExecutionLeaseTests(unittest.TestCase):
         self.assertEqual(captured["path"], "/v1/leases/reserve-attempt")
         self.assertEqual(captured["body"]["ttl_seconds"], 900)
 
+    def test_acquire_rejects_malformed_backend_response(self):
+        with patch.object(el, "_post", return_value={"ok": True, "attempts": 9999, "lease_until": 9999}), patch.dict(os.environ, {
+            "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
+            "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
+        }, clear=True):
+            with self.assertRaisesRegex(el.ExecutionLeaseError, "attempts"):
+                el.acquire_execution_lease(self.workflow(used=0, maximum=16))
+
+    def test_reserve_rejects_inconsistent_backend_response(self):
+        with patch.object(el, "_post", return_value={
+            "ok": True,
+            "start_attempt": 5,
+            "used_attempts": 9,
+            "lease_until": int(__import__("time").time()) + 60,
+        }), patch.dict(os.environ, {
+            "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
+            "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
+        }, clear=True):
+            with self.assertRaisesRegex(el.ExecutionLeaseError, "range"):
+                el.reserve_remote_execution_attempt(
+                    self.workflow(used=4, maximum=16),
+                    count=1,
+                    max_attempts=16,
+                )
+
     def test_release_is_best_effort(self):
         with patch.object(el, "_post", side_effect=el.ExecutionLeaseError("down")), patch.dict(os.environ, {
             "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
