@@ -481,6 +481,32 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertTrue(ctx.exception.uncertain)
         self.assertFalse(ctx.exception.retry_allowed)
 
+    def test_live_result_does_not_persist_raw_bridge_url(self):
+        node = self.node({"title": "Hello"})
+        bridge_url = "https://private-bridge.example.test/api/bridge"
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "target_fingerprint": "target-a",
+                "reconciliation_target_fingerprint": "reconcile-a",
+                "action_specs": {"create_page": {"idempotent": True}},
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": bridge_url,
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(
+            cb, "post_request",
+            return_value={"ok": True, "bridge_job_id": "job-1"},
+        ):
+            result = cb.execute_connector_bridge(node, "bridge it", dry_run=False)
+        encoded = cb.canonical_json(result).decode("utf-8")
+        self.assertNotIn(bridge_url, encoded)
+        self.assertEqual(result["bridge_target_fingerprint"], "target-a")
+
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
 
