@@ -28,6 +28,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("admin|maintain|push) ;;", self.orchestrator)
         self.assertNotIn("admin|maintain|push|triage)", self.orchestrator)
 
+    def test_approval_target_id_is_validated_before_resume(self):
+        self.assertIn('Approval event does not identify a target workflow', self.orchestrator)
+        self.assertIn('Approval workflow ID contains unsafe characters', self.orchestrator)
+
     def test_approval_worker_requires_authenticated_label_event(self):
         self.assertIn('ORCHESTRATOR_APPROVAL_EVENT:', self.orchestrator)
         self.assertIn("github.event.action == 'labeled'", self.orchestrator)
