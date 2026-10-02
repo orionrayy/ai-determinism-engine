@@ -222,6 +222,336 @@ def execution_key(workflow: dict[str, Any], node: Node) -> str:
     raw = f"{workflow['id']}:{node.id}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
+def federation_enabled() -> bool:
+    return (
+        os.environ.get("ORCHESTRATOR_FEDERATION_ENABLED", "false").lower() == "true"
+        and os.environ.get("GITHUB_ACTIONS", "").lower() == "true"
+        and bool(os.environ.get("GITHUB_TOKEN"))
+    )
+
+
+def dispatch_federation(manifest: dict[str, Any]) -> None:
+    repository = github_repository()
+    http_json(
+        f"https://api.github.com/repos/{repository}/dispatches",
+        method="POST",
+        body={
+            "event_type": "orchestrator.federate",
+            "client_payload": {"manifest": manifest},
+        },
+        headers=github_headers(),
+        timeout=30,
+    )
+
+
+def download_federation_aggregate(
+    artifact_id: int,
+    expected_artifact_digest: str = "",
+) -> dict[str, Any]:
+    repository = github_repository()
+    metadata = http_json(
+        f"https://api.github.com/repos/{repository}/actions/artifacts/{int(artifact_id)}",
+        headers=github_headers(),
+        timeout=30,
+    ).get("data") or {}
+    if metadata.get("expired"):
+        raise RuntimeError("federation result artifact has expired")
+    actual_digest = str(metadata.get("digest") or "")
+    if expected_artifact_digest and actual_digest and expected_artifact_digest != actual_digest:
+        raise RuntimeError("federation artifact digest mismatch")
+
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/{repository}/actions/artifacts/{int(artifact_id)}/zip",
+        headers=github_headers(),
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = response.read(64 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > 512 * 1024:
+                raise RuntimeError("federation artifact exceeds download limit")
+            chunks.append(chunk)
+    archive = zipfile.ZipFile(io.BytesIO(b"".join(chunks)))
+    members = archive.infolist()
+    if len(members) > 8:
+        raise RuntimeError("federation artifact contains too many files")
+    aggregate_members = [
+        member
+        for member in members
+        if Path(member.filename).name == "aggregate.json"
+        and "/" not in member.filename.strip("/").replace("\\", "/")
+        and not member.filename.startswith(".")
+    ]
+    if len(aggregate_members) != 1:
+        raise RuntimeError("federation artifact must contain exactly one aggregate.json")
+    member = aggregate_members[0]
+    raw = archive.read(member)
+    if len(raw) > 128 * 1024:
+        raise RuntimeError("federation aggregate exceeds download limit")
+    value = json.loads(raw.decode("utf-8"))
+    if not isinstance(value, dict):
+        raise RuntimeError("federation aggregate must be an object")
+    return value
+
+
+def validate_federation_aggregate(
+    aggregate: dict[str, Any],
+    workflow: dict[str, Any],
+    expected_artifact_digest: str = "",
+) -> dict[str, AgentResult]:
+    federation = workflow.get("federation") or {}
+    federation_id = str(federation.get("id") or "")
+    if not federation_id:
+        raise RuntimeError("workflow has no active federation")
+    if str(aggregate.get("federation_id") or "") != federation_id:
+        raise RuntimeError("federation ID mismatch")
+    if str(aggregate.get("workflow_id") or "") != str(workflow.get("id") or ""):
+        raise RuntimeError("workflow ID mismatch")
+    aggregate_copy = dict(aggregate)
+    aggregate_sha = str(aggregate_copy.pop("aggregate_sha256") or "")
+    if not aggregate_sha or hashlib.sha256(
+        json.dumps(aggregate_copy, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest() != aggregate_sha:
+        raise RuntimeError("aggregate digest mismatch")
+    results_raw = aggregate.get("results")
+    if not isinstance(results_raw, list) or len(results_raw) != int(federation.get("task_count") or 0):
+        raise RuntimeError("aggregate task count mismatch")
+    expected = {
+        str(item.get("task_id")): item
+        for item in federation.get("tasks", [])
+        if isinstance(item, dict)
+    }
+    if len(expected) != len(results_raw):
+        raise RuntimeError("federation task ledger mismatch")
+    results: dict[str, AgentResult] = {}
+    for item in results_raw:
+        if not isinstance(item, dict):
+            raise RuntimeError("federation result is not an object")
+        result = AgentResult(
+            federation_id=str(item.get("federation_id") or ""),
+            workflow_id=str(item.get("workflow_id") or ""),
+            task_id=str(item.get("task_id") or ""),
+            agent_id=str(item.get("agent_id") or ""),
+            role=str(item.get("role") or ""),
+            capability=str(item.get("capability") or ""),
+            tool=str(item.get("tool") or ""),
+            attempt=int(item.get("attempt") or 0),
+            input_digest=str(item.get("input_digest") or ""),
+            status=str(item.get("status") or ""),
+            output=dict(item.get("output") or {}),
+            output_sha256=str(item.get("output_sha256") or ""),
+            error=dict(item["error"]) if isinstance(item.get("error"), dict) else None,
+            worker_run_id=str(item.get("worker_run_id") or ""),
+            protocol_version=int(item.get("protocol_version") or 0),
+        )
+        validate_agent_result(result)
+        exp = expected.get(result.task_id)
+        if not exp:
+            raise RuntimeError(f"unexpected federated task result: {result.task_id}")
+        for field in ("federation_id", "workflow_id", "agent_id", "role", "capability", "tool", "attempt", "input_digest"):
+            if str(getattr(result, field)) != str(exp.get(field)):
+                raise RuntimeError(f"federated result identity mismatch: {result.task_id}")
+        if result.task_id in results:
+            raise RuntimeError(f"duplicate federated task result: {result.task_id}")
+        results[result.task_id] = result
+    if set(results) != set(expected):
+        raise RuntimeError("federation aggregate is missing task results")
+    return results
+
+
+def delegate_ready_agents(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    attempt_budget: AttemptBudget,
+) -> str | None:
+    if not federation_enabled():
+        return None
+    eligible = []
+    for node in sorted(ready_nodes(nodes), key=lambda item: item.id):
+        assign_role(node)
+        profile_safe = bool(getattr(node, "agent_role", "")) and node.agent_role not in {"publisher", "operator"}
+        if not profile_safe or node.risk not in {"low", "medium"}:
+            continue
+        if side_effecting(node, registry):
+            continue
+        eligible.append(node)
+    if len(eligible) < 2:
+        return None
+    limit = min(
+        len(eligible),
+        int(workflow.get("max_parallel") or DEFAULT_MAX_PARALLEL),
+        8,
+    )
+    selected = eligible[:limit]
+    if attempt_budget.remaining < len(selected):
+        return None
+    for node in selected:
+        attempt_budget.acquire(node.id)
+
+    federation_id = new_id("fed")
+    tasks = []
+    for node in selected:
+        context = build_node_context(nodes, node)
+        task = build_task(
+            federation_id=federation_id,
+            workflow_id=workflow["id"],
+            task_id=node.id,
+            role=node.agent_role,
+            capability=node.capability,
+            tool=node.tool,
+            risk=node.risk,
+            instruction=str(node.input.get("instruction") or ""),
+            context=context,
+            contract=node.contract,
+            attempt=node.retry_count + 1,
+        )
+        tasks.append(task)
+    manifest = build_manifest(federation_id, tasks)
+
+    workflow["federation"] = {
+        "id": federation_id,
+        "status": "dispatched",
+        "task_count": len(tasks),
+        "tasks": [
+            {
+                "task_id": task.task_id,
+                "agent_id": task.agent_id,
+                "role": task.role,
+                "capability": task.capability,
+                "tool": task.tool,
+                "risk": task.risk,
+                "attempt": task.attempt,
+                "input_digest": task.input_digest,
+            }
+            for task in tasks
+        ],
+        "artifact_id": None,
+        "artifact_digest": None,
+        "aggregate_sha256": None,
+        "created_at": utc_now(),
+    }
+    for node in selected:
+        transition(node, "delegated")
+    attempt_budget.sync()
+    workflow["status"] = "waiting_agents"
+    workflow["nodes"] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
+    append_event("federation.prepared", {
+        "workflow_id": workflow["id"],
+        "federation_id": federation_id,
+        "task_count": len(tasks),
+    })
+    try:
+        dispatch_federation(manifest)
+    except Exception as exc:
+        workflow["federation"]["status"] = "dispatch_failed"
+        workflow["federation"]["error"] = str(exc)
+        for node in selected:
+            transition(node, "ready")
+        workflow["status"] = "ready"
+        workflow["nodes"] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        append_event("federation.dispatch_failed", {
+            "workflow_id": workflow["id"],
+            "federation_id": federation_id,
+            "error": str(exc),
+        })
+        return None
+    persist_workflow(workflow)
+    append_event("federation.dispatched", {
+        "workflow_id": workflow["id"],
+        "federation_id": federation_id,
+        "task_count": len(tasks),
+    })
+    return federation_id
+
+
+def ingest_federation(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    artifact_id: int,
+    artifact_digest: str = "",
+) -> str:
+    federation = workflow.get("federation") or {}
+    if federation.get("status") == "completed" and int(federation.get("artifact_id") or 0) == int(artifact_id):
+        return "already_completed"
+    results = validate_federation_aggregate(
+        download_federation_aggregate(artifact_id, artifact_digest),
+        workflow,
+        artifact_digest,
+    )
+    by_id = {node.id: node for node in nodes}
+    failures: list[Node] = []
+    for task_id, result in results.items():
+        node = by_id.get(task_id)
+        if node is None or node.status != "delegated":
+            raise RuntimeError(f"federated task node is not delegated: {task_id}")
+        if result.status == "completed":
+            candidate_output = dict(result.output)
+            validation = validate_node_output(node, candidate_output)
+            if not validation.get("passed"):
+                node.error = {
+                    "type": "agent_contract_failed",
+                    "message": "Federated worker output failed supervisor-side contract validation.",
+                    "validation": validation,
+                    "agent_id": result.agent_id,
+                }
+                transition(node, "failed")
+                failures.append(node)
+                continue
+            node.output = candidate_output
+            node.output["validation"] = validation
+            node.error = {}
+            transition(node, "completed")
+            node_success_checkpoint(workflow, node)
+            update_tool_health(node, True, registry)
+            append_event("agent.completed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "agent_id": result.agent_id,
+                "role": result.role,
+                "status": "completed",
+                "output_sha256": result.output_sha256,
+            })
+        else:
+            node.error = dict(result.error or {})
+            node.error["agent_id"] = result.agent_id
+            node.error["execution_uncertain"] = False
+            transition(node, "failed")
+            failures.append(node)
+            update_tool_health(node, False, registry)
+
+    federation["status"] = "completed" if not failures else "partial_failure"
+    federation["artifact_id"] = int(artifact_id)
+    federation["artifact_digest"] = artifact_digest or None
+    aggregate_value = download_federation_aggregate(artifact_id, artifact_digest)
+    federation["aggregate_sha256"] = aggregate_value.get("aggregate_sha256")
+    federation["completed_at"] = utc_now()
+
+    replan_needed = False
+    for node in failures:
+        if replan_after_failure(workflow, nodes, node, registry):
+            replan_needed = True
+    workflow["nodes"] = [asdict(item) for item in nodes]
+    workflow["status"] = "ready" if replan_needed or not failures else "failed"
+    if failures and not replan_needed:
+        workflow["failed_node"] = failures[0].id
+    persist_workflow(workflow)
+    append_event("federation.completed", {
+        "workflow_id": workflow["id"],
+        "federation_id": federation["id"],
+        "artifact_id": int(artifact_id),
+        "status": federation["status"],
+        "aggregate_sha256": federation["aggregate_sha256"],
+    })
+    return federation["status"]
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
     if node.tool == "github":
         action = str(node.input.get("action") or "metadata")
