@@ -24,6 +24,13 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Connector intent-bound idempotency v29
+
+- Connector bridge `request_id` is now derived from protocol, workflow id, node id, connector, action, and payload, while transient goal/timestamp fields remain outside the identity.
+- This separates the durable internal `execution_id` used for workflow recovery from the external connector idempotency key used for request deduplication.
+- The bridge runtime records the request-intent fingerprint with its cached result and rejects reuse of the same idempotency key for a different intent instead of returning the wrong cached response.
+- Retries of the exact same connector intent reuse the same request id; a replan that changes connector/action/payload gets a different request id.
+- This follows the durable-redrive pattern where an execution identity and a request/client token have distinct purposes. citeturn897311search2turn897311search6
 ## Continuation chain binding v28
 
 - `github_run_id` now means the latest worker Actions run that durably touched the workflow; it is updated on workflow persistence.
@@ -46,7 +53,7 @@ Primary branch: `main`
 Current main baseline for this branch: execution preflight + resume plan immutability v25, on top of approval intent binding v23 plus its v24 hotfix, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; live side effects require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
-Current execution-fabric branch: `hardening/continuation-chain-binding-v28` (draft; `main` remains the merge baseline)
+Current execution-fabric branch: `hardening/connector-intent-idempotency-v29` (draft; `main` remains the merge baseline)
 
 ## Architecture
 
