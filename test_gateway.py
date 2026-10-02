@@ -91,7 +91,19 @@ class GatewayTests(unittest.TestCase):
             "Execute orchestration operation wattpad-romance-publisher.publication.schedule",
         )
         self.assertEqual(event_id, "evt-1")
-        self.assertEqual(metadata["execution_id"], "a" * 64)
+        self.assertEqual(
+            metadata["execution_id"],
+            gateway.derive_execution_id(
+                "evt-1",
+                "wattpad-romance-publisher",
+                "publication.schedule",
+                gateway.intent_fingerprint(
+                    "wattpad-romance-publisher",
+                    "publication.schedule",
+                    {"secret": "do-not-forward"},
+                ),
+            ),
+        )
         self.assertEqual(metadata["requested_mode"], "dry-run")
         self.assertEqual(metadata["idempotency_key"], "evt-1")
         self.assertNotIn("secret", json.dumps(metadata))
