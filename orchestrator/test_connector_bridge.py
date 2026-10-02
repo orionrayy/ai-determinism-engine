@@ -453,7 +453,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 status = 200
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self): return b'{"ok": true, "bridge_job_id": "job-1"}'
+                def read(self, limit=None): return b'{"ok": true, "bridge_job_id": "job-1"}'
             return Response()
 
         inventory = {"notion": {"actions": ["create_page"], "configured": True, "free_tier": True}}
