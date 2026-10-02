@@ -1,3 +1,9 @@
+## Connector target binding v32
+
+Connector requests now bind retry semantics to a hashed upstream target identity in addition to the action contract. If the configured upstream target changes while a request is being retried, the control plane rejects the retry before another POST. The bridge runtime also includes that target identity in its local idempotency fingerprint, preventing an old cached result from being replayed against a different target.
+
+The raw upstream URL is not exposed in discovery output; only its SHA-256 target fingerprint is carried forward.
+
 ## Parallel budget admission v31
 
 The parallel executor now admits a safe-node batch against the workflow's remaining durable execution-step budget before persisting any node in `running`. A batch is truncated to available capacity; when capacity is exhausted, the deterministic next ready node is failed before another node can become stranded in an unfinished runtime state.
