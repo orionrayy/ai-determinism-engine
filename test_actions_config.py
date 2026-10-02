@@ -151,6 +151,17 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("node workers/private-input/test.mjs", self.tests)
         self.assertIn("wrangler@4.146.0", self.tests)
 
+    def test_gemini_free_model_allowlist_is_registry_pinned(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        gemini = registry["gemini"]
+        self.assertEqual(gemini["default_model"], "gemini-3.8-flash")
+        self.assertIn("gemini-3.8-flash", gemini["free_models"])
+        self.assertIn("gemini-3.7-flash", gemini["free_models"])
+        self.assertIn("gemini-3.6-flash", gemini["free_models"])
+        self.assertIn("gemini-3.5-flash", gemini["free_models"])
+        self.assertIn("configured_gemini_model", Path("orchestrator/orchestrator.py").read_text())
+        self.assertIn("not allowed by the free-only model registry", Path("orchestrator/llm_planner.py").read_text())
+
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
