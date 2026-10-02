@@ -15,7 +15,6 @@ on:
       - "test_gateway.py"
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/actionlint.yaml"
-      - ".github/actionlint.yaml"
       - ".github/workflows/orchestrator-agent-federation.yml"
       - "orchestrator/test_aggregate_agent_results.py"
       - "orchestrator/test_agent_protocol.py"
@@ -29,6 +28,7 @@ on:
       - ".orchestrator/state.json"
   pull_request:
     paths:
+      - ".github/actionlint.yaml"
       - "orchestrator/**"
       - ".github/workflows/bridge-deploy.yml"
       - "gateway.py"
