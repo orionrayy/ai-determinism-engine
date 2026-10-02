@@ -32,6 +32,7 @@ class StateSchemaTests(unittest.TestCase):
         self.assertEqual(workflow["schema_version"], CURRENT_WORKFLOW_SCHEMA_VERSION)
         self.assertEqual(workflow["reconciliations"], {})
         self.assertEqual(workflow["agent_team"], {})
+        self.assertEqual(workflow["federation"], {})
         self.assertEqual(workflow["nodes"][0]["agent_role"], "")
         self.assertEqual(workflow["plan_integrity"], "legacy_unverified")
         self.assertEqual(workflow["nodes"][0]["status"], "pending")

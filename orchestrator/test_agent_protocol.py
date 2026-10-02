@@ -20,6 +20,7 @@ class AgentProtocolTests(unittest.TestCase):
             "task_id": "n01",
             "role": "researcher",
             "capability": "research",
+            "tool": "research_bundle",
             "risk": "low",
             "instruction": "collect evidence",
             "context": {"query": "test"},
@@ -38,11 +39,11 @@ class AgentProtocolTests(unittest.TestCase):
 
     def test_side_effect_roles_are_rejected(self):
         with self.assertRaises(FederationProtocolError):
-            self.task(role="operator", capability="execute", risk="medium")
+            self.task(role="operator", capability="execute", tool="noop", risk="medium")
 
     def test_high_risk_federation_is_rejected(self):
         with self.assertRaises(FederationProtocolError):
-            self.task(risk="high")
+            self.task(risk="high", tool="research_bundle")
 
     def test_tampered_task_digest_is_rejected(self):
         value = self.task().to_dict()

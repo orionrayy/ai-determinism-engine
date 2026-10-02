@@ -844,6 +844,91 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["schema_version"], CURRENT_WORKFLOW_SCHEMA_VERSION)
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
 
+    def test_federation_disabled_by_default(self):
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FEDERATION_ENABLED": "false", "GITHUB_ACTIONS": "true"},
+            clear=False,
+        ):
+            self.assertFalse(o.federation_enabled())
+
+    def test_delegate_ready_agents_persists_and_dispatches_safe_batch(self):
+        workflow = {
+            "id": "wf-test",
+            "goal": "research test",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 4,
+            "attempts_used": 0,
+            "max_attempts": 64,
+            "nodes": [],
+        }
+        nodes = [
+            o.Node("n01", "research", "research_bundle", risk="low", agent_role="researcher", input={"instruction": "collect evidence"}),
+            o.Node("n02", "research", "research_bundle", risk="low", agent_role="skeptic", input={"instruction": "check counterevidence"}),
+        ]
+        workflow["nodes"] = [o.asdict(node) for node in nodes]
+        registry = {
+            "research_bundle": {"free_tier": True, "side_effects": []},
+            "capability:research": {"default_tool": "research_bundle", "fallback_tools": []},
+        }
+        captured = {}
+        events = []
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FEDERATION_ENABLED": "true", "GITHUB_ACTIONS": "true", "GITHUB_TOKEN": "token"},
+            clear=False,
+        ), patch.object(o, "build_node_context", return_value={}), \
+             patch.object(o, "new_id", return_value="fed_test"), \
+             patch.object(o, "persist_workflow"), \
+             patch.object(o, "append_event", side_effect=lambda event_type, payload: events.append((event_type, payload))), \
+             patch.object(o, "dispatch_federation", side_effect=lambda manifest: captured.setdefault("manifest", manifest)):
+            budget = o.AttemptBudget(workflow)
+            result = o.delegate_ready_agents(workflow, nodes, registry, budget)
+        if result is None:
+            self.fail(f"federation prepare failed: {events}")
+        self.assertEqual(result, "fed_test")
+        self.assertEqual(workflow["status"], "waiting_agents")
+        self.assertEqual(workflow["federation"]["task_count"], 2)
+        self.assertEqual(workflow["attempts_used"], 2)
+        self.assertTrue(all(node.status == "delegated" for node in nodes))
+        self.assertEqual(len(captured["manifest"]["tasks"]), 2)
+
+    def test_delegate_failure_refunds_reserved_attempts(self):
+        workflow = {
+            "id": "wf-test",
+            "goal": "research test",
+            "live": False,
+            "status": "ready",
+            "max_parallel": 4,
+            "attempts_used": 0,
+            "max_attempts": 64,
+            "nodes": [],
+        }
+        nodes = [
+            o.Node("n01", "research", "research_bundle", risk="low", agent_role="researcher", input={"instruction": "collect evidence"}),
+            o.Node("n02", "research", "research_bundle", risk="low", agent_role="skeptic", input={"instruction": "check counterevidence"}),
+        ]
+        workflow["nodes"] = [o.asdict(node) for node in nodes]
+        registry = {
+            "research_bundle": {"free_tier": True, "side_effects": []},
+            "capability:research": {"default_tool": "research_bundle", "fallback_tools": []},
+        }
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FEDERATION_ENABLED": "true", "GITHUB_ACTIONS": "true", "GITHUB_TOKEN": "token"},
+            clear=False,
+        ), patch.object(o, "build_node_context", return_value={}), \
+             patch.object(o, "new_id", return_value="fed_test"), \
+             patch.object(o, "persist_workflow"), \
+             patch.object(o, "dispatch_federation", side_effect=RuntimeError("dispatch down")):
+            budget = o.AttemptBudget(workflow)
+            result = o.delegate_ready_agents(workflow, nodes, registry, budget)
+        self.assertIsNone(result)
+        self.assertEqual(workflow["attempts_used"], 0)
+        self.assertEqual(workflow["status"], "ready")
+        self.assertTrue(all(node.status == "ready" for node in nodes))
+
     def test_deterministic_research_plan_uses_multi_agent_scatter_gather(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):

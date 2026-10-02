@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v32 on top of v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v37 federated agent protocol + GitHub Actions matrix federation on top of v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -213,6 +213,17 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `AI Orchestrator` concurrency is scoped by workflow identity when available, so independent workflows no longer serialize behind one global lock.
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
+
+## Orchestration hardening v37
+- Added `orchestrator/agent_worker.py` and `orchestrator/aggregate_agent_results.py` for isolated safe-agent execution and supervisor-side result aggregation.
+- Added `.github/workflows/orchestrator-agent-federation.yml`: manifest validation → bounded matrix fan-out (`max-parallel: 4`, `fail-fast: false`) → one immutable result artifact per task → aggregation → completion dispatch.
+- Federated tasks use protocol v2 and are bound to the exact planned tool, role, capability, attempt, workflow ID, agent ID, and input digest. Results are validated against that identity before adoption.
+- Federation is opt-in via `ORCHESTRATOR_FEDERATION_ENABLED`; normal operation remains the existing in-process executor, so local/offline/dry-run operation does not depend on GitHub Actions federation.
+- Supervisor remains the sole writer to workflow state and the only path permitted to perform side effects. Federated workers are limited to low/medium-risk, parallel-safe, non-side-effecting work.
+- Artifact transport uses one-day retention and bounded envelopes. Artifact data is transport/mailbox state, not authoritative workflow state.
+- Workflow schema is now v5 with a persisted `federation` execution record.
+- Federation delegation reserves attempts only after successful task/manifest validation and refunds them when dispatch fails.
+- GitHub Actions matrix output is a JSON matrix object; matrix outputs are not treated as a multi-agent mailbox because matrix/reusable-workflow aggregation semantics are lossy for multiple workers.
 
 ## Orchestration hardening v36
 - Added `orchestrator/agent_protocol.py`, a bounded protocol for federated workers using immutable task/result envelopes, stable agent identity, input/output SHA-256 digests, protocol versioning, and strict size limits.

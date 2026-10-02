@@ -12,6 +12,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.orchestrator = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
+        cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
@@ -25,6 +26,33 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.continue', self.approval)
         self.assertNotIn('Authorize approval actor', self.orchestrator)
 
+
+    def test_federation_has_unique_artifact_per_matrix_task(self):
+        self.assertIn("matrix.task.task_id", self.federation)
+        self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
+        self.assertIn("merge-multiple: false", self.federation)
+        self.assertIn("fail-fast: false", self.federation)
+        self.assertIn("max-parallel: 4", self.federation)
+    def test_federated_matrix_is_bounded_and_read_only(self):
+        self.assertIn("types: [orchestrator.federate]", self.federation)
+        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("fail-fast: false", self.federation)
+        self.assertIn("contents: read", self.federation)
+        self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
+        self.assertIn("retention-days: 1", self.federation)
+        self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", self.federation)
+        self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", self.federation)
+
+    def test_federated_aggregator_is_the_only_write_permission(self):
+        self.assertIn("aggregate:", self.federation)
+        self.assertIn("contents: write", self.federation)
+        self.assertIn("orchestrator.federation.completed", self.federation)
+
+    def test_supervisor_handles_federation_completion_dispatch(self):
+        self.assertIn("orchestrator.federation.completed", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_ID", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_DIGEST", self.orchestrator)
+        self.assertIn("actions: read", self.orchestrator)
 
     def test_committed_orchestrator_state_matches_current_schema(self):
         from orchestrator.state_schema import CURRENT_STATE_VERSION
