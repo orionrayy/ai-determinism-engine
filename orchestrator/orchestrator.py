@@ -31,7 +31,7 @@ try:
     from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from .plan_integrity import fingerprint_nodes
     from .policy_integrity import build_policy_snapshot, fingerprint_policy
-    from .state_schema import StateSchemaError, migrate_state
+    from .state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
 except ImportError:
@@ -48,7 +48,7 @@ except ImportError:
     from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from plan_integrity import fingerprint_nodes
     from policy_integrity import build_policy_snapshot, fingerprint_policy
-    from state_schema import StateSchemaError, migrate_state
+    from state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
 
@@ -232,6 +232,21 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
 
 class ExecutionBudgetExceeded(RuntimeError):
     pass
+
+
+def configured_max_execution_steps() -> int:
+    raw = os.environ.get("ORCHESTRATOR_MAX_EXECUTION_STEPS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_EXECUTION_STEPS
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError("ORCHESTRATOR_MAX_EXECUTION_STEPS must be an integer") from exc
+    if value < 1 or value > MAX_MAX_EXECUTION_STEPS:
+        raise ValueError(
+            f"ORCHESTRATOR_MAX_EXECUTION_STEPS must be between 1 and {MAX_MAX_EXECUTION_STEPS}"
+        )
+    return value
 
 
 def execution_budget(workflow: dict[str, Any]) -> dict[str, Any]:
@@ -2460,11 +2475,12 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 4,
+        "schema_version": CURRENT_WORKFLOW_SCHEMA_VERSION,
         "plan_fingerprint": None,
         "policy_fingerprint": fingerprint_policy(route_snapshot),
         "route_snapshot": route_snapshot,
         "policy_integrity": "initialized",
+        "execution_budget": {"max_steps": configured_max_execution_steps(), "used_steps": 0},
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
