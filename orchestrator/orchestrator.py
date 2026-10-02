@@ -864,6 +864,49 @@ def load_state() -> dict[str, Any]:
         raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
 
 
+
+def load_workflow(workflow_id: str) -> dict[str, Any] | None:
+    """Load one workflow without hydrating unrelated workflow shards."""
+    workflow_id = str(workflow_id or "").strip()
+    if not workflow_id:
+        return None
+
+    shard = workflow_shard_path(workflow_id)
+    if shard.exists():
+        value = _read_json_file(shard, MAX_WORKFLOW_SHARD_BYTES)
+        if not isinstance(value, dict):
+            raise RuntimeError("invalid workflow shard: root must be an object")
+        stored_id = str(value.get("id") or "").strip()
+        if stored_id != workflow_id:
+            raise RuntimeError("workflow shard identity mismatch")
+        try:
+            migrated = migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {workflow_id: value},
+            })
+        except StateSchemaError as exc:
+            raise RuntimeError(f"invalid workflow shard: {exc}") from exc
+        return migrated["workflows"][workflow_id]
+
+    if not STATE_FILE.exists():
+        return None
+
+    raw = _read_json_file(STATE_FILE, MAX_LEGACY_STATE_BYTES)
+    if not isinstance(raw, dict):
+        raise RuntimeError("invalid orchestrator state: root must be an object")
+    storage_format = raw.get("storage_format")
+    if storage_format not in (None, "legacy", STATE_STORAGE_FORMAT):
+        raise RuntimeError(
+            f"unsupported orchestrator storage format: {storage_format}"
+        )
+    try:
+        state = migrate_state(raw)
+    except StateSchemaError as exc:
+        raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
+    workflow = state.get("workflows", {}).get(workflow_id)
+    return workflow if isinstance(workflow, dict) else None
+
+
 def save_state(state: dict[str, Any]) -> None:
     """Bootstrap/migration writer; normal execution must use persist_workflow()."""
     try:
@@ -3550,14 +3593,14 @@ def main() -> int:
     parser.add_argument('--federation-artifact-id')
     args = parser.parse_args()
 
-    state = load_state()
-
     if args.list:
+        state = load_state()
         for workflow in state.get('workflows', {}).values():
             print_summary(workflow)
         return 0
 
     if args.resume:
+        state = load_state()
         count = resume_pending_workflows(
             state, approve_high_risk=args.approve_high_risk, step=args.step
         )
@@ -3565,7 +3608,7 @@ def main() -> int:
         return 0
 
     if args.workflow_id:
-        workflow = state.get('workflows', {}).get(args.workflow_id)
+        workflow = load_workflow(args.workflow_id)
         if not workflow:
             raise SystemExit(f'workflow not found: {args.workflow_id}')
         federation_artifact_raw = (
@@ -3614,7 +3657,7 @@ def main() -> int:
             return 0 if result not in {'failed', 'continuation_failed'} else 2
         return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
-    if not args.goal:
+    # Goal-driven ingress may need global event deduplication, so hydrate all state only here.\n    state = load_state()\n\n    if not args.goal:
         raise SystemExit('provide --goal or --workflow-id')
 
     live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
