@@ -132,6 +132,12 @@ class ActionsConfigTests(unittest.TestCase):
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
 
+    def test_scheduled_recovery_compacts_terminal_state(self):
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('compact_terminal_workflows', recovery)
+        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
+        self.assertIn('git add .orchestrator/workflows', recovery)
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
