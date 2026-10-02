@@ -212,6 +212,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "action_specs": {"create_page": {"idempotent": True}},
             }
         }
+        node = self.node()
         with patch.object(
             cb, "discover_capabilities", return_value=inventory
         ), patch.object(
@@ -223,9 +224,9 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
             }, clear=True):
                 with self.assertRaises(cb.ConnectorRequestError) as ctx:
-                    cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+                    cb.execute_connector_bridge(node, "bridge it", dry_run=False)
         self.assertTrue(ctx.exception.uncertain)
-        self.assertTrue(self.node().input.get("connector_action_idempotent") is not False)
+        self.assertTrue(node.input.get("connector_action_idempotent"))
 
     def test_free_only_blocks_paid_discovered_connector(self):
         inventory = {
