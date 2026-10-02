@@ -62,6 +62,7 @@ class ReconciliationRequest:
     node_id: str
     connector: str
     action: str
+    target_fingerprint: str | None
     sent_at: int
 
 
@@ -388,7 +389,11 @@ def reconciliation_url(bridge_url: str) -> str:
     )
 
 
-def build_reconciliation_request(node: Any) -> ReconciliationRequest:
+def build_reconciliation_request(
+    node: Any,
+    *,
+    target_fingerprint: str | None = None,
+) -> ReconciliationRequest:
     workflow_id = str(node.input.get("workflow_id") or "").strip()
     node_id = str(node.id or "").strip()
     connector = str(node.input.get("connector") or "").strip().lower()
@@ -415,6 +420,7 @@ def build_reconciliation_request(node: Any) -> ReconciliationRequest:
         node_id=node_id,
         connector=connector,
         action=action,
+        target_fingerprint=str(target_fingerprint or "").strip() or None,
         sent_at=int(time.time()),
     )
 
@@ -475,8 +481,8 @@ def post_reconciliation(
 
 
 def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[str, Any]:
-    request = build_reconciliation_request(node)
     if dry_run:
+        request = build_reconciliation_request(node)
         return {
             "simulated": True,
             "protocol": PROTOCOL,
@@ -485,13 +491,42 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
             "action": request.action,
             "state": "unknown",
         }
+
     url, secret = bridge_config()
     inventory = discover_capabilities(url, force_refresh=True)
-    spec = inventory.get(request.connector)
-    if not isinstance(spec, dict) or not spec.get("reconciliation", False):
+    spec = inventory.get(
+        str(node.input.get("connector") or "").strip().lower()
+    )
+    if not isinstance(spec, dict):
         raise ConnectorReconciliationError(
-            f"connector {request.connector!r} does not advertise reconciliation"
+            f"connector {node.input.get('connector')!r} is not advertised by the bridge"
         )
+    if not spec.get("reconciliation", False):
+        raise ConnectorReconciliationError(
+            f"connector {node.input.get('connector')!r} does not advertise reconciliation"
+        )
+    connector = str(node.input.get("connector") or "").strip().lower()
+    action = str(node.input.get("action") or "").strip().lower()
+    action_spec = validate_discovered_action(connector, action, inventory)
+    target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
+    current_contract = action_contract_fingerprint(
+        action_spec,
+        target_fingerprint=target_fingerprint,
+    )
+    runtime_error = getattr(node, "error", None)
+    previous_contract = (
+        str(runtime_error.get("connector_action_contract_fingerprint") or "").strip()
+        if isinstance(runtime_error, dict)
+        else ""
+    )
+    if previous_contract and previous_contract != current_contract:
+        raise ConnectorReconciliationError(
+            "connector action contract changed before reconciliation"
+        )
+    request = build_reconciliation_request(
+        node,
+        target_fingerprint=target_fingerprint,
+    )
     result = post_reconciliation(url, secret, request)
     # Never persist arbitrary upstream reconciliation data into public workflow state.
     return {
@@ -500,6 +535,8 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
         "request_id": request.request_id,
         "connector": request.connector,
         "action": request.action,
+        "target_fingerprint": request.target_fingerprint,
+        "action_contract_fingerprint": current_contract,
         "discovery": build_discovery_snapshot(inventory),
         "state": result["state"],
         "checked_at": int(time.time()),
