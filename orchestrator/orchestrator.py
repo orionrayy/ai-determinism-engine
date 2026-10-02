@@ -2265,6 +2265,11 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     return {"passed": True, "checks": checks, "checked_at": utc_now()}
 
 
+def checkpoint_filename(workflow_id: str, node_id: str) -> str:
+    identity = f"{str(workflow_id)}\x00{str(node_id)}".encode("utf-8")
+    return f"{hashlib.sha256(identity).hexdigest()}.json"
+
+
 def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     evidence = build_evidence(
         workflow["id"],
@@ -2283,7 +2288,9 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
         "node": sanitize_for_durable(asdict(node)),
         "ts": utc_now(),
     }
-    checkpoint_path = CHECKPOINT_DIR / f"{workflow['id']}-{node.id}.json"
+    checkpoint_path = CHECKPOINT_DIR / checkpoint_filename(
+        workflow["id"], node.id
+    )
     write_json(checkpoint_path, checkpoint)
     checkpoint_bytes = checkpoint_path.read_bytes()
     try:
