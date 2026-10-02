@@ -32,6 +32,10 @@ A ChatGPT subscription does not itself provide an OpenAI API key or API billing.
 - Event-driven: `repository_dispatch` type `orchestrator.event` with payload `{ "goal": "..." }`.
 - Scheduled: every 15 minutes for recovery of stalled/running workflows.
 
+## Private input transport v43
+
+The structured live path uses a separate authenticated HTTPS private-input store. The gateway persists raw input there and GitHub receives only an opaque reference plus integrity metadata. The worker resolves the payload just-in-time for connector execution and scrubs it before durable state is written. The private-input backend is vendor-neutral and must expose `POST /v1/inputs` and `GET /v1/inputs/{input_ref}`. No backend is deployed by this repository yet.
+
 ## Connector boundary
 
 GitHub Actions cannot directly invoke the ChatGPT-installed connector catalog (Firecrawl, Notion, Figma, Canva, etc.). Those services need their own API credentials or a webhook gateway. The state machine is connector-agnostic and the adapters can be expanded without changing orchestration semantics.
