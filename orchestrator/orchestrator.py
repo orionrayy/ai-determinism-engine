@@ -431,74 +431,79 @@ def route_tool(
 
 def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
     g = goal.lower()
+    fallback_tools = {
+        "research": "research_bundle",
+        "analyze": "gemini",
+        "draft": "gemini",
+        "spec": "gemini",
+        "build": "github",
+        "test": "github",
+        "deploy": "webhook",
+        "validate": "local_validator",
+        "publish": "webhook",
+        "notify": "webhook",
+        "execute": "webhook",
+    }
+
     if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
-        sequence = [
-            ("research", "Collect requirements and constraints."),
-            ("spec", "Produce an implementation specification."),
-            ("build", "Implement the requested system."),
-            ("test", "Run deterministic tests."),
-            ("deploy", "Deploy only after validation."),
-            ("validate", "Verify the deployed result."),
-            ("notify", "Report state and artifacts."),
+        plan = [
+            ("n01-research", "research", "Collect requirements, constraints, and acceptance criteria.", [], "researcher"),
+            ("n02-skeptic", "research", "Independently search for missing requirements, risks, counterexamples, and edge cases.", [], "skeptic"),
+            ("n03-spec", "spec", "Synthesize both research lanes into an implementation specification.", ["n01-research", "n02-skeptic"], "architect"),
+            ("n04-build", "build", "Implement the requested system from the approved specification.", ["n03-spec"], "implementer"),
+            ("n05-test", "test", "Run deterministic tests against the implementation.", ["n04-build"], "tester"),
+            ("n06-validate", "validate", "Critically verify implementation and tests against the goal and specification.", ["n04-build", "n05-test"], "critic"),
+            ("n07-deploy", "deploy", "Deploy only after critic validation succeeds.", ["n06-validate"], "operator"),
+            ("n08-postvalidate", "validate", "Verify the deployed result and declared artifacts.", ["n07-deploy"], "critic"),
+            ("n09-notify", "notify", "Report outcome, evidence, artifacts, and remaining uncertainty.", ["n08-postvalidate"], "communicator"),
         ]
     elif any(k in g for k in ("research", "compare", "literature", "study", "analysis")):
-        sequence = [
-            ("research", "Collect evidence and primary sources."),
-            ("analyze", "Synthesize evidence and uncertainty."),
-            ("draft", "Produce the requested research output."),
-            ("validate", "Check citations and consistency."),
-            ("notify", "Report the completed result."),
+        plan = [
+            ("n01-research", "research", "Collect primary evidence and relevant sources.", [], "researcher"),
+            ("n02-skeptic", "research", "Independently seek counterevidence, contradictions, and limitations.", [], "skeptic"),
+            ("n03-analyze", "analyze", "Compare both evidence lanes and synthesize uncertainty.", ["n01-research", "n02-skeptic"], "analyst"),
+            ("n04-draft", "draft", "Produce the requested research output from the synthesized evidence.", ["n03-analyze"], "analyst"),
+            ("n05-validate", "validate", "Critique the draft for factuality, citation coverage, consistency, and unsupported claims.", ["n03-analyze", "n04-draft"], "critic"),
+            ("n06-notify", "notify", "Report the final result and evidence state.", ["n05-validate"], "communicator"),
         ]
     elif any(k in g for k in ("content", "post", "instagram", "youtube", "publish")):
-        sequence = [
-            ("research", "Collect source material and constraints."),
-            ("draft", "Create the content draft."),
-            ("validate", "Check factuality and format."),
-            ("publish", "Publish only after validation."),
-            ("notify", "Report publication status."),
+        plan = [
+            ("n01-research", "research", "Collect source material, factual constraints, and audience requirements.", [], "researcher"),
+            ("n02-skeptic", "research", "Independently identify factual, legal, format, and audience risks.", [], "skeptic"),
+            ("n03-draft", "draft", "Synthesize source material and risk findings into the content draft.", ["n01-research", "n02-skeptic"], "analyst"),
+            ("n04-validate", "validate", "Critique the draft for factuality, format, policy, and evidence.", ["n03-draft"], "critic"),
+            ("n05-publish", "publish", "Publish only the validated artifact.", ["n04-validate"], "publisher"),
+            ("n06-notify", "notify", "Report publication status and artifact references.", ["n05-publish"], "communicator"),
         ]
     else:
-        sequence = [
-            ("research", "Gather minimum required information."),
-            ("execute", "Perform the requested operation."),
-            ("validate", "Validate output against the goal."),
-            ("notify", "Report the result and artifacts."),
+        plan = [
+            ("n01-research", "research", "Gather the minimum required information.", [], "researcher"),
+            ("n02-execute", "execute", "Perform the requested operation.", ["n01-research"], "operator"),
+            ("n03-validate", "validate", "Validate output against the goal.", ["n02-execute"], "critic"),
+            ("n04-notify", "notify", "Report the result and artifacts.", ["n03-validate"], "communicator"),
         ]
 
     nodes: list[Node] = []
-    previous: list[str] = []
-    for index, (capability, instruction) in enumerate(sequence, start=1):
+    for node_id, capability, instruction, dependencies, role in plan:
         cap_spec = registry.get(f"capability:{capability}", {})
         if cap_spec:
             preferred = route_tool(capability, registry, live=live)
         else:
-            preferred = {
-                "research": "research_bundle",
-                "analyze": "gemini",
-                "draft": "gemini",
-                "spec": "gemini",
-                "build": "github",
-                "test": "github",
-                "deploy": "webhook",
-                "validate": "local_validator",
-                "publish": "webhook",
-                "notify": "webhook",
-                "execute": "webhook",
-            }.get(capability, "noop")
+            preferred = fallback_tools.get(capability, "noop")
         node = Node(
-            id=f"n{index:02d}-{capability}",
+            id=node_id,
             capability=capability,
             tool=preferred,
-            depends_on=list(previous),
+            depends_on=list(dependencies),
             risk=classify_risk(capability),
             input={
                 "goal": goal,
                 "instruction": instruction,
                 "query": goal if capability == "research" else "",
             },
+            agent_role=role,
         )
         nodes.append(node)
-        previous = [node.id]
     return nodes
 
 def validate_dag(nodes: list[Node]) -> None:
