@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from state_schema import CURRENT_STATE_VERSION
+
 import orchestrator as o
 
 
@@ -793,7 +795,7 @@ class OrchestratorTests(unittest.TestCase):
         snapshot = json.loads(json.dumps(first))
         second = o.migrate_state(first)
         self.assertEqual(second, snapshot)
-        self.assertEqual(second["version"], o.CURRENT_STATE_VERSION)
+        self.assertEqual(second["version"], CURRENT_STATE_VERSION)
         self.assertEqual(
             second["workflows"]["wf_1"]["schema_version"],
             o.CURRENT_WORKFLOW_SCHEMA_VERSION,
