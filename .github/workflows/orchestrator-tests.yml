@@ -33,6 +33,9 @@ on:
       - ".orchestrator/state.json"
   pull_request:
     paths:
+      - ".github/workflows/orchestrator.yml"
+      - ".github/workflows/orchestrator-continuation.yml"
+      - ".github/workflows/orchestrator-approval.yml"
       - "private_input.py"
       - "test_private_input.py"
       - "contracts/private-input.schema.json"
