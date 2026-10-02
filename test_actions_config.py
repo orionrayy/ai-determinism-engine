@@ -100,6 +100,15 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)
         self.assertIn('args=(--workflow-id "$ORCHESTRATOR_TARGET_WORKFLOW_ID" --step)', self.orchestrator)
 
+    def test_source_issue_trigger_binds_event_action(self):
+        self.assertIn('ISSUE_ACTION: ${{ github.event.action }}', self.orchestrator)
+        self.assertIn('[ORCHESTRATOR]', self.orchestrator)
+
+    def test_continuation_dispatch_carries_exact_run_attempt(self):
+        self.assertIn('WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}', self.continuation)
+        self.assertIn('WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}', self.continuation)
+        self.assertIn("continuation:${os.environ['WORKFLOW_RUN_ID']}:${os.environ['WORKFLOW_RUN_ATTEMPT']}", self.continuation)
+
     def test_source_issue_is_propagated(self):
         self.assertIn('ORCHESTRATOR_TRIGGER_ISSUE', self.orchestrator)
         self.assertIn('ORCHESTRATOR_GITHUB_RUN_ID', self.orchestrator)
