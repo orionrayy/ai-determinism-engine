@@ -152,6 +152,11 @@ Current execution-fabric branch: `main`
 - This fixes double charging in execute_with_retries(), which previously could consume two budget units for one retry and reduce later retry/replan capacity.
 - Regression tests cover a two-attempt retry with max_attempts=2 and a max_attempts=1 fail-closed retry path.
 - No database, broker, queue, paid service, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
+## Orchestration hardening v61 — durable event redaction
+- `append_event()` now sanitizes its payload before size bounding and append/fsync, so event logs share the workflow-shard/checkpoint secret-redaction boundary.
+- This closes the residual durable-state path in which exception traces or credential-bearing error messages could bypass `sanitize_for_durable()` and land in `.orchestrator/events/*.jsonl`.
+- Event redaction is fail-closed for diagnostic trace fields and common bearer/API-key/password/secret patterns while preserving event type, identity, and bounded audit metadata.
+- No new database, broker, proxy, paid service, or runtime dependency is introduced; GitHub Actions + stdlib Python and free-first remain unchanged.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
