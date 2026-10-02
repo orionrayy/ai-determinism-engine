@@ -1209,6 +1209,29 @@ class OrchestratorTests(unittest.TestCase):
                 self.assertEqual(compact["workflows"], {})
                 self.assertTrue(o.workflow_shard_path("wf-migrate").exists())
 
+    def test_load_workflow_uses_single_canonical_shard(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            state_file.write_text(json.dumps({"version": CURRENT_STATE_VERSION, "storage_format": "sharded-v1", "workflows": {}, "last_workflow_id": None}), encoding="utf-8")
+            for workflow_id, status in (("wf-target", "running"), ("wf-other", "completed")):
+                shard = root / "workflows" / (o.hashlib.sha256(workflow_id.encode()).hexdigest() + ".json")
+                shard.parent.mkdir(parents=True, exist_ok=True)
+                shard.write_text(json.dumps({"id": workflow_id, "status": status, "nodes": []}), encoding="utf-8")
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file), patch.object(o, "_load_workflow_shards", side_effect=AssertionError("global hydration must not run")):
+                workflow = o.load_workflow("wf-target")
+            self.assertEqual(workflow["status"], "running")
+
+    def test_load_workflow_falls_back_to_legacy_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            workflow = {"id": "wf-legacy-only", "status": "waiting_approval", "nodes": []}
+            state_file.write_text(json.dumps({"version": CURRENT_STATE_VERSION, "workflows": {"wf-legacy-only": workflow}}), encoding="utf-8")
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file):
+                loaded = o.load_workflow("wf-legacy-only")
+            self.assertEqual(loaded["status"], "waiting_approval")
+
     def test_state_migration_is_idempotent(self):
         source = {
             "version": 2,
