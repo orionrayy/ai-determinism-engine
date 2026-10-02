@@ -729,6 +729,18 @@ def save_state(state: dict[str, Any]) -> None:
 
 def persist_workflow(workflow: dict[str, Any]) -> None:
     state = load_state()
+    current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
+    raw_attempt = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
+    current_run_attempt = int(raw_attempt) if raw_attempt.isdigit() and int(raw_attempt) >= 1 else None
+    if current_run_id:
+        previous_run_id = str(workflow.get("github_run_id") or "").strip() or None
+        previous_run_attempt = workflow.get("github_run_attempt")
+        if workflow.get("origin_github_run_id") in (None, ""):
+            workflow["origin_github_run_id"] = previous_run_id or current_run_id
+        if workflow.get("origin_github_run_attempt") is None:
+            workflow["origin_github_run_attempt"] = previous_run_attempt or current_run_attempt
+        workflow["github_run_id"] = current_run_id
+        workflow["github_run_attempt"] = current_run_attempt
     workflow["updated_at"] = utc_now()
     state.setdefault("workflows", {})[workflow["id"]] = workflow
     state["last_workflow_id"] = workflow["id"]
@@ -2948,6 +2960,17 @@ def create_workflow(
         "trigger_issue": trigger_issue,
         "event_id": event_id,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
+        "github_run_attempt": (
+            int(os.environ["ORCHESTRATOR_GITHUB_RUN_ATTEMPT"])
+            if os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").isdigit()
+            else None
+        ),
+        "origin_github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID") or None,
+        "origin_github_run_attempt": (
+            int(os.environ["ORCHESTRATOR_GITHUB_RUN_ATTEMPT"])
+            if os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").isdigit()
+            else None
+        ),
         "execution_id": execution_id,
         "external_workflow_id": external_workflow_id,
         "external_domain": external_domain,
