@@ -107,6 +107,7 @@ DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
 MAX_ATTEMPTS_PER_WORKFLOW = STATE_MAX_ATTEMPTS_PER_WORKFLOW
 MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
+MAX_GENERIC_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_NODE_ID_LENGTH = 100
 SAFE_NODE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 
@@ -1479,6 +1480,7 @@ def http_json(
     body: Any | None = None,
     headers: dict[str, str] | None = None,
     timeout: int = 60,
+    max_response_bytes: int = MAX_GENERIC_HTTP_RESPONSE_BYTES,
 ) -> dict[str, Any]:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https":
@@ -1492,8 +1494,14 @@ def http_json(
     if data is not None:
         request_headers["Content-Type"] = "application/json"
     request = urllib.request.Request(url, data=data, headers=request_headers, method=method)
+    max_response_bytes = max(1024, int(max_response_bytes))
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        raw = response.read().decode("utf-8", "replace")
+        raw_bytes = response.read(max_response_bytes + 1)
+        if len(raw_bytes) > max_response_bytes:
+            raise RuntimeError(
+                f"HTTP response exceeds {max_response_bytes} bytes"
+            )
+        raw = raw_bytes.decode("utf-8", "replace")
         try:
             value = json.loads(raw) if raw else {}
         except json.JSONDecodeError:
@@ -1586,6 +1594,7 @@ def execute_firecrawl(node: Node, goal: str) -> dict[str, Any]:
         },
         headers={"Authorization": f"Bearer {key}"},
         timeout=120,
+        max_response_bytes=4 * 1024 * 1024,
     )
 
 def execute_research_bundle(node: Node, goal: str) -> dict[str, Any]:
