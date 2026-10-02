@@ -145,9 +145,9 @@ def acquire_execution_lease(
             raise ExecutionLeaseError("execution attempt budget already exhausted")
         raise ExecutionLeaseError("execution lease acquisition failed")
     attempts = _require_int(result, "attempts", maximum=max_attempts)
-    _require_int(result, "lease_until", minimum=int(time.time()))
+    _require_int(result, "lease_until", minimum=int(time.time()) - 5)
     if result.get("retention_until") is not None:
-        _require_int(result, "retention_until", minimum=attempts)
+        _require_int(result, "retention_until", minimum=int(time.time()) - 5)
     result["attempts"] = attempts
     return result
 
