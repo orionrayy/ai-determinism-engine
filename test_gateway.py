@@ -140,8 +140,23 @@ class GatewayTests(unittest.TestCase):
             })
 
     def test_gateway_rejects_non_positive_content_length(self):
-        # The handler must not call read(-1), which can consume until connection close.
-        self.assertTrue(True)
+        with self.assertRaisesRegex(ValueError, "payload size"):
+            gateway.parse_content_length("-1")
+        with self.assertRaisesRegex(ValueError, "payload size"):
+            gateway.parse_content_length("0")
+
+    def test_gateway_rejects_invalid_content_length(self):
+        with self.assertRaisesRegex(ValueError, "content_length_invalid"):
+            gateway.parse_content_length("not-a-number")
+
+    def test_structured_execution_rejects_oversized_input_object(self):
+        with self.assertRaisesRegex(ValueError, "input_has_too_many_properties"):
+            gateway.build_execution_event({
+                "event_id": "evt-many",
+                "domain": "publisher",
+                "operation": "chapter.produce",
+                "payload": {str(i): i for i in range(257)},
+            })
 
     def test_authorization_rejects_old_hmac_signature(self):
         body = b'{"goal":"hello"}'
