@@ -24,6 +24,13 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Reconciliation target binding v34
+
+- Connector reconciliation now re-discovers the current connector action contract and target fingerprint before contacting the reconciliation endpoint.
+- If the saved execution contract fingerprint differs from the current action contract/target, reconciliation fails closed and does not query or mutate the connector target.
+- The reconciliation request carries the target fingerprint; the bridge runtime independently compares it with the currently configured upstream target before dispatching reconciliation.
+- Legacy workflows without a saved contract fingerprint remain compatible, while newly hardened executions are protected against target drift during recovery.
+
 ## Upstream failure boundary v33
 
 - Bridge upstream HTTP responses outside 2xx are now raised as typed upstream failures instead of being cached as successful bridge responses.
