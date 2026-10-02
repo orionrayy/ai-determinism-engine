@@ -61,6 +61,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "actions": ["create_page"],
                 "capabilities": ["publish"],
                 "configured": True,
+                "free_tier": True,
                 "risk": "high",
                 "free_tier": False,
             }
@@ -115,6 +116,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "notion": {
                     "actions": ["create_page"],
                     "configured": True,
+                "free_tier": True,
                     "reconciliation": False,
                 }
             }
@@ -132,6 +134,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-a",
@@ -162,6 +165,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "reconciliation": True,
             }
         }
@@ -203,6 +207,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": True}},
             }
@@ -248,6 +253,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "actions": ["create_page"],
                 "configured": True,
                 "free_tier": True,
+                "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": False}},
             }
         }
@@ -280,6 +286,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "actions": ["create_page"],
                 "configured": True,
                 "free_tier": True,
+                "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-b",
                 "action_specs": {
@@ -311,6 +318,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "actions": ["create_page"],
                 "configured": True,
                 "free_tier": True,
+                "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-a",
                 "reconciliation_target_fingerprint": "reconcile-b",
@@ -338,6 +346,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "reconciliation": True,
             }
         }
@@ -373,6 +382,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "notion": {
                     "actions": ["create_page"],
                     "configured": True,
+                "free_tier": True,
                     "action_specs": {
                         "create_page": {
                             "required": ["title", "properties.name"],
@@ -440,6 +450,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             {"notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "target_fingerprint": "target-a",
                 "action_specs": {
                     "create_page": {
@@ -452,6 +463,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             {"notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "target_fingerprint": "target-b",
                 "action_specs": {
                     "create_page": {
@@ -512,6 +524,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "target_fingerprint": "target-a",
                 "reconciliation_target_fingerprint": "reconcile-a",
                 "action_specs": {
@@ -553,6 +566,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "target_fingerprint": "target-a",
                 "reconciliation_target_fingerprint": "reconcile-a",
                 "action_specs": {"create_page": {"idempotent": True}},
