@@ -3,6 +3,7 @@ import os
 import hmac
 import json
 import time
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -175,17 +176,66 @@ class BridgeRuntimeTests(unittest.TestCase):
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_reconciliation(payload)
     def test_idempotent_response_is_replayed(self):
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
         payload = self.payload()
         routes = {"notion": {
             "actions": ["create_page"],
             "url": "https://upstream.example.test/invoke",
         }}
         first = {"status_code": 200, "data": {"id": "p1"}}
-        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value=first):
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value=first) as dispatch:
             a = br.handle_request(payload, "secret")
             b = br.handle_request(payload, "secret")
+        self.assertEqual(dispatch.call_count, 1)
         self.assertFalse(a.get("idempotent_replay", False))
         self.assertTrue(b["idempotent_replay"])
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+
+    def test_identical_concurrent_requests_are_single_flight(self):
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+        payload = self.payload()
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        entered = threading.Event()
+        release = threading.Event()
+        calls = []
+
+        def fake_dispatch(route, request_payload):
+            calls.append(request_payload["request_id"])
+            entered.set()
+            self.assertTrue(release.wait(2))
+            return {"status_code": 200, "data": {"id": "p1"}}
+
+        results = []
+
+        def invoke():
+            results.append(br.handle_request(payload, "secret"))
+
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=fake_dispatch):
+            first_thread = threading.Thread(target=invoke)
+            second_thread = threading.Thread(target=invoke)
+            first_thread.start()
+            self.assertTrue(entered.wait(1))
+            second_thread.start()
+            time.sleep(0.02)
+            self.assertEqual(calls, [payload["request_id"]])
+            release.set()
+            first_thread.join(2)
+            second_thread.join(2)
+
+        self.assertEqual(len(results), 2)
+        self.assertEqual(calls, [payload["request_id"]])
+        self.assertEqual(
+            sum(1 for result in results if result.get("idempotent_replay", False)),
+            1,
+        )
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
 
     def test_same_idempotency_key_cannot_change_request_intent(self):
         request_id = hashlib.sha256(b"stable-intent-key").hexdigest()
