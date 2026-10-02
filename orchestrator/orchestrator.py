@@ -3175,16 +3175,10 @@ def main() -> int:
                     "artifact_id": federation_artifact_id,
                     "error": str(exc),
                 })
-                state["workflows"][workflow["id"]] = workflow
-                state["last_workflow_id"] = workflow["id"]
-                save_state(state)
                 print_summary(workflow)
                 return 2
             if workflow.get("status") not in {"completed", "failed"}:
                 result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-                state["workflows"][workflow["id"]] = workflow
-                state["last_workflow_id"] = workflow["id"]
-                save_state(state)
                 print_summary(workflow)
                 return 0 if result not in {"failed", "continuation_failed"} else 2
         if args.step:
@@ -3253,9 +3247,6 @@ def main() -> int:
         return 0 if result not in {'failed', 'continuation_failed'} else 2
 
     run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-    state['workflows'][workflow['id']] = workflow
-    state['last_workflow_id'] = workflow['id']
-    save_state(state)
     if workflow.get("status") in {"completed", "failed"}:
         notify_execution_callback(workflow)
     print_summary(workflow)
