@@ -99,6 +99,36 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["plan_integrity"], "verified")
         self.assertEqual(workflow["nodes"][0]["tool"], "noop")
 
+    def test_resume_fails_closed_when_tool_policy_drifts(self):
+        node = o.Node("n01", "execute", "noop", [])
+        old_registry = {
+            "capability:execute": {"default_tool": "noop", "fallback_tools": []},
+            "noop": {"free_tier": True, "side_effects": [], "risk": "low"},
+        }
+        new_registry = {
+            "capability:execute": {"default_tool": "noop", "fallback_tools": []},
+            "noop": {"free_tier": True, "side_effects": ["external_request"], "risk": "high"},
+        }
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            snapshot = o.build_policy_snapshot(old_registry, [node], live=False)
+        workflow = {
+            "id": "wf_policy_drift",
+            "goal": "resume policy drift",
+            "live": False,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": o.fingerprint_nodes([node]),
+            "policy_fingerprint": o.fingerprint_policy(snapshot),
+            "route_snapshot": snapshot,
+            "policy_integrity": "verified",
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False),                  patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=new_registry),                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["policy_integrity"], "drift_detected")
+        self.assertTrue(workflow["policy_drift"])
+        execute.assert_not_called()
+
     def test_running_safe_node_is_rearmed_after_runner_interruption(self):
         node = o.Node("n01", "execute", "noop", [], status="running")
         workflow = {
