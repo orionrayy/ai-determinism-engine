@@ -1261,7 +1261,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(workflow["id"].startswith("wf_"))
         self.assertEqual(workflow["status"], "planning")
         self.assertEqual(workflow["execution_mode"], "dry-run")
-        self.assertEqual(workflow["schema_version"], 5)
+        self.assertEqual(workflow["schema_version"], 6)
         self.assertEqual(workflow["execution_budget"], {"max_steps": 96, "used_steps": 0})
         self.assertGreaterEqual(len(workflow["nodes"]), 4)
 
