@@ -812,11 +812,41 @@ def load_registry() -> dict[str, dict[str, Any]]:
 def free_only() -> bool:
     return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
 
+def configured_gemini_model(
+    planner: bool = False,
+    registry: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    spec = (registry or {}).get("gemini", {})
+    default_model = str(spec.get("default_model") or "gemini-3.8-flash").strip()
+    if planner:
+        return (
+            os.environ.get("GEMINI_PLANNER_MODEL")
+            or os.environ.get("GEMINI_MODEL")
+            or default_model
+        )
+    return os.environ.get("GEMINI_MODEL") or default_model
+
+
+def gemini_model_allowed(
+    registry: dict[str, dict[str, Any]],
+    model: str | None = None,
+) -> bool:
+    if not free_only():
+        return True
+    spec = registry.get("gemini", {})
+    allowed = spec.get("free_models")
+    if not isinstance(allowed, list):
+        return False
+    selected = str(model or configured_gemini_model()).strip()
+    return selected in {str(item).strip() for item in allowed}
+
+
 def tool_available(
     tool_name: str,
     registry: dict[str, dict[str, Any]],
     require_env: bool = True,
     enforce_free: bool = True,
+    model: str | None = None,
 ) -> bool:
     spec = registry.get(tool_name, {})
     if enforce_free and free_only():
@@ -824,6 +854,8 @@ def tool_available(
         if not spec and tool_name in BUILTIN_FREE_TOOLS:
             is_free = True
         if not is_free:
+            return False
+        if tool_name == "gemini" and not gemini_model_allowed(registry, model=model):
             return False
     if not require_env:
         return True
@@ -1035,7 +1067,12 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     key = os.environ.get("GEMINI_API_KEY")
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
-    model = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+    registry = load_registry()
+    model = configured_gemini_model(registry=registry)
+    if free_only() and not gemini_model_allowed(registry, model=model):
+        raise RuntimeError(
+            f"Gemini model {model!r} is not allowed by the free-only model registry"
+        )
     role = str(node.agent_role or "operator")
     if node.capability == "validate":
         instruction = (
@@ -2941,7 +2978,15 @@ def create_workflow(
                 },
             )
         ]
-    if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY") and nodes is None:
+    planner_model = configured_gemini_model(planner=True, registry=registry)
+    planner_available = tool_available(
+        "gemini",
+        registry,
+        require_env=True,
+        enforce_free=True,
+        model=planner_model,
+    )
+    if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and planner_available and nodes is None:
         try:
             from llm_planner import plan_goal
             nodes = plan_goal(goal, registry, Node, validate_dag, live=live)

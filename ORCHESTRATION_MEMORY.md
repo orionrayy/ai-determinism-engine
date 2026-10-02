@@ -17,10 +17,19 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v40 recovery routing + exact Actions run-attempt binding + federation fairness/backpressure on top of v39, v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure, v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
+
+
+## Orchestration hardening v42 — free Gemini model gate
+- `orchestrator/tools.json` is now authoritative for Gemini model cost policy: it declares the default model plus an explicit `free_models` allowlist.
+- `tool_available`, workflow planning, the Gemini planner, and the Gemini executor all enforce the same registry-backed model allowlist when `ORCHESTRATOR_FREE_ONLY=true`.
+- `GEMINI_PLANNER_MODEL` can no longer silently bypass the free-only policy. An unlisted model causes the planner to be skipped/fail closed rather than invoking the API.
+- Gemini executor requests are rejected before network execution when `GEMINI_MODEL` is outside the registry allowlist.
+- Current Google pricing documentation lists Gemini 3.8 Flash, 3.7 Flash, 3.6 Flash, and 3.5 Flash with free-tier standard input/output pricing; the registry is intentionally explicit so future pricing/model changes require a deliberate policy update.
+- No additional dependency or paid service was introduced.
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:

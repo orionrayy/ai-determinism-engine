@@ -51,10 +51,30 @@ def _object_from_text(text: str) -> dict:
     return value
 
 
+def configured_model(registry: dict) -> str:
+    spec = registry.get('gemini', {})
+    default_model = str(spec.get('default_model') or '').strip()
+    if not default_model:
+        raise RuntimeError('Gemini default_model is missing from the registry')
+    model = (
+        os.environ.get('GEMINI_PLANNER_MODEL')
+        or os.environ.get('GEMINI_MODEL')
+        or default_model
+    ).strip()
+    if os.environ.get('ORCHESTRATOR_FREE_ONLY', 'true').lower() == 'true':
+        allowed = registry.get('gemini', {}).get('free_models')
+        if not isinstance(allowed, list) or model not in {str(item).strip() for item in allowed}:
+            raise RuntimeError(
+                f'Gemini planner model {model!r} is not allowed by the free-only model registry'
+            )
+    return model
+
+
 def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False) -> list:
     api_key = os.environ.get('GEMINI_API_KEY')
     if not api_key:
         raise RuntimeError('GEMINI_API_KEY is not configured')
+    model = configured_model(registry)
 
     capabilities = sorted(
         key.split(':', 1)[1] for key in registry if key.startswith('capability:')
@@ -92,7 +112,6 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         'For action_specs, honor required fields and declared primitive types exactly; do not invent connector fields. '
         'Goal: ' + goal
     )
-    model = os.environ.get('GEMINI_PLANNER_MODEL', os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash'))
     endpoint = (
         'https://generativelanguage.googleapis.com/v1beta/models/'
         + urllib.parse.quote(model, safe='')
