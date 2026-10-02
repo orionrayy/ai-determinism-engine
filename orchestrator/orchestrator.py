@@ -38,6 +38,7 @@ try:
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
     from .state_schema import (
+        CURRENT_STATE_VERSION,
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
@@ -70,6 +71,7 @@ except ImportError:
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
     from state_schema import (
+        CURRENT_STATE_VERSION,
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
@@ -718,39 +720,218 @@ def mark_execution_not_applied(
     })
 
 
-def load_state() -> dict[str, Any]:
-    if not STATE_FILE.exists():
-        return migrate_state({"version": 4, "workflows": {}, "last_workflow_id": None})
-    try:
-        raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        return migrate_state(raw)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, StateSchemaError) as exc:
-        raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
+STATE_STORAGE_FORMAT = "sharded-v1"
+MAX_WORKFLOW_SHARDS = 512
+MAX_WORKFLOW_SHARD_BYTES = 512 * 1024
+MAX_WORKFLOW_STATE_BYTES = 16 * 1024 * 1024
+MAX_LEGACY_STATE_BYTES = 4 * 1024 * 1024
 
-def save_state(state: dict[str, Any]) -> None:
+
+def workflow_state_dir() -> Path:
+    return STATE_DIR / "workflows"
+
+
+def workflow_shard_path(workflow_id: str) -> Path:
+    workflow_id = str(workflow_id)
+    shard = hashlib.sha256(workflow_id.encode("utf-8")).hexdigest()
+    return workflow_state_dir() / f"{shard}.json"
+
+
+def _read_json_file(path: Path, max_bytes: int) -> Any:
     try:
-        write_json(STATE_FILE, migrate_state(state))
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise StateSchemaError(f"cannot read state file {path.name}: {exc}") from exc
+    if len(raw) > max_bytes:
+        raise StateSchemaError(
+            f"state file {path.name} exceeds {max_bytes} bytes"
+        )
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise StateSchemaError(f"invalid JSON in state file {path.name}") from exc
+
+
+def _load_workflow_shards() -> dict[str, dict[str, Any]]:
+    directory = workflow_state_dir()
+    if not directory.exists():
+        return {}
+    try:
+        paths = sorted(directory.glob("*.json"))
+    except OSError as exc:
+        raise StateSchemaError(f"cannot list workflow state shards: {exc}") from exc
+    if len(paths) > MAX_WORKFLOW_SHARDS:
+        raise StateSchemaError(
+            f"workflow shard count exceeds limit {MAX_WORKFLOW_SHARDS}"
+        )
+
+    total_bytes = 0
+    workflows: dict[str, dict[str, Any]] = {}
+    for path in paths:
+        if len(path.stem) != 64 or any(
+            char not in "0123456789abcdef" for char in path.stem
+        ):
+            raise StateSchemaError(
+                f"invalid workflow shard filename: {path.name}"
+            )
+        try:
+            total_bytes += path.stat().st_size
+        except OSError as exc:
+            raise StateSchemaError(
+                f"cannot stat workflow shard {path.name}: {exc}"
+            ) from exc
+        if total_bytes > MAX_WORKFLOW_STATE_BYTES:
+            raise StateSchemaError(
+                f"workflow shard aggregate exceeds {MAX_WORKFLOW_STATE_BYTES} bytes"
+            )
+        value = _read_json_file(path, MAX_WORKFLOW_SHARD_BYTES)
+        if not isinstance(value, dict):
+            raise StateSchemaError(
+                f"workflow shard {path.name} must contain an object"
+            )
+        workflow_id = str(value.get("id") or "").strip()
+        if not workflow_id:
+            raise StateSchemaError(
+                f"workflow shard {path.name} has no workflow id"
+            )
+        expected = hashlib.sha256(
+            workflow_id.encode("utf-8")
+        ).hexdigest()
+        if expected != path.stem:
+            raise StateSchemaError(
+                f"workflow shard identity mismatch: {path.name}"
+            )
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {workflow_id: value},
+        })
+        workflows[workflow_id] = migrated["workflows"][workflow_id]
+    return workflows
+
+
+def _latest_workflow_id(
+    workflows: dict[str, dict[str, Any]],
+) -> str | None:
+    if not workflows:
+        return None
+    return max(
+        workflows.items(),
+        key=lambda item: (
+            str(item[1].get("updated_at") or ""),
+            str(item[1].get("created_at") or ""),
+            str(item[0]),
+        ),
+    )[0]
+
+
+def load_state() -> dict[str, Any]:
+    if STATE_FILE.exists():
+        raw = _read_json_file(STATE_FILE, MAX_LEGACY_STATE_BYTES)
+        if not isinstance(raw, dict):
+            raise RuntimeError(
+                "invalid orchestrator state: root must be an object"
+            )
+    else:
+        raw = {
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {},
+            "last_workflow_id": None,
+            "storage_format": STATE_STORAGE_FORMAT,
+        }
+
+    storage_format = raw.get("storage_format")
+    if storage_format not in (None, "legacy", STATE_STORAGE_FORMAT):
+        raise RuntimeError(
+            f"unsupported orchestrator storage format: {storage_format}"
+        )
+
+    try:
+        state = migrate_state(raw)
+        sharded = _load_workflow_shards()
+        workflows = dict(state.get("workflows") or {})
+        workflows.update(sharded)
+        state["workflows"] = workflows
+        if (
+            storage_format == STATE_STORAGE_FORMAT
+            or sharded
+        ):
+            state["storage_format"] = STATE_STORAGE_FORMAT
+            state["last_workflow_id"] = _latest_workflow_id(workflows)
+        elif state.get("last_workflow_id") not in workflows:
+            state["last_workflow_id"] = _latest_workflow_id(workflows)
+        return state
     except StateSchemaError as exc:
         raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
 
+
+def save_state(state: dict[str, Any]) -> None:
+    """Bootstrap/migration writer; normal execution must use persist_workflow()."""
+    try:
+        migrated = migrate_state(state)
+        workflows = migrated.get("workflows") or {}
+        for workflow_id, workflow in workflows.items():
+            if not isinstance(workflow, dict):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} must be an object"
+                )
+            write_json(workflow_shard_path(str(workflow_id)), workflow)
+        write_json(
+            STATE_FILE,
+            {
+                "version": CURRENT_STATE_VERSION,
+                "storage_format": STATE_STORAGE_FORMAT,
+                "workflows": {},
+                "last_workflow_id": (
+                    migrated.get("last_workflow_id")
+                    if migrated.get("last_workflow_id") in workflows
+                    else _latest_workflow_id(workflows)
+                ),
+            },
+        )
+    except StateSchemaError as exc:
+        raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
+
+
 def persist_workflow(workflow: dict[str, Any]) -> None:
-    state = load_state()
     current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
     raw_attempt = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
-    current_run_attempt = int(raw_attempt) if raw_attempt.isdigit() and int(raw_attempt) >= 1 else None
+    current_run_attempt = (
+        int(raw_attempt)
+        if raw_attempt.isdigit() and int(raw_attempt) >= 1
+        else None
+    )
     if current_run_id:
-        previous_run_id = str(workflow.get("github_run_id") or "").strip() or None
+        previous_run_id = (
+            str(workflow.get("github_run_id") or "").strip() or None
+        )
         previous_run_attempt = workflow.get("github_run_attempt")
         if workflow.get("origin_github_run_id") in (None, ""):
-            workflow["origin_github_run_id"] = previous_run_id or current_run_id
+            workflow["origin_github_run_id"] = (
+                previous_run_id or current_run_id
+            )
         if workflow.get("origin_github_run_attempt") is None:
-            workflow["origin_github_run_attempt"] = previous_run_attempt or current_run_attempt
+            workflow["origin_github_run_attempt"] = (
+                previous_run_attempt or current_run_attempt
+            )
         workflow["github_run_id"] = current_run_id
         workflow["github_run_attempt"] = current_run_attempt
+
     workflow["updated_at"] = utc_now()
-    state.setdefault("workflows", {})[workflow["id"]] = workflow
-    state["last_workflow_id"] = workflow["id"]
-    save_state(state)
+    workflow_id = str(workflow.get("id") or "").strip()
+    if not workflow_id:
+        raise RuntimeError("cannot persist workflow without an id")
+    try:
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {workflow_id: workflow},
+        })
+    except StateSchemaError as exc:
+        raise RuntimeError(f"invalid workflow state: {exc}") from exc
+    write_json(
+        workflow_shard_path(workflow_id),
+        migrated["workflows"][workflow_id],
+    )
+
 
 def new_id(prefix: str) -> str:
     """Generate a collision-resistant local identifier.

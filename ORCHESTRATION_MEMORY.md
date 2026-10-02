@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + v38 health-state sharding/federation recovery + earlier durable control-plane generations.
+Current main baseline: orchestration hardening v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + v38 health-state sharding/federation recovery + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -62,6 +62,15 @@ Current execution-fabric branch: `main`
 - Source Issue handling explicitly binds `github.event.action` before bash `set -u` executes the labeled-event branch.
 - Continuation dispatch explicitly exports the originating `workflow_run.id` and `run_attempt` used by its continuation event identity.
 - No paid service, database, broker, queue, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
+
+## Orchestration hardening v48 — sharded workflow persistence
+- Workflow snapshots are stored per workflow under `.orchestrator/workflows/` using SHA-256(workflow_id) filenames; the compact `.orchestrator/state.json` is an index/legacy compatibility envelope, not the canonical workflow store.
+- `persist_workflow()` writes only the active workflow shard, so unrelated workflows do not share the same JSON write surface during normal execution.
+- `load_state()` hydrates legacy records plus canonical shards, lets shards override legacy copies, validates shard filename identity, bounds shard count and aggregate bytes, and recomputes `last_workflow_id` from durable timestamps when sharded.
+- The continuation worker, scheduled recovery, and job summary all use the canonical Python `load_state()` path; scheduled recovery no longer parses `state.json` directly.
+- `save_state()` remains only as a compatibility/bootstrap migration writer; normal runtime execution uses `persist_workflow()` exclusively.
+- Storage format is explicitly tagged `sharded-v1`; the schema version remains unchanged because the workflow contract is unchanged.
+- No database, event bus, paid queue, or paid API is introduced. The control plane remains GitHub Actions + stdlib Python and free-first.
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:

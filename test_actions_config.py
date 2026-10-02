@@ -67,6 +67,13 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_DIGEST", self.orchestrator)
         self.assertIn("actions: read", self.orchestrator)
 
+    def test_state_uses_sharded_storage_format(self):
+        self.assertEqual(self.state.get('storage_format'), 'sharded-v1')
+        self.assertIn('from orchestrator.orchestrator import load_state', self.continuation)
+        self.assertIn('from orchestrator.orchestrator import load_state', self.orchestrator)
+        self.assertNotIn('json.load(open(\'.orchestrator/state.json\'))', self.continuation)
+        self.assertNotIn('json.load(open(".orchestrator/state.json"))', self.orchestrator)
+
     def test_committed_orchestrator_state_matches_current_schema(self):
         from orchestrator.state_schema import CURRENT_STATE_VERSION
         self.assertEqual(self.state.get('version'), CURRENT_STATE_VERSION)
@@ -128,6 +135,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("github.event_name != 'schedule'", self.orchestrator)
         self.assertIn('"workflow_id": workflow_id', self.orchestrator)
         self.assertIn('"orchestrator.continue"', self.orchestrator)
+
+    def test_scheduled_recovery_uses_canonical_loader(self):
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('from orchestrator.orchestrator import load_state', recovery)
+        self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
 
 
     def test_core_actions_are_pinned_to_node24_releases(self):

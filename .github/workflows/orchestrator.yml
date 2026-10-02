@@ -245,15 +245,24 @@ jobs:
             "" \
             "- Goal: $(cat /tmp/orchestrator_goal.txt)" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f .orchestrator/state.json ]; then
-            python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json
-          s=json.load(open(".orchestrator/state.json"))
-          wf=s.get("workflows",{}).get(s.get("last_workflow_id"))
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          from orchestrator.orchestrator import load_state
+          s = load_state()
+          workflows = s.get("workflows", {})
+          wf = workflows.get(s.get("last_workflow_id"))
+          if wf is None:
+              wf = max(
+                  workflows.values(),
+                  key=lambda item: (
+                      str(item.get("updated_at") or ""),
+                      str(item.get("created_at") or ""),
+                      str(item.get("id") or ""),
+                  ),
+                  default=None,
+              )
           print(f"- Workflow: `{wf['id']}`" if wf else "- Workflow: n/a")
           print(f"- Status: **{wf['status']}**" if wf else "- Status: n/a")
           PY
-          fi
 
   schedule-recovery:
     if: github.event_name == 'schedule'
@@ -282,13 +291,9 @@ jobs:
           import os
           import subprocess
           from datetime import datetime, timezone
-          from pathlib import Path
+          from orchestrator.orchestrator import load_state
 
-          state_path = Path(".orchestrator/state.json")
-          if not state_path.exists():
-              print("dispatched=0")
-              raise SystemExit(0)
-          state = json.loads(state_path.read_text(encoding="utf-8"))
+          state = load_state()
           now = datetime.now(timezone.utc)
 
           def stale_running(workflow):
