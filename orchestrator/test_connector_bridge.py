@@ -410,8 +410,9 @@ class ConnectorBridgeTests(unittest.TestCase):
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
         }, clear=True), patch.object(cb, "discover_capabilities", return_value=inventory), \
              patch.object(cb.urllib.request, "urlopen", return_value=Response()):
-            with self.assertRaisesRegex(cb.ConnectorRequestError, "128 KiB"):
+            with self.assertRaisesRegex(cb.ConnectorRequestError, "128 KiB") as ctx:
                 cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        self.assertTrue(ctx.exception.uncertain)
 
     def test_live_rejects_response_contract_violation(self):
         captured = {}
@@ -438,8 +439,9 @@ class ConnectorBridgeTests(unittest.TestCase):
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
         }, clear=True), patch.object(cb, "discover_capabilities", return_value=inventory), \
              patch.object(cb.urllib.request, "urlopen", side_effect=lambda req, timeout=60: Response()):
-            with self.assertRaisesRegex(cb.ConnectorBridgeError, "response field bridge_job_id must be string"):
+            with self.assertRaisesRegex(cb.ConnectorRequestError, "response contract failed") as ctx:
                 cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        self.assertTrue(ctx.exception.uncertain)
 
     def test_live_sends_idempotency_key_and_signature(self):
         captured = {}
