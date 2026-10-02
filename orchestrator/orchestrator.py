@@ -1951,12 +1951,24 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow.setdefault("repair_feedback", {})
     workflow.setdefault("evidence", {})
     workflow.setdefault("reconciliations", {})
+    workflow.setdefault(
+        "retry_jitter_seed",
+        hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
+    )
+    workflow.setdefault("attempts_used", 0)
+    workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+    workflow["max_attempts"] = max(
+        1,
+        min(int(workflow["max_attempts"]), MAX_ATTEMPTS_PER_WORKFLOW),
+    )
+    attempt_budget = AttemptBudget(workflow)
     workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
     workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
     for node in nodes:
         node.input["workflow_id"] = workflow["id"]
         node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
+        node.input["retry_jitter_seed"] = workflow["retry_jitter_seed"]
 
     safety = 0
     while True:
@@ -2048,6 +2060,23 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 continue
 
             node.input["context"] = build_node_context(nodes, node)
+            if not attempt_budget.acquire(node.id):
+                node.error = {
+                    "type": "attempt_budget_exhausted",
+                    "message": (
+                        f"workflow attempt budget exhausted at "
+                        f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                    ),
+                    "failure_class": "permanent",
+                    "retry_allowed": False,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                attempt_budget.sync()
+                persist_workflow(workflow)
+                return
             transition(node, "running")
 
             execution_id = execution_key(workflow, node)
@@ -2124,14 +2153,40 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
         if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
             for node, execution_id in executable:
-                results.append((node, execution_id, *execute_with_retries(node, workflow["goal"], dry_run)))
+                results.append((
+                    node,
+                    execution_id,
+                    *execute_with_retries(
+                        node,
+                        workflow["goal"],
+                        dry_run,
+                        attempt_budget=attempt_budget,
+                        initial_attempt_reserved=True,
+                        before_retry=(
+                            lambda node=node: (
+                                attempt_budget.sync(),
+                                workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
+                                persist_workflow(workflow),
+                            )
+                            if side_effecting(node, registry)
+                            else None
+                        ),
+                    ),
+                ))
         else:
             with ThreadPoolExecutor(
                 max_workers=min(workflow["max_parallel"], len(executable)),
                 thread_name_prefix="orchestrator-node",
             ) as pool:
                 futures = {
-                    pool.submit(execute_with_retries, node, workflow["goal"], dry_run): (node, execution_id)
+                    pool.submit(
+                        execute_with_retries,
+                        node,
+                        workflow["goal"],
+                        dry_run,
+                        attempt_budget=attempt_budget,
+                        initial_attempt_reserved=True,
+                    ): (node, execution_id)
                     for node, execution_id in executable
                 }
                 completed_futures = {}
@@ -2167,6 +2222,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     persist_workflow(workflow)
                     return
 
+        attempt_budget.sync()
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
 
