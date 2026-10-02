@@ -1,5 +1,8 @@
 # AI Orchestrator Core — Free Execution Path
 
+The control plane, gateway, and connector bridge use Python's standard library only. The legacy `ai_determinism_engine.py` ML application has a separate dependency manifest in `requirements-legacy.txt`; install that file only when using the legacy ML engine.
+
+
 This is a no-builder-quota control plane.
 
 Architecture: **goal → DAG planner → state machine → execution adapters → validation → retry → checkpoint → persistent state**
