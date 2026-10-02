@@ -39,6 +39,14 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
 
+    def test_event_log_failure_does_not_break_execution(self):
+        with patch.object(
+            o.EVENT_FILE,
+            "open",
+            side_effect=OSError("event log unavailable"),
+        ):
+            o.append_event("test.event", {"ok": True})
+
     def test_atomic_json_write_replaces_existing_file_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
