@@ -128,6 +128,21 @@ def validate_action_input(route: dict[str, Any], action: str, value: Any) -> Non
             raise BridgeRuntimeError(f"connector input field {field_name} must be {type_name}")
 
 
+def route_target_fingerprint(url: str) -> str | None:
+    value = str(url or "").strip()
+    if not value:
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    normalized = urllib.parse.urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path or "/",
+        parsed.query,
+        "",
+    ))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
     routes = load_routes() if routes is None else routes
     described: dict[str, dict[str, Any]] = {}
@@ -152,6 +167,7 @@ def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str
         described[connector] = {
             "actions": normalized_actions,
             "capabilities": sorted(str(item) for item in capabilities),
+            "target_fingerprint": route_target_fingerprint(str(route.get("url") or "")),
             "action_specs": {
                 action: _normalize_action_spec(
                     raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {}
@@ -183,7 +199,10 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
     return request_id, connector, action
 
 
-def request_intent_fingerprint(payload: dict[str, Any]) -> str:
+def request_intent_fingerprint(
+    payload: dict[str, Any],
+    target_fingerprint: str | None = None,
+) -> str:
     intent = {
         "protocol": payload.get("protocol"),
         "workflow_id": payload.get("workflow_id"),
@@ -191,6 +210,7 @@ def request_intent_fingerprint(payload: dict[str, Any]) -> str:
         "connector": payload.get("connector"),
         "action": payload.get("action"),
         "input": payload.get("input"),
+        "target_fingerprint": target_fingerprint,
     }
     return hashlib.sha256(canonical_json(intent)).hexdigest()
 
@@ -402,9 +422,12 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     routes = load_routes()
     request_id, connector, action = validate_envelope(payload, routes)
 
-    intent_fingerprint = request_intent_fingerprint(payload)
     route = routes[connector]
     validate_action_input(route, action, payload.get("input"))
+    intent_fingerprint = request_intent_fingerprint(
+        payload,
+        route_target_fingerprint(str(route.get("url") or "")),
+    )
 
     cached = acquire_idempotency_slot(request_id, intent_fingerprint)
     if cached is not None:
