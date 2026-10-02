@@ -123,6 +123,18 @@ class ActionsConfigTests(unittest.TestCase):
     def test_render_runtime_matches_ci_python(self):
         self.assertEqual((ROOT / ".python-version").read_text().strip(), "3.12")
 
+    def test_private_input_contract_is_versioned(self):
+        contract = json.loads(
+            (ROOT / "contracts" / "private-input.schema.json").read_text()
+        )
+        self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(
+            contract["properties"]["protocol"]["const"],
+            "ai-orchestrator.private-input/v1",
+        )
+        self.assertIn("payload", contract["required"])
+        self.assertEqual(contract["properties"]["payload"]["type"], "object")
+
     def test_private_input_channel_is_not_bypassed_in_structured_live_mode(self):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
