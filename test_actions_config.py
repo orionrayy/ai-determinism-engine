@@ -23,6 +23,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("startsWith(github.event.issue.title, '[ORCHESTRATOR]')", self.orchestrator)
         self.assertIn("startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]')", self.orchestrator)
 
+    def test_approval_worker_requires_authenticated_label_event(self):
+        self.assertIn('ORCHESTRATOR_APPROVAL_EVENT:', self.orchestrator)
+        self.assertIn("github.event.action == 'labeled'", self.orchestrator)
+        self.assertIn("github.event.label.name == 'orchestrator-approved'", self.orchestrator)
+        self.assertIn("github.event.label.name == 'orchestrator-rejected'", self.orchestrator)
+
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
 
