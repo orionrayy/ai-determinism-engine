@@ -34,10 +34,9 @@ permissions:
   issues: write
 
 concurrency:
-  # Serialize retries/continuations for the same workflow, while allowing
-  # unrelated workflows to execute independently. Scheduled recovery remains
-  # globally serialized because its trigger carries no workflow identity.
-  group: ${{ github.workflow }}-${{ github.event_name == 'repository_dispatch' && (github.event.client_payload.trigger_issue || github.event.client_payload.workflow_id) || github.event_name == 'issues' && github.event.issue.number || github.event_name == 'schedule' && 'scheduled-recovery' || github.run_id }}
+  # Serialize retries/continuations for the exact workflow identity. Issue events
+  # are source-ingress only; approvals are translated to repository_dispatch by
+  # orchestrator-approval.yml so they use the same workflow_id group.
   cancel-in-progress: false
   queue: max
 
@@ -67,20 +66,6 @@ jobs:
             *) echo "Issue author is not authorized to trigger orchestration"; exit 1 ;;
           esac
 
-      - name: Authorize approval actor
-        if: github.event_name == 'issues' && startsWith(github.event.issue.title, '[ORCHESTRATOR APPROVAL]') && github.event.action == 'labeled'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ACTOR: ${{ github.actor }}
-          REPOSITORY: ${{ github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          permission="$(gh api "repos/$REPOSITORY/collaborators/$ACTOR/permission" --jq '.permission' 2>/dev/null || true)"
-          case "$permission" in
-            admin|maintain|push|triage) ;;
-            *) echo "Actor lacks repository permission to approve orchestration"; exit 1 ;;
-          esac
       - name: Resolve goal
         id: goal
         shell: bash
@@ -123,17 +108,6 @@ jobs:
           trigger_issue=""
           if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
             case "$ISSUE_TITLE" in
-              "[ORCHESTRATOR APPROVAL]"*)
-                meta="${ISSUE_TITLE#"[ORCHESTRATOR APPROVAL] "}"
-                workflow_id="${meta%% / *}"
-                if [ "$ISSUE_ACTION" = "labeled" ]; then
-                  case "$ISSUE_LABEL" in
-                    orchestrator-approved|orchestrator-rejected) ;;
-                    *) echo "Ignoring unrelated label"; exit 0 ;;
-                  esac
-                fi
-                goal="Resume workflow $workflow_id after approval state change."
-                ;;
               "[ORCHESTRATOR]"*)
                 if [ "$ISSUE_ACTION" = "labeled" ]; then
                   echo "Ignoring label on a source orchestration issue"; exit 0
