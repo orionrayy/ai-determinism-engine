@@ -700,7 +700,7 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         inventory,
     )
     spec = inventory.get(request.connector, {})
-    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true" and not bool(spec.get("free_tier", False)):
+    if free_only_enabled() and not bool(spec.get("free_tier", False)):
         raise ConnectorBridgeError(
             f"connector {request.connector!r} is disabled by ORCHESTRATOR_FREE_ONLY=true"
         )
