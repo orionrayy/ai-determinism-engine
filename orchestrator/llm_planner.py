@@ -6,12 +6,14 @@ import urllib.parse
 import urllib.request
 
 try:
+    from .capability_graph import free_only_enabled
     from .connector_bridge import (
         ConnectorBridgeError,
         discover_capabilities,
         validate_discovered_payload,
     )
 except ImportError:
+    from capability_graph import free_only_enabled
     from connector_bridge import (
         ConnectorBridgeError,
         discover_capabilities,
@@ -91,7 +93,7 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         'Goal: ' + goal
     )
     model = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash')
-    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").strip().lower() not in {"0", "false", "no", "off", "disabled"}:
+    if free_only_enabled():
         configured = registry.get("gemini", {})
         allowed_models = {
             str(value).strip() for value in (configured.get("free_models") or [])
