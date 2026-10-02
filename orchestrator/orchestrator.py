@@ -72,6 +72,12 @@ MAX_GOAL_CHARS = 4000
 MAX_NODE_INTENT_BYTES = 32 * 1024
 MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
+MAX_NODE_RETRIES = 8
+RISK_LEVELS = {"low", "medium", "high", "critical"}
+NODE_STATUSES = {
+    "pending", "ready", "running", "validating", "waiting_approval",
+    "retrying", "replanning", "reconciling", "completed", "failed", "cancelled",
+}
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
 TRANSITIONS = {
@@ -633,6 +639,18 @@ def validate_dag(nodes: list[Node]) -> None:
             default=str,
             separators=(",", ":"),
         )
+        if node.risk not in RISK_LEVELS:
+            raise ValueError(f"node {node.id} has invalid risk")
+        if node.status not in NODE_STATUSES:
+            raise ValueError(f"node {node.id} has invalid status")
+        if node.retry_count < 0 or node.max_retries < 0:
+            raise ValueError(f"node {node.id} has negative retry fields")
+        if node.max_retries > MAX_NODE_RETRIES or node.retry_count > node.max_retries:
+            raise ValueError(f"node {node.id} exceeds retry bounds")
+        for field_name in ("input", "output", "error", "contract"):
+            if not isinstance(getattr(node, field_name), dict):
+                raise ValueError(f"node {node.id} {field_name} must be an object")
+
         if len(intent_serialized.encode("utf-8")) > MAX_NODE_INTENT_BYTES:
             raise ValueError(
                 f"node {node.id} intent exceeds {MAX_NODE_INTENT_BYTES} bytes"
