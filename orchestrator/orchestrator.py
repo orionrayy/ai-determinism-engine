@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import json
 import os
+import secrets
 import tempfile
+import threading
 import time
 import traceback
 import urllib.error
@@ -26,9 +28,14 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence
-    from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
-    from .state_schema import StateSchemaError, migrate_state
+    from .state_schema import (
+        DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
+        MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
+        StateSchemaError,
+        migrate_state,
+    )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
 except ImportError:
@@ -40,9 +47,14 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence
-    from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
+    from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
-    from state_schema import StateSchemaError, migrate_state
+    from state_schema import (
+        DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
+        MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
+        StateSchemaError,
+        migrate_state,
+    )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
 
@@ -57,6 +69,7 @@ MAX_NODES = 24
 MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
+MAX_ATTEMPTS_PER_WORKFLOW = STATE_MAX_ATTEMPTS_PER_WORKFLOW
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -67,10 +80,42 @@ TRANSITIONS = {
     "retrying": {"ready", "failed"},
     "failed": {"replanning", "reconciling", "ready", "cancelled"},
     "replanning": {"ready", "failed", "cancelled"},
-    "reconciling": {"completed", "ready", "failed", "cancelled"},
+    "reconciling": {"validating", "ready", "failed", "cancelled"},
     "completed": set(),
     "cancelled": set(),
 }
+
+class AttemptBudget:
+    """Workflow-scoped attempt budget shared by retries, batches, and replans."""
+
+    def __init__(self, workflow: dict[str, Any]) -> None:
+        self.workflow = workflow
+        self.max_attempts = max(
+            1,
+            min(
+                int(workflow.get("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)),
+                MAX_ATTEMPTS_PER_WORKFLOW,
+            ),
+        )
+        self.used = max(0, int(workflow.get("attempts_used", 0)))
+        self._lock = threading.Lock()
+
+    @property
+    def remaining(self) -> int:
+        with self._lock:
+            return max(0, self.max_attempts - self.used)
+
+    def acquire(self, node_id: str) -> bool:
+        with self._lock:
+            if self.used >= self.max_attempts:
+                return False
+            self.used += 1
+            return True
+
+    def sync(self) -> None:
+        self.workflow["attempts_used"] = self.used
+        self.workflow["max_attempts"] = self.max_attempts
+
 
 @dataclass
 class Node:
@@ -1343,6 +1388,10 @@ def replan_after_failure(
 ) -> bool:
     replans = int(workflow.get("replan_count", 0))
     if replans >= MAX_REPLANS:
+        return False
+    if int(workflow.get("attempts_used", 0)) >= int(
+        workflow.get("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+    ):
         return False
 
     old_tool = failed_node.tool
