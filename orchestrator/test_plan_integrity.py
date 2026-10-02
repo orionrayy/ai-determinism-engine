@@ -45,6 +45,12 @@ class PlanIntegrityTests(unittest.TestCase):
         second_node.input["approval_actor"] = "reviewer"
         second_node.input["approval_approved_at"] = "2026-10-01T19:00:00+00:00"
         self.assertEqual(first, fingerprint_nodes([second_node]))
+    def test_agent_role_changes_fingerprint(self):
+        base = fingerprint_nodes([self.node()])
+        second = self.node()
+        second.agent_role = "critic"
+        self.assertNotEqual(base, fingerprint_nodes([second]))
+
     def test_fingerprint_changes_when_plan_definition_changes(self):
         base = fingerprint_nodes([self.node()])
         different_tool = fingerprint_nodes([self.node(tool="connector_bridge")])
