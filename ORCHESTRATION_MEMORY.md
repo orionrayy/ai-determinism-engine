@@ -35,6 +35,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Discovered connector action specs are fingerprinted and pinned across retry attempts. Contract drift after an uncertain failure stops before the next upstream POST.
 - The bridge idempotency cache remains process-local and best-effort. Upstream/provider-side idempotency remains the durable boundary across process restarts or multiple bridge replicas.
 - No control-plane change in v30 executes a production side effect automatically.
+- Scheduled recovery now treats a recently persisted running workflow with a current worker run ID as fresh: for five minutes it defers that workflow instead of competing with continuation. Manual `--resume` remains able to process a fresh running workflow. Missing/malformed worker timestamps fail open to recovery rather than silently suppressing it.
 
 ## Connector intent-bound idempotency v29
 
