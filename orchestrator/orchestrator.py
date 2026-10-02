@@ -1634,6 +1634,8 @@ def reconcile_first_uncertain(
 
 
 def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+    if workflow.get('status') in {'completed', 'cancelled'}:
+        return str(workflow['status'])
     nodes = [Node(**node) for node in workflow['nodes']]
     validate_dag(nodes)
     registry = load_registry()
@@ -1881,6 +1883,8 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             persist_workflow(workflow)
             return 'failed'
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
+    if workflow.get("status") in {"completed", "cancelled"}:
+        return
     nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
     registry = load_registry()
