@@ -85,19 +85,13 @@ def commit_side_effect_start(
         "-m",
         f"chore(orchestrator): persist execution start {execution_id}",
     )
-    # The expected remote SHA becomes the CAS guard at the actual use point.
-    # A remote change after the HEAD check therefore causes this push to fail
-    # before any external side effect is allowed to proceed.
+    # Git's non-force ref update is itself an atomic fast-forward/CAS-like
+    # check at the remote use point. If main moves after the pre-check, this
+    # push is rejected and the external side effect has not started yet.
     try:
-        _run_git(
-            root,
-            "push",
-            f"--force-with-lease=refs/heads/main:{remote}",
-            "origin",
-            "HEAD:refs/heads/main",
-        )
+        _run_git(root, "push", "origin", "HEAD:refs/heads/main")
     except DurabilityBarrierError as exc:
         raise DurabilityBarrierError(
-            "durability barrier CAS rejected: main changed after preflight"
+            "durability barrier remote update rejected; main changed after preflight"
         ) from exc
     return True
