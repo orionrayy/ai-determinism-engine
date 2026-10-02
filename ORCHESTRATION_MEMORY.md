@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: approval intent binding v23 plus its v24 hotfix, on top of durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; live side effects require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
+Current main baseline: execution-envelope ingress v25, on top of approval intent binding v23/v24, durability-barrier recovery v22, interrupted side-effect recovery v21, the post-start side-effect replay fence v20, and pre-side-effect durability v19; cross-service requests now carry execution identity, intent fingerprint, input digest, attempt, and requested mode; live side effects still require a durable `START` fence, explicit recovery semantics, and approval binding before replay; always verify the current `main` ref before modifying.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -191,6 +191,16 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - Stale or missing approval fingerprints are fail-closed: the old approval is cleared, the old issue reference is discarded, and the node returns to `ready` so a fresh approval issue is created.
 - The approving GitHub actor and approval timestamp are persisted as audit metadata.
 - `approval_fingerprint` is excluded from the plan fingerprint as runtime approval metadata; changing the actual tool/action/payload still changes the plan fingerprint and fails the existing plan-integrity check.
+
+## Execution envelope v25
+
+- `gateway.py` accepts the structured cross-service envelope fields used by the automation core: event id, execution id, workflow id, domain, operation, intent fingerprint, attempt, requested mode, and input digest.
+- The gateway validates the supplied intent fingerprint against the structured input before dispatch and rejects malformed execution identities or attempts outside the bounded range.
+- Raw structured input is not copied into the public repository-backed metadata; only bounded identity, fingerprint, digest, and mode fields cross the GitHub `repository_dispatch` boundary.
+- The orchestrator persists the external execution identity in workflow state and returns it in terminal callback receipts.
+- Terminal callbacks are HTTPS-only and HMAC authenticated; repeated terminal callbacks are handled idempotently by the automation-core ledger.
+- The engine workflow preserves the requested live/dry-run mode across `repository_dispatch` instead of falling back to local workflow-input defaults.
+- Canonical contract: `contracts/execution-envelope.schema.json`.
 
 ## Durability barrier recovery v22
 
