@@ -325,6 +325,62 @@ class BridgeRuntimeTests(unittest.TestCase):
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
 
+    def test_identical_concurrent_failure_is_single_flight(self):
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+        payload = self.payload(
+            request_id=hashlib.sha256(b"concurrent-failure").hexdigest()
+        )
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+            }
+        }
+        entered = threading.Event()
+        release = threading.Event()
+        calls = []
+        results = []
+
+        def fake_dispatch(route, request_payload):
+            calls.append(request_payload["request_id"])
+            entered.set()
+            self.assertTrue(release.wait(2))
+            raise br.UpstreamConnectorError(
+                "upstream connector returned HTTP 500",
+                status_code=500,
+                uncertain=True,
+            )
+
+        def invoke():
+            try:
+                results.append(br.handle_request(payload, "secret"))
+            except Exception as exc:
+                results.append(exc)
+
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=fake_dispatch) as dispatch:
+            first_thread = threading.Thread(target=invoke)
+            second_thread = threading.Thread(target=invoke)
+            first_thread.start()
+            self.assertTrue(entered.wait(1))
+            second_thread.start()
+            time.sleep(0.02)
+            self.assertEqual(calls, [payload["request_id"]])
+            release.set()
+            first_thread.join(2)
+            second_thread.join(2)
+
+            self.assertEqual(dispatch.call_count, 1)
+            self.assertEqual(len(results), 2)
+            self.assertTrue(all(isinstance(item, Exception) for item in results))
+
+            recovery = br.handle_request(payload, "secret")
+
+        self.assertTrue(recovery["ok"])
+        self.assertEqual(dispatch.call_count, 2)
+        br._COMPLETED.clear()
+        br._INFLIGHT.clear()
+
     def test_same_idempotency_key_cannot_change_request_intent(self):
         request_id = hashlib.sha256(b"stable-intent-key").hexdigest()
         first_payload = self.payload(request_id=request_id)
