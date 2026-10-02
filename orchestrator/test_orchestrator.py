@@ -804,7 +804,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(o.StateSchemaError):
             o.migrate_state({
-                "version": o.CURRENT_STATE_VERSION + 1,
+                "version": CURRENT_STATE_VERSION + 1,
                 "workflows": {},
             })
 
