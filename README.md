@@ -1,5 +1,11 @@
 # AI Orchestrator Core
 
+## Execution preflight + resume plan immutability v25
+
+Persisted workflow tool selection is now immutable across resume until an explicit replan. Initial creation still uses capability routing, while live execution preflights credentials, free-only policy, tool health, and HTTPS prerequisites before a side-effect durability barrier. Preflight failures can safely enter the existing bounded replan path.
+
+The GitHub Actions worker now accepts both source orchestration issues and approval issues at the job filter level, closing the approval-event delivery gap.
+
 Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
 Free execution path: GitHub Actions + stdlib Python control plane.
