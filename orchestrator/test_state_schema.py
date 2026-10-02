@@ -122,6 +122,33 @@ class StateSchemaTests(unittest.TestCase):
                 },
             })
 
+    def test_execution_envelope_identity_is_schema_validated(self):
+        base = {
+            "id": "wf",
+            "execution_id": "a" * 64,
+            "intent_fingerprint": "b" * 64,
+            "input_digest": "c" * 64,
+            "external_workflow_id": "external-wf",
+            "parent_execution_id": "parent-1",
+            "external_domain": "publisher",
+            "external_operation": "chapter.produce",
+            "idempotency_key": "evt-1",
+            "external_attempt": 2,
+            "nodes": [],
+        }
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {"wf": base},
+        })
+        self.assertEqual(
+            migrated["workflows"]["wf"]["execution_id"],
+            "a" * 64,
+        )
+        bad = dict(base)
+        bad["intent_fingerprint"] = "not-hex"
+        with self.assertRaises(StateSchemaError):
+            migrate_state({"version": CURRENT_STATE_VERSION, "workflows": {"wf": bad}})
+
     def test_invalid_workflow_live_type_fails_closed(self):
         with self.assertRaises(StateSchemaError):
             migrate_state({
