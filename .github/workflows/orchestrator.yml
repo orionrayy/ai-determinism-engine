@@ -182,6 +182,7 @@ jobs:
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
+          ORCHESTRATOR_GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           ORCHESTRATOR_FREE_ONLY: "true"
           ORCHESTRATOR_MAX_PARALLEL: ${{ inputs.max_parallel || '4' }}
           ORCHESTRATOR_MAX_EXECUTION_STEPS: ${{ inputs.max_steps || '96' }}
