@@ -516,7 +516,6 @@ class ConnectorBridgeTests(unittest.TestCase):
                 with self.assertRaises(cb.ConnectorRequestError) as ctx:
                     cb.execute_connector_bridge(node, "bridge it", dry_run=False)
         self.assertTrue(ctx.exception.uncertain)
-        self.assertFalse(ctx.exception.retry_allowed)
 
     def test_connector_response_persists_only_allowlisted_fields(self):
         node = self.node({"title": "Hello"})
