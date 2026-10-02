@@ -122,6 +122,10 @@ class AttemptBudget:
             self.used += 1
             return True
 
+    def refund(self, count: int) -> None:
+        with self._lock:
+            self.used = max(0, self.used - max(0, int(count)))
+
     def sync(self) -> None:
         self.workflow["attempts_used"] = self.used
         self.workflow["max_attempts"] = self.max_attempts
@@ -383,40 +387,48 @@ def delegate_ready_agents(
         eligible.append(node)
     if len(eligible) < 2:
         return None
+
     limit = min(
         len(eligible),
         int(workflow.get("max_parallel") or DEFAULT_MAX_PARALLEL),
         8,
     )
     selected = eligible[:limit]
+    federation_id = new_id("fed")
+    tasks = []
+    try:
+        for node in selected:
+            context = build_node_context(nodes, node)
+            tasks.append(build_task(
+                federation_id=federation_id,
+                workflow_id=workflow["id"],
+                task_id=node.id,
+                role=node.agent_role,
+                capability=node.capability,
+                tool=node.tool,
+                risk=node.risk,
+                instruction=str(node.input.get("instruction") or ""),
+                context=context,
+                contract=node.contract,
+                attempt=node.retry_count + 1,
+            ))
+        manifest = build_manifest(federation_id, tasks)
+    except Exception as exc:
+        append_event("federation.prepare_failed", {
+            "workflow_id": workflow["id"],
+            "federation_id": federation_id,
+            "error": str(exc),
+        })
+        return None
+
     if attempt_budget.remaining < len(selected):
         return None
     for node in selected:
         attempt_budget.acquire(node.id)
 
-    federation_id = new_id("fed")
-    tasks = []
-    for node in selected:
-        context = build_node_context(nodes, node)
-        task = build_task(
-            federation_id=federation_id,
-            workflow_id=workflow["id"],
-            task_id=node.id,
-            role=node.agent_role,
-            capability=node.capability,
-            tool=node.tool,
-            risk=node.risk,
-            instruction=str(node.input.get("instruction") or ""),
-            context=context,
-            contract=node.contract,
-            attempt=node.retry_count + 1,
-        )
-        tasks.append(task)
-    manifest = build_manifest(federation_id, tasks)
-
     workflow["federation"] = {
         "id": federation_id,
-        "status": "dispatched",
+        "status": "prepared",
         "task_count": len(tasks),
         "tasks": [
             {
@@ -450,11 +462,13 @@ def delegate_ready_agents(
     try:
         dispatch_federation(manifest)
     except Exception as exc:
+        attempt_budget.refund(len(selected))
         workflow["federation"]["status"] = "dispatch_failed"
         workflow["federation"]["error"] = str(exc)
         for node in selected:
             transition(node, "ready")
         workflow["status"] = "ready"
+        attempt_budget.sync()
         workflow["nodes"] = [asdict(item) for item in nodes]
         persist_workflow(workflow)
         append_event("federation.dispatch_failed", {
@@ -463,6 +477,7 @@ def delegate_ready_agents(
             "error": str(exc),
         })
         return None
+    workflow["federation"]["status"] = "dispatched"
     persist_workflow(workflow)
     append_event("federation.dispatched", {
         "workflow_id": workflow["id"],
@@ -470,7 +485,6 @@ def delegate_ready_agents(
         "task_count": len(tasks),
     })
     return federation_id
-
 
 def ingest_federation(
     workflow: dict[str, Any],
