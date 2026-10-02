@@ -58,6 +58,16 @@ def derive_execution_id(
     ).hexdigest()
 
 
+def parse_content_length(value: str | None) -> int:
+    try:
+        length = int(value or "0")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("content_length_invalid") from exc
+    if length <= 0 or length > 128 * 1024:
+        raise ValueError("payload size must be between 1 byte and 128 KiB")
+    return length
+
+
 def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     domain = str(payload.get("domain") or "").strip()
     operation = str(payload.get("operation") or "").strip().lower()
@@ -71,6 +81,8 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         request_input = payload.get("input") or {}
     if not isinstance(request_input, dict):
         raise ValueError("payload/input must be an object")
+    if len(request_input) > 256:
+        raise ValueError("input_has_too_many_properties")
 
     idempotency_key = str(
         payload.get("idempotency_key")
@@ -290,9 +302,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            if length <= 0 or length > 128 * 1024:
-                raise ValueError("payload size must be between 1 byte and 128 KiB")
+            length = parse_content_length(self.headers.get("Content-Length"))
             raw = self.rfile.read(length)
             if not authorized(dict(self.headers.items()), raw):
                 self._send(401, {"ok": False, "error": "unauthorized"})
