@@ -1,5 +1,6 @@
 import json
 import tempfile
+import sys
 import threading
 import unittest
 from pathlib import Path
@@ -795,6 +796,30 @@ class OrchestratorTests(unittest.TestCase):
              patch.object(o, "save_state") as save_state:
             count = o.resume_pending_workflows(state, step=True)
         self.assertEqual(count, 1)
+        save_state.assert_not_called()
+
+    def test_main_persists_new_workflow_before_execution(self):
+        workflow = {
+            "id": "wf-new", "goal": "build", "status": "planning", "live": False,
+            "nodes": [],
+        }
+        calls = []
+        state = {"version": CURRENT_STATE_VERSION, "workflows": {}, "last_workflow_id": None}
+        def fake_run(wf, approve_high_risk=False):
+            calls.append("run")
+            wf["status"] = "completed"
+        with patch.object(o, "load_state", return_value=state), \
+             patch.object(o, "create_workflow", return_value=workflow), \
+             patch.object(o, "persist_workflow", side_effect=lambda wf: calls.append("persist")), \
+             patch.object(o, "append_event"), \
+             patch.object(o, "run_workflow", side_effect=fake_run), \
+             patch.object(o, "save_state") as save_state, \
+             patch.object(o, "notify_execution_callback"), \
+             patch.object(o, "print_summary"), \
+             patch.object(sys, "argv", ["orchestrator", "--goal", "build"]):
+            result = o.main()
+        self.assertEqual(result, 0)
+        self.assertEqual(calls[:2], ["persist", "run"])
         save_state.assert_not_called()
 
     def test_state_migration_is_idempotent(self):
