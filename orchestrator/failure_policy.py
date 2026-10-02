@@ -70,16 +70,13 @@ def classify_failure(exc: Exception) -> str:
     return "permanent"
 
 
-def retry_allowed(
-    failure_class: str,
-    *,
-    explicitly_retryable: bool | None = None,
-) -> bool:
-    if failure_class in _NON_RETRYABLE_CLASSES:
-        return False
-    if explicitly_retryable is not None:
-        return bool(explicitly_retryable)
-    return failure_class in {"transient", "intermittent", "dependency"}
+def retry_class_allowed(failure_class: str) -> bool:
+    """Class-level signal only; the orchestrator owns the final retry decision."""
+    return failure_class not in _NON_RETRYABLE_CLASSES and failure_class in {
+        "transient",
+        "intermittent",
+        "dependency",
+    }
 
 
 def deterministic_retry_delay(
@@ -87,26 +84,28 @@ def deterministic_retry_delay(
     node_id: str,
     attempt: int,
     *,
+    retry_seed: str = "",
     base_max: float = 8.0,
 ) -> float:
+    """Auditable equal-jitter backoff derived from a per-workflow seed.
+
+    The seed is persisted in workflow state, so retries are spread across
+    workflows without introducing un-auditable wall-clock randomness.
+    """
     attempt = max(1, int(attempt))
     base = min(float(2 ** attempt), float(base_max))
     digest = hashlib.sha256(
-        f"{workflow_id}:{node_id}:{attempt}".encode("utf-8")
+        f"{retry_seed}:{workflow_id}:{node_id}:{attempt}".encode("utf-8")
     ).digest()
-    # 0.000-0.250 seconds: deterministic jitter, not wall-clock randomness.
-    jitter = int.from_bytes(digest[:2], "big") % 251
-    return base + (jitter / 1000.0)
+    fraction = int.from_bytes(digest[:8], "big") / float(2**64)
+    return (base * 0.5) + (base * 0.5 * fraction)
 
 
 def describe_failure(exc: Exception, *, uncertain: bool = False) -> dict[str, Any]:
     failure_class = "uncertain" if uncertain else classify_failure(exc)
     return {
         "class": failure_class,
-        "retry_allowed": retry_allowed(
-            failure_class,
-            explicitly_retryable=getattr(exc, "retry_allowed", None),
-        ),
+        "retry_class_allowed": retry_class_allowed(failure_class),
         "uncertain": failure_class == "uncertain",
         "message": str(exc),
     }
