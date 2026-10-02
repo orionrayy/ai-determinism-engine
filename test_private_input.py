@@ -9,6 +9,52 @@ import private_input as pi
 
 
 class PrivateInputTests(unittest.TestCase):
+    def test_request_signature_binds_method_and_path(self):
+        secret = "secret"
+        body = b"{}"
+        timestamp = 1700000000
+        get_one = pi.request_signature(
+            method="GET",
+            path="/v1/inputs/" + "a" * 64,
+            timestamp=timestamp,
+            body=body,
+            secret=secret,
+        )
+        get_two = pi.request_signature(
+            method="GET",
+            path="/v1/inputs/" + "b" * 64,
+            timestamp=timestamp,
+            body=body,
+            secret=secret,
+        )
+        post_one = pi.request_signature(
+            method="POST",
+            path="/v1/inputs",
+            timestamp=timestamp,
+            body=body,
+            secret=secret,
+        )
+        self.assertNotEqual(get_one, get_two)
+        self.assertNotEqual(get_one, post_one)
+        self.assertEqual(
+            get_one,
+            pi.request_signature(
+                method="GET",
+                path="/v1/inputs/" + "a" * 64,
+                timestamp=timestamp,
+                body=body,
+                secret=secret,
+            ),
+        )
+
+    def test_ref_rejects_malformed_execution_identity(self):
+        with self.assertRaisesRegex(pi.PrivateInputError, "execution identity"):
+            pi.derive_input_ref(
+                "not-an-execution-id",
+                "a" * 64,
+                "secret",
+            )
+
     def test_ref_is_deterministic_and_secret_bound(self):
         payload = {"title": "Hello"}
         digest = pi.input_digest(payload)
