@@ -23,6 +23,9 @@ NODE_STATUSES = {
 WORKFLOW_STATUSES = {"planning", "ready", "running", "waiting_approval", "failed", "completed", "cancelled"}
 EXECUTION_MODES = {"live", "dry-run"}
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
+DOMAIN_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
+OPERATION_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 VOLATILE_INPUT_KEYS = {
     "workflow_id",
     "context",
@@ -172,6 +175,47 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 )
         workflow.setdefault("policy_fingerprint", None)
         workflow.setdefault("route_snapshot", {})
+        for field_name in ("execution_id", "intent_fingerprint", "input_digest"):
+            value = workflow.get(field_name)
+            if value is not None and value != "":
+                if not isinstance(value, str) or not HEX64_RE.fullmatch(value):
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r}.{field_name} must be a 64-character lowercase hex digest"
+                    )
+        for field_name in ("external_workflow_id", "parent_execution_id"):
+            value = workflow.get(field_name)
+            if value is not None and value != "" and not SAFE_ID_RE.fullmatch(str(value)):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.{field_name} contains unsafe characters"
+                )
+        external_domain = workflow.get("external_domain")
+        if external_domain:
+            if not isinstance(external_domain, str) or not DOMAIN_RE.fullmatch(external_domain):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.external_domain is invalid"
+                )
+        external_operation = workflow.get("external_operation")
+        if external_operation:
+            if not isinstance(external_operation, str) or not OPERATION_RE.fullmatch(external_operation):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.external_operation is invalid"
+                )
+        idempotency_key = workflow.get("idempotency_key")
+        if idempotency_key is not None and len(str(idempotency_key)) > 128:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.idempotency_key is too long"
+            )
+        try:
+            external_attempt = int(workflow.get("external_attempt", 1))
+        except (TypeError, ValueError) as exc:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.external_attempt must be an integer"
+            ) from exc
+        if external_attempt < 1 or external_attempt > 1000:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.external_attempt out of bounds"
+            )
+        workflow["external_attempt"] = external_attempt
         workflow.setdefault("policy_integrity", "legacy_unverified")
         workflow.setdefault(
             "origin_github_run_id",
