@@ -28,6 +28,13 @@ def intent_fingerprint(domain: str, operation: str, payload: dict) -> str:
     })).hexdigest()
 
 
+def derive_unstructured_event_id(goal: str, metadata: dict) -> str:
+    return hashlib.sha256(canonical_json({
+        "schema_version": 1,
+        "goal": str(goal),
+        "metadata": metadata if isinstance(metadata, dict) else {},
+    })).hexdigest()
+
 def derive_execution_id(event_id: str, domain: str, operation: str, fingerprint: str) -> str:
     return hashlib.sha256(canonical_json({
         "schema_version": 1,
@@ -243,11 +250,7 @@ class Handler(BaseHTTPRequestHandler):
                     or str(payload.get("event_id") or "").strip()
                     or ""
                 )
-                event_id = explicit_event_id or hashlib.sha256(canonical_json({
-                    "schema_version": 1,
-                    "goal": goal,
-                    "metadata": metadata,
-                })).hexdigest()
+                event_id = explicit_event_id or derive_unstructured_event_id(goal, metadata)
             result = github_dispatch(goal, metadata, event_id=event_id)
             receipt = {"ok": True, "queued": True, **result}
             if isinstance(metadata, dict):
