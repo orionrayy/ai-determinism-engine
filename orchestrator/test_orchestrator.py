@@ -864,6 +864,21 @@ class OrchestratorTests(unittest.TestCase):
                 loaded = o.load_state()
             self.assertEqual(loaded["workflows"]["wf-legacy"]["status"], "completed")
 
+    def test_load_state_rejects_unknown_storage_format(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state_file = root / "state.json"
+            state_file.write_text(
+                json.dumps({
+                    "version": CURRENT_STATE_VERSION,
+                    "storage_format": "future-v99",
+                    "workflows": {},
+                }),
+                encoding="utf-8",
+            )
+            with patch.object(o, "STATE_DIR", root), patch.object(o, "STATE_FILE", state_file):
+                with self.assertRaisesRegex(RuntimeError, "unsupported orchestrator storage format"):
+                    o.load_state()
     def test_load_state_rejects_mismatched_workflow_shard_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
