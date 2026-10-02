@@ -41,7 +41,7 @@ class OrchestratorTests(unittest.TestCase):
 
     def test_event_log_failure_does_not_break_execution(self):
         with patch.object(
-            o.EVENT_FILE,
+            Path,
             "open",
             side_effect=OSError("event log unavailable"),
         ):
@@ -364,7 +364,7 @@ class OrchestratorTests(unittest.TestCase):
             "goal": "run",
             "live": False,
             "nodes": [o.asdict(node)],
-            "plan_fingerprint": "not-the-current-plan",
+            "plan_fingerprint": "f" * 64,
         }
         with patch.object(o, "execute_node") as execute:
             result = o.run_one_step(workflow)
@@ -1470,7 +1470,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_workflow_creation_persists_requested_execution_budget(self):
         with patch.dict(o.os.environ, {"ORCHESTRATOR_MAX_EXECUTION_STEPS": "17"}, clear=False):
             workflow = o.create_workflow("research something", live=False)
-        self.assertEqual(workflow["schema_version"], 5)
+        self.assertEqual(workflow["schema_version"], 6)
         self.assertEqual(workflow["execution_budget"], {"max_steps": 17, "used_steps": 0})
 
     def test_invalid_requested_execution_budget_fails_closed(self):
@@ -1623,7 +1623,7 @@ class OrchestratorTests(unittest.TestCase):
         )
         node.input["approval_fingerprint"] = o.fingerprint_nodes([node])
         workflow = {"id": "wf_approval_bind", "status": "waiting_approval", "nodes": [o.asdict(node)]}
-        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer", "ORCHESTRATOR_APPROVAL_EVENT": "true"}, clear=False), \
+        with patch.dict(o.os.environ, {"GITHUB_ACTOR": "reviewer", "ORCHESTRATOR_APPROVAL_EVENT": "true", "ORCHESTRATOR_APPROVAL_ISSUE": "42"}, clear=False), \
              patch.object(o, "get_issue_labels", return_value={"orchestrator-approved"}):
             o.refresh_approvals(workflow, [node])
         self.assertTrue(node.input["approval_granted"])
