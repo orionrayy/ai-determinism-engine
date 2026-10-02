@@ -2080,6 +2080,24 @@ class OrchestratorTests(unittest.TestCase):
                 self.assertTrue((root / "legacy-events.jsonl").exists())
                 self.assertFalse(list((root / "events").glob("*.jsonl")) if (root / "events").exists() else [])
 
+    def test_event_log_redacts_durable_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            event_path = Path(tmp) / "events.jsonl"
+            with patch.object(o, "EVENT_FILE", event_path),                  patch.object(o, "EVENT_DIR", Path(tmp) / "events"):
+                o.append_event("node.failed", {
+                    "workflow_id": "wf-event-redact",
+                    "error": {
+                        "message": "Authorization: Bearer TOPSECRET",
+                        "traceback": "Traceback ... api_key=TRACESECRET",
+                    },
+                })
+            content = event_path.read_text(encoding="utf-8")
+
+        self.assertNotIn("TOPSECRET", content)
+        self.assertNotIn("TRACESECRET", content)
+        self.assertIn("diagnostic_trace", content)
+        self.assertIn('"redacted":true', content)
+
     def test_event_payload_is_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
             event_path = Path(tmp) / "events.jsonl"
