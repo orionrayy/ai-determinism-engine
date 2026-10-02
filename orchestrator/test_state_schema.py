@@ -33,6 +33,20 @@ class StateSchemaTests(unittest.TestCase):
         self.assertEqual(workflow["plan_integrity"], "legacy_unverified")
         self.assertEqual(workflow["nodes"][0]["status"], "pending")
         self.assertEqual(workflow["max_parallel"], 4)
+        self.assertEqual(workflow["execution_budget"], {"max_steps": 96, "used_steps": 0})
+
+    def test_invalid_execution_budget_fails_closed(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": 4,
+                "workflows": {
+                    "wf": {
+                        "schema_version": 3,
+                        "execution_budget": {"max_steps": 0, "used_steps": 0},
+                        "nodes": [],
+                    }
+                },
+            })
 
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(StateSchemaError):
