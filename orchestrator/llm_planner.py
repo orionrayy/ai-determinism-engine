@@ -90,7 +90,16 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         'For action_specs, honor required fields and declared primitive types exactly; do not invent connector fields. '
         'Goal: ' + goal
     )
-    model = os.environ.get('GEMINI_PLANNER_MODEL', os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash'))
+    model = os.environ.get('GEMINI_MODEL', 'gemini-3.8-flash')
+    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").strip().lower() not in {"0", "false", "no", "off", "disabled"}:
+        configured = registry.get("gemini", {})
+        allowed_models = {
+            str(value).strip() for value in (configured.get("free_models") or [])
+        }
+        if allowed_models and model not in allowed_models:
+            raise RuntimeError("configured Gemini planner model is not free-tier allowlisted")
+    else:
+        model = os.environ.get('GEMINI_PLANNER_MODEL', model)
     endpoint = (
         'https://generativelanguage.googleapis.com/v1beta/models/'
         + urllib.parse.quote(model, safe='')
