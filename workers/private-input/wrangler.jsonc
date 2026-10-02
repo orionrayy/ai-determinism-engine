@@ -1,0 +1,23 @@
+{
+  "name": "ai-orchestrator-private-input",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["PrivateInput"]
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PRIVATE_INPUTS",
+        "class_name": "PrivateInput"
+      }
+    ]
+  },
+  "secrets": {
+    "required": ["ORCHESTRATOR_PRIVATE_INPUT_SECRET"]
+  }
+}
