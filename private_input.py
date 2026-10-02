@@ -24,6 +24,7 @@ MAX_TTL_SECONDS = 7 * 24 * 60 * 60
 DEFAULT_TTL_SECONDS = 24 * 60 * 60
 REF_RE = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 class PrivateInputError(RuntimeError):
@@ -51,9 +52,12 @@ def derive_input_ref(
     digest: str,
     secret: str,
 ) -> str:
+    execution = str(execution_id or "").strip()
+    if not EXECUTION_ID_RE.fullmatch(execution):
+        raise PrivateInputError("invalid private input execution identity")
     if not DIGEST_RE.fullmatch(str(digest or "")):
         raise PrivateInputError("invalid private input digest")
-    message = f"{PROTOCOL}\n{str(execution_id).strip()}\n{digest}".encode("utf-8")
+    message = f"{PROTOCOL}\n{execution}\n{digest}".encode("utf-8")
     return hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
 
@@ -70,13 +74,47 @@ def private_input_config() -> tuple[str, str]:
     return url.rstrip("/"), secret
 
 
-def _signed_headers(timestamp: int, body: bytes, secret: str) -> dict[str, str]:
-    message = str(timestamp).encode("utf-8") + b"\n" + body
-    signature = hmac.new(
+def request_signature(
+    *,
+    method: str,
+    path: str,
+    timestamp: int,
+    body: bytes,
+    secret: str,
+) -> str:
+    normalized_method = str(method or "GET").upper()
+    normalized_path = str(path or "/")
+    message = (
+        normalized_method.encode("utf-8")
+        + b"\n"
+        + normalized_path.encode("utf-8")
+        + b"\n"
+        + str(timestamp).encode("utf-8")
+        + b"\n"
+        + body
+    )
+    return hmac.new(
         secret.encode("utf-8"),
         message,
         hashlib.sha256,
     ).hexdigest()
+
+
+def _signed_headers(
+    *,
+    method: str,
+    path: str,
+    timestamp: int,
+    body: bytes,
+    secret: str,
+) -> dict[str, str]:
+    signature = request_signature(
+        method=method,
+        path=path,
+        timestamp=timestamp,
+        body=body,
+        secret=secret,
+    )
     return {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -118,11 +156,19 @@ def store_private_input(
     body = canonical_json(envelope)
     if len(body) > MAX_BODY_BYTES:
         raise PrivateInputError("private input envelope exceeds 128 KiB")
+    request_path = urllib.parse.urlparse(url + "/v1/inputs").path or "/"
+    timestamp = int(time.time())
     request = urllib.request.Request(
         url + "/v1/inputs",
         data=body,
         headers={
-            **_signed_headers(int(time.time()), body, secret),
+            **_signed_headers(
+                method="POST",
+                path=request_path,
+                timestamp=timestamp,
+                body=body,
+                secret=secret,
+            ),
             "Idempotency-Key": ref,
         },
         method="POST",
@@ -165,9 +211,17 @@ def fetch_private_input(
         raise PrivateInputError("private input reference does not match execution identity")
     timestamp = int(time.time())
     body = b""
+    request_url = url + "/v1/inputs/" + urllib.parse.quote(ref, safe="")
+    request_path = urllib.parse.urlparse(request_url).path or "/"
     request = urllib.request.Request(
-        url + "/v1/inputs/" + urllib.parse.quote(ref, safe=""),
-        headers=_signed_headers(timestamp, body, secret),
+        request_url,
+        headers=_signed_headers(
+            method="GET",
+            path=request_path,
+            timestamp=timestamp,
+            body=body,
+            secret=secret,
+        ),
         method="GET",
     )
     try:
