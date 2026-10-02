@@ -74,7 +74,7 @@ class ExecutionLeaseTests(unittest.TestCase):
         self.assertEqual(captured["body"]["ttl_seconds"], 900)
 
     def test_release_is_best_effort(self):
-        with patch.object(el, "_post", side_effect=RuntimeError("down")), patch.dict(os.environ, {
+        with patch.object(el, "_post", side_effect=el.ExecutionLeaseError("down")), patch.dict(os.environ, {
             "ORCHESTRATOR_PRIVATE_INPUT_URL": "https://private.example",
             "ORCHESTRATOR_PRIVATE_INPUT_SECRET": "secret",
         }, clear=True):
