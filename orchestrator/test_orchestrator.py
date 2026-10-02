@@ -1321,6 +1321,32 @@ class OrchestratorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             o.validate_dag([node])
 
+    def test_free_only_planner_cannot_bypass_model_policy(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "free_models": ["gemini-3.8-flash"],
+                "model_env": "GEMINI_MODEL",
+                "required_env": "GEMINI_API_KEY",
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ORCHESTRATOR_LLM_PLANNER": "true",
+            "GEMINI_API_KEY": "key",
+            "GEMINI_MODEL": "gemini-paid-model",
+        }, clear=True), patch.object(
+            o, "load_registry", return_value=registry
+        ), patch.object(
+            o, "deterministic_plan", return_value=[
+                o.Node("n01", "execute", "noop", [])
+            ]
+        ) as fallback:
+            with patch.object(o, "append_event"):
+                workflow = o.create_workflow("do work", live=False)
+        fallback.assert_called_once()
+        self.assertEqual(workflow["nodes"][0]["tool"], "noop")
+
     def test_workflow_creation_falls_back_without_gemini_key(self):
         with patch.dict(o.os.environ, {}, clear=True):
             workflow = o.create_workflow("build a small website", live=False)
