@@ -225,12 +225,13 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             raise StateSchemaError(
                 f"workflow {workflow_id!r}.idempotency_key is too long"
             )
-        try:
-            external_attempt = int(workflow.get("external_attempt", 1))
-        except (TypeError, ValueError) as exc:
-            raise StateSchemaError(
-                f"workflow {workflow_id!r}.external_attempt must be an integer"
-            ) from exc
+        external_attempt = _strict_bounded_int(
+            workflow.get("external_attempt"),
+            default=1,
+            minimum=1,
+            maximum=1000,
+            field_name=f"workflow {workflow_id!r}.external_attempt",
+        )
         if external_attempt < 1 or external_attempt > 1000:
             raise StateSchemaError(
                 f"workflow {workflow_id!r}.external_attempt out of bounds"
@@ -261,16 +262,13 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             raise StateSchemaError(
                 f"workflow {workflow_id!r}.callback.status is invalid"
             )
-        try:
-            callback_attempts = int(callback.get("attempts", 0))
-        except (TypeError, ValueError) as exc:
-            raise StateSchemaError(
-                f"workflow {workflow_id!r}.callback.attempts must be an integer"
-            ) from exc
-        if callback_attempts < 0 or callback_attempts > MAX_CALLBACK_ATTEMPTS:
-            raise StateSchemaError(
-                f"workflow {workflow_id!r}.callback.attempts out of bounds"
-            )
+        callback_attempts = _strict_bounded_int(
+            callback.get("attempts"),
+            default=0,
+            minimum=0,
+            maximum=MAX_CALLBACK_ATTEMPTS,
+            field_name=f"workflow {workflow_id!r}.callback.attempts",
+        )
         target_fingerprint = callback.get("target_fingerprint")
         if target_fingerprint not in (None, ""):
             if not isinstance(target_fingerprint, str) or not HEX64_RE.fullmatch(target_fingerprint):
@@ -286,25 +284,31 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(workflow.get("execution_budget"), dict):
             raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget must be an object")
         budget = workflow["execution_budget"]
-        try:
-            max_steps = int(budget.get("max_steps", 96))
-            used_steps = int(budget.get("used_steps", 0))
-        except (TypeError, ValueError) as exc:
-            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget contains non-integer values") from exc
-        if max_steps < 1 or max_steps > 256:
-            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.max_steps out of bounds")
-        if used_steps < 0 or used_steps > 256:
-            raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.used_steps out of bounds")
+        max_steps = _strict_bounded_int(
+            budget.get("max_steps"),
+            default=96,
+            minimum=1,
+            maximum=256,
+            field_name=f"workflow {workflow_id!r}.execution_budget.max_steps",
+        )
+        used_steps = _strict_bounded_int(
+            budget.get("used_steps"),
+            default=0,
+            minimum=0,
+            maximum=256,
+            field_name=f"workflow {workflow_id!r}.execution_budget.used_steps",
+        )
         if used_steps > max_steps:
             raise StateSchemaError(f"workflow {workflow_id!r}.execution_budget.used_steps exceeds max_steps")
         budget["max_steps"] = max_steps
         budget["used_steps"] = used_steps
-        try:
-            replan_count = int(workflow.get("replan_count", 0))
-        except (TypeError, ValueError) as exc:
-            raise StateSchemaError(
-                f"workflow {workflow_id!r}.replan_count must be an integer"
-            ) from exc
+        replan_count = _strict_bounded_int(
+            workflow.get("replan_count"),
+            default=0,
+            minimum=0,
+            maximum=MAX_REPLANS,
+            field_name=f"workflow {workflow_id!r}.replan_count",
+        )
         if replan_count < 0 or replan_count > MAX_REPLANS:
             raise StateSchemaError(
                 f"workflow {workflow_id!r}.replan_count out of bounds"
@@ -395,13 +399,20 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} node {node['id']!r}.status is invalid"
                 )
-            try:
-                retry_count = int(node.get("retry_count", 0))
-                max_retries = int(node.get("max_retries", 2))
-            except (TypeError, ValueError) as exc:
-                raise StateSchemaError(
-                    f"workflow {workflow_id!r} node {node['id']!r} retry fields must be integers"
-                ) from exc
+            retry_count = _strict_bounded_int(
+                node.get("retry_count"),
+                default=0,
+                minimum=0,
+                maximum=MAX_NODE_RETRIES,
+                field_name=f"workflow {workflow_id!r} node {node['id']!r}.retry_count",
+            )
+            max_retries = _strict_bounded_int(
+                node.get("max_retries"),
+                default=2,
+                minimum=0,
+                maximum=MAX_NODE_RETRIES,
+                field_name=f"workflow {workflow_id!r} node {node['id']!r}.max_retries",
+            )
             if (
                 retry_count < 0
                 or max_retries < 0
