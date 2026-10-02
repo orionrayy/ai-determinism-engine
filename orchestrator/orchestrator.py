@@ -2912,7 +2912,7 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 5,
+        "schema_version": 6,
         "agent_team": team_manifest(workflow_id, nodes),
         "federation": {},
         "plan_fingerprint": None,
