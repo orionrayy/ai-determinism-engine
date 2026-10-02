@@ -19,7 +19,7 @@ MAX_WORKER_RESULT_FILE_BYTES = 16 * 1024
 
 
 def _write_result(path: Path, result: dict) -> None:
-    payload = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\\n"
+    payload = json.dumps(result, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
     encoded = payload.encode("utf-8")
     if len(encoded) > MAX_WORKER_RESULT_FILE_BYTES:
         raise RuntimeError("worker result exceeds file size limit")
