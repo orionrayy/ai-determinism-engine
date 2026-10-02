@@ -1736,7 +1736,11 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         is_free = bool(spec.get("free_tier", False))
         if not spec and node.tool in BUILTIN_FREE_TOOLS:
             is_free = True
-        if not is_free:
+        if not is_free or not model_is_free(node.tool, registry):
+            if node.tool == "gemini":
+                raise RuntimeError(
+                    f"Gemini model {configured_model('gemini')!r} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+                )
             raise RuntimeError(
                 f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true"
             )
