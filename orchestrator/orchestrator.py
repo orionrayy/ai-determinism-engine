@@ -2459,14 +2459,30 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
             # Phase 2: only now cross runtime activation and side-effect barriers.
             executable = []
-            for node in batch:
+            if all(not side_effecting(node, registry) for node in batch):
+                # Safe independent nodes share one durable activation record. This avoids
+                # persisting a reserved budget before any node is actually activated.
+                for node in batch:
+                    node.input["context"] = build_node_context(nodes, node)
+                    transition(node, "running")
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
-                node.input["context"] = build_node_context(nodes, node)
-                transition(node, "running")
+                for node in batch:
+                    append_event("node.started", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "tool": node.tool,
+                    })
+                    executable.append((node, execution_key(workflow, node)))
+            else:
+                for node in batch:
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    node.input["context"] = build_node_context(nodes, node)
+                    transition(node, "running")
 
-                execution_id = execution_key(workflow, node)
-                if side_effecting(node, registry):
+                    execution_id = execution_key(workflow, node)
+                    if side_effecting(node, registry):
                     record = workflow.setdefault("executions", {}).get(execution_id)
                     if record and record.get("status") == "started":
                         node.error = {
@@ -2522,12 +2538,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                             })
                             return
 
-                append_event("node.started", {
-                    "workflow_id": workflow["id"],
-                    "node_id": node.id,
-                    "tool": node.tool,
-                })
-                executable.append((node, execution_id))
+                    append_event("node.started", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "tool": node.tool,
+                    })
+                    executable.append((node, execution_id))
         if not executable:
             workflow["nodes"] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
