@@ -1132,6 +1132,24 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(count, 1)
         save_state.assert_not_called()
 
+    def test_main_goal_ingress_deduplicates_existing_event_id(self):
+        existing = {
+            "id": "wf-existing",
+            "goal": "already accepted",
+            "status": "running",
+            "nodes": [],
+            "event_id": "evt-123",
+        }
+        state = {"version": CURRENT_STATE_VERSION, "workflows": {"wf-existing": existing}, "last_workflow_id": "wf-existing"}
+        with patch.object(o, "load_state", return_value=state) as load_state, \
+             patch.object(o, "create_workflow", side_effect=AssertionError("dedup must stop before create_workflow")), \
+             patch.object(o, "print_summary"), patch.object(o, "notify_execution_callback"), \
+             patch.object(sys, "argv", ["orchestrator", "--goal", "duplicate",]), \
+             patch.dict(o.os.environ, {"ORCHESTRATOR_EVENT_ID": "evt-123"}, clear=False):
+            result = o.main()
+        self.assertEqual(result, 0)
+        load_state.assert_called_once()
+
     def test_main_persists_new_workflow_before_execution(self):
         workflow = {"id": "wf-new", "goal": "build", "status": "planning", "live": False, "nodes": []}
         calls = []
