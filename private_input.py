@@ -13,11 +13,12 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
 
-PROTOCOL = "ai-orchestrator.private-input/v1"
+PROTOCOL = "ai-orchestrator.private-input/v2"
 MAX_BODY_BYTES = 128 * 1024
 MAX_INPUT_BYTES = 96 * 1024
 MAX_TTL_SECONDS = 7 * 24 * 60 * 60
@@ -25,6 +26,8 @@ DEFAULT_TTL_SECONDS = 24 * 60 * 60
 REF_RE = re.compile(r"^[0-9a-f]{64}$")
 DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
 EXECUTION_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+FINGERPRINT_RE = re.compile(r"^[0-9a-f]{64}$")
+MAX_FETCH_404_RETRIES = 2
 
 
 class PrivateInputError(RuntimeError):
@@ -71,6 +74,8 @@ def private_input_config() -> tuple[str, str]:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme != "https":
         raise PrivateInputError("private input transport HTTPS is required")
+    if parsed.query or parsed.fragment:
+        raise PrivateInputError("private input URL must not contain query or fragment")
     return url.rstrip("/"), secret
 
 
@@ -133,6 +138,8 @@ def store_private_input(
     ttl_seconds: int = DEFAULT_TTL_SECONDS,
 ) -> str:
     url, secret = private_input_config()
+    if not FINGERPRINT_RE.fullmatch(str(intent_fingerprint or "")):
+        raise PrivateInputError("invalid private input intent fingerprint")
     digest = input_digest(payload)
     ref = derive_input_ref(execution_id, digest, secret)
     try:
@@ -177,8 +184,10 @@ def store_private_input(
         with urllib.request.urlopen(request, timeout=30) as response:
             raw = response.read(MAX_BODY_BYTES + 1)
             status = response.status
+    except urllib.error.HTTPError as exc:
+        raise PrivateInputError(f"private input store returned HTTP {exc.code}") from exc
     except Exception as exc:
-        raise PrivateInputError(f"private input store request failed: {exc}") from exc
+        raise PrivateInputError("private input store transport unavailable") from exc
     if not 200 <= status < 300:
         raise PrivateInputError(f"private input store returned HTTP {status}")
     try:
@@ -190,6 +199,14 @@ def store_private_input(
     returned_ref = str(result.get("input_ref") or "").strip()
     if returned_ref != ref:
         raise PrivateInputError("private input store returned a different input reference")
+    for field, expected in (
+        ("execution_id", str(execution_id)),
+        ("input_digest", digest),
+        ("intent_fingerprint", str(intent_fingerprint)),
+    ):
+        actual = str(result.get(field) or "").strip()
+        if actual and actual != expected:
+            raise PrivateInputError(f"private input store {field} mismatch")
     return ref
 
 
@@ -209,27 +226,40 @@ def fetch_private_input(
     expected_ref = derive_input_ref(execution_id, expected_digest, secret)
     if not hmac.compare_digest(ref, expected_ref):
         raise PrivateInputError("private input reference does not match execution identity")
-    timestamp = int(time.time())
-    body = b""
     request_url = url + "/v1/inputs/" + urllib.parse.quote(ref, safe="")
     request_path = urllib.parse.urlparse(request_url).path or "/"
-    request = urllib.request.Request(
-        request_url,
-        headers=_signed_headers(
+    last_not_found = False
+    for attempt in range(MAX_FETCH_404_RETRIES + 1):
+        timestamp = int(time.time())
+        body = b""
+        request = urllib.request.Request(
+            request_url,
+            headers=_signed_headers(
+                method="GET",
+                path=request_path,
+                timestamp=timestamp,
+                body=body,
+                secret=secret,
+            ),
             method="GET",
-            path=request_path,
-            timestamp=timestamp,
-            body=body,
-            secret=secret,
-        ),
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            raw = response.read(MAX_BODY_BYTES + 1)
-            status = response.status
-    except Exception as exc:
-        raise PrivateInputError(f"private input fetch failed: {exc}") from exc
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                raw = response.read(MAX_BODY_BYTES + 1)
+                status = response.status
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                last_not_found = True
+                if attempt < MAX_FETCH_404_RETRIES:
+                    time.sleep(0.25 * (attempt + 1))
+                    continue
+                break
+            raise PrivateInputError(f"private input fetch returned HTTP {exc.code}") from exc
+        except Exception as exc:
+            raise PrivateInputError("private input transport unavailable") from exc
+        break
+    if last_not_found:
+        raise PrivateInputError("private input was not found")
     if not 200 <= status < 300:
         raise PrivateInputError(f"private input fetch returned HTTP {status}")
     if len(raw) > MAX_BODY_BYTES:
@@ -251,10 +281,50 @@ def fetch_private_input(
     if returned_digest != expected_digest or actual_digest != expected_digest:
         raise PrivateInputError("private input digest mismatch")
     returned_execution_id = str(result.get("execution_id") or "").strip()
-    if returned_execution_id and returned_execution_id != str(execution_id):
+    if returned_execution_id != str(execution_id):
         raise PrivateInputError("private input execution identity mismatch")
+    returned_fp = str(result.get("intent_fingerprint") or "").strip()
     if expected_intent_fingerprint:
-        returned_fp = str(result.get("intent_fingerprint") or "").strip()
-        if returned_fp and returned_fp != expected_intent_fingerprint:
+        if returned_fp != expected_intent_fingerprint:
             raise PrivateInputError("private input intent fingerprint mismatch")
+    elif not FINGERPRINT_RE.fullmatch(returned_fp):
+        raise PrivateInputError("private input intent fingerprint is missing or invalid")
+    expires_at_raw = result.get("expires_at")
+    if not isinstance(expires_at_raw, int) or expires_at_raw <= int(time.time()):
+        raise PrivateInputError("private input has expired")
     return payload
+
+
+def delete_private_input(input_ref: str) -> bool:
+    url, secret = private_input_config()
+    ref = str(input_ref or "").strip()
+    if not REF_RE.fullmatch(ref):
+        raise PrivateInputError("invalid private input reference")
+    request_url = url + "/v1/inputs/" + urllib.parse.quote(ref, safe="")
+    request_path = urllib.parse.urlparse(request_url).path or "/"
+    body = b""
+    timestamp = int(time.time())
+    request = urllib.request.Request(
+        request_url,
+        headers=_signed_headers(
+            method="DELETE",
+            path=request_path,
+            timestamp=timestamp,
+            body=body,
+            secret=secret,
+        ),
+        method="DELETE",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            status = response.status
+            response.read(MAX_BODY_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return True
+        raise PrivateInputError(f"private input delete returned HTTP {exc.code}") from exc
+    except Exception as exc:
+        raise PrivateInputError("private input delete transport unavailable") from exc
+    if not 200 <= status < 300:
+        raise PrivateInputError(f"private input delete returned HTTP {status}")
+    return True
