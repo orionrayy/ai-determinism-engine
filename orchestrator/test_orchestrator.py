@@ -107,7 +107,12 @@ class OrchestratorTests(unittest.TestCase):
         }
         new_registry = {
             "capability:execute": {"default_tool": "noop", "fallback_tools": []},
-            "noop": {"free_tier": True, "side_effects": ["external_request"], "risk": "high"},
+            "noop": {
+                "free_tier": True,
+                "side_effects": [],
+                "risk": "low",
+                "allowed_actions": ["validate"],
+            },
         }
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
             snapshot = o.build_policy_snapshot(old_registry, [node], live=False)
@@ -891,7 +896,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(state["last_workflow_id"], "wf_old")
     def test_one_step_advances_dag_incrementally(self):
-        workflow = o.create_workflow('build a website', live=False)
+        with patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow('build a website', live=False)
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, 'STATE_DIR', Path(tmp)), \
                  patch.object(o, 'EVENT_FILE', Path(tmp) / 'events.jsonl'), \
@@ -1034,7 +1040,8 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("contract field missing: answer", workflow["nodes"][0]["error"]["message"])
 
     def test_dry_run_end_to_end_completes_without_credentials(self):
-        workflow = o.create_workflow("research an offline technical topic", live=False)
+        with patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow("research an offline technical topic", live=False)
         self.assertEqual(workflow["status"], "planning")
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)), \
