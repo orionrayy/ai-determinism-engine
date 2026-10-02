@@ -214,6 +214,13 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - `repository_dispatch` continuation runs for the same `workflow_id` share the same concurrency group; issue-triggered runs are grouped by issue number; scheduled recovery uses a dedicated global recovery group.
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
+## Orchestration hardening v36
+- Added `orchestrator/agent_protocol.py`, a bounded protocol for federated workers using immutable task/result envelopes, stable agent identity, input/output SHA-256 digests, protocol versioning, and strict size limits.
+- Federated tasks are restricted to low/medium, parallel-safe, non-side-effect agent roles. The supervisor remains the authoritative state and side-effect writer.
+- Artifacts are treated as transport/mailbox only; their contents must be validated against the original task identity and input digest before adoption.
+- The protocol is compatible with GitHub Actions dynamic matrix fan-out while avoiding matrix-job output aggregation semantics as a source of truth.
+- No database, broker, external queue, hosted agent service, or paid dependency was introduced.
+
 ## Orchestration hardening v35
 - Added orchestrator/agent_fabric.py, a zero-dollar typed agent registry/protocol with stable agent identities, role/capability validation, risk ceilings, team manifests, handoff edges, and collaboration pattern classification.
 - Node now carries agent_role; workflow schema is v4 so agent-role assignment is persisted and included in plan integrity.
