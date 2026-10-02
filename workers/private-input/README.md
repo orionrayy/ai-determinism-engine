@@ -2,7 +2,7 @@
 
 This Worker is the zero-dollar private-input backend for the orchestration engine.
 
-It uses Cloudflare Workers Free + a SQLite-backed Durable Object. Each opaque `input_ref` maps to one Durable Object instance, giving the private-input boundary transactional, strongly consistent storage and per-input TTL cleanup with an alarm. This avoids the cross-region read-after-write delay of Workers KV.
+It uses Cloudflare Workers Free + SQLite-backed Durable Objects. Private inputs and execution leases are isolated by opaque subject/name. SQLite storage is transactional and strongly consistent; private-input rows use expiry alarms, while execution-lease rows retain the attempt ledger for seven days after ownership release/expiry. This avoids the cross-region read-after-write delay of Workers KV.
 
 Current Workers Free Durable Object allowances include 100,000 requests/day, 13,000 GB-s/day, 5 million SQLite rows read/day, 100,000 rows written/day, and 5 GB total SQLite storage. These are finite free quotas, not unlimited capacity.
 
