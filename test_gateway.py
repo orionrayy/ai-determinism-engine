@@ -64,6 +64,7 @@ class GatewayTests(unittest.TestCase):
             "payload": {"secret": "do-not-forward"},
             "source": "test",
             "attempt": 2,
+            "requested_mode": "live",
         }
         goal, metadata, event_id = gateway.build_execution_event(payload)
         self.assertEqual(
@@ -72,6 +73,7 @@ class GatewayTests(unittest.TestCase):
         )
         self.assertEqual(event_id, "evt-1")
         self.assertEqual(metadata["execution_id"], "a" * 64)
+        self.assertEqual(metadata["requested_mode"], "live")
         self.assertNotIn("secret", json.dumps(metadata))
         self.assertEqual(len(metadata["input_digest"]), 64)
 
