@@ -328,6 +328,21 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         raise BridgeRuntimeError("connector reconciliation is not configured")
     if action not in route.get("actions", []):
         raise BridgeRuntimeError("connector action is not allowlisted")
+    raw_specs = route.get("action_specs", {})
+    action_spec = _normalize_action_spec(
+        raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {},
+        default_free_tier=bool(route.get("free_tier", False)),
+    )
+    if (
+        os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
+        and (
+            route.get("free_tier") is not True
+            or action_spec.get("free_tier") is not True
+        )
+    ):
+        raise BridgeRuntimeError(
+            "connector reconciliation is not certified for free-only execution"
+        )
     result = dispatch_reconciliation(
         route,
         {
@@ -361,6 +376,21 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
 
     route = routes[connector]
     validate_action_input(route, action, payload.get("input"))
+    raw_specs = route.get("action_specs", {})
+    action_spec = _normalize_action_spec(
+        raw_specs.get(action, {}) if isinstance(raw_specs, dict) else {},
+        default_free_tier=bool(route.get("free_tier", False)),
+    )
+    if (
+        os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
+        and (
+            route.get("free_tier") is not True
+            or action_spec.get("free_tier") is not True
+        )
+    ):
+        raise BridgeRuntimeError(
+            "connector action is not certified for free-only execution"
+        )
     result = dispatch_upstream(route, payload)
     response = {
         "ok": True,

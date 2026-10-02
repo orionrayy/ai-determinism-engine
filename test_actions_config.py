@@ -172,6 +172,14 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("is not certified for free-only execution", connector_bridge)
         self.assertIn('"free_tier": bool(raw.get("free_tier", default_free_tier))', Path("orchestrator/connector_bridge.py").read_text())
 
+    def test_canonical_memory_is_header_first_and_current(self):
+        memory = (ROOT / "ORCHESTRATION_MEMORY.md").read_text()
+        self.assertTrue(memory.startswith("# ORCHESTRATION MEMORY — Canonical Control-Plane Context"))
+        self.assertIn("v43 connector upstream cost gate", memory)
+        self.assertIn("v42 free Gemini model gate", memory)
+        self.assertIn("v41 private structured input boundary", memory)
+        self.assertIn("v44 — reconciliation cost closure", memory)
+
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
