@@ -1,5 +1,11 @@
 # AI Orchestrator Core
 
+## Connector intent-bound idempotency v29
+
+Connector bridge request IDs are now derived from the immutable request intent: protocol, workflow, node, connector, action, and payload. Runtime timestamps and goal text do not change the idempotency identity.
+
+The bridge runtime stores the intent fingerprint with cached results and rejects an idempotency-key collision when the same key is reused for a different request intent. Retries of the same intent still replay the cached result; an explicit replan that changes connector/action/payload receives a distinct request identity.
+
 ## Continuation chain binding v28
 
 `github_run_id` now tracks the latest worker Actions run that durably persisted the workflow, while `origin_github_run_id` preserves the initial run for provenance. This keeps `workflow_run` continuation correlated across multiple resume cycles.
