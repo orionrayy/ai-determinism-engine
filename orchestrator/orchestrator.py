@@ -1617,12 +1617,29 @@ def reconcile_first_uncertain(
         node.error["reconciled"] = True
         node.error["reconciliation_state"] = "applied"
         node.error.pop("reconciliation_required", None)
-        node.output["validation"] = {
-            "passed": True,
-            "checks": [{"check": "reconciliation_applied", "passed": True}],
-            "checked_at": utc_now(),
-        }
-        transition(node, "completed")
+        try:
+            transition(node, "validating")
+            node.output["validation"] = validate_node_output(node, node.output)
+            transition(node, "completed")
+        except Exception as exc:
+            # The provider already confirmed the side effect as applied. Record that
+            # fact before failing validation so recovery cannot replay the effect.
+            mark_execution_completed(workflow, execution_id, node.output)
+            node.error = {
+                **node.error,
+                "validation_failed_after_reconciliation": True,
+                "validation_error": str(exc),
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            append_event("node.reconciliation_validation_failed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "execution_id": execution_id,
+                "error": str(exc),
+            })
+            return "failed"
         mark_execution_completed(workflow, execution_id, node.output)
         node_success_checkpoint(workflow, node)
         update_tool_health(node, True, registry)
