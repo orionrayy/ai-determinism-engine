@@ -1023,6 +1023,27 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("output_sha256", record)
         self.assertNotIn("output", record)
 
+    def test_workflow_events_are_sharded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "EVENT_DIR", root / "events"),                  patch.object(o, "EVENT_FILE", root / "legacy-events.jsonl"):
+                o.append_event("workflow.started", {"workflow_id": "wf_a"})
+                o.append_event("workflow.started", {"workflow_id": "wf_b"})
+                a = root / "events" / o.hashlib.sha256(b"wf_a").hexdigest()
+                b = root / "events" / o.hashlib.sha256(b"wf_b").hexdigest()
+                self.assertTrue((a.with_suffix(".jsonl")).exists())
+                self.assertTrue((b.with_suffix(".jsonl")).exists())
+                self.assertNotEqual(a, b)
+                self.assertFalse((root / "legacy-events.jsonl").exists())
+
+    def test_event_without_workflow_keeps_legacy_log(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with patch.object(o, "EVENT_DIR", root / "events"),                  patch.object(o, "EVENT_FILE", root / "legacy-events.jsonl"):
+                o.append_event("planner.fallback", {"goal": "test"})
+                self.assertTrue((root / "legacy-events.jsonl").exists())
+                self.assertFalse(list((root / "events").glob("*.jsonl")) if (root / "events").exists() else [])
+
     def test_event_payload_is_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
             event_path = Path(tmp) / "events.jsonl"
