@@ -1,5 +1,13 @@
 # AI Orchestrator Core
 
+## Lifecycle control plane v26
+
+Workflow execution now has a durable logical-step budget (96 by default, bounded to 256) that is consumed before a node activation and persisted across continuation. Budget exhaustion fails closed instead of creating an unbounded replan loop.
+
+Node contracts can declare deterministic postconditions such as field existence/equality, value membership, non-empty fields, or bounded HTTP status. These acceptance checks run before completion is recorded; post-side-effect acceptance failures remain subject to the existing no-duplicate replay fence.
+
+Resume paths preserve the persisted plan/tool selection until an explicit replan, and the manual workflow dispatch exposes `max_steps` for a per-workflow budget.
+
 ## Execution preflight + resume plan immutability v25
 
 Persisted workflow tool selection is now immutable across resume until an explicit replan. Initial creation still uses capability routing, while live execution preflights credentials, free-only policy, tool health, and HTTPS prerequisites before a side-effect durability barrier. Preflight failures can safely enter the existing bounded replan path.
