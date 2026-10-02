@@ -129,6 +129,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('node workers/private-input/test.mjs', self.tests)
         self.assertIn('node-version: "24"', self.tests)
 
+    def test_orchestrator_enables_durable_execution_lease(self):
+        self.assertIn('ORCHESTRATOR_EXECUTION_LEASE_ENABLED: "true"', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS: "900"', self.orchestrator)
+
     def test_private_input_deploy_is_pinned_and_manual(self):
         self.assertIn("workflow_dispatch:", self.private_input_deploy)
         self.assertIn('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', self.private_input_deploy)
