@@ -3657,7 +3657,10 @@ def main() -> int:
             return 0 if result not in {'failed', 'continuation_failed'} else 2
         return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
-    # Goal-driven ingress may need global event deduplication, so hydrate all state only here.\n    state = load_state()\n\n    if not args.goal:
+    # Goal-driven ingress may need global event deduplication, so hydrate all state only here.
+    state = load_state()
+
+    if not args.goal:
         raise SystemExit('provide --goal or --workflow-id')
 
     live = args.live or os.environ.get('ORCHESTRATOR_LIVE', '').lower() == 'true'
