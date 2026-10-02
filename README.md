@@ -1,3 +1,11 @@
+## Control-plane hardening v30
+
+v30 closes cross-layer correctness gaps found after the v29 audit: workflow creation now persists the configured execution-step budget and uses the current workflow schema constant; connector idempotency is single-flight within a bridge process and cached responses are protected from caller mutation; continuation events bind to the worker run ID and run attempt; and reconciliation keeps the connector request ID distinct from the internal execution ID.
+
+Connector action contracts are fingerprinted and pinned across retry attempts. If the bridge advertises a different action contract after an uncertain connector failure, the retry is rejected before another upstream POST rather than silently executing under changed semantics.
+
+The bridge cache is intentionally process-local and best-effort. Durable duplicate suppression across bridge restarts or multiple bridge instances still depends on the upstream honoring Idempotency-Key.
+
 # AI Orchestrator Core
 
 ## Connector intent-bound idempotency v29
