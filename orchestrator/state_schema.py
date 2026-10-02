@@ -11,7 +11,8 @@ MAX_PARALLEL = 8
 MAX_REPLANS = 2
 MAX_NODE_RETRIES = 8
 MAX_GOAL_CHARS = 4000
-MAX_NODE_BYTES = 32 * 1024
+MAX_NODE_INTENT_BYTES = 32 * 1024
+MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 NODE_STATUSES = {
@@ -258,16 +259,35 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                     raise StateSchemaError(
                         f"workflow {workflow_id!r} node {node['id']!r} exceeds artifact limit"
                     )
-            serialized = json.dumps(
+            intent_serialized = json.dumps(
+                {
+                    "id": node["id"],
+                    "capability": node["capability"],
+                    "tool": node["tool"],
+                    "depends_on": node["depends_on"],
+                    "risk": node["risk"],
+                    "input": node["input"],
+                    "contract": node["contract"],
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+                separators=(",", ":"),
+            )
+            if len(intent_serialized.encode("utf-8")) > MAX_NODE_INTENT_BYTES:
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r} node {node['id']!r} intent exceeds {MAX_NODE_INTENT_BYTES} bytes"
+                )
+            state_serialized = json.dumps(
                 node,
                 ensure_ascii=False,
                 sort_keys=True,
                 default=str,
                 separators=(",", ":"),
             )
-            if len(serialized.encode("utf-8")) > MAX_NODE_BYTES:
+            if len(state_serialized.encode("utf-8")) > MAX_NODE_STATE_BYTES:
                 raise StateSchemaError(
-                    f"workflow {workflow_id!r} node {node['id']!r} exceeds {MAX_NODE_BYTES} bytes"
+                    f"workflow {workflow_id!r} node {node['id']!r} state exceeds {MAX_NODE_STATE_BYTES} bytes"
                 )
 
     state["workflows"] = workflows
