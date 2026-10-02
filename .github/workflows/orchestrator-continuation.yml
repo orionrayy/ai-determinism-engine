@@ -5,6 +5,10 @@ on:
     workflows: ["AI Orchestrator"]
     types: [completed]
 
+concurrency:
+  group: orchestrator-continuation-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -23,6 +27,7 @@ jobs:
         shell: bash
         env:
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
           if [ ! -f .orchestrator/state.json ]; then
@@ -33,7 +38,15 @@ jobs:
           import json, os
           state=json.load(open('.orchestrator/state.json'))
           run_id=str(os.environ['WORKFLOW_RUN_ID'])
-          wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
+          run_attempt=str(os.environ['WORKFLOW_RUN_ATTEMPT'])
+          wf=next((
+              (
+                  item for item in state.get('workflows',{}).values()
+                  if str(item.get('github_run_id')) == run_id
+                  and str(item.get('github_run_attempt')) == run_attempt
+              ),
+              None,
+          )
           status=wf.get('status') if wf else 'missing'
           wid=wf.get('id') if wf else ''
           print(f'workflow_id={wid}')
@@ -55,6 +68,7 @@ jobs:
             'event_type':'orchestrator.continue',
             'client_payload':{
               'workflow_id':os.environ['WORKFLOW_ID'],
+              'event_id':f"continuation:{os.environ['WORKFLOW_RUN_ID']}:{os.environ['WORKFLOW_RUN_ATTEMPT']}",
               'trigger_issue':os.environ.get('TRIGGER_ISSUE') or '',
             },
           })
