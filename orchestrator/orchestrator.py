@@ -30,6 +30,7 @@ try:
     from .evidence import build_evidence
     from .failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from .plan_integrity import fingerprint_nodes
+    from .policy_integrity import build_policy_snapshot, fingerprint_policy
     from .state_schema import StateSchemaError, migrate_state
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
@@ -46,6 +47,7 @@ except ImportError:
     from evidence import build_evidence
     from failure_policy import classify_failure, deterministic_retry_delay, retry_allowed
     from plan_integrity import fingerprint_nodes
+    from policy_integrity import build_policy_snapshot, fingerprint_policy
     from state_schema import StateSchemaError, migrate_state
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
@@ -1352,6 +1354,63 @@ def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
     return bool(exc.retry_allowed), True
 
 
+def refresh_policy_snapshot(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    *,
+    status: str = "refreshed",
+) -> None:
+    snapshot = build_policy_snapshot(
+        registry,
+        nodes,
+        live=bool(workflow.get("live")),
+    )
+    workflow["route_snapshot"] = snapshot
+    workflow["policy_fingerprint"] = fingerprint_policy(snapshot)
+    workflow["policy_integrity"] = status
+
+
+def ensure_policy_integrity(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> bool:
+    snapshot = build_policy_snapshot(
+        registry,
+        nodes,
+        live=bool(workflow.get("live")),
+    )
+    fingerprint = fingerprint_policy(snapshot)
+    previous = str(workflow.get("policy_fingerprint") or "").strip()
+    if not previous:
+        workflow["route_snapshot"] = snapshot
+        workflow["policy_fingerprint"] = fingerprint
+        workflow["policy_integrity"] = "initialized"
+        append_event("workflow.policy_initialized", {
+            "workflow_id": workflow["id"],
+            "policy_fingerprint": fingerprint,
+        })
+        return True
+    if previous != fingerprint:
+        workflow["policy_integrity"] = "drift_detected"
+        workflow["policy_drift"] = {
+            "expected": previous,
+            "actual": fingerprint,
+            "detected_at": utc_now(),
+        }
+        workflow["status"] = "failed"
+        append_event("workflow.policy_drift", {
+            "workflow_id": workflow["id"],
+            "expected": previous,
+            "actual": fingerprint,
+        })
+        return False
+    workflow["route_snapshot"] = snapshot
+    workflow["policy_integrity"] = "verified"
+    return True
+
+
 def execution_failure_policy(
     node: Node,
     exc: Exception,
@@ -1559,6 +1618,7 @@ def replan_after_failure(
     })
     workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
     workflow["plan_integrity"] = "replanned"
+    refresh_policy_snapshot(workflow, nodes, registry, status="replanned")
     transition(failed_node, "ready")
     workflow["status"] = "running"
     return True
@@ -1780,6 +1840,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live, route=False)
     if not ensure_plan_integrity(workflow, nodes):
+        workflow['nodes'] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return 'failed'
+    if not ensure_policy_integrity(workflow, nodes, registry):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return 'failed'
@@ -2053,6 +2117,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     live = bool(workflow.get("live"))
     enforce_node_policy(nodes, registry, live=live, route=False)
     if not ensure_plan_integrity(workflow, nodes):
+        workflow["nodes"] = [asdict(node) for node in nodes]
+        persist_workflow(workflow)
+        return
+    if not ensure_policy_integrity(workflow, nodes, registry):
         workflow["nodes"] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return
@@ -2363,6 +2431,7 @@ def create_workflow(
         nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
     enforce_node_policy(nodes, registry, live=live, route=True)
+    route_snapshot = build_policy_snapshot(registry, nodes, live=live)
     return {
         "id": new_id("wf"),
         "created_at": utc_now(),
@@ -2374,8 +2443,11 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 3,
+        "schema_version": 4,
         "plan_fingerprint": None,
+        "policy_fingerprint": fingerprint_policy(route_snapshot),
+        "route_snapshot": route_snapshot,
+        "policy_integrity": "initialized",
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
