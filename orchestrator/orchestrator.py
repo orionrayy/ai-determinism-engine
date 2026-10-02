@@ -21,7 +21,7 @@ from typing import Any
 
 try:
     from .capability_graph import (
-        QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
+        QUARANTINED, effective_health, free_only_enabled, load_health, record_tool_result, route_capability, save_health
     )
     from .connector_bridge import (
         ConnectorReconciliationError,
@@ -39,7 +39,7 @@ try:
     from .private_input import PrivateInputError, fetch_private_input
 except ImportError:
     from capability_graph import (
-        QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
+        QUARANTINED, effective_health, free_only_enabled, load_health, record_tool_result, route_capability, save_health
     )
     from connector_bridge import (
         ConnectorReconciliationError,
@@ -428,7 +428,7 @@ def load_registry() -> dict[str, dict[str, Any]]:
     return {}
 
 def free_only() -> bool:
-    return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
+    return free_only_enabled()
 
 def configured_model(tool_name: str) -> str:
     if tool_name == "gemini":
