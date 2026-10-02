@@ -306,9 +306,9 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         nodes = workflow.get("nodes", [])
         if not isinstance(nodes, list):
             raise StateSchemaError(f"workflow {workflow_id!r}.nodes must be an array")
-        if len(nodes) == 0 or len(nodes) > MAX_NODES:
+        if len(nodes) > MAX_NODES:
             raise StateSchemaError(
-                f"workflow {workflow_id!r}.nodes count must be between 1 and {MAX_NODES}"
+                f"workflow {workflow_id!r}.nodes count exceeds {MAX_NODES}"
             )
         node_ids: set[str] = set()
         for node in nodes:
