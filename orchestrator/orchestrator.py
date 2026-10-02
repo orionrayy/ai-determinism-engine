@@ -222,11 +222,13 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             or previous_run_id
             or current_run_id
         )
-        origin_run_attempt = (
-            workflow.get("origin_github_run_attempt")
-            if workflow.get("origin_github_run_attempt") is not None
-            else (previous_run_attempt if previous_run_id else current_run_attempt)
-        )
+        origin_run_attempt = workflow.get("origin_github_run_attempt")
+        if origin_run_attempt is None:
+            origin_run_attempt = (
+                previous_run_attempt
+                if previous_run_attempt is not None
+                else current_run_attempt
+            )
         workflow["origin_github_run_id"] = origin_run_id
         workflow["origin_github_run_attempt"] = origin_run_attempt
         workflow["github_run_id"] = current_run_id
