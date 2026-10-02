@@ -166,6 +166,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": True}},
             }
         }
@@ -189,6 +190,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
+                "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": False}},
             }
         }
