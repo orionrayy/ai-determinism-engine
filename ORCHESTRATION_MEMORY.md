@@ -117,6 +117,15 @@ Current execution-fabric branch: `main`
 - String, collection, and nesting bounds cap durable representation growth; this is an additional bound beyond the v54 transport response cap.
 - The sanitizer is applied at workflow-shard and checkpoint write boundaries, so the runtime object is not mutated mid-execution and same-process downstream nodes retain access to raw connector results.
 - No external DLP service, database, proxy, or paid dependency is introduced; the privacy boundary remains stdlib-only and free-first.
+## Orchestration hardening v56 — connector idempotency and upstream failure semantics
+- Connector bridge idempotency cache entries are now bound to a semantic request digest (connector, action, workflow, node, and input), so reuse of an idempotency key with different intent fails closed instead of returning an unrelated cached result.
+- Current free-only policy and action input validation are re-evaluated before a cached replay is returned, preventing policy drift from bypassing a newly stricter gate.
+- Bridge upstream invocation now rejects non-2xx upstream responses and propagates 5xx/transport/oversized-response failures as uncertain upstream failures to the HTTP boundary, so the orchestrator's reconciliation policy remains engaged.
+- Bridge upstream response size is bounded to 128 KiB and the bounded in-memory idempotency cache has a 24-hour entry lifetime with a 128-entry cap.
+- The API and Render bridge handlers distinguish upstream failures from malformed client requests without introducing a new service or dependency.
+- Approval fingerprint regression coverage now explicitly verifies that runtime metadata is excluded while semantic payload changes invalidate approval.
+- No database, broker, queue, paid dependency, or new runtime service is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
