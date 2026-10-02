@@ -24,6 +24,13 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Connector target binding v32
+
+- Connector discovery now exposes only a SHA-256 `target_fingerprint` for each configured upstream URL; the URL itself is not persisted in discovery output.
+- The connector action contract fingerprint now binds both the normalized action contract and the discovered target fingerprint, so a route-target change after an uncertain connector failure fails closed before another POST.
+- Bridge-runtime idempotency fingerprints also bind the target fingerprint, preventing a process-local cached response from being replayed against a different configured upstream target under the same request ID.
+- This remains bounded by the upstream/provider idempotency boundary across bridge process restarts: the bridge itself has no durable cross-process cache.
+
 ## Parallel budget admission v31
 
 - Parallel safe-node batches are now admitted against the remaining durable execution-step budget before any node in the batch is persisted as `running`.
