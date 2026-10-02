@@ -25,13 +25,10 @@ jobs:
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -euo pipefail
-          if [ ! -f .orchestrator/state.json ]; then
-            echo "continue=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os
-          state=json.load(open('.orchestrator/state.json'))
+          import os
+          from orchestrator.orchestrator import load_state
+          state=load_state()
           run_id=str(os.environ['WORKFLOW_RUN_ID'])
           wf=next((item for item in state.get('workflows',{}).values() if str(item.get('github_run_id')) == run_id), None)
           status=wf.get('status') if wf else 'missing'
