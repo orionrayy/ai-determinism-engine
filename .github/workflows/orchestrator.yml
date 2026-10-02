@@ -45,7 +45,6 @@ concurrency:
   # orchestrator-approval.yml so they use the same workflow_id group.
   group: ${{ github.workflow }}-${{ github.event_name == 'repository_dispatch' && github.event.client_payload.workflow_id || github.event_name == 'issues' && github.event.issue.number || github.event_name == 'schedule' && 'scheduled-recovery' || github.run_id }}
   cancel-in-progress: false
-  queue: max
 
 jobs:
   orchestrate:
@@ -174,6 +173,7 @@ jobs:
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
+          ORCHESTRATOR_GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           ORCHESTRATOR_FREE_ONLY: "true"
           ORCHESTRATOR_MAX_PARALLEL: ${{ inputs.max_parallel || '4' }}
           ORCHESTRATOR_MAX_ATTEMPTS: ${{ vars.ORCHESTRATOR_MAX_ATTEMPTS || '64' }}
