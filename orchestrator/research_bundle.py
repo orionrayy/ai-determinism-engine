@@ -4,6 +4,13 @@ import json
 import urllib.parse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+try:
+    from .http_safety import read_response_limited
+except ImportError:
+    from http_safety import read_response_limited
+
+MAX_RESEARCH_RESPONSE_BYTES = 512 * 1024
+
 
 def _request(url: str, user_agent: str) -> dict:
     from urllib.request import Request, urlopen
@@ -13,7 +20,11 @@ def _request(url: str, user_agent: str) -> dict:
         method='GET',
     )
     with urlopen(req, timeout=30) as response:
-        raw = response.read().decode('utf-8', 'replace')
+        raw = read_response_limited(
+            response,
+            MAX_RESEARCH_RESPONSE_BYTES,
+            error_message="research response exceeds 512 KiB safety limit",
+        ).decode('utf-8', 'replace')
         return json.loads(raw) if raw else {}
 
 
@@ -40,7 +51,12 @@ def search_arxiv(query: str) -> dict:
     from urllib.request import Request, urlopen
     req = Request(url, headers={'User-Agent': 'ai-orchestrator-research/1.0'})
     with urlopen(req, timeout=30) as response:
-        root = ET.fromstring(response.read())
+        raw = read_response_limited(
+            response,
+            MAX_RESEARCH_RESPONSE_BYTES,
+            error_message="research response exceeds 512 KiB safety limit",
+        )
+        root = ET.fromstring(raw)
     ns = {'a': 'http://www.w3.org/2005/Atom'}
     items = []
     for entry in root.findall('a:entry', ns):
