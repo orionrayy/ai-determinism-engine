@@ -1,3 +1,4 @@
+import json
 import unittest
 from pathlib import Path
 
@@ -32,6 +33,26 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("github.event.action == 'labeled'", self.orchestrator)
         self.assertIn("github.event.label.name == 'orchestrator-approved'", self.orchestrator)
         self.assertIn("github.event.label.name == 'orchestrator-rejected'", self.orchestrator)
+
+    def test_execution_envelope_contract_is_versioned(self):
+        contract = json.loads(
+            (ROOT / "contracts" / "execution-envelope.schema.json").read_text()
+        )
+        self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
+        self.assertIn("execution_id", contract["required"])
+        self.assertIn("intent_fingerprint", contract["required"])
+        self.assertEqual(contract["properties"]["requested_mode"]["enum"], ["dry-run", "live"])
+
+    def test_execution_callback_contract_is_versioned(self):
+        contract = json.loads(
+            (ROOT / "contracts" / "execution-callback.schema.json").read_text()
+        )
+        self.assertEqual(contract["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(
+            contract["properties"]["status"]["enum"],
+            ["completed", "failed", "uncertain"],
+        )
+        self.assertIn("execution_id", contract["required"])
 
     def test_execution_budget_input_is_wired_to_worker(self):
         self.assertIn('max_steps:', self.orchestrator)
