@@ -349,7 +349,8 @@ def preflight_node(
 
     env_name = spec.get("required_env")
     if env_name and not os.environ.get(env_name):
-        raise RuntimeError(f"{env_name} is required for tool {node.tool}")
+        if not (node.tool == "webhook" and node.input.get("url")):
+            raise RuntimeError(f"{env_name} is required for tool {node.tool}")
     secret_env = spec.get("secret_env")
     if secret_env and not os.environ.get(secret_env):
         raise RuntimeError(f"{secret_env} is required for tool {node.tool}")
