@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import secrets
+import uuid
 import tempfile
 import threading
 import time
@@ -285,7 +286,14 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     save_state(state)
 
 def new_id(prefix: str) -> str:
-    return f"{prefix}_{int(time.time() * 1000)}"
+    """Generate a collision-resistant local identifier.
+
+    Workflow creation can now happen concurrently across independent GitHub
+    concurrency groups, so millisecond timestamps alone are not a safe identity.
+    UUID4 is intentionally non-deterministic because the workflow ID is identity,
+    not replay input; replay-sensitive values derive from the persisted ID.
+    """
+    return f"{prefix}_{uuid.uuid4().hex}"
 
 def classify_risk(capability: str) -> str:
     if capability in {"deploy", "publish", "delete", "external_write"}:
