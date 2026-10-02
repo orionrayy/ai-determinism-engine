@@ -46,15 +46,16 @@ def authorized(headers: dict[str, str], raw_body: bytes | None = None) -> bool:
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
     if not configured:
         return False
-    supplied = headers.get("Authorization", "")
+    normalized = {str(k).lower(): str(v).strip() for k, v in headers.items()}
+    supplied = normalized.get("authorization", "")
     expected = "Bearer " + configured
     if secrets.compare_digest(supplied, expected):
         return True
 
     if raw_body is None:
         return False
-    timestamp = headers.get("X-Orchestrator-Timestamp", "")
-    signature = headers.get("X-Orchestrator-Signature", "")
+    timestamp = normalized.get("x-orchestrator-timestamp", "")
+    signature = normalized.get("x-orchestrator-signature", "")
     try:
         ts = int(timestamp)
     except ValueError:
@@ -109,7 +110,11 @@ class Handler(BaseHTTPRequestHandler):
             if length > 128 * 1024:
                 raise ValueError("payload too large")
             raw = self.rfile.read(length)
-            if not authorized({k: v for k, v in self.headers.items()}, raw):
+            normalized_headers = {
+                str(k).lower(): str(v).strip()
+                for k, v in self.headers.items()
+            }
+            if not authorized(normalized_headers, raw):
                 self._send(401, {"ok": False, "error": "unauthorized"})
                 return
             payload = json.loads(raw.decode("utf-8") if raw else "{}")
