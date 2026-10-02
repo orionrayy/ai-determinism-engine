@@ -3354,8 +3354,6 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
         if workflow.get("status") == "failed" or step:
             break
 
-    save_state(state)
-    return resumed
 
 
 def main() -> int:
@@ -3432,11 +3430,6 @@ def main() -> int:
             result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
             print_summary(workflow)
             return 0 if result not in {'failed', 'continuation_failed'} else 2
-        run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-        state['workflows'][workflow['id']] = workflow
-        state['last_workflow_id'] = workflow['id']
-        save_state(state)
-        print_summary(workflow)
         return 0 if workflow['status'] in {'completed', 'waiting_approval'} else 2
 
     if not args.goal:
@@ -3493,22 +3486,12 @@ def main() -> int:
     workflow['status'] = 'ready'
     persist_workflow(workflow)
     append_event(
-            'workflow.created',
+        'workflow.created',
         {'workflow_id': workflow['id'], 'goal': workflow['goal'], 'live': live},
     )
 
-    if args.step:
-        result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
-        state['workflows'][workflow['id']] = workflow
-        state['last_workflow_id'] = workflow['id']
-        save_state(state)
-        print_summary(workflow)
         return 0 if result not in {'failed', 'continuation_failed'} else 2
 
-    run_workflow(workflow, approve_high_risk=args.approve_high_risk)
-    state['workflows'][workflow['id']] = workflow
-    state['last_workflow_id'] = workflow['id']
-    save_state(state)
     if workflow.get("status") in {"completed", "failed"}:
         notify_execution_callback(workflow)
     print_summary(workflow)
