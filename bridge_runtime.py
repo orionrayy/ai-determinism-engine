@@ -19,7 +19,19 @@ MAX_BODY_BYTES = 64 * 1024
 _LOCK = threading.Lock()
 _IDEMPOTENCY_CONDITION = threading.Condition(_LOCK)
 _COMPLETED: dict[str, tuple[float, str, dict[str, Any]]] = {}
-_INFLIGHT: dict[str, str] = {}
+
+
+class _InFlight:
+    __slots__ = ("intent_fingerprint", "event", "result", "error")
+
+    def __init__(self, intent_fingerprint: str) -> None:
+        self.intent_fingerprint = intent_fingerprint
+        self.event = threading.Event()
+        self.result: dict[str, Any] | None = None
+        self.error: str | None = None
+
+
+_INFLIGHT: dict[str, _InFlight] = {}
 
 
 class BridgeRuntimeError(RuntimeError):
@@ -238,29 +250,36 @@ def cleanup_idempotency(now: float) -> None:
 def acquire_idempotency_slot(
     request_id: str,
     intent_fingerprint: str,
-) -> dict[str, Any] | None:
-    """Return a cached response or claim exclusive execution for this request intent."""
+) -> tuple[dict[str, Any] | None, bool]:
+    """Return a cached/replayed result or claim exclusive execution for this intent."""
     with _IDEMPOTENCY_CONDITION:
-        while True:
-            cleanup_idempotency(time.time())
-            item = _COMPLETED.get(request_id)
-            if item is not None:
-                _, stored_fingerprint, result = item
-                if stored_fingerprint != intent_fingerprint:
-                    raise BridgeRuntimeError(
-                        "idempotency key conflicts with request intent"
-                    )
-                return copy.deepcopy(result)
-
-            inflight = _INFLIGHT.get(request_id)
-            if inflight is None:
-                _INFLIGHT[request_id] = intent_fingerprint
-                return None
-            if inflight != intent_fingerprint:
+        cleanup_idempotency(time.time())
+        item = _COMPLETED.get(request_id)
+        if item is not None:
+            _, stored_fingerprint, result = item
+            if stored_fingerprint != intent_fingerprint:
                 raise BridgeRuntimeError(
-                    "idempotency key conflicts with in-flight request intent"
+                    "idempotency key conflicts with request intent"
                 )
-            _IDEMPOTENCY_CONDITION.wait()
+            return copy.deepcopy(result), True
+
+        inflight = _INFLIGHT.get(request_id)
+        if inflight is None:
+            _INFLIGHT[request_id] = _InFlight(intent_fingerprint)
+            return None, False
+        if inflight.intent_fingerprint != intent_fingerprint:
+            raise BridgeRuntimeError(
+                "idempotency key conflicts with in-flight request intent"
+            )
+
+    # A duplicate that arrived during the active flight must observe that flight's
+    # result or failure. It must never create a second upstream attempt implicitly.
+    inflight.event.wait()
+    if inflight.error is not None:
+        raise BridgeRuntimeError(inflight.error)
+    if inflight.result is None:
+        raise BridgeRuntimeError("idempotency flight ended without a result")
+    return copy.deepcopy(inflight.result), True
 
 
 def cache_result(
@@ -276,18 +295,24 @@ def cache_result(
             intent_fingerprint,
             copy.deepcopy(result),
         )
-        _INFLIGHT.pop(request_id, None)
+        inflight = _INFLIGHT.pop(request_id, None)
+        if inflight is not None and inflight.intent_fingerprint == intent_fingerprint:
+            inflight.result = copy.deepcopy(result)
+            inflight.event.set()
         _IDEMPOTENCY_CONDITION.notify_all()
 
 
 def release_idempotency_slot(
     request_id: str,
     intent_fingerprint: str,
+    error: Exception | None = None,
 ) -> None:
     with _IDEMPOTENCY_CONDITION:
-        if _INFLIGHT.get(request_id) == intent_fingerprint:
-            _INFLIGHT.pop(request_id, None)
-            _IDEMPOTENCY_CONDITION.notify_all()
+        inflight = _INFLIGHT.pop(request_id, None)
+        if inflight is not None and inflight.intent_fingerprint == intent_fingerprint:
+            inflight.error = str(error or "idempotency flight failed")
+            inflight.event.set()
+        _IDEMPOTENCY_CONDITION.notify_all()
 
 
 def reconciliation_url(route: dict[str, Any]) -> str:
@@ -468,9 +493,9 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
         route_target_fingerprint(str(route.get("url") or "")),
     )
 
-    cached = acquire_idempotency_slot(request_id, intent_fingerprint)
+    cached, replay = acquire_idempotency_slot(request_id, intent_fingerprint)
     if cached is not None:
-        return {**cached, "idempotent_replay": True}
+        return {**cached, "idempotent_replay": replay}
 
     try:
         result = dispatch_upstream(route, payload)
@@ -484,6 +509,6 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
         }
         cache_result(request_id, intent_fingerprint, response)
         return response
-    except Exception:
-        release_idempotency_slot(request_id, intent_fingerprint)
+    except Exception as exc:
+        release_idempotency_slot(request_id, intent_fingerprint, exc)
         raise
