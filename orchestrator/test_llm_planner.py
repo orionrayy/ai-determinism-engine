@@ -44,6 +44,25 @@ class PlannerTests(unittest.TestCase):
         prompt = post.call_args.args[1]["contents"][0]["parts"][0]["text"]
         self.assertIn("notion", prompt)
 
+    def test_free_only_blocks_planner_model_override(self):
+        registry = {
+            "capability:analyze": {"default_tool": "gemini", "fallback_tools": []},
+            "gemini": {
+                "free_tier": True,
+                "model_env": "GEMINI_MODEL",
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            },
+        }
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_API_KEY": "planner-key",
+            "GEMINI_MODEL": "gemini-3.8-flash",
+            "GEMINI_PLANNER_MODEL": "gemini-paid-model",
+        }, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "not free-tier"):
+                lp.plan_goal("analyze this", registry, FakeNode, fake_validate, live=False)
+
     def test_rejects_non_json(self):
         with self.assertRaises(ValueError):
             lp._object_from_text('no json here')
