@@ -431,6 +431,27 @@ class StateSchemaTests(unittest.TestCase):
                 "workflows": {"wf": "not-an-object"},
             })
 
+    def test_private_input_ref_requires_execution_identity_and_digest(self):
+        state = {
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf-private": {
+                    "id": "wf-private",
+                    "schema_version": 6,
+                    "goal": "private",
+                    "status": "ready",
+                    "private_input_ref": "a" * 64,
+                    "nodes": [],
+                }
+            },
+        }
+        with self.assertRaisesRegex(
+            StateSchemaError,
+            "private_input_ref requires execution_id and input_digest",
+        ):
+            migrate_state(state)
+
+
 
 if __name__ == "__main__":
     unittest.main()
