@@ -59,6 +59,11 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             "origin_github_run_id",
             workflow.get("github_run_id"),
         )
+        workflow.setdefault(
+            "origin_github_run_attempt",
+            workflow.get("github_run_attempt"),
+        )
+        workflow.setdefault("github_run_attempt", None)
         workflow.setdefault("execution_budget", {
             "max_steps": 96,
             "used_steps": 0,
