@@ -22,6 +22,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - The budget is persisted and schema-validated so crash recovery cannot silently reset the runaway-loop guard.
 - Node contracts may declare deterministic postconditions: field_exists, field_equals, field_in, non_empty, or bounded http_status. These checks execute before a node is marked completed.
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
+- Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
 ## Current baseline
 
