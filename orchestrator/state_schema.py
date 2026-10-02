@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 from typing import Any
 
@@ -16,6 +17,8 @@ MAX_NODE_INTENT_BYTES = 32 * 1024
 MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
 MAX_NODES = 24
+MAX_ATTEMPTS_PER_WORKFLOW = 256
+RETRY_SEED_RE = re.compile(r"^[0-9a-f]{32,64}$")
 RISK_LEVELS = {"low", "medium", "high", "critical"}
 NODE_STATUSES = {
     "pending", "ready", "running", "validating", "waiting_approval",
@@ -181,6 +184,16 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 )
         workflow.setdefault("policy_fingerprint", None)
         workflow.setdefault("route_snapshot", {})
+        retry_seed = workflow.get("retry_seed")
+        if retry_seed in (None, ""):
+            retry_seed = hashlib.sha256(
+                f"legacy-retry-seed:{workflow_id}".encode("utf-8")
+            ).hexdigest()
+            workflow["retry_seed"] = retry_seed
+        if not isinstance(retry_seed, str) or not RETRY_SEED_RE.fullmatch(retry_seed):
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.retry_seed must be a 32-64 character lowercase hex string"
+            )
         for field_name in ("plan_fingerprint", "policy_fingerprint"):
             value = workflow.get(field_name)
             if value not in (None, ""):
@@ -293,14 +306,14 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             budget.get("max_steps"),
             default=96,
             minimum=1,
-            maximum=256,
+            maximum=MAX_ATTEMPTS_PER_WORKFLOW,
             field_name=f"workflow {workflow_id!r}.execution_budget.max_steps",
         )
         used_steps = _strict_bounded_int(
             budget.get("used_steps"),
             default=0,
             minimum=0,
-            maximum=256,
+            maximum=MAX_ATTEMPTS_PER_WORKFLOW,
             field_name=f"workflow {workflow_id!r}.execution_budget.used_steps",
         )
         if used_steps > max_steps:
