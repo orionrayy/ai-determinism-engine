@@ -55,6 +55,12 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v48 Sharded Workflow State
+
+Workflow snapshots are stored under `.orchestrator/workflows/` using SHA-256(workflow_id) filenames. `.orchestrator/state.json` remains a compact compatibility/index envelope, while `load_state()` hydrates the canonical workflow shards and validates their identities and size bounds.
+
+Normal execution writes only the active workflow shard. Continuation, scheduled recovery, and job-summary paths use the same canonical loader, so sharding does not leave recovery dependent on the empty index file.
+
 ## v45 Reliability Hardening
 
 The gateway HMAC covers timestamp, HTTP method, request path, optional `Idempotency-Key`, and the raw body; header names are normalized case-insensitively. Unkeyed unstructured events receive a deterministic event identity that is propagated as the workflow identity for replay serialization.
