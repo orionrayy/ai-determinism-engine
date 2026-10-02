@@ -83,6 +83,37 @@ def execution_id(workflow_id: str, node_id: str) -> str:
     ).hexdigest()
 
 
+def request_intent(
+    workflow_id: str,
+    node_id: str,
+    connector: str,
+    action: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "protocol": PROTOCOL,
+        "workflow_id": str(workflow_id),
+        "node_id": str(node_id),
+        "connector": str(connector).strip().lower(),
+        "action": str(action).strip().lower(),
+        "input": payload,
+    }
+
+
+def connector_request_id(
+    workflow_id: str,
+    node_id: str,
+    connector: str,
+    action: str,
+    payload: dict[str, Any],
+) -> str:
+    return hashlib.sha256(
+        canonical_json(
+            request_intent(workflow_id, node_id, connector, action, payload)
+        )
+    ).hexdigest()
+
+
 def build_request(node: Any, goal: str) -> ConnectorRequest:
     workflow_id = str(node.input.get("workflow_id") or "").strip()
     node_id = str(node.id or "").strip()
@@ -103,7 +134,13 @@ def build_request(node: Any, goal: str) -> ConnectorRequest:
 
     request = ConnectorRequest(
         protocol=PROTOCOL,
-        request_id=execution_id(workflow_id, node_id),
+        request_id=connector_request_id(
+            workflow_id,
+            node_id,
+            connector,
+            action,
+            payload,
+        ),
         workflow_id=workflow_id,
         node_id=node_id,
         connector=connector,
@@ -347,9 +384,18 @@ def build_reconciliation_request(node: Any) -> ReconciliationRequest:
         raise ConnectorReconciliationError("invalid reconciliation connector name")
     if not ACTION_RE.fullmatch(action):
         raise ConnectorReconciliationError("invalid reconciliation action")
+    payload = node.input.get("payload", {})
+    if not isinstance(payload, dict):
+        payload = {}
     return ReconciliationRequest(
         protocol=PROTOCOL,
-        request_id=execution_id(workflow_id, node_id),
+        request_id=connector_request_id(
+            workflow_id,
+            node_id,
+            connector,
+            action,
+            payload,
+        ),
         workflow_id=workflow_id,
         node_id=node_id,
         connector=connector,
