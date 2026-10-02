@@ -66,6 +66,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_DIGEST", self.orchestrator)
         self.assertIn("actions: read", self.orchestrator)
 
+    def test_state_uses_sharded_storage_format(self):
+        self.assertEqual(self.state.get('storage_format'), 'sharded-v1')
+        self.assertIn('from orchestrator.orchestrator import load_state', self.continuation)
+        self.assertIn('from orchestrator.orchestrator import load_state', self.orchestrator)
     def test_committed_orchestrator_state_matches_current_schema(self):
         from orchestrator.state_schema import CURRENT_STATE_VERSION
         self.assertEqual(self.state.get('version'), CURRENT_STATE_VERSION)
