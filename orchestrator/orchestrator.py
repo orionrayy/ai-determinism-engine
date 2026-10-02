@@ -1760,6 +1760,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     registry = load_registry()
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
+    workflow['agent_team'] = team_manifest(workflow['id'], nodes)
     if not ensure_plan_integrity(workflow, nodes):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
@@ -2404,8 +2405,11 @@ def create_workflow(
     if nodes is None:
         nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
+    for node in nodes:
+        assign_role(node)
+    workflow_id = new_id("wf")
     return {
-        "id": new_id("wf"),
+        "id": workflow_id,
         "created_at": utc_now(),
         "goal": goal,
         "status": "planning",
@@ -2424,7 +2428,8 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 3,
+        "schema_version": 4,
+        "agent_team": team_manifest(workflow_id, nodes),
         "plan_fingerprint": None,
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
