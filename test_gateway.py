@@ -64,7 +64,7 @@ class GatewayTests(unittest.TestCase):
             "payload": {"secret": "do-not-forward"},
             "source": "test",
             "attempt": 2,
-            "requested_mode": "live",
+            "requested_mode": "dry-run",
         }
         goal, metadata, event_id = gateway.build_execution_event(payload)
         self.assertEqual(
