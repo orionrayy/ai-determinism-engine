@@ -1,3 +1,7 @@
+## Concurrent single-flight failure semantics v35
+
+Bridge-runtime single-flight now coalesces both successful and failed overlapping calls. Waiting duplicates observe the original flight outcome instead of launching a second upstream attempt after a failure, while a later fresh request can retry because failed flights are not stored in the success cache.
+
 ## Reconciliation target binding v34
 
 Recovery now binds reconciliation to the same connector target and normalized action contract observed during the failed execution. A target or contract change causes reconciliation to fail closed before the recovery lookup is sent. The bridge runtime repeats the target comparison as an independent boundary.
