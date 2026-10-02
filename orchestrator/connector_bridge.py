@@ -562,6 +562,10 @@ def reconcile_connector_execution(node: Any, goal: str, dry_run: bool) -> dict[s
         raise ConnectorReconciliationError(
             f"connector {node.input.get('connector')!r} does not advertise reconciliation"
         )
+    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true" and not bool(spec.get("free_tier", False)):
+        raise ConnectorReconciliationError(
+            f"connector {node.input.get('connector')!r} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+        )
     connector = str(node.input.get("connector") or "").strip().lower()
     action = str(node.input.get("action") or "").strip().lower()
     action_spec = validate_discovered_action(connector, action, inventory)
@@ -693,6 +697,10 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         inventory,
     )
     spec = inventory.get(request.connector, {})
+    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true" and not bool(spec.get("free_tier", False)):
+        raise ConnectorBridgeError(
+            f"connector {request.connector!r} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+        )
     target_fingerprint = str(spec.get("target_fingerprint") or "").strip() or None
     reconciliation_target_fingerprint = (
         str(spec.get("reconciliation_target_fingerprint") or "").strip() or None
