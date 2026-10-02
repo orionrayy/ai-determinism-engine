@@ -24,6 +24,11 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Approval trust-boundary hardening v40
+
+- Approval labels are now accepted only when the actor has `admin`, `maintain`, or `push` repository permission; `triage` is excluded even though it can manage issues/labels.
+- This keeps issue/label moderation power separate from the authority to authorize high-risk orchestrator actions.
+
 ## Strict state identity validation v39
 
 - State/workflow schema version fields now fail closed when explicitly malformed instead of being silently coerced to legacy version `1`.
