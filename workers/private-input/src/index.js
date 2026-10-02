@@ -76,8 +76,9 @@ async function auth(request, env) {
   if (!secret) return false;
   if ((request.headers.get("X-Orchestrator-Protocol") || "") !== PROTOCOL) return false;
   const timestampRaw = request.headers.get("X-Orchestrator-Timestamp") || "";
-  const timestamp = Number.parseInt(timestampRaw, 10);
-  if (!Number.isInteger(timestamp)) return false;
+  if (!/^\\d+$/.test(timestampRaw)) return false;
+  const timestamp = Number(timestampRaw);
+  if (!Number.isSafeInteger(timestamp)) return false;
   if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > CLOCK_SKEW_SECONDS) return false;
   const body = request.method === "GET" || request.method === "DELETE"
     ? ""
@@ -100,6 +101,10 @@ function validateEnvelope(envelope, now, requireTtlWindow) {
     "schema_version", "protocol", "input_ref", "execution_id",
     "intent_fingerprint", "input_digest", "expires_at", "payload",
   ];
+  const allowed = new Set(required);
+  for (const key of Object.keys(envelope)) {
+    if (!allowed.has(key)) throw new Error("unknown_envelope_field");
+  }
   for (const key of required) {
     if (!(key in envelope)) throw new Error("missing_" + key);
   }
