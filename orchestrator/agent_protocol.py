@@ -348,37 +348,21 @@ def validate_result(
         raise FederationProtocolError("unsupported federation result protocol version")
     if result.status not in {"completed", "failed"}:
         raise FederationProtocolError("invalid federation result status")
-    validate_task(
-        AgentTask(
-            federation_id=result.federation_id,
-            workflow_id=result.workflow_id,
-            task_id=result.task_id,
-            agent_id=result.agent_id,
-            role=result.role,
-            capability=result.capability,
-            tool=result.tool,
-            risk="low",
-            instruction="result-validation-placeholder",
-            context={},
-            contract={},
-            attempt=result.attempt,
-            input_digest=digest({
-                "workflow_id": result.workflow_id,
-                "task_id": result.task_id,
-                "role": result.role,
-                "capability": result.capability,
-                "tool": result.tool,
-                "risk": "low",
-                "instruction": "result-validation-placeholder",
-                "context": {},
-                "contract": {},
-                "attempt": result.attempt,
-            }),
-            protocol_version=result.protocol_version,
-        )
-    )
+    _validate_safe_id("federation_id", result.federation_id)
+    _validate_safe_id("workflow_id", result.workflow_id)
+    _validate_safe_id("task_id", result.task_id)
+    validate_role(result.role, result.capability, "low")
+    if not AGENTS[result.role].parallel_safe:
+        raise FederationProtocolError("result role is not parallel-safe")
+    if result.agent_id != agent_id(result.workflow_id, result.task_id, result.role):
+        raise FederationProtocolError("result agent identity mismatch")
+    if result.attempt < 1:
+        raise FederationProtocolError("result attempt must be >= 1")
+    _bounded_dict(result.output, MAX_RESULT_OUTPUT_BYTES, "output")
     if result.output_sha256 != digest(result.output):
         raise FederationProtocolError("result output digest mismatch")
+    if result.error is not None:
+        _bounded_dict(result.error, MAX_RESULT_ERROR_BYTES, "error")
     if expected_task is not None:
         validate_task(expected_task)
         fields = (
@@ -397,8 +381,6 @@ def validate_result(
             for field in fields
         ):
             raise FederationProtocolError("result does not match expected task")
-    if result.error is not None:
-        _bounded_dict(result.error, MAX_RESULT_ERROR_BYTES, "error")
 
 
 def build_manifest(
