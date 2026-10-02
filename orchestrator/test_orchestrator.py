@@ -407,6 +407,36 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["execution_budget"]["used_steps"], 1)
         self.assertTrue(workflow["nodes"][0]["error"]["budget_exhausted"])
 
+    def test_transition_graph_has_no_reconciling_to_completed_shortcut(self):
+        self.assertNotIn("completed", o.TRANSITIONS["reconciling"])
+        node = o.Node("n01", "execute", "noop", [], status="reconciling")
+        with self.assertRaises(RuntimeError):
+            o.transition(node, "completed")
+
+    def test_transition_graph_matches_finite_state_model(self):
+        terminal = {"completed", "cancelled"}
+        for source, destinations in o.TRANSITIONS.items():
+            if source in terminal:
+                self.assertEqual(destinations, set())
+            for destination in destinations:
+                self.assertIn(destination, o.NODE_STATUSES)
+        # Every accepting path from reconciliation to completion must enter validation.
+        frontier = [("reconciling", False)]
+        seen = set(frontier)
+        found = False
+        while frontier:
+            state, validated = frontier.pop(0)
+            validated = validated or state == "validating"
+            if state == "completed":
+                found = found or validated
+                continue
+            for nxt in o.TRANSITIONS.get(state, set()):
+                item = (nxt, validated)
+                if item not in seen:
+                    seen.add(item)
+                    frontier.append(item)
+        self.assertTrue(found)
+
     def test_retry_seed_is_auditable_and_changes_across_new_workflows(self):
         with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
             a = o.create_workflow("research a", live=False)
