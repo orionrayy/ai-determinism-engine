@@ -39,6 +39,7 @@ try:
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
 except ImportError:
     from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
@@ -58,6 +59,7 @@ except ImportError:
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
@@ -134,6 +136,7 @@ class Node:
     output: dict[str, Any] = field(default_factory=dict)
     error: dict[str, Any] = field(default_factory=dict)
     contract: dict[str, Any] = field(default_factory=dict)
+    agent_role: str = "operator"
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
