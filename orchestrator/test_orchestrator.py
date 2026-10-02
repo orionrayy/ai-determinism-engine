@@ -139,6 +139,25 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("gemini", registry, model="gemini-3.8-pro"))
             self.assertTrue(o.tool_available("gemini", registry, model="gemini-3.8-flash"))
 
+    def test_gemini_executor_fails_closed_on_unlisted_model(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+                "required_env": "GEMINI_API_KEY",
+            }
+        }
+        with patch.dict(o.os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_MODEL": "gemini-3.8-pro",
+            "GEMINI_API_KEY": "key",
+        }, clear=False), patch.object(o, "load_registry", return_value=registry), patch.object(o, "http_json") as http:
+            with self.assertRaisesRegex(RuntimeError, "not allowed by the free-only model registry"):
+                o.execute_gemini(node, "analyze")
+        http.assert_not_called()
+
     def test_atomic_json_write_replaces_existing_file_cleanly(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "state.json"
