@@ -415,6 +415,7 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
     request_id = str(payload.get("request_id") or "").strip()
     connector = str(payload.get("connector") or "").strip().lower()
     action = str(payload.get("action") or "").strip().lower()
+    target_fingerprint = str(payload.get("target_fingerprint") or "").strip() or None
     if len(request_id) != 64 or any(ch not in "0123456789abcdef" for ch in request_id):
         raise BridgeRuntimeError("invalid request_id")
     route = routes.get(connector)
@@ -424,12 +425,20 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         raise BridgeRuntimeError("connector reconciliation is not configured")
     if action not in route.get("actions", []):
         raise BridgeRuntimeError("connector action is not allowlisted")
+    current_target_fingerprint = route_target_fingerprint(
+        str(route.get("url") or "")
+    )
+    if target_fingerprint and target_fingerprint != current_target_fingerprint:
+        raise BridgeRuntimeError(
+            "connector reconciliation target no longer matches execution target"
+        )
     result = dispatch_reconciliation(
         route,
         {
             "request_id": request_id,
             "connector": connector,
             "action": action,
+            "target_fingerprint": target_fingerprint,
         },
     )
     return {
@@ -438,6 +447,7 @@ def handle_reconciliation(payload: dict[str, Any]) -> dict[str, Any]:
         "request_id": request_id,
         "connector": connector,
         "action": action,
+        "target_fingerprint": target_fingerprint,
         "state": result["state"],
         "upstream": result,
     }
