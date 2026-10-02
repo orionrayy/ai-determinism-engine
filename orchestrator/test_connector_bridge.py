@@ -116,7 +116,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 "notion": {
                     "actions": ["create_page"],
                     "configured": True,
-                "free_tier": True,
+                    "free_tier": True,
                     "reconciliation": False,
                 }
             }
@@ -134,7 +134,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
-                "free_tier": True,
+
                 "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-a",
@@ -207,7 +207,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
-                "free_tier": True,
+
                 "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": True}},
             }
@@ -252,7 +252,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
-                "free_tier": True,
+
                 "free_tier": True,
                 "action_specs": {"create_page": {"idempotent": False}},
             }
@@ -285,7 +285,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
-                "free_tier": True,
+
                 "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-b",
@@ -317,7 +317,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "notion": {
                 "actions": ["create_page"],
                 "configured": True,
-                "free_tier": True,
+
                 "free_tier": True,
                 "reconciliation": True,
                 "target_fingerprint": "target-a",
@@ -502,7 +502,7 @@ class ConnectorBridgeTests(unittest.TestCase):
             "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
             "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
         }, clear=True):
-            inventory = {"notion": {"actions": ["create_page"], "configured": True}}
+            inventory = {"notion": {"actions": ["create_page"], "configured": True, "free_tier": True}}
             class Response:
                 status = 200
                 def __enter__(self): return self
