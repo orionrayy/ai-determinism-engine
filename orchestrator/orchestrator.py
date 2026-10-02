@@ -3779,6 +3779,7 @@ def main() -> int:
         idempotency_key=idempotency_key,
         private_input_ref=private_input_ref,
         external_attempt=external_attempt,
+        workflow_id=ingress_workflow_id,
     )
     workflow['status'] = 'ready'
     persist_workflow(workflow)
