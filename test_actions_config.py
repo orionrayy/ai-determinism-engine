@@ -63,6 +63,26 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('ORCHESTRATOR_MAX_EXECUTION_STEPS:', self.orchestrator)
         self.assertIn("inputs.max_steps || '96'", self.orchestrator)
 
+    def test_ci_push_validation_is_main_only(self):
+        self.assertIn('push:', self.tests)
+        self.assertIn('branches:\n      - main', self.tests)
+
+    def test_ci_pr_gate_covers_control_plane_runtime(self):
+        for path in (
+            'private_input.py',
+            'test_private_input.py',
+            'orchestrator-continuation.yml',
+            'orchestrator.yml',
+            'bridge_runtime.py',
+            'test_bridge_runtime.py',
+        ):
+            self.assertIn(path, self.tests)
+
+    def test_ci_cancels_obsolete_pr_runs(self):
+        self.assertIn('concurrency:', self.tests)
+        self.assertIn('orchestrator-tests-${{ github.event.pull_request.number || github.ref }}', self.tests)
+        self.assertIn('cancel-in-progress: true', self.tests)
+
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
 
