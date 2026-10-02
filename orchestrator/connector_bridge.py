@@ -674,7 +674,6 @@ def post_request(url: str, secret: str, request: ConnectorRequest) -> dict[str, 
             raise ConnectorRequestError(
                 f"connector bridge reported upstream HTTP {upstream_status}",
                 uncertain=upstream_status >= 500,
-                retry_allowed=False,
             )
     return result
 
