@@ -68,4 +68,27 @@ jobs:
           /tmp/actionlint -color
 
       - name: Unit tests
-        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest discover -s orchestrator -p "test_*.py" -v 2>&1 | tee /tmp/orchestrator-tests.log
+          python -m unittest test_gateway test_actions_config test_private_input -v 2>&1 | tee -a /tmp/orchestrator-tests.log
+
+      - name: Failure diagnostic summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo "### Orchestrator test failure diagnostic"
+            echo
+            echo '```text'
+            if [ -f /tmp/orchestrator-tests.log ]; then
+              grep -E '^(FAIL|ERROR):|^Traceback \(|AssertionError:|^Ran [0-9]+ tests|^FAILED' /tmp/orchestrator-tests.log | tail -n 80 || true
+              echo
+              echo '--- tail ---'
+              tail -n 80 /tmp/orchestrator-tests.log || true
+            else
+              echo "Test log was not produced."
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
