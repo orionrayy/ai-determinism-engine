@@ -71,6 +71,26 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
         workflow.setdefault("agent_team", {})
+        workflow.setdefault("github_run_attempt", None)
+        workflow.setdefault("origin_github_run_attempt", workflow.get("github_run_attempt"))
+        for field_name in ("github_run_attempt", "origin_github_run_attempt"):
+            value = workflow.get(field_name)
+            if value is not None:
+                if isinstance(value, bool):
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r}.{field_name} must be a positive integer or null"
+                    )
+                try:
+                    parsed = int(value)
+                except (TypeError, ValueError) as exc:
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r}.{field_name} must be a positive integer or null"
+                    ) from exc
+                if parsed < 1:
+                    raise StateSchemaError(
+                        f"workflow {workflow_id!r}.{field_name} must be a positive integer or null"
+                    )
+                workflow[field_name] = parsed
         workflow.setdefault("federation", {})
         workflow.setdefault(
             "max_federation_batches",
