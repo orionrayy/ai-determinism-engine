@@ -2341,6 +2341,15 @@ def create_workflow(
         "live": live,
         "execution_mode": "dry-run",
         "replan_count": 0,
+        "attempts_used": 0,
+        "max_attempts": max(
+            1,
+            min(
+                int(os.environ.get("ORCHESTRATOR_MAX_ATTEMPTS", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)),
+                MAX_ATTEMPTS_PER_WORKFLOW,
+            ),
+        ),
+        "retry_jitter_seed": secrets.token_hex(16),
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
