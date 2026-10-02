@@ -44,7 +44,7 @@ class PlannerTests(unittest.TestCase):
         prompt = post.call_args.args[1]["contents"][0]["parts"][0]["text"]
         self.assertIn("notion", prompt)
 
-    def test_free_only_blocks_planner_model_override(self):
+    def test_free_only_ignores_paid_planner_model_override(self):
         registry = {
             "capability:analyze": {"default_tool": "gemini", "fallback_tools": []},
             "gemini": {
@@ -54,14 +54,25 @@ class PlannerTests(unittest.TestCase):
                 "free_models": ["gemini-3.8-flash"],
             },
         }
+        planner_response = {
+            "candidates": [{
+                "content": {"parts": [{"text": '{"nodes": []}'}]}
+            }]
+        }
         with patch.dict(os.environ, {
             "ORCHESTRATOR_FREE_ONLY": "true",
             "GEMINI_API_KEY": "planner-key",
             "GEMINI_MODEL": "gemini-3.8-flash",
             "GEMINI_PLANNER_MODEL": "gemini-paid-model",
-        }, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "not free-tier"):
-                lp.plan_goal("analyze this", registry, FakeNode, fake_validate, live=False)
+        }, clear=True), patch.object(
+            lp, "_post", return_value=planner_response
+        ) as post:
+            nodes = lp.plan_goal("analyze this", registry, FakeNode, fake_validate, live=False)
+        self.assertEqual(nodes, [])
+        endpoint = post.call_args.args[0]
+        self.assertIn("/models/gemini-3.8-flash:generateContent", endpoint)
+        self.assertNotIn("gemini-paid-model", endpoint)
+
 
     def test_rejects_non_json(self):
         with self.assertRaises(ValueError):
