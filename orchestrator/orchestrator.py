@@ -813,6 +813,10 @@ def load_state() -> dict[str, Any]:
             "storage_format": STATE_STORAGE_FORMAT,
         }
 
+    storage_format = raw.get("storage_format")
+    if storage_format not in (None, "legacy", STATE_STORAGE_FORMAT):
+        raise RuntimeError(f"unsupported orchestrator storage format: {storage_format}")
+
     try:
         state = migrate_state(raw)
         sharded = _load_workflow_shards()
