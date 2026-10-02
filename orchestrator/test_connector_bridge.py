@@ -193,7 +193,7 @@ class ConnectorBridgeTests(unittest.TestCase):
                 return_value={"ok": True, "bridge_job_id": "job-1"},
             ) as post:
                 result = cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
-        self.assertEqual(result["response"]["bridge_job_id"], "job-1")
+        self.assertEqual(result["response"]["fields"]["bridge_job_id"], "job-1")
         discovery.assert_called_once_with("https://bridge.example.test/api/bridge", force_refresh=True)
         post.assert_called_once()
 
