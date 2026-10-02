@@ -24,6 +24,7 @@ except ImportError:
 
 
 MAX_PLANNER_RESPONSE_BYTES = 512 * 1024
+MAX_PLANNER_GOAL_BYTES = 48 * 1024
 
 def _post(url: str, payload: dict, api_key: str) -> dict:
     request = urllib.request.Request(
@@ -80,6 +81,9 @@ def configured_model(registry: dict) -> str:
 
 
 def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False) -> list:
+    goal = str(goal or "")
+    if len(goal.encode("utf-8")) > MAX_PLANNER_GOAL_BYTES:
+        raise ValueError("planner goal exceeds 48 KiB safety limit")
     api_key = os.environ.get('GEMINI_API_KEY')
     if not api_key:
         raise RuntimeError('GEMINI_API_KEY is not configured')
