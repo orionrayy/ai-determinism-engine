@@ -27,8 +27,12 @@ on:
       - ".github/workflows/bridge-deploy.yml"
       - "gateway.py"
       - "test_gateway.py"
+      - "private_input.py"
+      - "test_private_input.py"
       - "ORCHESTRATION_MEMORY.md"
       - ".github/workflows/orchestrator-tests.yml"
+      - ".github/workflows/orchestrator-continuation.yml"
+      - ".github/workflows/orchestrator.yml"
   workflow_dispatch:
 
 concurrency:
