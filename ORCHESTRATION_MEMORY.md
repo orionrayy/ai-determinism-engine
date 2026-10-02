@@ -90,11 +90,12 @@ Current execution-fabric branch: `main`
 - No new service, dependency, or cost surface is introduced.
 
 ## Orchestration hardening v52 — identity-first ingress deduplication
-- New ingress events derive a deterministic internal workflow ID from `Idempotency-Key` (preferred) or `event_id`, creating a stable canonical shard identity for duplicate requests.
-- Goal-driven ingress checks that single canonical shard before falling back to the full `load_state()` scan, so new duplicate detection is O(1)-shard while pre-v52 legacy workflows remain discoverable.
-- Reused idempotency/event identities now compare persisted intent/input digests when supplied; a mismatched request fails closed instead of being silently treated as the same operation.
-- GitHub Actions repository-dispatch concurrency now falls back through `workflow_id`, `event_id`, and `idempotency_key`, so duplicate ingress instances are serialized before the orchestrator state check.
-- This preserves the free-first GitHub Actions + stdlib Python control plane and avoids introducing a centralized paid or remote idempotency ledger.
+- New ingress events derive a deterministic internal workflow ID from Idempotency-Key (preferred) or event_id, creating a stable canonical shard identity for duplicate requests.
+- Goal-driven ingress checks that single canonical shard before falling back to the full load_state() scan; a full scan is skipped entirely when the compact sharded-v1 index has no legacy workflow records.
+- Compatibility fallback remains available for pre-v48 legacy workflow records stored in the monolithic index.
+- Reused idempotency/event identities compare persisted intent/input digests when supplied; a mismatched request fails closed instead of being silently treated as the same operation.
+- GitHub Actions repository-dispatch concurrency falls back through workflow_id, event_id, and idempotency_key, so duplicate ingress instances are serialized before state inspection.
+- No new database, cache, broker, queue, paid service, or runtime dependency is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
