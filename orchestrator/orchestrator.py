@@ -254,12 +254,17 @@ def federation_enabled() -> bool:
 
 def dispatch_federation(manifest: dict[str, Any]) -> None:
     repository = github_repository()
+    federation_id = str(manifest.get("federation_id") or "")
+    slot = federation_slot(federation_id)
     http_json(
         f"https://api.github.com/repos/{repository}/dispatches",
         method="POST",
         body={
             "event_type": "orchestrator.federate",
-            "client_payload": {"manifest": manifest},
+            "client_payload": {
+                "manifest": manifest,
+                "slot": slot,
+            },
         },
         headers=github_headers(),
         timeout=30,
@@ -473,15 +478,31 @@ def delegate_ready_agents(
         })
         return None
 
+    allowed, quota_reason = can_reserve_federation(workflow, len(selected))
+    if not allowed:
+        append_event("federation.deferred", {
+            "workflow_id": workflow["id"],
+            "reason": quota_reason,
+            "task_count": len(selected),
+            "federation_batches_used": workflow.get("federation_batches_used", 0),
+            "federation_tasks_used": workflow.get("federation_tasks_used", 0),
+        })
+        return None
     if attempt_budget.remaining < len(selected):
         return None
     for node in selected:
         attempt_budget.acquire(node.id)
+    try:
+        reserve_federation_quota(workflow, len(selected))
+    except Exception:
+        attempt_budget.refund(len(selected))
+        return None
 
     workflow["federation"] = {
         "id": federation_id,
         "status": "prepared",
         "task_count": len(tasks),
+        "slot": federation_slot(federation_id),
         "tasks": [
             {
                 "task_id": task.task_id,
@@ -517,6 +538,7 @@ def delegate_ready_agents(
         dispatch_federation(manifest)
     except Exception as exc:
         attempt_budget.refund(len(selected))
+        refund_federation_quota(workflow, len(selected))
         workflow["federation"]["status"] = "dispatch_failed"
         workflow["federation"]["error"] = str(exc)
         for node in selected:
