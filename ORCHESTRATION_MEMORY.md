@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure, v38 health-state sharding + federation recovery, v37 GitHub Actions matrix federation, v36 bounded federated protocol, v35 supervised multi-agent fabric, v34 workflow-sharded audit events, v33 committed state schema CI contract, v32 collision-resistant workflow identities, v31 canonical approval ingress/barrier optimization, v30 workflow-scoped concurrency, v29 state-persistence recovery, v28 bounded/fsynced audit state, v27 deterministic retry/reconciliation hardening, and the earlier secure live-boundary/durability-barrier generations.
+Current main baseline: orchestration hardening v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + v38 health-state sharding/federation recovery + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -39,6 +39,14 @@ Current execution-fabric branch: `main`
 - An uncertified reconciliation is rejected before `post_reconciliation`/`dispatch_reconciliation`, so recovery cannot create an unbudgeted vendor API charge.
 - Canonical memory layout is header-first and the current baseline explicitly records v43/v42/v41 so historical context cannot be mistaken for the active `main` state.
 - No paid dependency or service is introduced.
+
+## Orchestration hardening v45 — artifact verifier SSRF guard
+- Artifact URL verification no longer uses the generic redirect-following HTTP helper.
+- HTTPS artifact checks resolve the hostname, reject non-public/reserved addresses including IPv4-mapped IPv6, connect to the validated IP directly, preserve TLS SNI/hostname verification, disable redirects, enforce port 443, and bound the response body to 256 KiB.
+- URL userinfo and fragments are rejected; path/query are percent-encoded before the HTTP request is built.
+- This is a stdlib-only mitigation aligned with OWASP SSRF guidance; arbitrary URL verification remains available for public HTTPS destinations without adding a paid egress/proxy service.
+- No new database, broker, queue, or paid dependency was introduced.
+
 
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:

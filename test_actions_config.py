@@ -180,6 +180,15 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("v41 private structured input boundary", memory)
         self.assertIn("v44 — reconciliation cost closure", memory)
 
+    def test_artifact_verifier_uses_pinned_public_https_guard(self):
+        orchestrator = (ROOT / "orchestrator" / "orchestrator.py").read_text()
+        self.assertIn("def safe_public_https_json(", orchestrator)
+        self.assertIn("MAX_ARTIFACT_RESPONSE_BYTES", orchestrator)
+        self.assertIn("artifact URL redirects are disabled", orchestrator)
+        self.assertIn("artifact URL resolves to a non-public IP", orchestrator)
+        self.assertIn("artifact URL must use port 443", orchestrator)
+        self.assertIn("result = safe_public_https_json(url, timeout=30)", orchestrator)
+
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
