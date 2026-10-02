@@ -91,8 +91,8 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_persist_state_skips_noop_push_and_retries_remote_advance(self):
         self.assertIn('if git diff --cached --quiet; then', self.orchestrator)
-        self.assertIn('git fetch origin "hardening/ci-failure-storm-shield-v44-clean"', self.orchestrator)
-        self.assertIn('git rebase "origin/hardening/ci-failure-storm-shield-v44-clean"', self.orchestrator)
+        self.assertIn('git fetch origin "${branch}"', self.orchestrator)
+        self.assertIn('git rebase "origin/${branch}"', self.orchestrator)
 
     def test_unit_test_failure_writes_step_summary_diagnostic(self):
         self.assertIn('GITHUB_STEP_SUMMARY', self.tests)
