@@ -2917,6 +2917,32 @@ def create_workflow(
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
+        "max_federation_batches": max(
+            0,
+            min(
+                int(
+                    os.environ.get(
+                        "ORCHESTRATOR_MAX_FEDERATION_BATCHES",
+                        DEFAULT_MAX_BATCHES_PER_WORKFLOW,
+                    )
+                ),
+                8,
+            ),
+        ),
+        "max_federation_tasks": max(
+            0,
+            min(
+                int(
+                    os.environ.get(
+                        "ORCHESTRATOR_MAX_FEDERATION_TASKS",
+                        DEFAULT_MAX_TASKS_PER_WORKFLOW,
+                    )
+                ),
+                32,
+            ),
+        ),
+        "federation_batches_used": 0,
+        "federation_tasks_used": 0,
         "trigger_issue": trigger_issue,
         "event_id": event_id,
         "github_run_id": os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID"),
