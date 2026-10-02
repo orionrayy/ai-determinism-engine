@@ -481,6 +481,46 @@ class ConnectorBridgeTests(unittest.TestCase):
         self.assertTrue(ctx.exception.uncertain)
         self.assertFalse(ctx.exception.retry_allowed)
 
+    def test_connector_response_persists_only_allowlisted_fields(self):
+        node = self.node({"title": "Hello"})
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "target_fingerprint": "target-a",
+                "reconciliation_target_fingerprint": "reconcile-a",
+                "action_specs": {
+                    "create_page": {
+                        "idempotent": True,
+                        "response_fields": ["upstream.data.id"],
+                    }
+                },
+            }
+        }
+        raw_response = {
+            "ok": True,
+            "bridge_job_id": "job-1",
+            "upstream": {
+                "status_code": 200,
+                "data": {
+                    "id": "p1",
+                    "private_token": "do-not-persist",
+                },
+            },
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(cb, "post_request", return_value=raw_response):
+            result = cb.execute_connector_bridge(node, "bridge it", dry_run=False)
+        encoded = cb.canonical_json(result).decode("utf-8")
+        self.assertEqual(result["response"]["fields"]["upstream.data.id"], "p1")
+        self.assertEqual(result["response"]["status_code"], 200)
+        self.assertNotIn("private_token", encoded)
+        self.assertNotIn("do-not-persist", encoded)
+
     def test_live_result_does_not_persist_raw_bridge_url(self):
         node = self.node({"title": "Hello"})
         bridge_url = "https://private-bridge.example.test/api/bridge"
