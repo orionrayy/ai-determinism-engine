@@ -514,9 +514,10 @@ class OrchestratorTests(unittest.TestCase):
                      patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"), \
                      patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"):
                     result = o.run_one_step(workflow, approve_high_risk=False)
-        self.assertEqual(result, "completed")
-        self.assertEqual(execute.call_count, 1)
-        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(result, "rearmed_pre_side_effect")
+        self.assertEqual(execute.call_count, 0)
+        self.assertEqual(workflow["status"], "running")
+        self.assertEqual(workflow["nodes"][0]["status"], "ready")
     def test_interrupted_started_connector_enters_reconciliation(self):
         node = o.Node(
             "n01-connector", "publish", "connector_bridge", [],
