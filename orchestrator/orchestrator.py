@@ -812,14 +812,19 @@ def load_registry() -> dict[str, dict[str, Any]]:
 def free_only() -> bool:
     return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
 
-def configured_gemini_model(planner: bool = False) -> str:
+def configured_gemini_model(
+    planner: bool = False,
+    registry: dict[str, dict[str, Any]] | None = None,
+) -> str:
+    spec = (registry or {}).get("gemini", {})
+    default_model = str(spec.get("default_model") or "gemini-3.8-flash").strip()
     if planner:
         return (
             os.environ.get("GEMINI_PLANNER_MODEL")
             or os.environ.get("GEMINI_MODEL")
-            or "gemini-3.8-flash"
+            or default_model
         )
-    return os.environ.get("GEMINI_MODEL") or "gemini-3.8-flash"
+    return os.environ.get("GEMINI_MODEL") or default_model
 
 
 def gemini_model_allowed(
@@ -1063,7 +1068,7 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
     if not key:
         raise RuntimeError("GEMINI_API_KEY is required for the Gemini adapter")
     registry = load_registry()
-    model = configured_gemini_model()
+    model = configured_gemini_model(registry=registry)
     if free_only() and not gemini_model_allowed(registry, model=model):
         raise RuntimeError(
             f"Gemini model {model!r} is not allowed by the free-only model registry"
@@ -2973,7 +2978,7 @@ def create_workflow(
                 },
             )
         ]
-    planner_model = configured_gemini_model(planner=True)
+    planner_model = configured_gemini_model(planner=True, registry=registry)
     planner_available = tool_available(
         "gemini",
         registry,
