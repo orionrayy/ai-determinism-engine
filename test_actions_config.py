@@ -83,6 +83,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('queue: max', self.orchestrator)
         self.assertIn('unexpected key "queue" for "concurrency" section', (ROOT / '.github' / 'actionlint.yaml').read_text())
 
+    def test_repository_ingress_concurrency_has_identity_fallbacks(self):
+        self.assertIn('github.event.client_payload.workflow_id || github.event.client_payload.event_id || github.event.client_payload.idempotency_key', self.orchestrator)
+
     def test_orchestrator_concurrency_isolated_by_workflow_identity(self):
         self.assertIn(
             "github.event.client_payload.workflow_id",
