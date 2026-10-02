@@ -1295,6 +1295,27 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["idempotency_key"], "evt-1")
         self.assertEqual(workflow["external_attempt"], 2)
 
+    def test_finalize_workflow_persists_callback_outcome_after_terminal_send(self):
+        workflow = {
+            "id": "wf_finalize_callback",
+            "execution_id": "1" * 64,
+            "status": "completed",
+            "callback": {"status": "pending", "attempts": 0},
+        }
+        state = {"workflows": {workflow["id"]: workflow}, "last_workflow_id": None}
+        def fake_callback(wf):
+            wf["callback"]["status"] = "sent"
+            return True
+        def fake_save(current):
+            self.assertEqual(
+                current["workflows"][workflow["id"]]["callback"]["status"],
+                "sent",
+            )
+        with patch.object(o, "notify_execution_callback", side_effect=fake_callback), \
+             patch.object(o, "save_state", side_effect=fake_save):
+            o.finalize_workflow_state(state, workflow)
+        self.assertEqual(state["last_workflow_id"], workflow["id"])
+
     def test_terminal_execution_callback_is_hmac_signed_and_idempotent(self):
         workflow = {
             "id": "wf_callback",
