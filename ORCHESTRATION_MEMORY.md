@@ -24,6 +24,18 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - Postcondition failure remains inside the existing failure policy, so a post-side-effect acceptance failure cannot silently trigger duplicate execution.
 - Durable non-side-effect nodes interrupted while running are rearmed to ready on the next worker; their re-execution remains bounded by the same workflow execution-step budget.
 - Manual workflow dispatch exposes max_steps; repository-triggered workflows use the production default unless explicitly configured.
+## Control-plane hardening v30
+
+- Workflow creation now persists execution_budget.max_steps from ORCHESTRATOR_MAX_EXECUTION_STEPS, bounded to 1–256, instead of wiring the input only through YAML.
+- New workflows use CURRENT_WORKFLOW_SCHEMA_VERSION (currently v5) rather than a stale hard-coded schema number.
+- Connector bridge idempotency is single-flight per request ID inside a bridge process; identical concurrent requests wait for the first result instead of launching duplicate upstream calls.
+- Idempotency cache entries are intent-bound and returned as defensive copies. Same-key/different-intent and same-key/different-in-flight-intent collisions fail closed.
+- Continuation events are keyed as continuation:<workflow_run_id>:<run_attempt> and dispatched with the exact workflow ID. The continuation workflow uses a per-run/per-attempt concurrency group. The pinned actionlint version does not understand an explicit queue key, so the default single-pending behavior is retained.
+- Reconciliation output now exposes the connector request ID separately from the durable internal execution ID.
+- Discovered connector action specs are fingerprinted and pinned across retry attempts. Contract drift after an uncertain failure stops before the next upstream POST.
+- The bridge idempotency cache remains process-local and best-effort. Upstream/provider-side idempotency remains the durable boundary across process restarts or multiple bridge replicas.
+- No control-plane change in v30 executes a production side effect automatically.
+
 ## Connector intent-bound idempotency v29
 
 - Connector bridge `request_id` is now derived from protocol, workflow id, node id, connector, action, and payload, while transient goal/timestamp fields remain outside the identity.
