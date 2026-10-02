@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .capability_graph import load_health, record_tool_result, route_capability, save_health
+    from .capability_graph import (
+        QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
+    )
     from .connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -32,7 +34,9 @@ try:
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
 except ImportError:
-    from capability_graph import load_health, record_tool_result, route_capability, save_health
+    from capability_graph import (
+        QUARANTINED, effective_health, load_health, record_tool_result, route_capability, save_health
+    )
     from connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -60,7 +64,7 @@ MAX_CONTEXT_BYTES = 48 * 1024
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
-    "ready": {"running", "waiting_approval", "cancelled"},
+    "ready": {"running", "waiting_approval", "cancelled", "failed"},
     "running": {"validating", "waiting_approval", "retrying", "failed", "cancelled", "ready"},
     "validating": {"completed", "retrying", "failed"},
     "waiting_approval": {"ready", "failed", "cancelled"},
@@ -235,6 +239,8 @@ def enforce_node_policy(
     nodes: list[Node],
     registry: dict[str, dict[str, Any]],
     live: bool = False,
+    *,
+    route: bool = False,
 ) -> None:
     for node in nodes:
         if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
@@ -242,7 +248,7 @@ def enforce_node_policy(
         floor = required_risk(node, registry)
         if RISK_ORDER.get(node.risk, 0) < RISK_ORDER[floor]:
             node.risk = floor
-        if registry.get(f"capability:{node.capability}"):
+        if route and registry.get(f"capability:{node.capability}"):
             node.tool = route_tool(
                 node.capability,
                 registry,
@@ -320,6 +326,46 @@ def route_tool(
         preferred=preferred,
         exclude=exclude,
     )
+
+
+def preflight_node(
+    node: Node,
+    registry: dict[str, dict[str, Any]],
+    *,
+    live: bool,
+) -> None:
+    """Validate local execution prerequisites before crossing any side-effect barrier."""
+    if node.tool not in BUILTIN_TOOLS and node.tool not in registry:
+        raise RuntimeError(f"tool {node.tool} is not registered")
+    if not live:
+        return
+
+    spec = registry.get(node.tool, {})
+    is_free = bool(spec.get("free_tier", False))
+    if not spec and node.tool in BUILTIN_FREE_TOOLS:
+        is_free = True
+    if free_only() and not is_free:
+        raise RuntimeError(f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true")
+
+    env_name = spec.get("required_env")
+    if env_name and not os.environ.get(env_name):
+        raise RuntimeError(f"{env_name} is required for tool {node.tool}")
+    secret_env = spec.get("secret_env")
+    if secret_env and not os.environ.get(secret_env):
+        raise RuntimeError(f"{secret_env} is required for tool {node.tool}")
+
+    health = load_tool_health()
+    if effective_health(health, node.tool) == QUARANTINED:
+        raise RuntimeError(f"tool {node.tool} is quarantined by the capability health policy")
+
+    if node.tool == "webhook":
+        url = str(node.input.get("url") or os.environ.get("ORCHESTRATOR_WEBHOOK_URL") or "").strip()
+        if urllib.parse.urlparse(url).scheme != "https":
+            raise RuntimeError("webhook execution requires an HTTPS URL")
+    if node.tool == "connector_bridge":
+        url = str(os.environ.get("ORCHESTRATOR_CONNECTOR_BRIDGE_URL") or "").strip()
+        if urllib.parse.urlparse(url).scheme != "https":
+            raise RuntimeError("connector bridge execution requires an HTTPS URL")
 
 
 def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: bool = False) -> list[Node]:
@@ -1591,7 +1637,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     validate_dag(nodes)
     registry = load_registry()
     live = bool(workflow.get('live'))
-    enforce_node_policy(nodes, registry, live=live)
+    enforce_node_policy(nodes, registry, live=live, route=False)
     if not ensure_plan_integrity(workflow, nodes):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
@@ -1646,6 +1692,31 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return workflow['status']
 
     node = sorted(eligible, key=lambda item: item.id)[0]
+    try:
+        preflight_node(node, registry, live=live)
+    except Exception as preflight_exc:
+        node.error = {
+            'type': type(preflight_exc).__name__,
+            'message': str(preflight_exc),
+            'failure_class': 'dependency',
+            'preflight_failed': True,
+        }
+        transition(node, 'failed')
+        workflow['status'] = 'failed'
+        workflow['failed_node'] = node.id
+        append_event('node.preflight_failed', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'tool': node.tool,
+            'error': str(preflight_exc),
+        })
+        if replan_after_failure(workflow, nodes, node, registry):
+            workflow['nodes'] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
+            return 'replanned'
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return 'failed'
     if live and node.risk in {'high', 'critical'} and not approve_high_risk and not node.input.get('approval_granted'):
         transition(node, 'waiting_approval')
         workflow['status'] = 'waiting_approval'
@@ -1898,7 +1969,32 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         )
 
         executable = []
+        preflight_replan_needed = False
         for node in batch:
+            try:
+                preflight_node(node, registry, live=live)
+            except Exception as preflight_exc:
+                node.error = {
+                    "type": type(preflight_exc).__name__,
+                    "message": str(preflight_exc),
+                    "failure_class": "dependency",
+                    "preflight_failed": True,
+                }
+                transition(node, "failed")
+                append_event("node.preflight_failed", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                    "error": str(preflight_exc),
+                })
+                if replan_after_failure(workflow, nodes, node, registry):
+                    preflight_replan_needed = True
+                    continue
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return
             if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
                 transition(node, "waiting_approval")
                 workflow["status"] = "waiting_approval"
@@ -2017,7 +2113,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     completed_futures[node.id] = (node, execution_id, *future.result())
                 results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
 
-        replan_needed = False
+        replan_needed = preflight_replan_needed
         for node, execution_id, success, error in results:
             if success:
                 if side_effecting(node, registry):
@@ -2075,6 +2171,7 @@ def create_workflow(
     if nodes is None:
         nodes = deterministic_plan(goal, registry, live=live)
     validate_dag(nodes)
+    enforce_node_policy(nodes, registry, live=live, route=True)
     return {
         "id": new_id("wf"),
         "created_at": utc_now(),
