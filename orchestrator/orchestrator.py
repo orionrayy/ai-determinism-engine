@@ -451,6 +451,8 @@ def delegate_ready_agents(
         "created_at": utc_now(),
     }
     for node in selected:
+        if node.status == "pending":
+            transition(node, "ready")
         transition(node, "delegated")
     attempt_budget.sync()
     workflow["status"] = "waiting_agents"
