@@ -1,4 +1,5 @@
 import unittest
+import urllib.request
 from unittest.mock import patch
 
 import research_bundle as r
@@ -36,7 +37,7 @@ class ResearchBundleTests(unittest.TestCase):
             def read(self, size=-1):
                 return b"x" * (size if size > 0 else 1)
 
-        with patch.object(r, "urlopen", return_value=FakeResponse()):
+        with patch.object(urllib.request, "urlopen", return_value=FakeResponse()):
             with self.assertRaisesRegex(RuntimeError, "research response exceeds 512 KiB"):
                 r._request("https://example.test", "test")
 
