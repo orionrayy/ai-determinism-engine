@@ -2097,8 +2097,12 @@ class OrchestratorTests(unittest.TestCase):
 
         self.assertNotIn("TOPSECRET", content)
         self.assertNotIn("TRACESECRET", content)
-        self.assertIn("diagnostic_trace", content)
-        self.assertIn('"redacted":true', content)
+        event = json.loads(content)
+        self.assertEqual(
+            event["payload"]["error"]["traceback"]["reason"],
+            "diagnostic_trace",
+        )
+        self.assertTrue(event["payload"]["error"]["traceback"]["redacted"])
 
     def test_event_payload_is_bounded(self):
         with tempfile.TemporaryDirectory() as tmp:
