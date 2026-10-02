@@ -3490,8 +3490,12 @@ def main() -> int:
         {'workflow_id': workflow['id'], 'goal': workflow['goal'], 'live': live},
     )
 
+    if args.step:
+        result = run_one_step(workflow, approve_high_risk=args.approve_high_risk)
+        print_summary(workflow)
         return 0 if result not in {'failed', 'continuation_failed'} else 2
 
+    run_workflow(workflow, approve_high_risk=args.approve_high_risk)
     if workflow.get("status") in {"completed", "failed"}:
         notify_execution_callback(workflow)
     print_summary(workflow)
