@@ -70,6 +70,7 @@ MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
 MAX_ATTEMPTS_PER_WORKFLOW = STATE_MAX_ATTEMPTS_PER_WORKFLOW
+MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -215,7 +216,17 @@ def mark_execution_completed(
         "completed_at": utc_now(),
     })
     if output is not None:
-        record["output"] = output
+        encoded = json.dumps(
+            output,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        record["output_sha256"] = hashlib.sha256(encoded).hexdigest()
+        evidence = output.get("evidence") if isinstance(output, dict) else None
+        if isinstance(evidence, dict) and evidence.get("evidence_sha256"):
+            record["evidence_sha256"] = str(evidence["evidence_sha256"])
 
 
 def mark_execution_not_applied(
@@ -230,7 +241,7 @@ def mark_execution_not_applied(
 
 def load_state() -> dict[str, Any]:
     if not STATE_FILE.exists():
-        return migrate_state({"version": 3, "workflows": {}, "last_workflow_id": None})
+        return migrate_state({"version": 4, "workflows": {}, "last_workflow_id": None})
     try:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         return migrate_state(raw)
@@ -2353,7 +2364,7 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 2,
+        "schema_version": 3,
         "plan_fingerprint": None,
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
