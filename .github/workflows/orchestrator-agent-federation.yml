@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      tasks: ${{ steps.manifest.outputs.tasks }}
+      matrix: ${{ steps.manifest.outputs.matrix }}
       federation_id: ${{ steps.manifest.outputs.federation_id }}
       workflow_id: ${{ steps.manifest.outputs.workflow_id }}
     steps:
@@ -64,7 +64,7 @@ jobs:
               raise SystemExit("manifest exceeds federation transport budget")
           print("federation_id=" + checked["federation_id"])
           print("workflow_id=" + checked["workflow_id"])
-          print("tasks=" + json.dumps(checked["tasks"], separators=(",", ":")))
+          print("matrix=" + json.dumps({"task": checked["tasks"]}, separators=(",", ":")))
           PY
       - name: Upload immutable manifest
         id: manifest-artifact
@@ -82,7 +82,7 @@ jobs:
       fail-fast: false
       max-parallel: 4
       matrix:
-        task: ${{ fromJSON(needs.prepare.outputs.tasks) }}
+        ${{ fromJSON(needs.prepare.outputs.matrix) }}
     permissions:
       contents: read
     steps:
