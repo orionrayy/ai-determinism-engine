@@ -17,6 +17,7 @@ on:
       - ".github/workflows/orchestrator-continuation.yml"
       - ".github/workflows/orchestrator.yml"
       - ".github/workflows/bridge-deploy.yml"
+      - ".orchestrator/state.json"
   pull_request:
     paths:
       - "orchestrator/**"
