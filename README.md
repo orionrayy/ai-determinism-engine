@@ -235,3 +235,7 @@ For live side-effecting nodes, the GitHub Actions worker commits and pushes the 
 ## State durability v15
 
 State JSON writes use same-directory temporary files with flush/fsync followed by atomic replacement. Persisted workflow schemas newer than the supported version fail closed instead of being guessed at.
+
+## v47 durable execution lease
+
+The live orchestrator can coordinate worker ownership and global attempt counting through the free-first Cloudflare SQLite Durable Object backend. Lease ownership expires after 900 seconds; the attempt ledger is retained for seven days. This prevents worker restart/continuation from resetting retry accounting. GitHub Actions enables the lease for live runs; dry-run remains independent.
