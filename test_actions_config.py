@@ -54,9 +54,11 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("contents: write", self.federation)
         self.assertIn("orchestrator.federation.completed", self.federation)
 
-    def test_supervisor_persists_federation_quota_defaults(self):
-        self.assertIn("ORCHESTRATOR_MAX_FEDERATION_BATCHES", self.orchestrator)
-        self.assertIn("ORCHESTRATOR_MAX_FEDERATION_TASKS", self.orchestrator)
+    def test_supervisor_exposes_opt_in_federation_control(self):
+        self.assertIn("federate_safe_agents:", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_FEDERATION_ENABLED", self.orchestrator)
+        self.assertIn("ORCHESTRATOR_FEDERATION_ARTIFACT_ID", self.orchestrator)
+
 
     def test_supervisor_handles_federation_completion_dispatch(self):
         self.assertIn("orchestrator.federation.completed", self.orchestrator)
