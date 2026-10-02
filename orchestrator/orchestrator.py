@@ -3354,6 +3354,7 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
         if workflow.get("status") == "failed" or step:
             break
 
+    return resumed
 
 
 def main() -> int:
