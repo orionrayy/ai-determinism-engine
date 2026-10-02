@@ -1932,6 +1932,12 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                 })
                 return 'failed'
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
+    append_event('agent.started', {
+        'workflow_id': workflow['id'],
+        'node_id': node.id,
+        'agent_id': agent_id(workflow['id'], node.id, node.agent_role),
+        'role': node.agent_role,
+    })
     success, error = execute_with_retries(
         node,
         workflow['goal'],
@@ -1959,6 +1965,13 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             'workflow_id': workflow['id'],
             'node_id': node.id,
             'tool': node.tool,
+        })
+        append_event('agent.completed', {
+            'workflow_id': workflow['id'],
+            'node_id': node.id,
+            'agent_id': agent_id(workflow['id'], node.id, node.agent_role),
+            'role': node.agent_role,
+            'status': 'completed',
         })
         notify_issue(
             workflow,
@@ -2214,6 +2227,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 "node_id": node.id,
                 "tool": node.tool,
             })
+            append_event("agent.started", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
+                "role": node.agent_role,
+            })
             executable.append((node, execution_id))
 
         if not executable:
@@ -2279,6 +2298,13 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     "workflow_id": workflow["id"],
                     "node_id": node.id,
                     "tool": node.tool,
+                })
+                append_event("agent.completed", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
+                    "role": node.agent_role,
+                    "status": "completed",
                 })
                 notify_issue(
                     workflow,
