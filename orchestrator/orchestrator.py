@@ -430,6 +430,20 @@ def load_registry() -> dict[str, dict[str, Any]]:
 def free_only() -> bool:
     return os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true"
 
+def configured_model(tool_name: str) -> str:
+    if tool_name == "gemini":
+        return os.environ.get("GEMINI_MODEL", "gemini-3.8-flash").strip()
+    if tool_name == "openai":
+        return os.environ.get("OPENAI_MODEL", "gpt-5.6").strip()
+    return ""
+
+def model_is_free(tool_name: str, registry: dict[str, dict[str, Any]]) -> bool:
+    spec = registry.get(tool_name, {})
+    allowed = spec.get("free_models") or []
+    if not allowed:
+        return True
+    return configured_model(tool_name) in {str(value).strip() for value in allowed}
+
 def tool_available(
     tool_name: str,
     registry: dict[str, dict[str, Any]],
@@ -441,7 +455,7 @@ def tool_available(
         is_free = bool(spec.get("free_tier", False))
         if not spec and tool_name in BUILTIN_FREE_TOOLS:
             is_free = True
-        if not is_free:
+        if not is_free or not model_is_free(tool_name, registry):
             return False
     if not require_env:
         return True
@@ -507,7 +521,11 @@ def preflight_node(
     is_free = bool(spec.get("free_tier", False))
     if not spec and node.tool in BUILTIN_FREE_TOOLS:
         is_free = True
-    if free_only() and not is_free:
+    if free_only() and (not is_free or not model_is_free(node.tool, registry)):
+        if node.tool == "gemini":
+            raise RuntimeError(
+                f"Gemini model {configured_model('gemini')!r} is disabled by ORCHESTRATOR_FREE_ONLY=true"
+            )
         raise RuntimeError(f"tool {node.tool} is disabled by ORCHESTRATOR_FREE_ONLY=true")
 
     env_name = spec.get("required_env")
