@@ -83,7 +83,7 @@ async function auth(request, env) {
   if (!secret) return false;
   if ((request.headers.get("X-Orchestrator-Protocol") || "") !== PROTOCOL) return false;
   const timestampRaw = request.headers.get("X-Orchestrator-Timestamp") || "";
-  if (!/^\\d+$/.test(timestampRaw)) return false;
+  if (!/^\d+$/.test(timestampRaw)) return false;
   const timestamp = Number(timestampRaw);
   if (!Number.isSafeInteger(timestamp)) return false;
   if (Math.abs(Math.floor(Date.now() / 1000) - timestamp) > CLOCK_SKEW_SECONDS) return false;
@@ -218,7 +218,7 @@ async function leaseRequest(request, env, kind) {
       value.max_attempts,
       value.initial_attempts,
     );
-    return response(result, result.conflict ? 409 : 200);
+    return response(result, result.conflict || result.budget_exhausted ? 409 : 200);
   }
   if (kind === "reserve") {
     const result = await stub.reserve(
