@@ -17,7 +17,8 @@ SECRET_VALUE_RE = re.compile(
     r"""(?ix)
     (?:
         bearer\s+[^\s,;]+
-        |(?:authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|
+        |(?:authorization)\s*[:=]\s*(?:bearer\s+)?[^\s,;'""]+
+        |(?:api[_-]?key|access[_-]?token|refresh[_-]?token|
            password|passwd|secret|client[_-]?secret|credential)\s*[:=]\s*
            ['"]?[^\s,;'""]+
     )
