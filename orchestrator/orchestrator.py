@@ -249,6 +249,38 @@ def dispatch_federation(manifest: dict[str, Any]) -> None:
     )
 
 
+def find_federation_artifact(
+    federation_id: str,
+) -> tuple[int, str] | None:
+    name = f"federation-results-{federation_id}"
+    repository = github_repository()
+    query = urllib.parse.urlencode({
+        "name": name,
+        "per_page": "10",
+        "page": "1",
+    })
+    data = http_json(
+        f"https://api.github.com/repos/{repository}/actions/artifacts?{query}",
+        headers=github_headers(),
+        timeout=30,
+    ).get("data") or {}
+    artifacts = data.get("artifacts", [])
+    if not isinstance(artifacts, list):
+        return None
+    candidates = [
+        item for item in artifacts
+        if isinstance(item, dict)
+        and str(item.get("name") or "") == name
+        and not bool(item.get("expired"))
+        and isinstance(item.get("id"), int)
+    ]
+    candidates.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    if not candidates:
+        return None
+    artifact = candidates[0]
+    return int(artifact["id"]), str(artifact.get("digest") or "")
+
+
 def download_federation_aggregate(
     artifact_id: int,
     expected_artifact_digest: str = "",
@@ -2133,6 +2165,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
     workflow['agent_team'] = team_manifest(workflow['id'], nodes)
+    active_federation = workflow.get("federation") or {}
+    if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
+        return "waiting_agents"
+
     if not ensure_plan_integrity(workflow, nodes):
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
