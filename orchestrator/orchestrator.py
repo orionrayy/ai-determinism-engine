@@ -68,7 +68,8 @@ MAX_MAX_EXECUTION_STEPS = 256
 RUNNING_RECOVERY_GRACE_SECONDS = 300
 MAX_CONTEXT_BYTES = 48 * 1024
 MAX_GOAL_CHARS = 4000
-MAX_NODE_BYTES = 32 * 1024
+MAX_NODE_INTENT_BYTES = 32 * 1024
+MAX_NODE_STATE_BYTES = 128 * 1024
 MAX_ARTIFACTS_PER_NODE = 32
 SAFE_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
 
@@ -593,15 +594,36 @@ def validate_dag(nodes: list[Node]) -> None:
         raise ValueError("duplicate node id")
     by_id = {node.id: node for node in nodes}
     for node in nodes:
-        serialized = json.dumps(
+        intent_serialized = json.dumps(
+            {
+                "id": node.id,
+                "capability": node.capability,
+                "tool": node.tool,
+                "depends_on": list(node.depends_on),
+                "risk": node.risk,
+                "input": node.input,
+                "contract": node.contract,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        )
+        if len(intent_serialized.encode("utf-8")) > MAX_NODE_INTENT_BYTES:
+            raise ValueError(
+                f"node {node.id} intent exceeds {MAX_NODE_INTENT_BYTES} bytes"
+            )
+        state_serialized = json.dumps(
             asdict(node),
             ensure_ascii=False,
             sort_keys=True,
             default=str,
             separators=(",", ":"),
         )
-        if len(serialized.encode("utf-8")) > MAX_NODE_BYTES:
-            raise ValueError(f"node {node.id} exceeds {MAX_NODE_BYTES} bytes")
+        if len(state_serialized.encode("utf-8")) > MAX_NODE_STATE_BYTES:
+            raise ValueError(
+                f"node {node.id} runtime state exceeds {MAX_NODE_STATE_BYTES} bytes"
+            )
         if len(node.input.get("artifacts", [])) > MAX_ARTIFACTS_PER_NODE:
             raise ValueError(
                 f"node {node.id} exceeds {MAX_ARTIFACTS_PER_NODE} artifacts"
