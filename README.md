@@ -100,6 +100,18 @@ Canonical technical memory and operating protocol: `ORCHESTRATION_MEMORY.md`.
 
 Free execution path: GitHub Actions + stdlib Python control plane.
 
+## Private input backend v45 — free-first $0 path
+
+Structured live connector inputs now have a deployable zero-dollar reference backend at `workers/private-input/`. It uses Cloudflare Workers Free with Workers KV, so raw payloads stay outside the public GitHub repository and expire automatically.
+
+The client/backend protocol is v2 and signs the HTTP method, request path, protocol version, timestamp, and exact body. The worker validates the HMAC-bound opaque reference, execution identity, digest, intent fingerprint, and TTL. POST is idempotent by `input_ref`; GET is read-only; DELETE provides best-effort cleanup after a failed GitHub dispatch.
+
+The free tier is finite, not unlimited: current Cloudflare documentation lists 100,000 Worker requests/day and Workers KV limits of 100,000 reads/day, 1,000 writes/day, 1,000 deletes/day, and 1 GB stored data. Exceeding a KV daily limit causes operations of that type to fail. This is intended for a small control plane, not unrestricted production volume.
+
+Deployment is manual through `.github/workflows/private-input-deploy.yml`, with the Wrangler CLI pinned to `4.146.0`. The workflow requires Cloudflare account/token credentials and the private-input HMAC secret. The repository does not currently claim that the Worker is deployed or health-verified.
+
+Render Free remains suitable for the stateless gateway/connector bridge, but Render Free Postgres has a 30-day lifetime and Render Free Key Value loses state on restart, so neither is the canonical private-input store.
+
 ## Connector idempotency-aware execution fabric v8
 
 Connector action contracts now affect runtime recovery: uncertain transport failures and HTTP 5xx responses are marked as potentially side-effecting. An action may be retried automatically only when its discovered contract declares `idempotent: true`. Uncertain non-idempotent failures fail closed and are not replanned to a different provider.
@@ -136,7 +148,7 @@ Workflow dispatch accepts a `max_parallel` input (1–8). The default is 4. Dry-
 
 ## LLM routing
 
-Gemini is the primary LLM adapter and OpenAI is an optional fallback. Google currently lists Gemini 3.8 Flash as free at the standard API tier. API-key authentication is still required.
+Gemini is the primary LLM adapter and OpenAI is an optional fallback. Gemini remains the primary LLM adapter on the free-first path; exact model availability and quota are governed by Google's current API pricing/limits. API-key authentication is still required.
 
 ## Controlled GitHub operations
 
