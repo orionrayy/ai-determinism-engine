@@ -126,6 +126,13 @@ Current execution-fabric branch: `main`
 - Approval fingerprint regression coverage now explicitly verifies that runtime metadata is excluded while semantic payload changes invalidate approval.
 - No database, broker, queue, paid dependency, or new runtime service is introduced; the control plane remains GitHub Actions + stdlib Python and free-first.
 
+## Orchestration hardening v57 — concurrent idempotency single-flight
+- The connector bridge now serializes concurrent requests sharing the same semantic request identity within a bridge process: one caller owns the upstream execution and concurrent duplicates wait for its completion.
+- In-flight requests are bound to the semantic request digest; a concurrent reuse of the same request ID with different input fails closed instead of sharing an unrelated execution.
+- A waiting duplicate either receives the completed cached result or returns an uncertain upstream failure after a bounded wait; it never starts a second upstream execution solely because the first request is still in flight.
+- The single-flight scope is per request identity rather than a global bridge lock, so unrelated connector actions retain concurrency.
+- This reduces thundering-herd duplicate side effects without adding a database, distributed lock service, queue, broker, paid dependency, or new runtime service. Provider-side idempotency/reconciliation remains authoritative across bridge process restarts or multiple bridge replicas.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
