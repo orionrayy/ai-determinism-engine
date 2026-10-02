@@ -2040,8 +2040,9 @@ def reconcile_first_uncertain(
             "checks": [{"check": "reconciliation_applied", "passed": True}],
             "checked_at": utc_now(),
         }
-        transition(node, "completed")
+        transition(node, "validating")
         mark_execution_completed(workflow, execution_id, node.output)
+        transition(node, "completed")
         node_success_checkpoint(workflow, node)
         update_tool_health(node, True, registry)
         append_event("node.reconciled", {
