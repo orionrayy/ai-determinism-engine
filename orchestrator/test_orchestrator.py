@@ -969,6 +969,42 @@ class OrchestratorTests(unittest.TestCase):
             )
             self.assertIsNotNone(duplicate)
 
+    def test_scheduled_recovery_defers_fresh_running_workflow(self):
+        now = o.datetime(2026, 10, 2, 9, 10, tzinfo=o.timezone.utc)
+        workflow = {
+            "status": "running",
+            "github_run_id": "123",
+            "updated_at": "2026-10-02T09:08:00+00:00",
+        }
+        self.assertFalse(o.running_recovery_due(workflow, now=now))
+
+    def test_scheduled_recovery_picks_stale_running_workflow(self):
+        now = o.datetime(2026, 10, 2, 9, 10, tzinfo=o.timezone.utc)
+        workflow = {
+            "status": "running",
+            "github_run_id": "123",
+            "updated_at": "2026-10-02T09:00:00+00:00",
+        }
+        self.assertTrue(o.running_recovery_due(workflow, now=now))
+
+    def test_manual_resume_can_still_process_fresh_running_workflow(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_fresh_manual",
+            "goal": "manual resume",
+            "status": "running",
+            "live": False,
+            "github_run_id": "123",
+            "updated_at": "2026-10-02T09:09:30+00:00",
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={}):
+                with patch.object(o, "run_workflow", return_value=None) as runner:
+                    state = {"workflows": {workflow["id"]: workflow}}
+                    o.resume_pending_workflows(state, scheduled_recovery=False)
+        runner.assert_called_once()
+
     def test_workflow_creation_is_persistable(self):
         workflow = o.create_workflow("build a small website", live=False)
         self.assertTrue(workflow["id"].startswith("wf_"))
