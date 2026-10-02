@@ -227,6 +227,7 @@ def _event_file(payload: dict[str, Any]) -> Path:
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
     event_file = _event_file(payload)
     event_file.parent.mkdir(parents=True, exist_ok=True)
+    payload = sanitize_for_durable(payload)
     raw_payload = json.dumps(
         payload,
         ensure_ascii=False,
