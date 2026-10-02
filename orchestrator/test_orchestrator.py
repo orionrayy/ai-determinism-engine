@@ -1778,6 +1778,35 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(node.status, "ready")
         self.assertEqual(workflow["status"], "running")
 
+    def test_approval_fingerprint_ignores_runtime_metadata_but_binds_semantic_fields(self):
+        node = o.Node(
+            "n01", "publish", "webhook", [],
+            risk="high",
+            input={
+                "workflow_id": "wf-a",
+                "instruction": "publish artifact",
+                "context": {"volatile": 1},
+                "repair_feedback": {"attempt": 2},
+                "approval_issue": 7,
+                "approval_granted": False,
+                "approval_actor": "reviewer",
+                "approval_approved_at": "2026-10-02T12:00:00+00:00",
+                "approval_fingerprint": "old",
+                "retry_jitter_seed": "seed-a",
+                "payload": {"artifact": "build.zip"},
+            },
+        )
+        baseline = o.fingerprint_nodes([node])
+        node.input["context"] = {"volatile": 999}
+        node.input["repair_feedback"] = {"attempt": 99}
+        node.input["approval_actor"] = "other-reviewer"
+        node.input["approval_approved_at"] = "2026-10-03T12:00:00+00:00"
+        node.input["retry_jitter_seed"] = "seed-b"
+        self.assertEqual(baseline, o.fingerprint_nodes([node]))
+
+        node.input["payload"] = {"artifact": "different.zip"}
+        self.assertNotEqual(baseline, o.fingerprint_nodes([node]))
+
     def test_stale_approval_is_rearmed_instead_of_accepted(self):
         node = o.Node(
             "n01-publish", "publish", "webhook", [], risk="high", status="waiting_approval",
