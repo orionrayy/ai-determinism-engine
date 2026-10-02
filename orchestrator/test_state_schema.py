@@ -80,6 +80,7 @@ class StateSchemaTests(unittest.TestCase):
         self.assertEqual(workflow["nodes"][0]["status"], "pending")
         self.assertEqual(workflow["max_parallel"], 4)
         self.assertEqual(workflow["execution_budget"], {"max_steps": 96, "used_steps": 0})
+        self.assertRegex(workflow["retry_seed"], r"^[0-9a-f]{64}$")
 
     def test_invalid_execution_budget_fails_closed(self):
         with self.assertRaises(StateSchemaError):
@@ -430,6 +431,30 @@ class StateSchemaTests(unittest.TestCase):
                 "version": 2,
                 "workflows": {"wf": "not-an-object"},
             })
+
+    def test_retry_seed_is_strictly_validated(self):
+        with self.assertRaises(StateSchemaError):
+            migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {
+                    "wf": {
+                        "id": "wf",
+                        "retry_seed": "not-hex",
+                        "nodes": [],
+                    }
+                },
+            })
+        migrated = migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf": {
+                    "id": "wf",
+                    "retry_seed": "a" * 32,
+                    "nodes": [],
+                }
+            },
+        })
+        self.assertEqual(migrated["workflows"]["wf"]["retry_seed"], "a" * 32)
 
     def test_private_input_ref_requires_execution_identity_and_digest(self):
         state = {
