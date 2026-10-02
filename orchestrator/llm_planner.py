@@ -52,10 +52,14 @@ def _object_from_text(text: str) -> dict:
 
 
 def configured_model(registry: dict) -> str:
+    spec = registry.get('gemini', {})
+    default_model = str(spec.get('default_model') or '').strip()
+    if not default_model:
+        raise RuntimeError('Gemini default_model is missing from the registry')
     model = (
         os.environ.get('GEMINI_PLANNER_MODEL')
         or os.environ.get('GEMINI_MODEL')
-        or str(registry.get('gemini', {}).get('default_model') or 'gemini-3.8-flash')
+        or default_model
     ).strip()
     if os.environ.get('ORCHESTRATOR_FREE_ONLY', 'true').lower() == 'true':
         allowed = registry.get('gemini', {}).get('free_models')
