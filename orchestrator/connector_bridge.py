@@ -247,9 +247,27 @@ def _normalize_action_spec(
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in _ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+
+    result_required = raw.get("result_required", [])
+    if not isinstance(result_required, list):
+        result_required = []
+    normalized_result_required = sorted(
+        {str(item).strip() for item in result_required if str(item).strip()}
+    )
+    result_types = raw.get("result_types", {})
+    if not isinstance(result_types, dict):
+        result_types = {}
+    normalized_result_types = {}
+    for key in sorted(result_types):
+        value = str(result_types[key] or "").strip().lower()
+        if str(key).strip() and value in _ACTION_TYPE_NAMES:
+            normalized_result_types[str(key).strip()] = value
+
     return {
         "required": normalized_required,
         "types": normalized_types,
+        "result_required": normalized_result_required,
+        "result_types": normalized_result_types,
         "idempotent": bool(raw.get("idempotent", False)),
         "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
@@ -322,6 +340,30 @@ def validate_discovered_payload(
         found, value = _resolve_payload_path(payload, field_name)
         if found and not _matches_payload_type(value, type_name):
             raise ConnectorBridgeError(f"connector payload field {field_name} must be {type_name}")
+    return action_spec
+
+
+def validate_discovered_result(
+    connector: str,
+    action: str,
+    result: Any,
+    inventory: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    action_spec = validate_discovered_action(connector, action, inventory)
+    if not isinstance(result, dict):
+        raise ConnectorBridgeError("connector response must be an object")
+    for field_name in action_spec["result_required"]:
+        found, _ = _resolve_payload_path(result, field_name)
+        if not found:
+            raise ConnectorBridgeError(
+                f"connector response missing required field: {field_name}"
+            )
+    for field_name, type_name in action_spec["result_types"].items():
+        found, value = _resolve_payload_path(result, field_name)
+        if found and not _matches_payload_type(value, type_name):
+            raise ConnectorBridgeError(
+                f"connector response field {field_name} must be {type_name}"
+            )
     return action_spec
 
 
