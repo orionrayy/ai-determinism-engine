@@ -865,6 +865,22 @@ def load_state() -> dict[str, Any]:
 
 
 
+def legacy_state_has_workflows() -> bool:
+    """Return whether the compact state index still contains legacy workflows."""
+    if not STATE_FILE.exists():
+        return False
+    raw = _read_json_file(STATE_FILE, MAX_LEGACY_STATE_BYTES)
+    if not isinstance(raw, dict):
+        raise RuntimeError("invalid orchestrator state: root must be an object")
+    storage_format = raw.get("storage_format")
+    if storage_format not in (None, "legacy", STATE_STORAGE_FORMAT):
+        raise RuntimeError(
+            f"unsupported orchestrator storage format: {storage_format}"
+        )
+    workflows = raw.get("workflows")
+    return isinstance(workflows, dict) and bool(workflows)
+
+
 def load_workflow(workflow_id: str) -> dict[str, Any] | None:
     """Load one workflow without hydrating unrelated workflow shards."""
     workflow_id = str(workflow_id or "").strip()
@@ -3739,7 +3755,7 @@ def main() -> int:
 
     # Compatibility fallback: old workflows may predate deterministic ingress
     # identities and therefore still live under a random workflow_id shard.
-    if (event_id or idempotency_key) and existing is None:
+    if (event_id or idempotency_key) and existing is None and legacy_state_has_workflows():
         state = load_state()
         existing = next(
             (
