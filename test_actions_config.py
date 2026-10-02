@@ -22,6 +22,19 @@ class ActionsConfigTests(unittest.TestCase):
     def test_pending_runs_are_not_replaced(self):
         self.assertIn('queue: max', self.orchestrator)
 
+    def test_orchestrator_concurrency_isolated_by_workflow_identity(self):
+        self.assertIn(
+            "github.event.client_payload.workflow_id",
+            self.orchestrator,
+        )
+        self.assertIn(
+            "github.event_name == 'schedule' && 'scheduled-recovery'",
+            self.orchestrator,
+        )
+        self.assertIn("github.run_id", self.orchestrator)
+        self.assertIn("queue: max", self.orchestrator)
+        self.assertIn("cancel-in-progress: false", self.orchestrator)
+
     def test_workflow_target_is_preferred_for_approval(self):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)
         self.assertIn('args=(--workflow-id "$ORCHESTRATOR_TARGET_WORKFLOW_ID" --step)', self.orchestrator)
