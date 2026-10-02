@@ -326,11 +326,19 @@ def validate_discovered_payload(
 
 
 def build_discovery_snapshot(inventory: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    return {
+    snapshot = {
         "protocol": PROTOCOL,
         "connectors": inventory,
         "count": len(inventory),
     }
+    canonical = json.dumps(
+        snapshot,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    snapshot["sha256"] = hashlib.sha256(canonical).hexdigest()
+    return snapshot
 
 
 def reconciliation_url(bridge_url: str) -> str:
