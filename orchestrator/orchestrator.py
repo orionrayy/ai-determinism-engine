@@ -41,6 +41,7 @@ try:
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
     from .federation_scheduler import (
@@ -72,6 +73,7 @@ except ImportError:
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
     from federation_scheduler import (
@@ -1921,6 +1923,27 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     if node.tool == "github":
         return execute_github(node)
     if node.tool == "connector_bridge":
+        private_ref = str(node.input.get("private_input_ref") or "").strip()
+        if private_ref and not dry_run:
+            execution_id = str(node.input.get("private_input_execution_id") or "").strip()
+            digest = str(node.input.get("private_input_digest") or "").strip()
+            if not execution_id:
+                raise PrivateInputError("private input execution identity is missing")
+            if "payload" in node.input:
+                raise PrivateInputError("private connector node must not persist a payload")
+            try:
+                payload = fetch_private_input(
+                    input_ref=private_ref,
+                    execution_id=execution_id,
+                    expected_digest=digest,
+                    expected_intent_fingerprint=(
+                        str(node.input.get("private_input_intent_fingerprint") or "").strip() or None
+                    ),
+                )
+                node.input["payload"] = payload
+                return execute_connector_bridge(node, goal, dry_run)
+            finally:
+                node.input.pop("payload", None)
         return execute_connector_bridge(node, goal, dry_run)
     if node.tool == "artifact_verifier":
         return execute_artifact_verifier(node, goal)
@@ -2887,11 +2910,38 @@ def create_workflow(
     external_operation: str | None = None,
     intent_fingerprint: str | None = None,
     input_digest: str | None = None,
+    idempotency_key: str | None = None,
+    private_input_ref: str | None = None,
     external_attempt: int | None = None,
 ) -> dict[str, Any]:
     registry = load_registry()
     nodes = None
-    if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY"):
+    if live and private_input_ref and external_domain and external_operation:
+        nodes = [
+            Node(
+                id="n01-private-execute",
+                capability="execute",
+                tool="connector_bridge",
+                depends_on=[],
+                risk="high",
+                input={
+                    "goal": goal,
+                    "instruction": (
+                        f"Execute private structured connector operation "
+                        f"{external_domain}.{external_operation}."
+                    ),
+                    "connector": str(external_domain).strip().lower(),
+                    "action": str(external_operation).strip().lower(),
+                    "private_input_ref": private_input_ref,
+                    "private_input_digest": str(input_digest or ""),
+                    "private_input_intent_fingerprint": str(intent_fingerprint or ""),
+                    "private_input_execution_id": str(execution_id or ""),
+                    "idempotency_key": str(idempotency_key or ""),
+                    "tool_selection_pinned": True,
+                },
+            )
+        ]
+    if os.environ.get("ORCHESTRATOR_LLM_PLANNER", "true").lower() == "true" and os.environ.get("GEMINI_API_KEY") and nodes is None:
         try:
             from llm_planner import plan_goal
             nodes = plan_goal(goal, registry, Node, validate_dag, live=live)
@@ -3238,6 +3288,8 @@ def main() -> int:
     external_operation = os.environ.get("ORCHESTRATOR_EXTERNAL_OPERATION", "").strip() or None
     intent_fingerprint_env = os.environ.get("ORCHESTRATOR_INTENT_FINGERPRINT", "").strip() or None
     input_digest = os.environ.get("ORCHESTRATOR_INPUT_DIGEST", "").strip() or None
+    idempotency_key = os.environ.get("ORCHESTRATOR_IDEMPOTENCY_KEY", "").strip() or None
+    private_input_ref = os.environ.get("ORCHESTRATOR_PRIVATE_INPUT_REF", "").strip() or None
     try:
         external_attempt = int(os.environ.get("ORCHESTRATOR_EXTERNAL_ATTEMPT", "1"))
     except ValueError:
@@ -3247,6 +3299,10 @@ def main() -> int:
             (
                 item for item in state.get("workflows", {}).values()
                 if item.get("event_id") == event_id
+                or (
+                    idempotency_key
+                    and item.get("idempotency_key") == idempotency_key
+                )
             ),
             None,
         )
@@ -3266,6 +3322,8 @@ def main() -> int:
         external_operation=external_operation,
         intent_fingerprint=intent_fingerprint_env,
         input_digest=input_digest,
+        idempotency_key=idempotency_key,
+        private_input_ref=private_input_ref,
         external_attempt=external_attempt,
     )
     workflow['status'] = 'ready'
