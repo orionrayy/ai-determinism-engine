@@ -2673,7 +2673,12 @@ def notify_execution_callback(workflow: dict[str, Any]) -> bool:
             else ""
         ),
     }
-    body = canonical_json(payload)
+    body = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
     for _ in range(3):
         timestamp = str(int(time.time()))
         signature = "sha256=" + hmac.new(
