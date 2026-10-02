@@ -124,6 +124,11 @@ class ActionsConfigTests(unittest.TestCase):
     def test_render_runtime_matches_ci_python(self):
         self.assertEqual((ROOT / ".python-version").read_text().strip(), "3.12")
 
+    def test_private_input_worker_is_part_of_ci_gate(self):
+        self.assertIn('"workers/private-input/**"', self.tests)
+        self.assertIn('node workers/private-input/test.mjs', self.tests)
+        self.assertIn('node-version: "24"', self.tests)
+
     def test_private_input_deploy_is_pinned_and_manual(self):
         self.assertIn("workflow_dispatch:", self.private_input_deploy)
         self.assertIn('actions/setup-node@820762786026740c76f36085b0efc47a31fe5020', self.private_input_deploy)
