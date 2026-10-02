@@ -215,6 +215,8 @@ jobs:
           ORCHESTRATOR_PRIVATE_INPUT_REF: ${{ github.event.client_payload.private_input_ref }}
           ORCHESTRATOR_PRIVATE_INPUT_URL: ${{ secrets.ORCHESTRATOR_PRIVATE_INPUT_URL }}
           ORCHESTRATOR_PRIVATE_INPUT_SECRET: ${{ secrets.ORCHESTRATOR_PRIVATE_INPUT_SECRET }}
+          ORCHESTRATOR_EXECUTION_LEASE_ENABLED: "true"
+          ORCHESTRATOR_EXECUTION_LEASE_TTL_SECONDS: "900"
           ORCHESTRATOR_REQUESTED_MODE: ${{ github.event.client_payload.requested_mode || (inputs.live && 'live' || 'dry-run') }}
           ORCHESTRATOR_CALLBACK_URL: ${{ secrets.ORCHESTRATOR_CALLBACK_URL }}
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
