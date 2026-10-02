@@ -1195,5 +1195,58 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("500", workflow["nodes"][0]["error"]["message"])
 
 
+    def test_resume_preserves_persisted_tool_selection_until_replan(self):
+        node = o.Node("n01", "execute", "noop", [])
+        workflow = {
+            "id": "wf_resume_plan",
+            "goal": "resume",
+            "live": True,
+            "nodes": [o.asdict(node)],
+            "plan_fingerprint": o.fingerprint_nodes([node]),
+        }
+        registry = {
+            "capability:execute": {
+                "default_tool": "wikipedia",
+                "fallback_tools": ["noop"],
+            },
+            "wikipedia": {"free_tier": True, "side_effects": []},
+            "noop": {"free_tier": True, "side_effects": []},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["plan_integrity"], "verified")
+        self.assertEqual(workflow["nodes"][0]["tool"], "noop")
+
+    def test_preflight_failure_happens_before_side_effect_barrier(self):
+        node = o.Node(
+            "n01-publish", "publish", "webhook", [], risk="high",
+            input={"approval_granted": True},
+        )
+        workflow = {
+            "id": "wf_preflight_barrier",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+        }
+        registry = {
+            "webhook": {
+                "free_tier": True,
+                "required_env": "ORCHESTRATOR_WEBHOOK_URL",
+                "side_effects": ["external_request"],
+            }
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.dict(o.os.environ, {
+                     "ORCHESTRATOR_FREE_ONLY": "true",
+                     "ORCHESTRATOR_WEBHOOK_URL": "",
+                 }, clear=False),                  patch.object(o, "commit_side_effect_start") as barrier,                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow, approve_high_risk=False)
+        self.assertEqual(result, "failed")
+        self.assertTrue(workflow["nodes"][0]["error"]["preflight_failed"])
+        barrier.assert_not_called()
+        execute.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
