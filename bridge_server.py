@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from bridge_runtime import (
     BridgeRuntimeError,
+    UpstreamConnectorError,
     describe_routes,
     handle_reconciliation,
     handle_request,
@@ -73,6 +74,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, handle_reconciliation(payload))
             else:
                 self._send(200, handle_request(payload, secret))
+        except UpstreamConnectorError as exc:
+            self._send(
+                502 if exc.uncertain else 400,
+                {
+                    "ok": False,
+                    "error": str(exc),
+                    "upstream_status": exc.status_code,
+                },
+            )
         except BridgeRuntimeError as exc:
             self._send(400, {"ok": False, "error": str(exc)})
         except Exception:
