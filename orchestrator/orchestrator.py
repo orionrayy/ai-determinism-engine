@@ -54,6 +54,7 @@ except ImportError:
     from state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION, StateSchemaError, migrate_state
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from private_input import PrivateInputError, fetch_private_input
 
 ROOT = Path(__file__).resolve().parent.parent
 STATE_DIR = ROOT / ".orchestrator"
