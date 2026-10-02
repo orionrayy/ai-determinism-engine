@@ -215,6 +215,15 @@ The connector bridge runtime can be hosted as a Vercel Python Function (`api/bri
 - The concurrency design uses GitHub Actions scheduler-level mutual exclusion rather than a second lease database, preserving the zero-dollar architecture.
 
 ## Orchestration hardening v48
+## Orchestration hardening v49
+- Durable workflow snapshots are now sharded by SHA-256(workflow_id) under `.orchestrator/workflows/`, while `.orchestrator/state.json` remains a compact backward-compatible index/legacy fallback.
+- `persist_workflow()` writes only the active workflow shard and no longer rewrites unrelated workflow snapshots; this reduces cross-workflow write contention and makes independent GitHub Actions workers naturally merge through disjoint files.
+- `load_state()` hydrates sharded workflows, validates shard filename identity, applies the existing workflow schema migration, and fails closed on malformed/oversized/mismatched shards. Legacy monolithic workflows remain readable during incremental migration.
+- `save_state()` is retained only as an explicit bootstrap/migration path and materializes shards before replacing the legacy state with a compact index.
+- Continuation and job-summary workflows now use the canonical Python `load_state()` loader rather than reading only `state.json`, so sharded workflows remain resumable and observable.
+- State schema version remains unchanged because this is a storage-layout change, not a workflow contract change; the storage format is explicitly tagged as `sharded-v1`.
+- No database, event bus, paid queue, or paid API was introduced. The change remains GitHub Actions + stdlib Python and preserves v39 federation fairness/backpressure.
+
 - Final workflow persistence no longer re-saves a process-start snapshot after execution; execution paths persist through `persist_workflow()`, which reloads and merges against the latest repository state. This prevents one concurrent workflow from clobbering another workflow's durable state.
 - Newly-created workflows are persisted before the first execution step, closing the pre-first-persistence crash window.
 - Gateway HMAC signatures now bind timestamp, HTTP method, request path, optional `Idempotency-Key`, and raw body.
