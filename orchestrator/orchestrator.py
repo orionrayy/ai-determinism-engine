@@ -1227,12 +1227,6 @@ def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
     return False
 
 
-def connector_failure_policy(node: Node, exc: Exception) -> tuple[bool, bool]:
-    if not isinstance(exc, ConnectorRequestError) or not exc.uncertain:
-        return True, False
-    return bool(exc.retry_allowed), True
-
-
 def execution_failure_policy(
     node: Node,
     exc: Exception,
@@ -1240,44 +1234,62 @@ def execution_failure_policy(
     *,
     dry_run: bool,
 ) -> tuple[str, bool, bool]:
-    failure_class = classify_failure(exc)
-    explicit_retry = getattr(exc, "retry_allowed", None)
-    can_retry = retry_allowed(
-        failure_class,
-        explicitly_retryable=explicit_retry,
+    decision = decide_retry(
+        classify_failure(exc),
+        explicitly_retryable=None,
+        uncertain=bool(getattr(exc, "uncertain", False)),
+        side_effect_started=side_effecting(node, registry) and not dry_run,
+        idempotent=bool(getattr(exc, "idempotent", False)),
     )
-    connector_can_retry, uncertain = connector_failure_policy(node, exc)
-    if uncertain:
-        failure_class = "uncertain"
-        can_retry = connector_can_retry
+    node.error["failure_class"] = decision["failure_class"]
+    node.error["retry_allowed"] = decision["retry_allowed"]
+    node.error["retry_reason"] = decision["reason"]
+    if decision["uncertain"]:
         node.error["execution_uncertain"] = True
         node.error["reconciliation_required"] = True
+    if decision["reason"] in {
+        "side_effect_started_requires_reconciliation",
+        "uncertain_requires_reconciliation",
+    }:
+        node.error["post_start_side_effect_failure"] = True
+        node.error["retry_blocked_after_side_effect_start"] = True
+        node.error["replan_blocked_after_side_effect_start"] = True
+    return (
+        str(decision["failure_class"]),
+        bool(decision["retry_allowed"]),
+        bool(decision["uncertain"]),
+    )
 
-    if side_effecting(node, registry) and not dry_run:
-        connector_safe_retry = (
-            isinstance(exc, ConnectorRequestError)
-            and uncertain
-            and connector_can_retry
-        )
-        if not connector_safe_retry:
-            node.error["post_start_side_effect_failure"] = True
-            node.error["retry_blocked_after_side_effect_start"] = True
-            node.error["replan_blocked_after_side_effect_start"] = True
-            can_retry = False
-            if failure_class in {"transient", "intermittent", "dependency"}:
-                failure_class = "uncertain"
-                uncertain = True
-                node.error["execution_uncertain"] = True
-                node.error["reconciliation_required"] = True
 
-    node.error["failure_class"] = failure_class
-    node.error["retry_allowed"] = can_retry
-    return failure_class, can_retry, uncertain
-
-def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, dict[str, Any] | None]:
+def execute_with_retries(
+    node: Node,
+    goal: str,
+    dry_run: bool,
+    *,
+    attempt_budget: AttemptBudget | None = None,
+    initial_attempt_reserved: bool = False,
+    before_retry: Any | None = None,
+) -> tuple[bool, dict[str, Any] | None]:
     registry = load_registry()
     attempts = node.retry_count
+    first_attempt = bool(initial_attempt_reserved)
+
     while True:
+        if not first_attempt and attempt_budget is not None:
+            if not attempt_budget.acquire(node.id):
+                node.error = {
+                    "type": "attempt_budget_exhausted",
+                    "message": (
+                        f"workflow attempt budget exhausted at "
+                        f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                    ),
+                    "failure_class": "permanent",
+                    "retry_allowed": False,
+                }
+                transition(node, "failed")
+                return False, node.error
+        first_attempt = False
+
         try:
             output = execute_node(node, goal, dry_run=dry_run)
             node.output = output
@@ -1298,13 +1310,28 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                 dry_run=dry_run,
             )
             if attempts < node.max_retries and can_retry:
-                attempts += 1
+                next_attempt = attempts + 1
+                if attempt_budget is not None and not attempt_budget.acquire(node.id):
+                    node.error = {
+                        **node.error,
+                        "type": "attempt_budget_exhausted",
+                        "message": (
+                            f"workflow attempt budget exhausted at "
+                            f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                        ),
+                        "failure_class": "permanent",
+                        "retry_allowed": False,
+                    }
+                    transition(node, "failed")
+                    return False, node.error
+                attempts = next_attempt
                 node.retry_count = attempts
                 transition(node, "retrying")
                 delay = deterministic_retry_delay(
                     str(node.input.get("workflow_id") or ""),
                     node.id,
                     attempts,
+                    jitter_seed=str(node.input.get("retry_jitter_seed") or ""),
                 )
                 append_event("node.retrying", {
                     "workflow_id": node.input.get("workflow_id"),
@@ -1312,9 +1339,13 @@ def execute_with_retries(node: Node, goal: str, dry_run: bool) -> tuple[bool, di
                     "attempt": attempts,
                     "error": str(exc),
                     "failure_class": failure_class,
+                    "execution_uncertain": uncertain,
                     "retry_delay": delay,
+                    "retry_jitter_seed": node.input.get("retry_jitter_seed"),
                 })
                 time.sleep(delay)
+                if before_retry is not None:
+                    before_retry()
                 transition(node, "ready")
                 transition(node, "running")
                 continue
