@@ -3,6 +3,7 @@ import unittest
 from research_budget import (
     choose_extended_providers,
     default_available_providers,
+    budget_for_goal,
     normalize_budget,
 )
 
@@ -13,6 +14,11 @@ class ResearchBudgetTests(unittest.TestCase):
         self.assertEqual(normalize_budget("balanced").max_extended_providers, 2)
         self.assertEqual(normalize_budget("deep").max_extended_providers, 4)
         self.assertEqual(normalize_budget("unknown").name, "balanced")
+
+    def test_goal_complexity_selects_deterministic_budget(self):
+        self.assertEqual(budget_for_goal("research AI safety"), "balanced")
+        self.assertEqual(budget_for_goal("systematic review of AI safety"), "deep")
+        self.assertEqual(budget_for_goal("get current API status"), "fast")
 
     def test_free_only_defaults_to_public_providers(self):
         self.assertEqual(
