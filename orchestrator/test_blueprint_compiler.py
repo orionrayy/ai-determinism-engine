@@ -1,5 +1,5 @@
 import unittest
-from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file, parse_source_document, render_execution_packet
+from blueprint_compiler import BlueprintError, build_compilation_manifest, compile_execution_waves, load_blueprint_file, parse_source_document, render_execution_packet
 
 class BlueprintCompilerTests(unittest.TestCase):
     def test_parse_source_document(self):
@@ -16,6 +16,8 @@ class BlueprintCompilerTests(unittest.TestCase):
         self.assertEqual(len(manifest["graph"]["parallel_candidate_units"]),2)
         packet=render_execution_packet(manifest,manifest["units"][0]["unit_id"])
         self.assertTrue(packet["execution_contract"]["re_audit_previous_results"])
+        self.assertGreaterEqual(manifest["graph"]["wave_count"], 1)
+        self.assertEqual(sum(manifest["graph"]["wave_sizes"]), manifest["graph"]["unit_count"])
     def test_fail_closed_duplicate_and_cycle(self):
         with self.assertRaises(BlueprintError):
             build_compilation_manifest({"blueprint_id":"dup","requirements":[{"id":"a","summary":"A"},{"id":"a","summary":"A2"}]})

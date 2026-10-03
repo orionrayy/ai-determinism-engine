@@ -43,6 +43,7 @@ try:
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
+        CURRENT_WORKFLOW_SCHEMA_VERSION,
         migrate_state,
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
@@ -50,6 +51,7 @@ try:
     from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
+    from .context_budget import ContextBudgetError, pack_node_context
     from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
     from .federation_scheduler import (
         DEFAULT_MAX_BATCHES_PER_WORKFLOW,
@@ -77,6 +79,7 @@ except ImportError:
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
+        CURRENT_WORKFLOW_SCHEMA_VERSION,
         migrate_state,
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
@@ -84,6 +87,7 @@ except ImportError:
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
+    from context_budget import ContextBudgetError, pack_node_context
     from agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
     from federation_scheduler import (
         DEFAULT_MAX_BATCHES_PER_WORKFLOW,
@@ -2093,16 +2097,54 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
             "capability": dep.capability,
             "tool": dep.tool,
             "status": dep.status,
-            "output": compact_json(dep.output, limit=12 * 1024),
+            "output": dep.output,
             "error": dep.error,
             "evidence_sha256": evidence.get("evidence_sha256"),
         }
-    return {
-        "goal": node.input.get("goal", ""),
-        "dependencies": dependencies,
-        "contract": node.contract,
-        "repair_feedback": node.input.get("repair_feedback", {}),
-    }
+    try:
+        return pack_node_context(
+            goal=node.input.get("goal", ""),
+            dependencies=dependencies,
+            contract=node.contract,
+            repair_feedback=node.input.get("repair_feedback", {}),
+        )
+    except ContextBudgetError as exc:
+        raise RuntimeError(f"node context budget exceeded: {exc}") from exc
+
+
+def record_workload_progress(workflow: dict[str, Any], node: Node) -> None:
+    workload = workflow.setdefault("workload", {})
+    if not isinstance(workload, dict):
+        raise RuntimeError("workflow.workload must be an object")
+    output = node.output if isinstance(node.output, dict) else {}
+    if node.capability == "blueprint" and output.get("blueprint_id"):
+        workload.update({
+            "kind": "blueprint",
+            "blueprint_id": str(output.get("blueprint_id") or ""),
+            "blueprint_version": str(output.get("blueprint_version") or ""),
+            "blueprint_digest": str(output.get("blueprint_digest") or ""),
+            "manifest_digest": str(output.get("manifest_digest") or ""),
+            "unit_count": int(output.get("unit_count") or 0),
+            "wave_count": int(output.get("wave_count") or 0),
+            "compiled_at": utc_now(),
+            "status": "compiled",
+        })
+    unit_id = str(node.input.get("workload_unit_id") or "").strip()
+    if not unit_id:
+        return
+    completed = workload.setdefault("completed_unit_ids", [])
+    if not isinstance(completed, list):
+        completed = []
+        workload["completed_unit_ids"] = completed
+    if unit_id not in completed:
+        completed.append(unit_id)
+    if len(completed) > 256:
+        del completed[:-256]
+    wave_id = str(node.input.get("workload_wave_id") or "").strip()
+    if wave_id:
+        workload["last_completed_wave_id"] = wave_id
+    workload["last_completed_unit_id"] = unit_id
+    workload["status"] = "progressing"
 
 
 def execute_blueprint_compiler(node: Node, goal: str) -> dict[str, Any]:
@@ -2154,6 +2196,9 @@ def execute_blueprint_compiler(node: Node, goal: str) -> dict[str, Any]:
         "root_units": manifest["graph"]["root_units"],
         "leaf_units": manifest["graph"]["leaf_units"],
         "parallel_candidate_units": manifest["graph"]["parallel_candidate_units"],
+        "wave_count": manifest["graph"]["wave_count"],
+        "wave_sizes": manifest["graph"]["wave_sizes"],
+        "waves": manifest["waves"],
         "units": manifest["units"],
     }
 
@@ -2362,6 +2407,7 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     )
     workflow.setdefault("evidence", {})[node.id] = evidence
     node.output["evidence"] = evidence
+    record_workload_progress(workflow, node)
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     checkpoint = {
         "workflow": workflow["id"],
@@ -3692,7 +3738,8 @@ def create_workflow(
         "repair_feedback": {},
         "evidence": {},
         "reconciliations": {},
-        "schema_version": 6,
+        "workload": {},
+        "schema_version": CURRENT_WORKFLOW_SCHEMA_VERSION,
         "agent_team": team_manifest(workflow_id, nodes),
         "federation": {},
         "plan_fingerprint": None,

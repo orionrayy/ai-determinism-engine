@@ -21,7 +21,7 @@ except ImportError:
     )
 
 CURRENT_STATE_VERSION = 4
-CURRENT_WORKFLOW_SCHEMA_VERSION = 6
+CURRENT_WORKFLOW_SCHEMA_VERSION = 7
 MAX_PARALLEL = 8
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
@@ -72,6 +72,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})
         workflow.setdefault("agent_team", {})
+        workflow.setdefault("workload", {})
         workflow.setdefault("github_run_attempt", None)
         workflow.setdefault("origin_github_run_attempt", workflow.get("github_run_attempt"))
         workflow.setdefault("private_input_ref", None)
@@ -90,6 +91,24 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 raise StateSchemaError(
                     f"workflow {workflow_id!r} private_input_ref requires execution_id and input_digest"
                 )
+        workload = workflow.get("workload")
+        if not isinstance(workload, dict):
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.workload must be an object"
+            )
+        for field_name in ("blueprint_digest", "manifest_digest"):
+            value = workload.get(field_name)
+            if value in (None, ""):
+                continue
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise StateSchemaError(
+                    f"workflow {workflow_id!r}.workload.{field_name} must be a 64-character lowercase hexadecimal string"
+                )
+        completed_units = workload.get("completed_unit_ids", [])
+        if not isinstance(completed_units, list) or len(completed_units) > 256:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.workload.completed_unit_ids must be a list of <=256 items"
+            )
         if workflow.get("idempotency_key") not in (None, ""):
             if not isinstance(workflow["idempotency_key"], str) or len(workflow["idempotency_key"]) > 128:
                 raise StateSchemaError(
