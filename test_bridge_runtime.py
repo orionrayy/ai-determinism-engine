@@ -166,6 +166,8 @@ class BridgeRuntimeTests(unittest.TestCase):
                 "types": {"properties.name": "string", "title": "string"},
                 "idempotent": True,
                 "free_tier": False,
+                "result_required": [],
+                "result_types": {},
             },
         )
         with patch.object(br, "load_routes", return_value=routes), patch.object(
