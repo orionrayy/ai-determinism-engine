@@ -2358,7 +2358,7 @@ class OrchestratorTests(unittest.TestCase):
             time.sleep(0.01)
             with lock:
                 active -= 1
-            return {"ok": True}
+            return {"output": "ok"}
 
         registry = {
             "gemini": {"free_tier": True, "free_models": ["test-model"]},
