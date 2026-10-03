@@ -241,7 +241,10 @@ def compile_execution_waves(units: Sequence[Mapping[str, Any]], *, max_units_per
                 dep_wave = unit_to_wave[str(dep)]
                 if dep_wave != wave['wave_id']: deps.add(dep_wave)
         wave['depends_on_waves'] = sorted(deps, key=lambda wid: wave_by_id[wid]['ordinal'])
-        wave['parallel_candidate'] = not wave['depends_on_waves']
+        # Units inside a wave are at the same dependency level, so no unit can
+        # depend on another unit in that same wave. They remain parallel-safe even
+        # when the wave itself depends on earlier waves.
+        wave['parallel_candidate'] = len(wave['unit_ids']) > 1
     return waves
 
 def build_compilation_manifest(blueprint:Mapping[str,Any]|str,*,max_requirements_per_unit:int=MAX_REQUIREMENTS_PER_UNIT,max_units:int=MAX_UNITS)->dict[str,Any]:
