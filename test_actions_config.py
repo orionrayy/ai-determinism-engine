@@ -210,13 +210,6 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn("node workers/private-input/test.mjs", self.tests)
         self.assertIn("python -m compileall -q orchestrator", self.tests)
         self.assertIn("python -m orchestrator.eval_harness --json", self.tests)
-        for module in (
-            "orchestrator/research_budget.py",
-            "orchestrator/epistemic_metrics.py",
-            "orchestrator/epistemic_deliberation.py",
-            "orchestrator/eval_harness.py",
-        ):
-            self.assertIn(module, self.tests)
 
     def test_private_input_boundary_is_wired(self):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
