@@ -94,6 +94,31 @@ def choose_extended_providers(
     return [provider for _, _, provider in scored[: selected_budget.max_extended_providers]]
 
 
+def budget_for_goal(goal: str) -> str:
+    text = str(goal or "").strip().lower()
+    deep_hints = (
+        "systematic review",
+        "comprehensive literature",
+        "deep research",
+        "meta-analysis",
+        "literature review",
+    )
+    balanced_hints = (
+        "research",
+        "compare",
+        "comparison",
+        "literature",
+        "study",
+        "analysis",
+        "evidence",
+    )
+    if any(hint in text for hint in deep_hints):
+        return "deep"
+    if any(hint in text for hint in balanced_hints):
+        return "balanced"
+    return "fast"
+
+
 def budget_metadata(budget: str | ResearchBudget) -> dict[str, int | str]:
     selected = budget if isinstance(budget, ResearchBudget) else normalize_budget(budget)
     return {
@@ -112,6 +137,7 @@ __all__ = [
     "FREE_PROVIDER_ORDER",
     "default_available_providers",
     "normalize_budget",
+    "budget_for_goal",
     "choose_extended_providers",
     "budget_metadata",
 ]
