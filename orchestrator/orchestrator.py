@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .capability_graph import load_health, record_tool_result, route_capability, save_health
+    from .capability_graph import load_health, record_tool_result, route_capability, save_health, execution_eligible
     from .connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -64,7 +64,7 @@ try:
         reserve as reserve_federation_quota,
     )
 except ImportError:
-    from capability_graph import load_health, record_tool_result, route_capability, save_health
+    from capability_graph import load_health, record_tool_result, route_capability, save_health, execution_eligible
     from connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -1790,11 +1790,14 @@ def execute_firecrawl(node: Node, goal: str) -> dict[str, Any]:
     )
 
 def execute_research_bundle(node: Node, goal: str) -> dict[str, Any]:
-    from research_bundle import research_bundle
+    try:
+        from .research_bundle import research_bundle
+    except ImportError:
+        from research_bundle import research_bundle
     query = str(node.input.get("query") or goal).strip()
     if not query:
         raise RuntimeError("research bundle requires a query")
-    return research_bundle(query)
+    return research_bundle(query, include_extended=True)
 
 def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
     query = str(node.input.get("query") or goal).strip()
@@ -2529,10 +2532,21 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
 
     if node.tool == "research_bundle":
         sources = output.get("sources")
-        ok = isinstance(sources, dict) and bool(sources)
-        checks.append({"check": "research_sources", "passed": ok})
-        if not ok:
-            raise RuntimeError("research bundle returned no sources")
+        records = output.get("evidence_records")
+        if isinstance(records, list):
+            ok = bool(records)
+            checks.append({
+                "check": "research_evidence_records",
+                "passed": ok,
+                "independent_source_count": int(output.get("independent_source_count") or 0),
+            })
+            if not ok:
+                raise RuntimeError("research bundle returned no canonical evidence records")
+        else:
+            ok = isinstance(sources, dict) and bool(sources)
+            checks.append({"check": "research_sources", "passed": ok})
+            if not ok:
+                raise RuntimeError("research bundle returned no sources")
 
     if node.tool in {"gemini", "openai"}:
         has_payload = bool(
@@ -2797,6 +2811,14 @@ def execute_with_retries(
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     registry = load_registry()
     spec = registry.get(node.tool, {})
+    if not dry_run:
+        if not execution_eligible(
+            node.tool,
+            registry,
+            load_tool_health(),
+            live=bool(node.input.get("live", True)),
+        ):
+            raise RuntimeError(f"tool {node.tool} is not executable under current policy")
     if free_only() and not dry_run:
         is_free = bool(spec.get("free_tier", False))
         if not spec and node.tool in BUILTIN_FREE_TOOLS:
