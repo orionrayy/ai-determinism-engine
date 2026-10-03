@@ -46,16 +46,33 @@ def canonical_json(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def sign(timestamp: int, body: bytes, secret: str) -> str:
-    digest = hmac.new(
-        secret.encode("utf-8"),
-        str(timestamp).encode("utf-8") + b"\n" + body,
-        hashlib.sha256,
-    ).hexdigest()
+def sign(
+    timestamp: int,
+    body: bytes,
+    secret: str,
+    *,
+    method: str = "POST",
+    path: str = "/bridge",
+) -> str:
+    message = b"\n".join([
+        str(timestamp).encode("utf-8"),
+        str(method).upper().encode("utf-8"),
+        str(path).encode("utf-8"),
+        body,
+    ])
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return "sha256=" + digest
 
 
-def verify_signature(headers: dict[str, str], body: bytes, secret: str, now: int | None = None) -> bool:
+def verify_signature(
+    headers: dict[str, str],
+    body: bytes,
+    secret: str,
+    now: int | None = None,
+    *,
+    method: str = "POST",
+    path: str = "/bridge",
+) -> bool:
     timestamp = headers.get("x-orchestrator-timestamp", "")
     signature = headers.get("x-orchestrator-signature", "")
     try:
@@ -65,7 +82,7 @@ def verify_signature(headers: dict[str, str], body: bytes, secret: str, now: int
     current = int(time.time()) if now is None else now
     if abs(current - sent_at) > MAX_SKEW_SECONDS:
         return False
-    expected = sign(sent_at, body, secret)
+    expected = sign(sent_at, body, secret, method=method, path=path)
     return hmac.compare_digest(signature, expected)
 
 
@@ -104,6 +121,8 @@ def _normalize_action_spec(
     return {
         "required": normalized_required,
         "types": normalized_types,
+        "result_required": sorted({str(item).strip() for item in (raw.get("result_required", []) if isinstance(raw.get("result_required", []), list) else []) if str(item).strip()}),
+        "result_types": {str(key).strip(): str(types_value).strip().lower() for key, types_value in sorted((raw.get("result_types", {}) if isinstance(raw.get("result_types", {}) else {})).items()) if str(key).strip() and str(types_value).strip().lower() in ACTION_TYPE_NAMES},
         "idempotent": bool(raw.get("idempotent", False)),
         "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
@@ -151,6 +170,25 @@ def validate_action_input(route: dict[str, Any], action: str, value: Any) -> Non
         found, field_value = _resolve_payload_path(value, field_name)
         if found and not _matches_payload_type(field_value, type_name):
             raise BridgeRuntimeError(f"connector input field {field_name} must be {type_name}")
+
+
+def validate_action_output(route: dict[str, Any], action: str, value: Any) -> None:
+    action_specs = route.get("action_specs", {})
+    raw_spec = action_specs.get(action, {}) if isinstance(action_specs, dict) else {}
+    spec = _normalize_action_spec(
+        raw_spec,
+        default_free_tier=bool(route.get("free_tier", False)),
+    )
+    if not isinstance(value, dict):
+        raise BridgeRuntimeError("connector output must be an object")
+    for field_name in spec["result_required"]:
+        found, _ = _resolve_payload_path(value, field_name)
+        if not found:
+            raise BridgeRuntimeError(f"connector output missing required field: {field_name}")
+    for field_name, type_name in spec["result_types"].items():
+        found, field_value = _resolve_payload_path(value, field_name)
+        if found and not _matches_payload_type(field_value, type_name):
+            raise BridgeRuntimeError(f"connector output field {field_name} must be {type_name}")
 
 
 def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
@@ -524,6 +562,7 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     assert event is not None
     try:
         result = dispatch_upstream(route, payload)
+        validate_action_output(route, action, result.get("data") if isinstance(result, dict) and "data" in result else result)
         response = {
             "ok": True,
             "protocol": PROTOCOL,
