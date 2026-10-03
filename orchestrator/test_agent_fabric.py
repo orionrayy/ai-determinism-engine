@@ -22,6 +22,15 @@ class AgentFabricTests(unittest.TestCase):
         self.assertEqual(assign_role(node), "researcher")
         self.assertEqual(node.agent_role, "researcher")
 
+    def test_blueprint_capability_routes_to_architect(self):
+        node = SimpleNamespace(
+            id="blueprint-01",
+            capability="blueprint",
+            risk="low",
+            agent_role="",
+        )
+        self.assertEqual(assign_role(node), "architect")
+
     def test_invalid_role_capability_pair_is_rejected(self):
         with self.assertRaises(ValueError):
             validate_role("tester", "research")
