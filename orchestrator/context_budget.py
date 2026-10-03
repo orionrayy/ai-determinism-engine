@@ -88,12 +88,12 @@ def _compact_evidence_output(
         }
         probe = dict(compact)
         probe["evidence_records"] = compact["evidence_records"] + [record]
-        if len(canonical_json(probe).encode("utf-8")) > max_bytes:
+        if len(canonical_json(probe)) > max_bytes:
             truncated = True
             break
         compact["evidence_records"].append(record)
 
-    if len(canonical_json(compact).encode("utf-8")) > max_bytes:
+    if len(canonical_json(compact)) > max_bytes:
         compact["evidence_records"] = []
         compact["evidence_records_truncated"] = True
         truncated = True
