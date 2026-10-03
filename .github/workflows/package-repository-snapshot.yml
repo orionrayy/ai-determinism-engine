@@ -1,0 +1,41 @@
+name: Package Repository Snapshot
+
+on:
+  push:
+    branches:
+      - feat/v67-epistemic-boundary-hardening
+    paths:
+      - "**"
+      - "!.github/workflows/orchestrator-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30af803
+        with:
+          fetch-depth: 0
+      - name: Create tracked-file archive
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git archive --format=zip --output="ai-determinism-engine-${GITHUB_SHA}.zip" "$GITHUB_SHA"
+          test -s "ai-determinism-engine-${GITHUB_SHA}.zip"
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ai-determinism-engine-${{ github.sha }}
+          path: ai-determinism-engine-${{ github.sha }}.zip
+          if-no-files-found: error
+          retention-days: 7
