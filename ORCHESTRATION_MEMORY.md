@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v62 planner input bound + v61 durable event redaction + v60 attempt-budget accounting + v59 resource-safety and durable diagnostics + v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
+Current main baseline: orchestration hardening v63 general blueprint workload compiler + v62 planner input bound + v61 durable event redaction + v60 attempt-budget accounting + v59 resource-safety and durable diagnostics + v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -635,3 +635,12 @@ Before changing runtime behavior:
 ## Design principle
 
 The system should fail closed on unsafe tool selection and unknown side-effect outcomes, fail open on optional observability, remain deterministic under duplicate events, and preserve explicit human approval for irreversible external effects.
+
+## Orchestration hardening v63 — general blueprint workload compiler
+- Added `orchestrator/blueprint_compiler.py` as a deterministic, side-effect-free workload compiler for structured blueprints and bounded Markdown/text documents.
+- The compiler preserves provenance, validates requirement dependencies, rejects cycles, and emits bounded execution units with requirement IDs, workstreams, risk, agent-role/capability hints, artifacts, acceptance criteria, source references, and unit dependencies.
+- Resource bounds are explicit: 256 KiB source/structured input, 512 requirements, 64 units, 8 requirements per unit, 24 KiB per unit/packet, and 480 KiB aggregate compilation manifest.
+- Plain Markdown/text ingestion is provenance-only and never invents semantic requirements; semantic extraction remains an explicit research/analysis operation.
+- `blueprint_compiler` is registered as credential-free and free-tier. Execution goes through the existing orchestrator supervisor and therefore retains current policy, checkpoint, retry/replan, federation, idempotency, and approval behavior.
+- File ingestion is restricted to `ORCHESTRATOR_WORKLOAD_ROOT`; path escape is rejected.
+- No paid service or runtime dependency was introduced.
