@@ -3,6 +3,7 @@ import tempfile
 import sys
 import threading
 import unittest
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -2332,6 +2333,42 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "failed")
         self.assertEqual(execute.call_count, 0)
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "attempt_budget_exhausted")
+
+    def test_quota_sensitive_nodes_are_serialized(self):
+        nodes = [
+            o.Node("n01-llm-a", "analyze", "gemini", []),
+            o.Node("n02-llm-b", "analyze", "gemini", []),
+        ]
+        workflow = {
+            "id": "wf_quota_serial",
+            "goal": "analysis",
+            "live": True,
+            "max_parallel": 2,
+            "nodes": [o.asdict(n) for n in nodes],
+        }
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def fake_execute(node, goal, dry_run):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return {"ok": True}
+
+        registry = {
+            "gemini": {"free_tier": True, "free_models": ["test-model"]},
+            "capability:analyze": {"default_tool": "gemini"},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=fake_execute),                  patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(maximum, 1)
 
     def test_parallel_independent_nodes_execute_concurrently(self):
         barrier = threading.Barrier(2)
