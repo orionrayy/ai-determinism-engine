@@ -93,12 +93,26 @@ def research_bundle(
 ) -> dict:
     errors = {}
     results = {}
-    providers = (
-        ('wikipedia', search_wikipedia),
-        ('arxiv', search_arxiv),
-        ('crossref', search_crossref),
+    all_providers = {
+        'wikipedia': search_wikipedia,
+        'arxiv': search_arxiv,
+        'crossref': search_crossref,
+    }
+    if include_extended:
+        try:
+            from .research_budget import normalize_budget
+        except ImportError:
+            from research_budget import normalize_budget
+        selected_budget_for_legacy = normalize_budget(budget)
+        legacy_names = selected_budget_for_legacy.legacy_providers
+    else:
+        legacy_names = tuple(all_providers)
+    providers = tuple(
+        (name, all_providers[name])
+        for name in legacy_names
+        if name in all_providers
     )
-    with ThreadPoolExecutor(max_workers=len(providers), thread_name_prefix='research') as pool:
+    with ThreadPoolExecutor(max_workers=max(1, len(providers)), thread_name_prefix='research') as pool:
         futures = {pool.submit(fn, query): name for name, fn in providers}
         for future in as_completed(futures):
             name = futures[future]
