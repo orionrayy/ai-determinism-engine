@@ -25,7 +25,11 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertTrue(records[0]["open_access"])
 
     def test_default_provider_order_honors_free_only_mode(self):
-        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
+             patch(
+                 "research_providers._provider_search",
+                 return_value={"data": []},
+             ):
             self.assertEqual(
                 research_records("topic")["providers"],
                 ["semantic_scholar", "europe_pmc"],
