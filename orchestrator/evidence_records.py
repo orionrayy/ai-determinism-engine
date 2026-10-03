@@ -162,21 +162,24 @@ def canonical_source_id(record: Mapping[str, Any]) -> str:
         return "pmcid:" + ids["pmcid"]
     if ids["core_id"]:
         return "core:" + ids["core_id"]
+    title = _norm_text(record.get("title"))
+    authors = _authors(record)
+    year = str(_first_nonempty(record.get("year"), record.get("publication_year"), "") or "")
+    if title and (authors or year):
+        anchor = {
+            "title": title,
+            "authors": [_norm_text(name) for name in authors[:8]],
+            "year": year,
+        }
+        digest = hashlib.sha256(
+            ("bibliographic:" + repr(sorted(anchor.items()))).encode("utf-8")
+        ).hexdigest()[:32]
+        return "fingerprint:" + digest
     provider = _norm_text(record.get("provider"))
     provider_id = _norm_text(record.get("provider_id") or record.get("paperId"))
     if provider_id:
         return f"{provider}:{provider_id}"
-    title = _norm_text(record.get("title"))
-    authors = _authors(record)
-    year = str(_first_nonempty(record.get("year"), record.get("publication_year"), "") or "")
-    anchor = {
-        "title": title,
-        "first_author": _norm_text(authors[0] if authors else ""),
-        "year": year,
-    }
-    digest = hashlib.sha256(
-        ("fallback:" + repr(sorted(anchor.items()))).encode("utf-8")
-    ).hexdigest()[:32]
+    digest = hashlib.sha256(("fallback:" + title).encode("utf-8")).hexdigest()[:32]
     return "fingerprint:" + digest
 
 
