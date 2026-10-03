@@ -58,6 +58,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -79,11 +80,6 @@ jobs:
           test "$actual_sha256" = "$expected_sha256"
           tar -xzf "/tmp/${archive}" -C /tmp
           /tmp/actionlint -color
-
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
-        with:
-          node-version: "24"
 
       - name: Unit tests
         run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_bridge_runtime test_actions_config -v
