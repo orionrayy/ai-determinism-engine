@@ -86,7 +86,7 @@ def search_crossref(query: str) -> dict:
     return {'query': query, 'results': results}
 
 
-def research_bundle(query: str) -> dict:
+def research_bundle(query: str, include_extended: bool = False) -> dict:
     errors = {}
     results = {}
     providers = (
