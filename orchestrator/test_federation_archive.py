@@ -89,6 +89,9 @@ class FederationArchiveTests(unittest.TestCase):
         class Response:
             status = 200
 
+            def __init__(self):
+                self.stream = io.BytesIO(archive_bytes)
+
             def __enter__(self):
                 return self
 
@@ -96,7 +99,7 @@ class FederationArchiveTests(unittest.TestCase):
                 return False
 
             def read(self, size=-1):
-                return archive_bytes
+                return self.stream.read(size)
 
         with patch.object(
             o,
