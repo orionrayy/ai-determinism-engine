@@ -203,6 +203,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
 
+    def test_orchestrator_ci_avoids_unused_node_and_worker_validation(self):
+        self.assertIn("timeout-minutes: 10", self.tests)
+        self.assertNotIn("actions/setup-node@", self.tests)
+        self.assertNotIn("wrangler@4.146.0", self.tests)
+        self.assertNotIn("node workers/private-input/test.mjs", self.tests)
+
     def test_private_input_boundary_is_wired(self):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
