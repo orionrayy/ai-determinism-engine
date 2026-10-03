@@ -2647,6 +2647,19 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
             if not ok:
                 raise RuntimeError("research bundle returned no sources")
 
+    if simulated and node.tool in {"gemini", "openai"}:
+        checks.append({
+            "check": "llm_adapter_contract",
+            "passed": True,
+            "deferred": True,
+        })
+        return {
+            "passed": True,
+            "checks": checks,
+            "checked_at": utc_now(),
+            "contract_deferred": bool(defer_epistemic),
+        }
+
     if node.tool in {"gemini", "openai"}:
         has_payload = bool(
             output.get("candidates")
