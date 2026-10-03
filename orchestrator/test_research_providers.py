@@ -55,9 +55,15 @@ class ResearchProviderTests(unittest.TestCase):
             "openalex": 1,
             "semantic_scholar": 1,
         })
+        providers = [item["provider"] for item in result["evidence_records"]]
+        self.assertEqual(set(providers), {"openalex", "semantic_scholar"})
         self.assertEqual(
-            [item["provider"] for item in result["evidence_records"]],
-            ["openalex", "semantic_scholar"],
+            providers,
+            [item["provider"] for item in research_records(
+                "topic",
+                providers=("openalex", "semantic_scholar"),
+                max_results=2,
+            )["evidence_records"]],
         )
 
     def test_provider_failure_is_reported_without_aborting_bundle(self):
