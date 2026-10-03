@@ -119,51 +119,53 @@ def pack_node_context(
     }
 
     omitted: list[str] = []
-    for dep_id in sorted(str(key) for key in deps):
-        candidate = _dependency_record(
-            dep_id,
-            deps[dep_id],
-            max_output_bytes=dependency_bytes,
-        )
-        packed["dependencies"][dep_id] = candidate
-        size = len(canonical_json(packed))
-        if size <= effective_max_bytes:
+    dep_items = {str(key): value for key, value in deps.items()}
+    for dep_id in sorted(dep_items):
+        candidate = _dependency_record(dep_id, dep_items[dep_id], max_output_bytes=dependency_bytes)
+        packed['dependencies'][dep_id] = candidate
+        if len(canonical_json(packed)) <= effective_max_bytes:
             continue
-
-        packed["dependencies"].pop(dep_id, None)
+        packed['dependencies'].pop(dep_id, None)
         compact = {
-            "capability": candidate["capability"],
-            "tool": candidate["tool"],
-            "status": candidate["status"],
-            "output_sha256": candidate["output_sha256"],
-            "evidence_sha256": candidate["evidence_sha256"],
-            "omitted": True,
-            "reason": "context_budget",
+            'capability': candidate['capability'], 'tool': candidate['tool'],
+            'status': candidate['status'], 'output_sha256': candidate['output_sha256'],
+            'evidence_sha256': candidate['evidence_sha256'],
+            'omitted': True, 'reason': 'context_budget',
         }
-        if len(canonical_json({**packed, "dependencies": {dep_id: compact}})) <= effective_max_bytes:
-            packed["dependencies"][dep_id] = compact
-        else:
+        packed['dependencies'][dep_id] = compact
+        if len(canonical_json(packed)) > effective_max_bytes:
+            packed['dependencies'].pop(dep_id, None)
             omitted.append(dep_id)
 
-    packed["context_budget"] = {
-        "max_bytes": max_bytes,
-        "used_bytes": len(canonical_json(packed)),
-        "dependency_bytes": dependency_bytes,
-        "omitted_dependencies": omitted,
-        "truncated_contract": contract_truncated,
-        "truncated_repair_feedback": repair_truncated,
+    while len(canonical_json(packed)) > max_bytes and packed['dependencies']:
+        ranked = sorted(packed['dependencies'].items(), key=lambda item: (-len(canonical_json(item[1])), item[0]))
+        dep_id, dep_value = ranked[0]
+        if isinstance(dep_value, dict) and 'output' in dep_value:
+            compact = dict(dep_value)
+            compact.pop('output', None)
+            compact['omitted'] = True
+            compact['reason'] = 'final_context_budget'
+            packed['dependencies'][dep_id] = compact
+        else:
+            packed['dependencies'].pop(dep_id, None)
+        if dep_id not in omitted:
+            omitted.append(dep_id)
+
+    packed['context_budget'] = {
+        'max_bytes': max_bytes,
+        'used_bytes': len(canonical_json(packed)),
+        'dependency_bytes': dependency_bytes,
+        'omitted_dependencies': sorted(omitted),
+        'truncated_contract': contract_truncated,
+        'truncated_repair_feedback': repair_truncated,
     }
-    if len(canonical_json(packed)) > effective_max_bytes:
-        # Contract/repair previews can still be too large after metadata.
-        packed["contract"] = {"sha256": digest(contract or {}), "omitted": True}
-        packed["repair_feedback"] = {
-            "sha256": digest(repair_feedback or {}),
-            "omitted": True,
-        }
-        packed["context_budget"]["used_bytes"] = len(canonical_json(packed))
     if len(canonical_json(packed)) > max_bytes:
-        raise ContextBudgetError("unable to pack context within budget")
-    packed["context_digest"] = digest(packed)
+        packed['contract'] = {'sha256': digest(contract or {}), 'omitted': True}
+        packed['repair_feedback'] = {'sha256': digest(repair_feedback or {}), 'omitted': True}
+        packed['context_budget']['used_bytes'] = len(canonical_json(packed))
+    if len(canonical_json(packed)) > max_bytes:
+        raise ContextBudgetError('unable to pack context within budget')
+    packed['context_digest'] = digest(packed)
     if len(canonical_json(packed)) > max_bytes:
         raise ContextBudgetError('context digest metadata exceeds budget')
     packed['context_budget']['used_bytes'] = len(canonical_json(packed))
