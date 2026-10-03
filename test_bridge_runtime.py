@@ -432,6 +432,30 @@ class BridgeRuntimeTests(unittest.TestCase):
         br.cleanup_idempotency(time.time())
         self.assertNotIn(request_id, br._COMPLETED)
 
+    def test_handle_request_promotes_validated_upstream_result(self):
+        payload = self.payload(
+            request_id=hashlib.sha256(b"wf:promote-result").hexdigest()
+        )
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_required": ["bridge_job_id"],
+                        "result_types": {"bridge_job_id": "string"},
+                    }
+                },
+            }
+        }
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={
+                 "status_code": 200,
+                 "data": {"bridge_job_id": "job-1"},
+             }):
+            result = br.handle_request(payload, "secret")
+        self.assertEqual(result["result"], {"bridge_job_id": "job-1"})
+
 
 if __name__ == "__main__":
     unittest.main()
