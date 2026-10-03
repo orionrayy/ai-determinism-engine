@@ -427,3 +427,11 @@ class BridgeRuntimeTests(unittest.TestCase):
                 br.handle_request(payload, "secret")
 
     def test_cleanup_idempotency_handles_expired_three_tuple_entry(self):
+        request_id = hashlib.sha256(b"expired").hexdigest()
+        br._COMPLETED[request_id] = (time.time() - 1, "digest", {"ok": True})
+        br.cleanup_idempotency(time.time())
+        self.assertNotIn(request_id, br._COMPLETED)
+
+
+if __name__ == "__main__":
+    unittest.main()
