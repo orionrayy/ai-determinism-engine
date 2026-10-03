@@ -43,6 +43,7 @@ try:
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
         MAX_ATTEMPTS_PER_WORKFLOW as STATE_MAX_ATTEMPTS_PER_WORKFLOW,
         StateSchemaError,
+        CURRENT_WORKFLOW_SCHEMA_VERSION,
         migrate_state,
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint

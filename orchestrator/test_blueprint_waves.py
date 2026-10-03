@@ -4,7 +4,7 @@ from blueprint_compiler import BlueprintError, build_compilation_manifest, compi
 class BlueprintWaveTests(unittest.TestCase):
     def test_waves_respect_dependency_levels_and_node_cap(self):
         requirements=[{"id":f"r{i:02d}","summary":f"req {i}"} for i in range(30)]
-        manifest=build_compilation_manifest({"blueprint_id":"waves","requirements":requirements})
+        manifest=build_compilation_manifest({"blueprint_id":"waves","requirements":requirements}, max_requirements_per_unit=1)
         self.assertGreaterEqual(manifest["graph"]["wave_count"],2)
         self.assertTrue(all(len(w["unit_ids"]) <= 24 for w in manifest["waves"]))
     def test_dependency_wave_order(self):
