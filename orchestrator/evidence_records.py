@@ -151,6 +151,9 @@ def _identifiers(record: Mapping[str, Any]) -> dict[str, str]:
 
 
 def canonical_source_id(record: Mapping[str, Any]) -> str:
+    existing = _norm_text(record.get("canonical_id"))
+    if existing:
+        return existing
     ids = _identifiers(record)
     if ids["doi"]:
         return "doi:" + ids["doi"]
