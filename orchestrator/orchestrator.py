@@ -117,6 +117,8 @@ MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
 MAX_ATTEMPTS_PER_WORKFLOW = STATE_MAX_ATTEMPTS_PER_WORKFLOW
+DEFAULT_FREE_LLM_CALLS = 12
+MAX_LLM_CALLS_PER_WORKFLOW = 64
 MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
 MAX_GENERIC_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_NODE_ID_LENGTH = 100
@@ -171,6 +173,34 @@ class AttemptBudget:
     def sync(self) -> None:
         self.workflow["attempts_used"] = self.used
         self.workflow["max_attempts"] = self.max_attempts
+
+
+def llm_call_budget_limit(workflow: dict[str, Any]) -> int:
+    raw = os.environ.get("ORCHESTRATOR_MAX_LLM_CALLS", "").strip()
+    default = DEFAULT_FREE_LLM_CALLS if free_only() else MAX_LLM_CALLS_PER_WORKFLOW
+    try:
+        requested = int(raw) if raw else default
+    except ValueError:
+        requested = default
+    return max(1, min(requested, MAX_LLM_CALLS_PER_WORKFLOW))
+
+
+def reserve_llm_call(workflow: dict[str, Any], node: "Node", *, live: bool) -> bool:
+    if not live or node.tool not in {"gemini", "openai"}:
+        return True
+    limit = llm_call_budget_limit(workflow)
+    used = max(0, int(workflow.get("llm_calls_used", 0)))
+    if used >= limit:
+        node.error = {
+            "type": "llm_call_budget_exhausted",
+            "message": f"LLM call budget exhausted at {used}/{limit}.",
+            "failure_class": "quota",
+            "retry_allowed": False,
+        }
+        return False
+    workflow["llm_calls_used"] = used + 1
+    workflow["llm_call_limit"] = limit
+    return True
 
 
 @dataclass
@@ -3410,6 +3440,15 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         persist_workflow(workflow)
         return "failed"
     attempt_budget.sync()
+    if not reserve_llm_call(workflow, node, live=live):
+        transition(node, "failed")
+        workflow["status"] = "failed"
+        workflow["failed_node"] = node.id
+        workflow["nodes"] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
+        return "failed"
+    workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
+    persist_workflow(workflow)
     transition(node, 'running')
     if not side_effecting(node, registry):
         workflow['nodes'] = [asdict(item) for item in nodes]
@@ -3706,6 +3745,15 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 attempt_budget.sync()
                 persist_workflow(workflow)
                 return
+            if not reserve_llm_call(workflow, node, live=live):
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return
+            workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
+            persist_workflow(workflow)
             transition(node, "running")
 
             execution_id = execution_key(workflow, node)
