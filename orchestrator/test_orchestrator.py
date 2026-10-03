@@ -1671,7 +1671,9 @@ class OrchestratorTests(unittest.TestCase):
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
                 nodes = o.deterministic_plan("research AI safety", {})
         self.assertEqual(nodes[0].agent_role, "researcher")
+        self.assertEqual(nodes[0].input["budget"], "balanced")
         self.assertEqual(nodes[1].agent_role, "skeptic")
+        self.assertEqual(nodes[1].input["budget"], "balanced")
         self.assertEqual(nodes[1].depends_on, [])
         self.assertEqual(nodes[2].agent_role, "analyst")
         self.assertEqual(
