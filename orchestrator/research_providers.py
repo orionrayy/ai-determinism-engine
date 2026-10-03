@@ -100,7 +100,7 @@ def _request_json(
             if delay:
                 time.sleep(delay)
             attempt += 1
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError) as exc:
             if attempt >= max_transient_retries:
                 raise ResearchProviderError(
                     "research provider transient request failure"
