@@ -2914,6 +2914,30 @@ def recover_barrier_failed_side_effects(
         recovered = True
     return recovered
 
+def recover_inflight_safe_nodes(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+) -> bool:
+    """Rearm interrupted non-side-effecting work so it can be safely replayed."""
+    recovered = False
+    for node in nodes:
+        if node.status != "running" or side_effecting(node, registry):
+            continue
+        node.output = {}
+        node.error = {}
+        transition(node, "ready")
+        append_event("node.safe_execution_recovered", {
+            "workflow_id": workflow.get("id"),
+            "node_id": node.id,
+            "reason": "worker_interruption",
+        })
+        recovered = True
+    if recovered:
+        workflow["status"] = "running"
+    return recovered
+
+
 def recover_inflight_side_effects(
     workflow: dict[str, Any],
     nodes: list[Node],
@@ -3129,6 +3153,10 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
         return 'rearmed_pre_side_effect'
+    if (recover_inflight_safe_nodes(workflow, nodes, registry)):
+        workflow["nodes"] = [asdict(node) for node in nodes]
+        attempt_budget.sync()
+        persist_workflow(workflow)
     recover_inflight_side_effects(workflow, nodes, registry)
     reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
     if reconciliation is not None:
@@ -3212,6 +3240,9 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         return "failed"
     attempt_budget.sync()
     transition(node, 'running')
+    if not side_effecting(node, registry):
+        workflow['nodes'] = [asdict(item) for item in nodes]
+        persist_workflow(workflow)
     execution_id = execution_key(workflow, node)
     if side_effecting(node, registry):
         record = workflow.setdefault('executions', {}).get(execution_id)
@@ -3402,6 +3433,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             workflow['nodes'] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
             return
+        if recover_inflight_safe_nodes(workflow, nodes, registry):
+            workflow['nodes'] = [asdict(node) for node in nodes]
+            attempt_budget.sync()
+            persist_workflow(workflow)
         recover_inflight_side_effects(workflow, nodes, registry)
         reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
         if reconciliation == "failed":
@@ -3578,6 +3613,14 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
 
         dry_run = not live
         results = []
+
+        # Persist safe running nodes before their execution begins. If the worker
+        # is interrupted, recovery can rearm them while preserving the charged
+        # attempt budget.
+        if executable and all(not side_effecting(node, registry) for node, _ in executable):
+            attempt_budget.sync()
+            workflow["nodes"] = [asdict(item) for item in nodes]
+            persist_workflow(workflow)
 
         if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
             for node, execution_id in executable:
