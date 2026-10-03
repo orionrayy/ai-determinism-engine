@@ -2856,6 +2856,7 @@ def execute_with_retries(
     attempt_budget: AttemptBudget | None = None,
     initial_attempt_reserved: bool = False,
     before_retry: Any | None = None,
+    llm_budget_workflow: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any] | None]:
     registry = load_registry()
     attempts = node.retry_count
@@ -2871,6 +2872,21 @@ def execute_with_retries(
                         f"{attempt_budget.used}/{attempt_budget.max_attempts}"
                     ),
                     "failure_class": "permanent",
+                    "retry_allowed": False,
+                }
+                transition(node, "failed")
+                return False, node.error
+            if llm_budget_workflow is not None and not reserve_llm_call(
+                llm_budget_workflow,
+                node,
+                live=not dry_run,
+            ):
+                attempt_budget.refund(1)
+                node.error = {
+                    **node.error,
+                    "type": "llm_call_budget_exhausted",
+                    "message": "LLM call budget exhausted before retry.",
+                    "failure_class": "quota",
                     "retry_allowed": False,
                 }
                 transition(node, "failed")
@@ -3534,6 +3550,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         dry_run=not live,
         attempt_budget=attempt_budget,
         initial_attempt_reserved=True,
+        llm_budget_workflow=workflow,
         before_retry=(
             lambda: (
                 attempt_budget.sync(),
@@ -3866,6 +3883,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         dry_run,
                         attempt_budget=attempt_budget,
                         initial_attempt_reserved=True,
+                        llm_budget_workflow=workflow,
                         before_retry=(
                             lambda node=node: (
                                 attempt_budget.sync(),
