@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic claim/evidence validation primitives."""
+# v67: explicit epistemic boundary for claim-level contracts.
 from __future__ import annotations
 
 from typing import Any, Mapping
