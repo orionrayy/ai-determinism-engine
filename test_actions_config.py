@@ -208,6 +208,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn("actions/setup-node@", self.tests)
         self.assertNotIn("wrangler@4.146.0", self.tests)
         self.assertNotIn("node workers/private-input/test.mjs", self.tests)
+        self.assertIn("python -m compileall -q orchestrator", self.tests)
         self.assertIn("python -m orchestrator.eval_harness --json", self.tests)
         for module in (
             "orchestrator/research_budget.py",
