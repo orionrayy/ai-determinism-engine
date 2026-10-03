@@ -2506,11 +2506,12 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("node output must be an object")
     contract = node.contract or {}
-    if output.get("simulated") is True and not contract:
+    if output.get("simulated") is True:
         return {
             "passed": True,
             "checks": [{"check": "dry_run_simulation", "passed": True}],
             "checked_at": utc_now(),
+            "contract_deferred": bool(contract),
         }
 
     checks = []
