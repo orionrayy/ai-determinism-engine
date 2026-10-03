@@ -250,6 +250,10 @@ def research_records(
         if provider and provider not in seen_providers:
             normalized_providers.append(provider)
             seen_providers.add(provider)
+    if providers is not None and not normalized_providers:
+        raise ResearchProviderError(
+            "no requested research providers are allowed by the current free-only policy"
+        )
     records: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
     provider_counts: dict[str, int] = {}
