@@ -1596,6 +1596,11 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
             ("n04-notify", "notify", "Report the result and artifacts.", ["n03-validate"], "communicator"),
         ]
 
+    try:
+        from .research_budget import budget_for_goal
+    except ImportError:
+        from research_budget import budget_for_goal
+
     nodes: list[Node] = []
     for node_id, capability, instruction, dependencies, role in plan:
         cap_spec = registry.get(f"capability:{capability}", {})
@@ -1618,6 +1623,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                     if role == "skeptic" and capability == "research"
                     else "primary_evidence"
                 ),
+                "budget": budget_for_goal(goal) if capability == "research" else "",
             },
             contract={},
             agent_role=role,
