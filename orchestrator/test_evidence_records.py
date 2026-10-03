@@ -13,9 +13,11 @@ class EvidenceRecordTests(unittest.TestCase):
         self.assertEqual(sorted(merged[0]["providers"]), ["crossref","openalex"])
         self.assertEqual(count_independent_sources(merged), 1)
 
-    def test_fallback_identity_is_deterministic(self):
-        a = {"title":"Novel Evidence","authors":["Jane Doe"],"published":"2025"}
+    def test_fallback_identity_is_deterministic_and_cross_provider(self):
+        a = {"provider":"openalex","title":"Novel Evidence","authors":[{"name":"Jane Doe"}],"publication_year":2025,"id":"https://openalex.org/W1"}
+        b = {"provider":"semantic_scholar","title":"Novel Evidence","authors":[{"name":"Jane Doe"}],"year":2025,"paperId":"P1"}
         self.assertEqual(canonical_source_id(a), canonical_source_id(a))
+        self.assertEqual(canonical_source_id(a), canonical_source_id(b))
 
     def test_normalized_record_has_credibility_signals_without_opaque_score(self):
         record = normalize_source("semantic_scholar", {
