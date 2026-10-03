@@ -2,8 +2,11 @@
 """Credential-optional public research provider fabric."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import tempfile
+from pathlib import Path
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,6 +29,9 @@ except ImportError:
 
 MAX_RESPONSE_BYTES = 512 * 1024
 DEFAULT_MAX_RESULTS = 8
+DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
+MAX_CACHE_ENTRY_BYTES = 768 * 1024
+MAX_CACHE_FILES = 128
 
 PROVIDER_ORDER = (
     "openalex",
@@ -48,6 +54,108 @@ def default_provider_order() -> tuple[str, ...]:
 
 class ResearchProviderError(RuntimeError):
     pass
+
+
+def _cache_enabled() -> bool:
+    return os.environ.get("ORCHESTRATOR_RESEARCH_CACHE", "true").strip().lower() != "false"
+
+
+def _cache_dir() -> Path:
+    configured = os.environ.get("ORCHESTRATOR_RESEARCH_CACHE_DIR", "").strip()
+    return Path(configured) if configured else Path(".orchestrator") / "research-cache"
+
+
+def _cache_ttl_seconds() -> int:
+    raw = os.environ.get("ORCHESTRATOR_RESEARCH_CACHE_TTL", "").strip()
+    try:
+        value = int(raw) if raw else DEFAULT_CACHE_TTL_SECONDS
+    except ValueError:
+        value = DEFAULT_CACHE_TTL_SECONDS
+    return max(0, min(value, 7 * 24 * 60 * 60))
+
+
+def _cache_path(provider: str, query: str, max_results: int) -> Path:
+    identity = json.dumps(
+        {
+            "schema": 1,
+            "provider": str(provider).strip().lower(),
+            "query": str(query).strip(),
+            "max_results": int(max_results),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return _cache_dir() / (hashlib.sha256(identity).hexdigest() + ".json")
+
+
+def _cache_load(provider: str, query: str, max_results: int) -> dict[str, Any] | None:
+    if not _cache_enabled():
+        return None
+    path = _cache_path(provider, query, max_results)
+    try:
+        if time.time() - path.stat().st_mtime > _cache_ttl_seconds():
+            return None
+        raw = path.read_bytes()
+        if len(raw) > MAX_CACHE_ENTRY_BYTES:
+            return None
+        value = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        return None
+    if (
+        str(value.get("provider") or "") != str(provider).strip().lower()
+        or str(value.get("query") or "") != str(query).strip()
+        or int(value.get("max_results") or 0) != int(max_results)
+    ):
+        return None
+    payload = value.get("payload")
+    return payload if isinstance(payload, dict) else None
+
+
+def _cache_store(provider: str, query: str, max_results: int, payload: dict[str, Any]) -> None:
+    if not _cache_enabled():
+        return
+    try:
+        directory = _cache_dir()
+        directory.mkdir(parents=True, exist_ok=True)
+        path = _cache_path(provider, query, max_results)
+        value = {
+            "schema": 1,
+            "provider": str(provider).strip().lower(),
+            "query": str(query).strip(),
+            "max_results": int(max_results),
+            "payload": payload,
+        }
+        encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > MAX_CACHE_ENTRY_BYTES:
+            return
+        fd, tmp_name = tempfile.mkstemp(prefix=".research-cache-", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, path)
+        finally:
+            try:
+                os.unlink(tmp_name)
+            except FileNotFoundError:
+                pass
+        files = sorted(
+            (item for item in directory.glob("*.json") if item.is_file()),
+            key=lambda item: item.stat().st_mtime,
+            reverse=True,
+        )
+        for stale in files[MAX_CACHE_FILES:]:
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+    except OSError:
+        # Research cache is an optimization only; provider failures must retain
+        # the normal execution path rather than turning into cache failures.
+        return
 
 
 def _request_json(
@@ -211,6 +319,10 @@ def normalize_provider_payload(
 
 
 def _provider_search(provider: str, query: str, max_results: int) -> dict[str, Any]:
+    provider = str(provider).strip().lower()
+    cached = _cache_load(provider, query, max_results)
+    if cached is not None:
+        return cached
     functions = {
         "openalex": search_openalex,
         "semantic_scholar": search_semantic_scholar,
@@ -220,7 +332,10 @@ def _provider_search(provider: str, query: str, max_results: int) -> dict[str, A
     fn = functions.get(provider)
     if fn is None:
         raise ResearchProviderError(f"unsupported research provider: {provider}")
-    return fn(query, max_results=max_results)
+    payload = fn(query, max_results=max_results)
+    if isinstance(payload, dict):
+        _cache_store(provider, query, max_results, payload)
+    return payload
 
 
 def research_records(
@@ -310,4 +425,6 @@ __all__ = [
     "normalize_provider_payload",
     "research_records",
     "default_provider_order",
+    "_cache_load",
+    "_cache_store",
 ]
