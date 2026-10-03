@@ -210,7 +210,7 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
 
 
 def cleanup_idempotency(now: float) -> None:
-    expired = [key for key, (expires, _) in _COMPLETED.items() if expires <= now]
+    expired = [key for key, (expires, _, _) in _COMPLETED.items() if expires <= now]
     for key in expired:
         _COMPLETED.pop(key, None)
 
