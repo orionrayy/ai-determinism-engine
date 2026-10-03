@@ -14,7 +14,6 @@ on:
       - "bridge_runtime.py"
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
-      - "bridge_runtime.py"
       - "bridge_server.py"
       - "test_gateway.py"
       - "private_input.py"
