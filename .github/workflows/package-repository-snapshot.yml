@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30af803
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
       - name: Create tracked-file archive
@@ -38,4 +38,4 @@ jobs:
           name: ai-determinism-engine-${{ github.sha }}
           path: ai-determinism-engine-${{ github.sha }}.zip
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 3
