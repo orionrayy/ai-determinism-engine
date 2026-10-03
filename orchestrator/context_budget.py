@@ -41,6 +41,65 @@ def bounded_json(value: Any, max_bytes: int) -> tuple[str, bool]:
     return clipped + "...[truncated]", True
 
 
+def _compact_evidence_output(
+    output: Any,
+    max_bytes: int,
+) -> tuple[dict[str, Any] | None, bool]:
+    if not isinstance(output, dict) or not isinstance(output.get("evidence_records"), list):
+        return None, False
+
+    compact: dict[str, Any] = {
+        "query": str(output.get("query") or ""),
+        "independent_source_count": int(output.get("independent_source_count") or 0),
+        "evidence_records": [],
+    }
+    if isinstance(output.get("provider_counts"), dict):
+        compact["provider_counts"] = {
+            str(k): int(v)
+            for k, v in sorted(output["provider_counts"].items())
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+    if isinstance(output.get("extended_errors"), dict):
+        compact["extended_errors"] = {
+            str(k): bounded_json(v, 512)[0]
+            for k, v in sorted(output["extended_errors"].items())
+        }
+
+    truncated = False
+    for raw in sorted(
+        (item for item in output["evidence_records"] if isinstance(item, dict)),
+        key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
+    ):
+        record = {
+            "canonical_id": str(raw.get("canonical_id") or ""),
+            "title": str(raw.get("title") or ""),
+            "providers": sorted(str(v) for v in (raw.get("providers") or []) if str(v)),
+            "year": raw.get("year"),
+            "doi": str(raw.get("doi") or ""),
+            "arxiv_id": str(raw.get("arxiv_id") or ""),
+            "pmid": str(raw.get("pmid") or ""),
+            "pmcid": str(raw.get("pmcid") or ""),
+            "venue": str(raw.get("venue") or ""),
+            "citation_count": int(raw.get("citation_count") or 0),
+            "open_access": bool(raw.get("open_access")),
+            "full_text_url": str(raw.get("full_text_url") or ""),
+            "primaryity": str(raw.get("primaryity") or "unknown"),
+            "authority_signals": sorted(str(v) for v in (raw.get("authority_signals") or []) if str(v)),
+        }
+        probe = dict(compact)
+        probe["evidence_records"] = compact["evidence_records"] + [record]
+        if len(canonical_json(probe).encode("utf-8")) > max_bytes:
+            truncated = True
+            break
+        compact["evidence_records"].append(record)
+
+    if len(canonical_json(compact).encode("utf-8")) > max_bytes:
+        compact["evidence_records"] = []
+        compact["evidence_records_truncated"] = True
+        truncated = True
+    return compact, truncated
+
+
 def _dependency_record(
     dependency_id: str,
     dependency: Mapping[str, Any],
@@ -48,7 +107,15 @@ def _dependency_record(
     max_output_bytes: int,
 ) -> dict[str, Any]:
     output = dependency.get("output")
-    output_json, truncated = bounded_json(output, max_output_bytes)
+    structured_output, structured_truncated = _compact_evidence_output(
+        output,
+        max_output_bytes,
+    )
+    if structured_output is not None:
+        output_json = structured_output
+        truncated = structured_truncated
+    else:
+        output_json, truncated = bounded_json(output, max_output_bytes)
     output_sha256 = digest(output)
     evidence_sha256 = dependency.get("evidence_sha256")
     record = {
