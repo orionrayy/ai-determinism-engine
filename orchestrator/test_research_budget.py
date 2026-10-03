@@ -1,6 +1,10 @@
 import unittest
 
-from research_budget import choose_extended_providers, normalize_budget
+from research_budget import (
+    choose_extended_providers,
+    default_available_providers,
+    normalize_budget,
+)
 
 
 class ResearchBudgetTests(unittest.TestCase):
@@ -9,6 +13,12 @@ class ResearchBudgetTests(unittest.TestCase):
         self.assertEqual(normalize_budget("balanced").max_extended_providers, 2)
         self.assertEqual(normalize_budget("deep").max_extended_providers, 4)
         self.assertEqual(normalize_budget("unknown").name, "balanced")
+
+    def test_free_only_defaults_to_public_providers(self):
+        self.assertEqual(
+            default_available_providers(),
+            ("semantic_scholar", "europe_pmc"),
+        )
 
     def test_provider_selection_is_deterministic_and_topic_aware(self):
         medical = choose_extended_providers(
