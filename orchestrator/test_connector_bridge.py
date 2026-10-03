@@ -30,7 +30,7 @@ class ConnectorBridgeTests(unittest.TestCase):
         body = b'{"ok":true}'
         sig = cb.sign(123, body, "secret")
         expected = __import__("hmac").new(
-            b"secret", b"123\n" + body, __import__("hashlib").sha256
+            b"secret", b"123\nPOST\n/bridge\n" + body, __import__("hashlib").sha256
         ).hexdigest()
         self.assertEqual(sig, "sha256=" + expected)
 
