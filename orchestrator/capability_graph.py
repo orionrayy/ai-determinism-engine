@@ -75,7 +75,6 @@ def configured_model(tool: str, registry: dict[str, dict[str, Any]]) -> str | No
         return None
     return (
         os.environ.get("GEMINI_MODEL")
-        or os.environ.get("GEMINI_PLANNER_MODEL")
         or default_model
     ).strip()
 
