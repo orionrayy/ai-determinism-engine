@@ -1931,6 +1931,85 @@ class OrchestratorTests(unittest.TestCase):
             result = o.execute_artifact_verifier(node, "verify")
         self.assertTrue(result["checks"][0]["passed"])
 
+    def test_llm_retry_consumes_second_budget_slot(self):
+        node = o.Node(
+            "n01", "analyze", "gemini", [],
+            status="running",
+            max_retries=1,
+        )
+        workflow = {"id": "wf_llm_retry", "llm_calls_used": 1}
+        budget = o.AttemptBudget({
+            "attempts_used": 1,
+            "max_attempts": 4,
+        })
+        with patch.object(
+            o,
+            "execute_node",
+            side_effect=[
+                RuntimeError("transient"),
+                {"candidates": [{"content": {"parts": [{"text": "{}"}]}}],
+                 },
+            ],
+        ), patch.object(
+            o,
+            "execution_failure_policy",
+            return_value=("transient", True, False),
+        ), patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "ORCHESTRATOR_MAX_LLM_CALLS": "2"},
+            clear=False,
+        ):
+            ok, error = o.execute_with_retries(
+                node,
+                "goal",
+                False,
+                attempt_budget=budget,
+                initial_attempt_reserved=True,
+                llm_budget_workflow=workflow,
+            )
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(workflow["llm_calls_used"], 2)
+        self.assertEqual(budget.used, 2)
+
+    def test_llm_retry_fails_closed_when_budget_is_exhausted(self):
+        node = o.Node(
+            "n01", "analyze", "gemini", [],
+            status="running",
+            max_retries=1,
+        )
+        workflow = {"id": "wf_llm_retry_limit", "llm_calls_used": 1}
+        budget = o.AttemptBudget({
+            "attempts_used": 1,
+            "max_attempts": 4,
+        })
+        with patch.object(
+            o,
+            "execute_node",
+            side_effect=RuntimeError("transient"),
+        ) as execute, patch.object(
+            o,
+            "execution_failure_policy",
+            return_value=("transient", True, False),
+        ), patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "ORCHESTRATOR_MAX_LLM_CALLS": "1"},
+            clear=False,
+        ):
+            ok, error = o.execute_with_retries(
+                node,
+                "goal",
+                False,
+                attempt_budget=budget,
+                initial_attempt_reserved=True,
+                llm_budget_workflow=workflow,
+            )
+        self.assertFalse(ok)
+        self.assertEqual(error["type"], "llm_call_budget_exhausted")
+        self.assertEqual(workflow["llm_calls_used"], 1)
+        self.assertEqual(budget.used, 1)
+        self.assertEqual(execute.call_count, 1)
+
     def test_free_only_llm_call_budget_is_bounded_and_persisted(self):
         node = o.Node("n01", "analyze", "gemini", [])
         workflow = {"id": "wf_llm_budget", "llm_calls_used": 11}
