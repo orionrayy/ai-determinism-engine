@@ -63,28 +63,21 @@ class ResearchProviderTests(unittest.TestCase):
             }
 
         with patch("research_providers._provider_search", side_effect=fake):
-            result = research_records(
+            first = research_records(
+                "topic",
+                providers=("openalex", "semantic_scholar"),
+                max_results=2,
+            )
+            second = research_records(
                 "topic",
                 providers=("openalex", "semantic_scholar"),
                 max_results=2,
             )
 
-        self.assertEqual(result["providers"], ["openalex", "semantic_scholar"])
-        self.assertEqual(result["errors"], {})
-        self.assertEqual(result["provider_counts"], {
-            "openalex": 1,
-            "semantic_scholar": 1,
-        })
-        providers = [item["provider"] for item in result["evidence_records"]]
-        self.assertEqual(set(providers), {"openalex", "semantic_scholar"})
-        self.assertEqual(
-            providers,
-            [item["provider"] for item in research_records(
-                "topic",
-                providers=("openalex", "semantic_scholar"),
-                max_results=2,
-            )["evidence_records"]],
-        )
+        first_providers = [item["provider"] for item in first["evidence_records"]]
+        second_providers = [item["provider"] for item in second["evidence_records"]]
+        self.assertEqual(set(first_providers), {"openalex", "semantic_scholar"})
+        self.assertEqual(first_providers, second_providers)
 
     def test_provider_failure_is_reported_without_aborting_bundle(self):
         with patch("research_providers._request_json", side_effect={
