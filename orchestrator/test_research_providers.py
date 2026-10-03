@@ -2,6 +2,7 @@ import json
 import os
 import unittest
 import urllib.error
+import tempfile
 from unittest.mock import patch
 
 from research_providers import (
@@ -56,6 +57,57 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(result["providers"], ["semantic_scholar"])
         self.assertNotIn("openalex", result["providers"])
         self.assertEqual(search.call_count, 1)
+
+    def test_provider_cache_avoids_repeated_network_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                os.environ,
+                {
+                    "ORCHESTRATOR_RESEARCH_CACHE": "true",
+                    "ORCHESTRATOR_RESEARCH_CACHE_DIR": tmp,
+                },
+                clear=False,
+            ), patch(
+                "research_providers.search_semantic_scholar",
+                return_value={"data": [{"paperId": "S1", "title": "Cached"}]},
+            ) as search:
+                first = research_records(
+                    "cache topic",
+                    providers=("semantic_scholar",),
+                    max_results=2,
+                )
+                second = research_records(
+                    "cache topic",
+                    providers=("semantic_scholar",),
+                    max_results=2,
+                )
+        self.assertEqual(search.call_count, 1)
+        self.assertEqual(first["evidence_records"], second["evidence_records"])
+
+    def test_provider_cache_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                os.environ,
+                {
+                    "ORCHESTRATOR_RESEARCH_CACHE": "false",
+                    "ORCHESTRATOR_RESEARCH_CACHE_DIR": tmp,
+                },
+                clear=False,
+            ), patch(
+                "research_providers.search_semantic_scholar",
+                return_value={"data": [{"paperId": "S1", "title": "Fresh"}]},
+            ) as search:
+                research_records(
+                    "uncached topic",
+                    providers=("semantic_scholar",),
+                    max_results=2,
+                )
+                research_records(
+                    "uncached topic",
+                    providers=("semantic_scholar",),
+                    max_results=2,
+                )
+        self.assertEqual(search.call_count, 2)
 
     def test_request_retries_429_with_bounded_backoff(self):
         class Response:
