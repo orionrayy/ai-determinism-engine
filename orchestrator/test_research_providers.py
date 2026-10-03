@@ -1,9 +1,14 @@
 import json
 import os
 import unittest
+import urllib.error
 from unittest.mock import patch
 
-from research_providers import normalize_provider_payload, research_records
+from research_providers import (
+    _request_json,
+    normalize_provider_payload,
+    research_records,
+)
 
 class ResearchProviderTests(unittest.TestCase):
     def test_openalex_payload_normalizes_to_evidence_records(self):
@@ -38,6 +43,48 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(result["providers"], ["semantic_scholar"])
         self.assertNotIn("openalex", result["providers"])
         self.assertEqual(search.call_count, 1)
+
+    def test_request_retries_429_with_bounded_backoff(self):
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, exc_type, exc, tb):
+                return False
+            def read(self, size):
+                self.size = size
+                return b'{"ok": true}'
+
+        rate_limited = urllib.error.HTTPError(
+            "https://example.test",
+            429,
+            "Too Many Requests",
+            {"Retry-After": "0"},
+            None,
+        )
+        with patch(
+            "research_providers.urllib.request.urlopen",
+            side_effect=[rate_limited, Response()],
+        ) as urlopen, patch("research_providers.time.sleep") as sleep:
+            result = _request_json("https://example.test")
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(0.0)
+
+    def test_request_does_not_retry_non_transient_http_error(self):
+        forbidden = urllib.error.HTTPError(
+            "https://example.test",
+            403,
+            "Forbidden",
+            {},
+            None,
+        )
+        with patch(
+            "research_providers.urllib.request.urlopen",
+            side_effect=forbidden,
+        ) as urlopen:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                _request_json("https://example.test")
+        self.assertEqual(urlopen.call_count, 1)
 
     def test_default_provider_order_honors_free_only_mode(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
