@@ -19,6 +19,19 @@ class ActionsConfigTests(unittest.TestCase):
         cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
+    def test_free_only_workflow_does_not_expose_paid_adapter_secrets(self):
+        for secret in (
+            "OPENAI_API_KEY",
+            "FIRECRAWL_API_KEY",
+            "ORCHESTRATOR_WEBHOOK_SECRET",
+        ):
+            self.assertNotIn(secret, self.orchestrator)
+
+    def test_ci_avoids_duplicate_push_and_pull_request_runs(self):
+        self.assertIn("branches:", self.tests)
+        self.assertIn("- main", self.tests)
+        self.assertIn("github.event_name == 'pull_request'", self.tests)
+        self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", self.tests)
     def test_approval_labels_use_dedicated_dispatcher(self):
         self.assertIn('types: [labeled]', self.approval)
         self.assertIn('orchestrator-approved', self.approval)
@@ -234,6 +247,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("v42 free Gemini model gate", memory)
         self.assertIn("v41 private structured input boundary", memory)
         self.assertIn("v44 — reconciliation cost closure", memory)
+        self.assertIn("v65", memory)
 
     def test_artifact_verifier_uses_pinned_public_https_guard(self):
         orchestrator = (ROOT / "orchestrator" / "orchestrator.py").read_text()
