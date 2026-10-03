@@ -94,6 +94,10 @@ jobs:
 
       - name: Unit tests
         run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
+      - name: Control-plane evaluation harness
+        env:
+          ORCHESTRATOR_FREE_ONLY: "true"
+        run: python orchestrator/eval_harness.py --json
       - name: Validate private-input Worker
         shell: bash
         run: |
