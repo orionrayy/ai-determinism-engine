@@ -1931,6 +1931,29 @@ class OrchestratorTests(unittest.TestCase):
             result = o.execute_artifact_verifier(node, "verify")
         self.assertTrue(result["checks"][0]["passed"])
 
+    def test_simulated_output_still_enforces_deterministic_contracts(self):
+        node = o.Node(
+            "n01", "execute", "noop", [],
+            contract={"required_fields": ["answer"], "min_sources": 1},
+        )
+        with self.assertRaisesRegex(RuntimeError, "contract field missing: answer"):
+            o.validate_node_output(
+                node,
+                {"simulated": True},
+            )
+
+    def test_simulated_epistemic_output_defers_only_epistemic_validation(self):
+        node = o.Node(
+            "n01", "execute", "gemini", [],
+            contract={"epistemic": True, "min_coverage": 0.8},
+        )
+        result = o.validate_node_output(
+            node,
+            {"simulated": True, "candidates": []},
+        )
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["checks"][0]["epistemic_deferred"])
+
     def test_contract_required_field_is_enforced(self):
         node = o.Node(
             "n01", "execute", "noop", [],
