@@ -2434,6 +2434,23 @@ def execute_blueprint_compiler(node: Node, goal: str) -> dict[str, Any]:
     }
 
 
+def _independent_source_count(value: Any) -> int:
+    if not isinstance(value, dict):
+        return 0
+    explicit = value.get("independent_source_count")
+    if isinstance(explicit, int) and explicit >= 0:
+        return explicit
+    records = value.get("evidence_records")
+    if isinstance(records, list):
+        try:
+            from .evidence_records import count_independent_sources
+        except ImportError:
+            from evidence_records import count_independent_sources
+        return count_independent_sources(records)
+    sources = value.get("sources")
+    return len(sources) if isinstance(sources, dict) else 0
+
+
 def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
     context = node.input.get("context") or {}
     dependencies = context.get("dependencies", {}) if isinstance(context, dict) else {}
@@ -2489,8 +2506,8 @@ def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
                 parsed = json.loads(candidate) if isinstance(candidate, str) else candidate
             except json.JSONDecodeError:
                 parsed = candidate
-            if isinstance(parsed, dict) and isinstance(parsed.get("sources"), dict):
-                source_count = max(source_count, len(parsed["sources"]))
+            if isinstance(parsed, dict):
+                source_count = max(source_count, _independent_source_count(parsed))
         ok = source_count >= int(min_sources)
         checks.append({
             "check": "contract:min_sources",
@@ -2560,8 +2577,7 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
 
     min_sources = contract.get("min_sources")
     if min_sources is not None:
-        sources = output.get("sources")
-        count = len(sources) if isinstance(sources, dict) else 0
+        count = _independent_source_count(output)
         ok = count >= int(min_sources)
         checks.append({"check": "min_sources", "actual": count, "required": int(min_sources), "passed": ok})
         if not ok:
