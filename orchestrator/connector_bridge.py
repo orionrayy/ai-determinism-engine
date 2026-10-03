@@ -631,11 +631,16 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         # Retry policy remains centralized in the orchestrator.
         exc.idempotent = bool(action_spec.get("idempotent"))
         raise
+    connector_result = (
+        response.get("result")
+        if isinstance(response, dict) and isinstance(response.get("result"), dict)
+        else response
+    )
     try:
         validate_discovered_result(
             request.connector,
             request.action,
-            response,
+            connector_result,
             inventory,
         )
     except ConnectorBridgeError as exc:
@@ -655,4 +660,5 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
         "response": response,
+        "result": connector_result,
     }
