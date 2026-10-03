@@ -119,8 +119,20 @@ def build_request(node: Any, goal: str) -> ConnectorRequest:
     return request
 
 
-def sign(timestamp: int, body: bytes, secret: str) -> str:
-    message = str(timestamp).encode("utf-8") + b"\n" + body
+def sign(
+    timestamp: int,
+    body: bytes,
+    secret: str,
+    *,
+    method: str = "POST",
+    path: str = "/bridge",
+) -> str:
+    message = b"\n".join([
+        str(timestamp).encode("utf-8"),
+        str(method).upper().encode("utf-8"),
+        str(path).encode("utf-8"),
+        body,
+    ])
     digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return "sha256=" + digest
 
@@ -430,7 +442,7 @@ def post_reconciliation(
         "User-Agent": "ai-orchestrator-connector-reconciliation/1.0",
         "X-Orchestrator-Protocol": PROTOCOL,
         "X-Orchestrator-Timestamp": str(request.sent_at),
-        "X-Orchestrator-Signature": sign(request.sent_at, body, secret),
+        "X-Orchestrator-Signature": sign(request.sent_at, body, secret, method="POST", path=urllib.parse.urlsplit(url).path or "/bridge"),
         "Idempotency-Key": request.request_id,
     }
     http = urllib.request.Request(
