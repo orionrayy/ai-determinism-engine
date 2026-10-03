@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ORCHESTRATOR_DIR = Path(__file__).resolve().parent
+for path in (ROOT, ORCHESTRATOR_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 try:
     from .blueprint_compiler import build_compilation_manifest
