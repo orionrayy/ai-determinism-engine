@@ -24,6 +24,22 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(records[0]["canonical_id"], "doi:10.1000/xyz")
         self.assertTrue(records[0]["open_access"])
 
+    def test_default_provider_order_honors_free_only_mode(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertEqual(
+                research_records("topic")["providers"],
+                ["semantic_scholar", "europe_pmc"],
+            )
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False), \
+             patch(
+                 "research_providers._provider_search",
+                 return_value={"data": []},
+             ):
+            self.assertEqual(
+                research_records("topic")["providers"],
+                ["openalex", "semantic_scholar", "europe_pmc", "core"],
+            )
+
     def test_provider_requests_run_in_parallel_with_deterministic_output_order(self):
         def fake(provider, query, max_results):
             if provider == "openalex":
