@@ -2944,6 +2944,12 @@ def replan_after_failure(
     ):
         return False
 
+    # A different adapter can have different side-effect semantics even when it
+    # advertises the same capability. Require the existing retry/reconciliation
+    # path to handle side effects rather than silently changing the operation.
+    if side_effecting(failed_node, registry):
+        return False
+
     old_tool = failed_node.tool
     try:
         candidate = route_tool(
