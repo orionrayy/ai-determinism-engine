@@ -181,7 +181,7 @@ Current execution-fabric branch: `main`
 - Ingress identities now include a deterministic semantic intent digest, so reusing an event/idempotency identity for a changed goal or external operation fails closed.
 - Safe federated workloads gain a bounded stale-recovery path after 10 minutes; only non-side-effecting delegated nodes can be rearmed and the reserved attempt/federation quota is refunded.
 - Interrupted non-side-effecting nodes are durably marked running before execution and are rearmed on worker recovery, preserving the charged attempt budget instead of silently starting an unrecorded attempt.
-- Gemini/planner prompts explicitly treat dependency and connector context as untrusted data; model output is capped at 2,048 tokens with a single candidate to bound free-tier consumption.
+- Gemini/planner prompts explicitly treat dependency and connector context as untrusted data; Gemini node output is capped at 2,048 tokens and planner output at 4,096 tokens with a single candidate to bound free-tier consumption.
 - The free-only supervisor no longer injects disabled paid-adapter credentials into the runtime environment.
 - CI push tests are restricted to main while pull-request checks use concurrency cancellation, avoiding redundant feature-branch execution on every intermediate commit.
 - These changes remain GitHub Actions + stdlib Python with no database, broker, queue, proxy, paid runtime service, or new package dependency.
