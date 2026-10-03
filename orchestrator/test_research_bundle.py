@@ -86,6 +86,36 @@ class ResearchBundleTests(unittest.TestCase):
         self.assertEqual(value["independent_source_count"], 2)
         self.assertEqual(len(value["evidence_records"]), 2)
 
+    def test_extended_research_stops_when_legacy_evidence_meets_budget(self):
+        with patch.object(r, "search_wikipedia", return_value={
+            "query": {"search": [{"title": f"Source {i}"} for i in range(8)]}
+        }), \
+             patch.object(r, "search_arxiv", return_value={"results": []}), \
+             patch.object(r, "search_crossref", return_value={"message": {"items": []}}), \
+             patch("research_providers.research_records") as extended:
+            value = r.research_bundle("topic", include_extended=True, budget="fast")
+        extended.assert_not_called()
+        self.assertGreaterEqual(value["independent_source_count"], 4)
+        self.assertTrue(value["research_stopped_early"])
+
+    def test_extended_research_can_rescue_legacy_outage(self):
+        extended = {
+            "evidence_records": [
+                {"canonical_id": "doi:10.1000/rescue", "provider": "semantic_scholar"},
+            ],
+            "independent_source_count": 1,
+            "provider_counts": {"semantic_scholar": 1},
+            "errors": {},
+        }
+        with patch.object(r, "search_wikipedia", side_effect=RuntimeError("down")), \
+             patch.object(r, "search_arxiv", side_effect=RuntimeError("down")), \
+             patch.object(r, "search_crossref", side_effect=RuntimeError("down")), \
+             patch("research_providers.research_records", return_value=extended):
+            value = r.research_bundle("topic", include_extended=True, budget="fast")
+        self.assertEqual(value["independent_source_count"], 1)
+        self.assertEqual(len(value["evidence_records"]), 1)
+        self.assertIn("research_budget", value)
+
     def test_extended_failure_preserves_legacy_evidence(self):
         with patch.object(r, "search_wikipedia", return_value={"query": {"search": [{"title": "Background"}]}}), \
              patch.object(r, "search_arxiv", return_value={"results": []}), \
