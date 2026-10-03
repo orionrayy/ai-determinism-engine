@@ -55,6 +55,11 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v66 Trace Contract and Evaluation Harness
+The durable event stream now carries a deterministic trace envelope without adding a telemetry backend: workflow events map to workflow spans, node events to node spans, and agent events to agent child spans. The trace IDs are derived from workflow/node/agent identity, so replay and inspection can correlate lifecycle events without depending on wall-clock identity.
+
+A dependency-free control-plane evaluation harness runs six cross-module invariants offline: blueprint repeatability, context-budget enforcement, semantic ingress binding, free-only policy, workload-wave ordering/parallelism, and trace hierarchy. It is executed in CI with no model/API call and fails the build when a control-plane invariant regresses.
+
 ## v64–v65 Deep Workload Orchestration and Integrity Hardening
 The orchestrator now supports bounded long-horizon workloads through aggregate context budgeting, deterministic execution waves, and durable workload lineage. v65 additionally stabilizes context provenance digests, blocks federation ZIP decompression beyond the aggregate bound before expansion, binds ingress identities to semantic intent, and preserves parallelism metadata for downstream waves.
 Regression coverage exercises the context, federation archive, ingress identity, and blueprint-wave integrity boundaries. No database, queue, broker, paid runtime service, or new dependency was introduced.
