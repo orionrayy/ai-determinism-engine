@@ -42,7 +42,7 @@ AGENTS = {
     "architect": AgentProfile(
         "architect",
         "Turn requirements and evidence into an implementation design.",
-        frozenset({"spec"}),
+        frozenset({"spec", "blueprint"}),
     ),
     "implementer": AgentProfile(
         "implementer",
@@ -91,6 +91,7 @@ ROLE_BY_CAPABILITY = {
     "analyze": "analyst",
     "draft": "analyst",
     "spec": "architect",
+    "blueprint": "architect",
     "build": "implementer",
     "test": "tester",
     "validate": "critic",

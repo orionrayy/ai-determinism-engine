@@ -2626,6 +2626,8 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
             finally:
                 node.input.pop("payload", None)
         return execute_connector_bridge(node, goal, dry_run)
+    if node.tool == "blueprint_compiler":
+        return execute_blueprint_compiler(node, goal)
     if node.tool == "artifact_verifier":
         return execute_artifact_verifier(node, goal)
     if node.tool == "local_validator":
