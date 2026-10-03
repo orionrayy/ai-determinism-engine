@@ -14,6 +14,8 @@ on:
       - "bridge_runtime.py"
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
+      - "bridge_runtime.py"
+      - "bridge_server.py"
       - "test_gateway.py"
       - "private_input.py"
       - "test_private_input.py"
@@ -47,6 +49,8 @@ on:
       - "orchestrator/**"
       - ".github/workflows/bridge-deploy.yml"
       - "gateway.py"
+      - "bridge_runtime.py"
+      - "bridge_server.py"
       - "test_gateway.py"
       - "ORCHESTRATION_MEMORY.md"
       - ".github/workflows/orchestrator-tests.yml"
@@ -93,7 +97,7 @@ jobs:
           node-version: "24"
 
       - name: Unit tests
-        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_actions_config test_private_input -v && node workers/private-input/test.mjs
+        run: python -m unittest discover -s orchestrator -p "test_*.py" -v && python -m unittest test_gateway test_bridge_runtime test_actions_config test_private_input -v && node workers/private-input/test.mjs
       - name: Control-plane evaluation harness
         env:
           ORCHESTRATOR_FREE_ONLY: "true"
