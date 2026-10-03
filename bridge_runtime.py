@@ -583,6 +583,7 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
             "request_id": request_id,
             "connector": connector,
             "action": action,
+            "result": result.get("data", result),
             "upstream": result,
         }
         cache_result(request_id, semantic_digest, response)
