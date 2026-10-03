@@ -142,6 +142,7 @@ class BridgeRuntimeTests(unittest.TestCase):
                 br.handle_request(bad, "secret")
 
 
+
     def test_reconciliation_capability_is_discovered(self):
         routes = {
             "notion": {
@@ -220,8 +221,7 @@ class BridgeRuntimeTests(unittest.TestCase):
             "actions": ["create_page"],
             "url": "https://upstream.example.test/invoke",
         }}
-        with patch.object(br, "load_routes", return_value=routes), \
-             patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}) as dispatch:
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}) as dispatch:
             br.handle_request(payload, "secret")
             changed = self.payload()
             changed["input"] = {"title": "Different"}
@@ -236,12 +236,10 @@ class BridgeRuntimeTests(unittest.TestCase):
             "url": "https://upstream.example.test/invoke",
             "free_tier": True,
         }}
-        with patch.object(br, "load_routes", return_value=routes), \
-             patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}):
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}):
             br.handle_request(payload, "secret")
             routes["notion"]["free_tier"] = False
-            with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True), \
-                 self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
+            with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True),                  self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
                 br.handle_request(payload, "secret")
 
     def test_upstream_http_error_is_not_cached(self):
@@ -250,8 +248,7 @@ class BridgeRuntimeTests(unittest.TestCase):
             "actions": ["create_page"],
             "url": "https://upstream.example.test/invoke",
         }}
-        with patch.object(br, "load_routes", return_value=routes), \
-             patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
             with self.assertRaises(br.BridgeUpstreamError):
                 br.handle_request(payload, "secret")
             dispatch.assert_called_once()
@@ -262,7 +259,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         class Response:
             status = 503
             def __enter__(self): return self
-            def __exit__(self, *args): return None
+            def __exit__(self, *args): return False
             def read(self, limit=None): return b'{"error":"down"}'
         with patch.object(br.urllib.request, "urlopen", return_value=Response()):
             with self.assertRaisesRegex(br.BridgeUpstreamError, "HTTP 503") as ctx:
@@ -276,7 +273,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         class Response:
             status = 200
             def __enter__(self): return self
-            def __exit__(self, *args): return None
+            def __exit__(self, *args): return False
             def read(self, limit=None): return b"x" * (br.MAX_UPSTREAM_RESPONSE_BYTES + 1)
         with patch.object(br.urllib.request, "urlopen", return_value=Response()):
             with self.assertRaisesRegex(br.BridgeUpstreamError, "exceeds 128 KiB"):
@@ -378,6 +375,12 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br, "load_routes", return_value=routes):
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_request(payload, "secret")
+
+    def test_cleanup_idempotency_handles_expired_three_tuple_entry(self):
+        request_id = hashlib.sha256(b"expired").hexdigest()
+        br._COMPLETED[request_id] = (time.time() - 1, "digest", {"ok": True})
+        br.cleanup_idempotency(time.time())
+        self.assertNotIn(request_id, br._COMPLETED)
 
 
 if __name__ == "__main__":
