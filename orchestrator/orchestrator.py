@@ -37,6 +37,7 @@ try:
     )
     from .evidence import build_evidence, sanitize_for_durable
     from .epistemic_validation import validate_epistemic_output
+    from .epistemic_metrics import record_node_metrics
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
     from .state_schema import (
@@ -74,6 +75,7 @@ except ImportError:
     )
     from evidence import build_evidence, sanitize_for_durable
     from epistemic_validation import validate_epistemic_output
+    from epistemic_metrics import record_node_metrics
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
     from state_schema import (
@@ -1824,7 +1826,12 @@ def execute_research_bundle(node: Node, goal: str) -> dict[str, Any]:
     query = str(node.input.get("query") or goal).strip()
     if not query:
         raise RuntimeError("research bundle requires a query")
-    return research_bundle(query, include_extended=True)
+    budget = str(node.input.get("budget") or "balanced").strip().lower()
+    return research_bundle(
+        query,
+        include_extended=True,
+        budget=budget,
+    )
 
 def execute_wikipedia(node: Node, goal: str) -> dict[str, Any]:
     query = str(node.input.get("query") or goal).strip()
@@ -2642,6 +2649,12 @@ def node_success_checkpoint(workflow: dict[str, Any], node: Node) -> None:
     )
     workflow.setdefault("evidence", {})[node.id] = evidence
     node.output["evidence"] = evidence
+    if node.contract.get("epistemic"):
+        verdict = extract_first_llm_json(node.output)
+        if isinstance(verdict, dict):
+            record_node_metrics(workflow, node.id, verdict=verdict)
+    elif node.tool == "research_bundle":
+        record_node_metrics(workflow, node.id, research_output=node.output)
     record_workload_progress(workflow, node)
     CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     checkpoint = {
@@ -3530,6 +3543,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
     workflow.setdefault("repair_feedback", {})
     workflow.setdefault("evidence", {})
     workflow.setdefault("reconciliations", {})
+    workflow.setdefault("epistemic_metrics", {})
     workflow.setdefault(
         "retry_jitter_seed",
         hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
