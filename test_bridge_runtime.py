@@ -73,7 +73,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertNotIn("NOTION_SECRET", json.dumps(discovered))
         self.assertEqual(
             discovered["clickup"]["action_specs"]["create_task"],
-            {"required": [], "types": {}, "idempotent": False},
+            {"required": [], "types": {}, "idempotent": False, "free_tier": False},
         )
 
     def test_action_free_tier_inherits_and_can_be_overridden(self):
@@ -188,7 +188,7 @@ class BridgeRuntimeTests(unittest.TestCase):
                 status = 200
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self): return b'{"state":"applied","external_id":"p1"}'
+                def read(self, limit=None): return b'{"state":"applied","external_id":"p1"}'
             return Response()
 
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen", side_effect=fake_urlopen):
@@ -247,6 +247,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         routes = {"notion": {
             "actions": ["create_page"],
             "url": "https://upstream.example.test/invoke",
+            "free_tier": True,
         }}
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
             with self.assertRaises(br.BridgeUpstreamError):
