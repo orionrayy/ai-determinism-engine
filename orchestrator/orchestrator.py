@@ -2547,17 +2547,16 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(output, dict):
         raise RuntimeError("node output must be an object")
     contract = node.contract or {}
-    if output.get("simulated") is True and (
-        not contract or contract.get("epistemic") is True
-    ):
-        return {
-            "passed": True,
-            "checks": [{"check": "dry_run_simulation", "passed": True}],
-            "checked_at": utc_now(),
-            "contract_deferred": bool(contract),
-        }
+    simulated = output.get("simulated") is True
+    defer_epistemic = simulated and contract.get("epistemic") is True
 
     checks = []
+    if simulated:
+        checks.append({
+            "check": "dry_run_simulation",
+            "passed": True,
+            "epistemic_deferred": defer_epistemic,
+        })
     required_fields = contract.get("required_fields", [])
     if required_fields:
         if not isinstance(required_fields, list):
@@ -2629,7 +2628,7 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         if not has_payload:
             raise RuntimeError("LLM adapter returned no usable payload")
         verdict = extract_first_llm_json(output)
-        if node.contract.get("epistemic"):
+        if node.contract.get("epistemic") and not defer_epistemic:
             if not isinstance(verdict, dict):
                 raise RuntimeError("epistemic validator returned no JSON object")
             epistemic_result = validate_epistemic_output(
