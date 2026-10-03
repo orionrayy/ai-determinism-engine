@@ -2811,14 +2811,6 @@ def execute_with_retries(
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     registry = load_registry()
     spec = registry.get(node.tool, {})
-    if not dry_run:
-        if not execution_eligible(
-            node.tool,
-            registry,
-            load_tool_health(),
-            live=bool(node.input.get("live", True)),
-        ):
-            raise RuntimeError(f"tool {node.tool} is not executable under current policy")
     if free_only() and not dry_run:
         is_free = bool(spec.get("free_tier", False))
         if not spec and node.tool in BUILTIN_FREE_TOOLS:
