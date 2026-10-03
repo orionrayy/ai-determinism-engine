@@ -17,6 +17,8 @@ for path in (ROOT, ORCHESTRATOR_DIR):
 try:
     from .blueprint_compiler import build_compilation_manifest
     from .context_budget import pack_node_context
+    from .epistemic_deliberation import debate_decision
+    from .epistemic_validation import validate_epistemic_output
     from .orchestrator import (
         TRACE_SCHEMA_VERSION,
         _trace_envelope,
@@ -28,6 +30,8 @@ try:
 except ImportError:
     from blueprint_compiler import build_compilation_manifest
     from context_budget import pack_node_context
+    from epistemic_deliberation import debate_decision
+    from epistemic_validation import validate_epistemic_output
     from orchestrator import (
         TRACE_SCHEMA_VERSION,
         _trace_envelope,
@@ -161,6 +165,94 @@ def _case_wave_ordering() -> dict[str, Any]:
     }
 
 
+def _case_epistemic_boundary() -> dict[str, Any]:
+    valid = validate_epistemic_output(
+        {
+            "claims": [
+                {
+                    "claim_id": "c1",
+                    "statement": "supported",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["source:a"],
+                },
+                {
+                    "claim_id": "c2",
+                    "statement": "disputed",
+                    "material": True,
+                    "status": "CONTESTED",
+                    "evidence_refs": ["source:b"],
+                },
+            ],
+            "evidence_records": [
+                {"canonical_id": "source:a"},
+                {"canonical_id": "source:b"},
+            ],
+        },
+        min_coverage=0.8,
+    )
+    duplicate = validate_epistemic_output(
+        {
+            "claims": [],
+            "evidence_records": [
+                {"canonical_id": "source:a"},
+                {"canonical_id": "source:a"},
+            ],
+        }
+    )
+    return {
+        "name": "epistemic_boundary",
+        "passed": valid["passed"] is True and duplicate["passed"] is False,
+        "supported_coverage": valid["coverage"]["coverage"],
+        "evidence_coverage": valid["coverage"]["evidence_coverage"],
+    }
+
+
+def _case_conditional_deliberation() -> dict[str, Any]:
+    stable = debate_decision([
+        {
+            "agent_id": "a1",
+            "answer": "A",
+            "confidence": 0.9,
+            "evidence_refs": ["x"],
+            "independent_source_count": 2,
+        },
+        {
+            "agent_id": "a2",
+            "answer": "A",
+            "confidence": 0.9,
+            "evidence_refs": ["y"],
+            "independent_source_count": 2,
+        },
+    ])
+    weak = debate_decision([
+        {
+            "agent_id": "a1",
+            "answer": "A",
+            "confidence": 0.9,
+            "evidence_refs": ["x"],
+            "independent_source_count": 1,
+        },
+        {
+            "agent_id": "a2",
+            "answer": "A",
+            "confidence": 0.9,
+            "evidence_refs": ["y"],
+            "independent_source_count": 1,
+        },
+    ])
+    return {
+        "name": "conditional_deliberation",
+        "passed": (
+            stable["required"] is False
+            and weak["required"] is True
+            and weak["reason"] == "insufficient_evidence"
+        ),
+        "stable_reason": stable["reason"],
+        "weak_reason": weak["reason"],
+    }
+
+
 def _case_trace_contract() -> dict[str, Any]:
     workflow = _trace_envelope("workflow.started", {"workflow_id": "eval-wf"})
     node = _trace_envelope(
@@ -197,6 +289,8 @@ CASES: tuple[Callable[[], dict[str, Any]], ...] = (
     _case_free_policy,
     _case_wave_ordering,
     _case_trace_contract,
+    _case_epistemic_boundary,
+    _case_conditional_deliberation,
 )
 
 
