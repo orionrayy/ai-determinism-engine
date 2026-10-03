@@ -81,7 +81,7 @@ class ResearchProviderTests(unittest.TestCase):
             result = _request_json("https://example.test")
         self.assertEqual(result, {"ok": True})
         self.assertEqual(urlopen.call_count, 2)
-        sleep.assert_called_once_with(0.0)
+        sleep.assert_not_called()
 
     def test_request_does_not_retry_non_transient_http_error(self):
         forbidden = urllib.error.HTTPError(
@@ -137,7 +137,11 @@ class ResearchProviderTests(unittest.TestCase):
                 }]
             }
 
-        with patch("research_providers._provider_search", side_effect=fake):
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "false"},
+            clear=False,
+        ), patch("research_providers._provider_search", side_effect=fake):
             first = research_records(
                 "topic",
                 providers=("openalex", "semantic_scholar"),
