@@ -175,6 +175,16 @@ Current execution-fabric branch: `main`
 - Blueprint wave metadata now marks any multi-unit wave as parallel-capable, including waves that depend on earlier levels; the prior metadata understated available parallelism.
 - Added regression coverage for all four integrity paths. No new service, dependency, database, broker, queue, or paid API was introduced.
 
+## Orchestration hardening v65 — deterministic integrity, liveness, and free-only hardening
+- Context provenance is stable: the context digest excludes its self-reference and mutable byte counter, while final size accounting reserves room for digest metadata.
+- Federation aggregate ZIP members are checked against their declared uncompressed and compressed sizes before decompression; encrypted members are rejected and post-read size is verified.
+- Ingress identities now include a deterministic semantic intent digest, so reusing an event/idempotency identity for a changed goal or external operation fails closed.
+- Safe federated workloads gain a bounded stale-recovery path after 10 minutes; only non-side-effecting delegated nodes can be rearmed and the reserved attempt/federation quota is refunded.
+- Interrupted non-side-effecting nodes are durably marked running before execution and are rearmed on worker recovery, preserving the charged attempt budget instead of silently starting an unrecorded attempt.
+- Gemini/planner prompts explicitly treat dependency and connector context as untrusted data; model output is capped at 2,048 tokens with a single candidate to bound free-tier consumption.
+- The free-only supervisor no longer injects disabled paid-adapter credentials into the runtime environment.
+- CI push tests are restricted to main while pull-request checks use concurrency cancellation, avoiding redundant feature-branch execution on every intermediate commit.
+- These changes remain GitHub Actions + stdlib Python with no database, broker, queue, proxy, paid runtime service, or new package dependency.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
