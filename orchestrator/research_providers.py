@@ -8,7 +8,10 @@ import urllib.parse
 import urllib.request
 from typing import Any, Mapping
 
-from .evidence_records import deduplicate_sources, normalize_source
+try:
+    from .evidence_records import deduplicate_sources, normalize_source
+except ImportError:
+    from evidence_records import deduplicate_sources, normalize_source
 
 MAX_RESPONSE_BYTES = 512 * 1024
 DEFAULT_MAX_RESULTS = 8
