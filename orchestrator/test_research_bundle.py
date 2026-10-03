@@ -86,6 +86,22 @@ class ResearchBundleTests(unittest.TestCase):
         self.assertEqual(value["independent_source_count"], 2)
         self.assertEqual(len(value["evidence_records"]), 2)
 
+    def test_fast_budget_bounds_legacy_provider_fanout(self):
+        with patch.object(r, "search_wikipedia", return_value={
+            "query": {"search": [{"title": "Source"}]}
+        }) as wiki, \
+             patch.object(r, "search_arxiv", return_value={"results": []}) as arxiv, \
+             patch.object(r, "search_crossref", return_value={"message": {"items": []}}) as crossref, \
+             patch("research_providers.research_records", return_value={
+                 "evidence_records": [],
+                 "provider_counts": {},
+                 "errors": {},
+             }):
+            r.research_bundle("topic", include_extended=True, budget="fast")
+        wiki.assert_called_once()
+        arxiv.assert_not_called()
+        crossref.assert_not_called()
+
     def test_extended_research_stops_when_legacy_evidence_meets_budget(self):
         with patch.object(r, "search_wikipedia", return_value={
             "query": {"search": [{"title": f"Source {i}"} for i in range(8)]}
