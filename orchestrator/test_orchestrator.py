@@ -1931,6 +1931,22 @@ class OrchestratorTests(unittest.TestCase):
             result = o.execute_artifact_verifier(node, "verify")
         self.assertTrue(result["checks"][0]["passed"])
 
+    def test_free_only_llm_call_budget_is_bounded_and_persisted(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {"id": "wf_llm_budget", "llm_calls_used": 11}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertTrue(o.reserve_llm_call(workflow, node, live=True))
+            self.assertEqual(workflow["llm_calls_used"], 12)
+            self.assertEqual(workflow["llm_call_limit"], 12)
+            self.assertFalse(o.reserve_llm_call(workflow, node, live=True))
+        self.assertEqual(node.error["type"], "llm_call_budget_exhausted")
+
+    def test_dry_run_does_not_consume_llm_call_budget(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {"id": "wf_llm_dry"}
+        self.assertTrue(o.reserve_llm_call(workflow, node, live=False))
+        self.assertNotIn("llm_calls_used", workflow)
+
     def test_simulated_output_still_enforces_deterministic_contracts(self):
         node = o.Node(
             "n01", "execute", "noop", [],
