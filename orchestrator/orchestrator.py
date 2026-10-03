@@ -674,6 +674,113 @@ def ingest_federation(
         "aggregate_sha256": federation["aggregate_sha256"],
     })
     return federation["status"]
+FEDERATION_STALE_SECONDS = 10 * 60
+
+
+def rearm_stale_federation(
+    workflow: dict[str, Any],
+    nodes: list[Node],
+    registry: dict[str, dict[str, Any]],
+    *,
+    now: datetime | None = None,
+) -> str:
+    """Recover a stuck safe-only federation without replaying side effects."""
+    federation = workflow.get("federation") or {}
+    if workflow.get("status") != "waiting_agents":
+        return "not_applicable"
+    if federation.get("status") not in {"prepared", "dispatched"}:
+        return "not_applicable"
+
+    created_raw = str(federation.get("created_at") or "").strip()
+    if not created_raw:
+        return "not_applicable"
+    try:
+        created = datetime.fromisoformat(created_raw.replace("Z", "+00:00"))
+    except ValueError:
+        return "not_applicable"
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) if now is None else now
+    age = max(0.0, (now - created).total_seconds())
+    if age < FEDERATION_STALE_SECONDS:
+        return "not_applicable"
+
+    task_ids = {
+        str(item.get("task_id") or "").strip()
+        for item in federation.get("tasks", [])
+        if isinstance(item, dict) and str(item.get("task_id") or "").strip()
+    }
+    delegated = [
+        node for node in nodes
+        if node.status == "delegated" and node.id in task_ids
+    ]
+    if not task_ids or len(delegated) != len(task_ids):
+        workflow["status"] = "failed"
+        workflow["error"] = {
+            "type": "federation_recovery_integrity_error",
+            "message": "Stale federation task inventory does not match delegated workflow nodes.",
+            "federation_id": federation.get("id"),
+        }
+        append_event("federation.stale_rearm_blocked", {
+            "workflow_id": workflow.get("id"),
+            "federation_id": federation.get("id"),
+            "reason": "task_inventory_mismatch",
+        })
+        persist_workflow(workflow)
+        return "failed"
+
+    if any(side_effecting(node, registry) for node in delegated):
+        workflow["status"] = "failed"
+        workflow["error"] = {
+            "type": "federation_recovery_safety_error",
+            "message": "Stale federation contains a side-effecting node; local replay is prohibited.",
+            "federation_id": federation.get("id"),
+        }
+        append_event("federation.stale_rearm_blocked", {
+            "workflow_id": workflow.get("id"),
+            "federation_id": federation.get("id"),
+            "reason": "side_effecting_task",
+        })
+        persist_workflow(workflow)
+        return "failed"
+
+    for node in delegated:
+        transition(node, "ready")
+        node.retry_count = 0
+        node.error = {}
+
+    attempt_budget = AttemptBudget(workflow)
+    attempt_budget.refund(len(delegated))
+    attempt_budget.sync()
+    try:
+        refund_federation_quota(workflow, len(delegated))
+    except Exception:
+        workflow["status"] = "failed"
+        workflow["error"] = {
+            "type": "federation_recovery_quota_error",
+            "message": "Unable to refund stale federation quota safely.",
+            "federation_id": federation.get("id"),
+        }
+        persist_workflow(workflow)
+        return "failed"
+
+    federation["status"] = "abandoned"
+    federation["abandoned_at"] = utc_now()
+    federation["abandon_reason"] = "stale_timeout"
+    federation["stale_after_seconds"] = FEDERATION_STALE_SECONDS
+    workflow["status"] = "ready"
+    workflow["nodes"] = [asdict(item) for item in nodes]
+    persist_workflow(workflow)
+    append_event("federation.stale_rearmed", {
+        "workflow_id": workflow.get("id"),
+        "federation_id": federation.get("id"),
+        "task_count": len(delegated),
+        "age_seconds": int(age),
+        "reason": "stale_timeout",
+    })
+    return "rearmed"
+
+
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
     if node.tool == "github":
         action = str(node.input.get("action") or "metadata")
@@ -3956,7 +4063,32 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
                     break
                 continue
 
+            nodes = [Node(**node) for node in workflow.get("nodes", [])]
             if artifact_id is None:
+                recovery = rearm_stale_federation(
+                    workflow,
+                    nodes,
+                    load_registry(),
+                )
+                if recovery == "failed":
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    state["workflows"][workflow["id"]] = workflow
+                    state["last_workflow_id"] = workflow["id"]
+                    resumed += 1
+                    break
+                if recovery == "rearmed":
+                    result = run_one_step(
+                        workflow,
+                        approve_high_risk=approve_high_risk,
+                    )
+                    workflow["nodes"] = [asdict(item) for item in workflow.get("nodes", nodes)]
+                    persist_workflow(workflow)
+                    state["workflows"][workflow["id"]] = workflow
+                    state["last_workflow_id"] = workflow["id"]
+                    resumed += 1
+                    if result == "failed" or step:
+                        break
+                    continue
                 append_event("federation.recovery_waiting", {
                     "workflow_id": workflow.get("id"),
                     "federation_id": federation.get("id"),
@@ -3965,7 +4097,6 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
                     break
                 continue
 
-            nodes = [Node(**node) for node in workflow.get("nodes", [])]
             try:
                 ingest_federation(
                     workflow,
