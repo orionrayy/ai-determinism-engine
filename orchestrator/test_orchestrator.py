@@ -1713,7 +1713,10 @@ class OrchestratorTests(unittest.TestCase):
             }},
         )
         result = o.execute_local_validator(node, "validate research")
-        minimum = [item for item in result["checks"] if item["check"] == "contract:min_sources"]
+        minimum = [
+            item for item in result["checks"]
+            if item.get("check") == "contract:min_sources"
+        ]
         self.assertEqual(len(minimum), 1)
         self.assertEqual(minimum[0]["actual"], 2)
         self.assertFalse(minimum[0]["passed"])
