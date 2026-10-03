@@ -2362,7 +2362,6 @@ class OrchestratorTests(unittest.TestCase):
 
         registry = {
             "gemini": {"free_tier": True, "free_models": ["test-model"]},
-            "capability:analyze": {"default_tool": "gemini"},
         }
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=fake_execute),                  patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
