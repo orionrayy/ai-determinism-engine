@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+import re
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,15 @@ _GENERAL_ORDER = (
     "europe_pmc",
     "core",
 )
+FREE_PROVIDER_ORDER = (
+    "semantic_scholar",
+    "europe_pmc",
+)
+
+
+def default_available_providers() -> tuple[str, ...]:
+    free_only = os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").strip().lower() == "true"
+    return FREE_PROVIDER_ORDER if free_only else _GENERAL_ORDER
 
 _TOPIC_HINTS = {
     "europe_pmc": (
@@ -59,16 +70,25 @@ def choose_extended_providers(
     query: str,
     *,
     budget: str | ResearchBudget = DEFAULT_BUDGET,
-    available: tuple[str, ...] = _GENERAL_ORDER,
+    available: tuple[str, ...] | None = None,
 ) -> list[str]:
     selected_budget = budget if isinstance(budget, ResearchBudget) else normalize_budget(budget)
     query_text = str(query or "").strip().lower()
-    available_set = {str(item).strip().lower() for item in available if str(item).strip()}
+    available_values = default_available_providers() if available is None else available
+    available_set = {
+        str(item).strip().lower()
+        for item in available_values
+        if str(item).strip()
+    }
     scored: list[tuple[int, int, str]] = []
     for index, provider in enumerate(_GENERAL_ORDER):
         if provider not in available_set:
             continue
-        score = sum(2 if " " in hint else 1 for hint in _TOPIC_HINTS.get(provider, ()) if hint in query_text)
+        score = sum(
+            2 if " " in hint else 1
+            for hint in _TOPIC_HINTS.get(provider, ())
+            if re.search(r"\b" + re.escape(hint) + r"\b", query_text)
+        )
         scored.append((-score, index, provider))
     scored.sort()
     return [provider for _, _, provider in scored[: selected_budget.max_extended_providers]]
@@ -89,6 +109,8 @@ __all__ = [
     "BUDGETS",
     "ResearchBudget",
     "DEFAULT_BUDGET",
+    "FREE_PROVIDER_ORDER",
+    "default_available_providers",
     "normalize_budget",
     "choose_extended_providers",
     "budget_metadata",
