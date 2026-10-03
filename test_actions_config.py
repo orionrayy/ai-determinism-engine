@@ -48,7 +48,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
         self.assertIn("merge-multiple: false", self.federation)
         self.assertIn("fail-fast: false", self.federation)
-        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("max-parallel: 1", self.federation)
     def test_federation_uses_fixed_concurrency_slots(self):
         self.assertIn("agent-federation-", self.federation)
         self.assertIn("github.event.client_payload.slot", self.federation)
@@ -57,7 +57,7 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_federated_matrix_is_bounded_and_read_only(self):
         self.assertIn("types: [orchestrator.federate]", self.federation)
-        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("max-parallel: 1", self.federation)
         self.assertIn("fail-fast: false", self.federation)
         self.assertIn("contents: read", self.federation)
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
