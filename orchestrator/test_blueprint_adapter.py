@@ -11,6 +11,8 @@ class BlueprintAdapterTests(unittest.TestCase):
         self.assertEqual(result["blueprint_id"],"demo")
         self.assertEqual(result["unit_count"],2)
         self.assertIn("manifest_digest",result)
+        self.assertIn("wave_count",result)
+        self.assertIn("waves",result)
     def test_file_mode_needs_workload_root(self):
         node=Node(id="compile",capability="blueprint",tool="blueprint_compiler",input={"blueprint_files":["blueprint.md"]})
         import os

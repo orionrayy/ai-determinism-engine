@@ -644,3 +644,11 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - `blueprint_compiler` is registered as credential-free and free-tier. Execution goes through the existing orchestrator supervisor and therefore retains current policy, checkpoint, retry/replan, federation, idempotency, and approval behavior.
 - File ingestion is restricted to `ORCHESTRATOR_WORKLOAD_ROOT`; path escape is rejected.
 - No paid service or runtime dependency was introduced.
+
+## Orchestration hardening v64 — deep general workload execution
+- Added deterministic global context packing so high-fan-in DAGs cannot accidentally exceed the 48 KiB orchestration context envelope; dependency evidence and digests remain available when full payload bodies are omitted.
+- Blueprint compiler now emits dependency-safe execution waves capped at 24 units, matching the current DAG node cap. This provides a generic slicing boundary for workloads larger than one runtime DAG.
+- Workflow state now carries a generic workload envelope for blueprint/version/digest lineage, compilation manifest identity, unit/wave counts, and optional completed unit/wave progress.
+- Added regression tests for bounded dependency context and workload-state validation.
+- No external side effects or new paid/runtime dependency were added. Existing supervisor policy remains authoritative.
+- Current production baseline is v64.

@@ -15,6 +15,8 @@ MAX_UNITS = 64
 MAX_REQUIREMENTS_PER_UNIT = 8
 MAX_UNIT_CONTEXT_BYTES = 24 * 1024
 MAX_MANIFEST_BYTES = 480 * 1024
+MAX_UNITS_PER_WAVE = 24
+MAX_WAVES = 32
 MAX_ID_LENGTH = 100
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _KINDS = {"hard_constraint","design_intent","implementation","acceptance","optional"}
@@ -194,13 +196,65 @@ def validate_unit_dag(units:Sequence[Mapping[str,Any]],normalized:Mapping[str,An
     for uid in by_id: visit(uid)
     return {"unit_count":len(units),"requirement_count":len(expected),"root_units":sorted(uid for uid in by_id if not by_id[uid].get("depends_on_units")),"leaf_units":sorted(uid for uid in by_id if not any(uid in (u.get("depends_on_units") or []) for u in units)),"parallel_candidate_units":sorted(uid for uid in by_id if by_id[uid].get("parallel_candidate") is True)}
 
+def _unit_levels(units: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    by_id = {str(u['unit_id']): u for u in units}
+    result: dict[str, int] = {}
+    visiting: set[str] = set()
+    def visit(uid: str) -> int:
+        if uid in result: return result[uid]
+        if uid in visiting: raise BlueprintError(f'unit dependency cycle at {uid}')
+        visiting.add(uid)
+        deps = [str(x) for x in (by_id[uid].get('depends_on_units') or [])]
+        result[uid] = 0 if not deps else max(visit(dep) + 1 for dep in deps)
+        visiting.remove(uid)
+        return result[uid]
+    for uid in by_id: visit(uid)
+    return result
+
+def compile_execution_waves(units: Sequence[Mapping[str, Any]], *, max_units_per_wave: int = MAX_UNITS_PER_WAVE, max_waves: int = MAX_WAVES) -> list[dict[str, Any]]:
+    if not 1 <= max_units_per_wave <= MAX_UNITS_PER_WAVE: raise BlueprintError('invalid max_units_per_wave')
+    if not 1 <= max_waves <= MAX_WAVES: raise BlueprintError('invalid max_waves')
+    units = list(units)
+    if not units: return []
+    levels = _unit_levels(units)
+    by_id = {str(u['unit_id']): u for u in units}
+    grouped: dict[int, list[str]] = {}
+    for uid, level in levels.items(): grouped.setdefault(level, []).append(uid)
+    waves: list[dict[str, Any]] = []
+    unit_to_wave: dict[str, str] = {}
+    ordinal = 0
+    for level in sorted(grouped):
+        ids = sorted(grouped[level], key=lambda uid: by_id[uid]['ordinal'])
+        for offset in range(0, len(ids), max_units_per_wave):
+            ordinal += 1
+            if ordinal > max_waves: raise BlueprintError(f'execution waves exceed {max_waves}')
+            selected = ids[offset:offset + max_units_per_wave]
+            seed = '{}:{}:{}'.format(units[0].get('unit_id'), level, ordinal)
+            wave_id = 'wave-' + hashlib.sha256(seed.encode('utf-8')).hexdigest()[:16]
+            for uid in selected: unit_to_wave[uid] = wave_id
+            waves.append({'wave_id':wave_id,'ordinal':ordinal,'level':level,'unit_ids':selected,'depends_on_waves':[],'parallel_candidate':False})
+    wave_by_id = {str(w['wave_id']): w for w in waves}
+    for wave in waves:
+        deps = set()
+        for uid in wave['unit_ids']:
+            for dep in by_id[uid].get('depends_on_units') or []:
+                dep_wave = unit_to_wave[str(dep)]
+                if dep_wave != wave['wave_id']: deps.add(dep_wave)
+        wave['depends_on_waves'] = sorted(deps, key=lambda wid: wave_by_id[wid]['ordinal'])
+        wave['parallel_candidate'] = not wave['depends_on_waves']
+    return waves
+
 def build_compilation_manifest(blueprint:Mapping[str,Any]|str,*,max_requirements_per_unit:int=MAX_REQUIREMENTS_PER_UNIT,max_units:int=MAX_UNITS)->dict[str,Any]:
     if isinstance(blueprint,str):
         parsed=parse_source_document(blueprint)
         blueprint={"blueprint_id":"source-document","version":"1","title":"Parsed Source Document","source":parsed,"requirements":[{"id":s["section_id"],"summary":s["heading"],"workstream":"source-sections","source_refs":[s["section_id"]],"acceptance_criteria":["Preserve source section provenance; perform semantic extraction separately."]} for s in parsed["sections"]]}
     normalized=normalize_blueprint(blueprint)
     units=compile_execution_units(normalized,max_requirements_per_unit=max_requirements_per_unit,max_units=max_units)
-    manifest={"schema_version":SCHEMA_VERSION,"compiler":"deterministic-blueprint-compiler","blueprint":normalized,"units":units,"graph":validate_unit_dag(units,normalized)}
+    waves=compile_execution_waves(units)
+    graph=validate_unit_dag(units,normalized)
+    graph["wave_count"]=len(waves)
+    graph["wave_sizes"]=[len(w["unit_ids"]) for w in waves]
+    manifest={"schema_version":SCHEMA_VERSION,"compiler":"deterministic-blueprint-compiler","blueprint":normalized,"units":units,"waves":waves,"graph":graph}
     manifest["manifest_digest"]=digest(manifest)
     if len(canonical_json(manifest))>MAX_MANIFEST_BYTES: raise BlueprintError("compiled manifest exceeds 480 KiB safety limit")
     return manifest
