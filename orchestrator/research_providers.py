@@ -31,6 +31,17 @@ PROVIDER_ORDER = (
     "europe_pmc",
     "core",
 )
+FREE_PROVIDER_ORDER = (
+    "semantic_scholar",
+    "europe_pmc",
+)
+
+
+def default_provider_order() -> tuple[str, ...]:
+    free_only = os.environ.get(
+        "ORCHESTRATOR_FREE_ONLY", "true"
+    ).strip().lower() == "true"
+    return FREE_PROVIDER_ORDER if free_only else PROVIDER_ORDER
 
 
 class ResearchProviderError(RuntimeError):
@@ -182,17 +193,24 @@ def _provider_search(provider: str, query: str, max_results: int) -> dict[str, A
 def research_records(
     query: str,
     *,
-    providers: tuple[str, ...] = PROVIDER_ORDER,
+    providers: tuple[str, ...] | None = None,
     max_results: int = DEFAULT_MAX_RESULTS,
 ) -> dict[str, Any]:
     query = str(query or "").strip()
     if not query:
         raise ValueError("research query is required")
-    normalized_providers = [
-        str(item).strip().lower()
-        for item in providers
-        if str(item).strip()
-    ]
+    requested_providers = (
+        default_provider_order()
+        if providers is None
+        else providers
+    )
+    normalized_providers: list[str] = []
+    seen_providers: set[str] = set()
+    for item in requested_providers:
+        provider = str(item).strip().lower()
+        if provider and provider not in seen_providers:
+            normalized_providers.append(provider)
+            seen_providers.add(provider)
     records: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
     provider_counts: dict[str, int] = {}
@@ -248,4 +266,5 @@ __all__ = [
     "search_core",
     "normalize_provider_payload",
     "research_records",
+    "default_provider_order",
 ]
