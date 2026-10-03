@@ -370,9 +370,17 @@ def download_federation_aggregate(
     if len(aggregate_members) != 1:
         raise RuntimeError("federation artifact must contain exactly one aggregate.json")
     member = aggregate_members[0]
-    raw = archive.read(member)
-    if len(raw) > 128 * 1024:
+    if member.is_dir():
+        raise RuntimeError("federation aggregate member must be a file")
+    if member.flag_bits & 0x1:
+        raise RuntimeError("encrypted federation aggregate is not supported")
+    if member.file_size < 0 or member.file_size > 128 * 1024:
         raise RuntimeError("federation aggregate exceeds download limit")
+    if member.compress_size < 0 or member.compress_size > 512 * 1024:
+        raise RuntimeError("federation aggregate compressed member exceeds download limit")
+    raw = archive.read(member)
+    if len(raw) != member.file_size:
+        raise RuntimeError("federation aggregate size mismatch")
     value = json.loads(raw.decode("utf-8"))
     if not isinstance(value, dict):
         raise RuntimeError("federation aggregate must be an object")
@@ -3652,6 +3660,71 @@ def deterministic_ingress_workflow_id(
     return f"wf-ingress-{kind}-{digest}"
 
 
+def build_ingress_intent_digest(
+    *,
+    goal: str,
+    live: bool,
+    external_workflow_id: str | None = None,
+    external_domain: str | None = None,
+    external_operation: str | None = None,
+    intent_fingerprint: str | None = None,
+    input_digest: str | None = None,
+    private_input_ref: str | None = None,
+) -> str:
+    payload = {
+        "goal": str(goal or ""),
+        "live": bool(live),
+        "external_workflow_id": str(external_workflow_id or ""),
+        "external_domain": str(external_domain or ""),
+        "external_operation": str(external_operation or ""),
+        "intent_fingerprint": str(intent_fingerprint or ""),
+        "input_digest": str(input_digest or ""),
+        "private_input_ref": str(private_input_ref or ""),
+    }
+    return hashlib.sha256(
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def validate_ingress_identity(
+    workflow: dict[str, Any],
+    *,
+    supplied_intent_digest: str,
+    supplied_intent_fingerprint: str | None = None,
+    supplied_input_digest: str | None = None,
+) -> None:
+    stored_digest = str(workflow.get("ingress_intent_digest") or "").strip()
+    if not stored_digest:
+        stored_digest = build_ingress_intent_digest(
+            goal=str(workflow.get("goal") or ""),
+            live=bool(workflow.get("live")),
+            external_workflow_id=workflow.get("external_workflow_id"),
+            external_domain=workflow.get("external_domain"),
+            external_operation=workflow.get("external_operation"),
+            intent_fingerprint=workflow.get("intent_fingerprint"),
+            input_digest=workflow.get("input_digest"),
+            private_input_ref=workflow.get("private_input_ref"),
+        )
+    if supplied_intent_digest and stored_digest and supplied_intent_digest != stored_digest:
+        raise RuntimeError(
+            "ingress identity conflict: request intent does not match the existing workflow"
+        )
+    for field_name, supplied in (
+        ("intent_fingerprint", supplied_intent_fingerprint),
+        ("input_digest", supplied_input_digest),
+    ):
+        stored = str(workflow.get(field_name) or "").strip()
+        if supplied and stored and supplied != stored:
+            raise RuntimeError(
+                f"ingress identity conflict: {field_name} does not match the existing workflow"
+            )
+
+
 def create_workflow(
     goal: str,
     live: bool,
@@ -3665,6 +3738,7 @@ def create_workflow(
     input_digest: str | None = None,
     idempotency_key: str | None = None,
     private_input_ref: str | None = None,
+    ingress_intent_digest: str | None = None,
     external_attempt: int | None = None,
     workflow_id: str | None = None,
 ) -> dict[str, Any]:
@@ -3792,6 +3866,7 @@ def create_workflow(
         "external_operation": external_operation,
         "intent_fingerprint": intent_fingerprint,
         "input_digest": input_digest,
+        "ingress_intent_digest": ingress_intent_digest,
         "external_attempt": int(external_attempt or 1),
         "nodes": [asdict(node) for node in nodes],
     }
@@ -4050,19 +4125,17 @@ def main() -> int:
         event_id,
         idempotency_key,
     )
+    ingress_intent_digest = build_ingress_intent_digest(
+        goal=args.goal,
+        live=live,
+        external_workflow_id=external_workflow_id,
+        external_domain=external_domain,
+        external_operation=external_operation,
+        intent_fingerprint=intent_fingerprint_env,
+        input_digest=input_digest,
+        private_input_ref=private_input_ref,
+    )
     existing = None
-
-    def _validate_ingress_match(workflow: dict[str, Any]) -> None:
-        for field_name, supplied in (
-            ("intent_fingerprint", intent_fingerprint_env),
-            ("input_digest", input_digest),
-        ):
-            stored = str(workflow.get(field_name) or "").strip()
-            if supplied and stored and supplied != stored:
-                raise SystemExit(
-                    f"ingress identity conflict: {field_name} does not match "
-                    "the existing workflow"
-                )
 
     if ingress_workflow_id:
         existing = load_workflow(ingress_workflow_id)
@@ -4074,7 +4147,15 @@ def main() -> int:
             )
             if not (matches_event or matches_idempotency):
                 raise SystemExit("ingress workflow identity collision")
-            _validate_ingress_match(existing)
+            try:
+                validate_ingress_identity(
+                    existing,
+                    supplied_intent_digest=ingress_intent_digest,
+                    supplied_intent_fingerprint=intent_fingerprint_env,
+                    supplied_input_digest=input_digest,
+                )
+            except RuntimeError as exc:
+                raise SystemExit(str(exc)) from exc
 
     # Compatibility fallback: old workflows may predate deterministic ingress
     # identities and therefore still live under a random workflow_id shard.
@@ -4092,7 +4173,15 @@ def main() -> int:
             None,
         )
         if existing is not None:
-            _validate_ingress_match(existing)
+            try:
+                validate_ingress_identity(
+                    existing,
+                    supplied_intent_digest=ingress_intent_digest,
+                    supplied_intent_fingerprint=intent_fingerprint_env,
+                    supplied_input_digest=input_digest,
+                )
+            except RuntimeError as exc:
+                raise SystemExit(str(exc)) from exc
 
     if existing:
         if existing.get("status") in {"completed", "failed"}:
@@ -4117,6 +4206,7 @@ def main() -> int:
         input_digest=input_digest,
         idempotency_key=idempotency_key,
         private_input_ref=private_input_ref,
+        ingress_intent_digest=ingress_intent_digest,
         external_attempt=external_attempt,
         workflow_id=ingress_workflow_id,
     )
