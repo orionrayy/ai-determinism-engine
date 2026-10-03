@@ -29,6 +29,19 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(records[0]["canonical_id"], "doi:10.1000/xyz")
         self.assertTrue(records[0]["open_access"])
 
+    def test_all_disallowed_explicit_providers_fail_closed(self):
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true"},
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "no requested research providers"):
+                research_records(
+                    "topic",
+                    providers=("openalex", "core"),
+                    max_results=2,
+                )
+
     def test_explicit_metered_provider_is_blocked_in_free_only_mode(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
              patch(
