@@ -106,4 +106,71 @@ def research_bundle(query: str, include_extended: bool = False) -> dict:
     ordered_errors = {name: errors[name] for name, _ in providers if name in errors}
     if not ordered_results:
         raise RuntimeError('all research providers failed')
-    return {'query': query, 'sources': ordered_results, 'errors': ordered_errors}
+
+    response = {
+        'query': query,
+        'sources': ordered_results,
+        'errors': ordered_errors,
+    }
+    if not include_extended:
+        return response
+
+    try:
+        try:
+            from .evidence_records import deduplicate_sources, normalize_source
+            from .research_providers import research_records
+        except ImportError:
+            from evidence_records import deduplicate_sources, normalize_source
+            from research_providers import research_records
+
+        legacy_records = []
+
+        wiki = ordered_results.get('wikipedia', {})
+        wiki_search = (
+            wiki.get('query', {}).get('search', [])
+            if isinstance(wiki, dict)
+            else []
+        )
+        if isinstance(wiki_search, list):
+            for item in wiki_search:
+                if isinstance(item, dict):
+                    legacy_records.append(normalize_source('wikipedia', item))
+
+        arxiv = ordered_results.get('arxiv', {})
+        arxiv_results = arxiv.get('results', []) if isinstance(arxiv, dict) else []
+        if isinstance(arxiv_results, list):
+            for item in arxiv_results:
+                if isinstance(item, dict):
+                    legacy_records.append(normalize_source('arxiv', item))
+
+        crossref = ordered_results.get('crossref', {})
+        crossref_results = (
+            crossref.get('results', [])
+            if isinstance(crossref, dict)
+            else []
+        )
+        if isinstance(crossref_results, list):
+            for item in crossref_results:
+                if isinstance(item, dict):
+                    legacy_records.append(normalize_source('crossref', item))
+
+        extended_records = research_records(query)
+        combined = deduplicate_sources(
+            legacy_records + list(extended_records.get('evidence_records') or [])
+        )
+        response['evidence_records'] = combined
+        response['independent_source_count'] = len(combined)
+        response['provider_counts'] = extended_records.get('provider_counts', {})
+        response['extended_errors'] = extended_records.get('errors', {})
+    except Exception as exc:
+        combined = deduplicate_sources(legacy_records)
+        response['evidence_records'] = combined
+        response['independent_source_count'] = len(combined)
+        response['provider_counts'] = {}
+        response['extended_errors'] = {
+            'fabric': {
+                'type': type(exc).__name__,
+                'message': str(exc),
+            }
+        }
+    return response
