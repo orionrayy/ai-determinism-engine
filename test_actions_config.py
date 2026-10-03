@@ -70,6 +70,15 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("contents: write", self.federation)
         self.assertIn("orchestrator.federation.completed", self.federation)
 
+    def test_supervisor_persists_bounded_research_cache(self):
+        self.assertIn("Restore research cache", self.orchestrator)
+        self.assertIn(
+            "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809",
+            self.orchestrator,
+        )
+        self.assertIn(".orchestrator/research-cache", self.orchestrator)
+        self.assertIn("orchestrator-research-v1-", self.orchestrator)
+
     def test_supervisor_exposes_opt_in_federation_control(self):
         self.assertIn("federate_safe_agents:", self.orchestrator)
         self.assertIn("ORCHESTRATOR_FEDERATION_ENABLED", self.orchestrator)
