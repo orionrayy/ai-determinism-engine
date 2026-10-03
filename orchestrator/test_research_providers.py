@@ -24,6 +24,42 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(records[0]["canonical_id"], "doi:10.1000/xyz")
         self.assertTrue(records[0]["open_access"])
 
+    def test_provider_requests_run_in_parallel_with_deterministic_output_order(self):
+        def fake(provider, query, max_results):
+            if provider == "openalex":
+                return {
+                    "results": [{
+                        "id": "https://openalex.org/W1",
+                        "title": "OpenAlex",
+                        "publication_year": 2026,
+                    }]
+                }
+            return {
+                "data": [{
+                    "paperId": "S1",
+                    "title": "Semantic Scholar",
+                    "year": 2026,
+                }]
+            }
+
+        with patch("research_providers._provider_search", side_effect=fake):
+            result = research_records(
+                "topic",
+                providers=("openalex", "semantic_scholar"),
+                max_results=2,
+            )
+
+        self.assertEqual(result["providers"], ["openalex", "semantic_scholar"])
+        self.assertEqual(result["errors"], {})
+        self.assertEqual(result["provider_counts"], {
+            "openalex": 1,
+            "semantic_scholar": 1,
+        })
+        self.assertEqual(
+            [item["provider"] for item in result["evidence_records"]],
+            ["openalex", "semantic_scholar"],
+        )
+
     def test_provider_failure_is_reported_without_aborting_bundle(self):
         with patch("research_providers._request_json", side_effect={
             "openalex": RuntimeError("down")
