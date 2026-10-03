@@ -17,6 +17,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
         cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
+        cls.private_input_tests = (ROOT / '.github' / 'workflows' / 'private-input-tests.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
     def test_free_only_workflow_does_not_expose_paid_adapter_secrets(self):
@@ -208,9 +209,10 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_REF", self.orchestrator)
         self.assertIn("ORCHESTRATOR_IDEMPOTENCY_KEY", self.orchestrator)
         self.assertIn("private_input_unavailable", Path("gateway.py").read_text())
-        self.assertIn("workers/private-input/**", self.tests)
-        self.assertIn("node workers/private-input/test.mjs", self.tests)
-        self.assertIn("wrangler@4.146.0", self.tests)
+        self.assertIn("workers/private-input/**", self.private_input_tests)
+        self.assertIn("node workers/private-input/test.mjs", self.private_input_tests)
+        self.assertIn("wrangler@4.146.0", self.private_input_tests)
+        self.assertNotIn("workers/private-input/**", self.tests)
 
     def test_gemini_free_model_allowlist_is_registry_pinned(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
