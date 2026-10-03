@@ -2634,7 +2634,7 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
             if not ok:
                 raise RuntimeError(f"response.status_code={nested} is not successful")
 
-    if node.tool == "research_bundle":
+    if node.tool == "research_bundle" and not simulated:
         sources = output.get("sources")
         records = output.get("evidence_records")
         if isinstance(records, list):
