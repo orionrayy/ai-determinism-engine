@@ -10,9 +10,17 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
 try:
-    from .evidence_records import deduplicate_sources, normalize_source
+    from .evidence_records import (
+        count_independent_sources,
+        deduplicate_sources,
+        normalize_source,
+    )
 except ImportError:
-    from evidence_records import deduplicate_sources, normalize_source
+    from evidence_records import (
+        count_independent_sources,
+        deduplicate_sources,
+        normalize_source,
+    )
 
 MAX_RESPONSE_BYTES = 512 * 1024
 DEFAULT_MAX_RESULTS = 8
@@ -226,7 +234,7 @@ def research_records(
         "query": query,
         "providers": normalized_providers,
         "evidence_records": deduped,
-        "independent_source_count": len(deduped),
+        "independent_source_count": count_independent_sources(deduped),
         "provider_counts": provider_counts,
         "errors": errors,
     }
