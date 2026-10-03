@@ -2021,6 +2021,32 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.reserve_llm_call(workflow, node, live=True))
         self.assertEqual(node.error["type"], "llm_call_budget_exhausted")
 
+    def test_llm_budget_exhaustion_survives_resume_state(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {
+            "id": "wf_llm_resume_budget",
+            "goal": "analyze",
+            "live": True,
+            "llm_calls_used": 12,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_FREE_ONLY": "true"},
+                clear=False,
+            ), patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={"gemini": {"free_tier": True}}),                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow)
+                self.assertEqual(result, "failed")
+                execute.assert_not_called()
+                shard = o.workflow_shard_path(workflow["id"])
+                persisted = json.loads(shard.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["llm_calls_used"], 12)
+        self.assertEqual(
+            persisted["nodes"][0]["error"]["type"],
+            "llm_call_budget_exhausted",
+        )
+
     def test_dry_run_does_not_consume_llm_call_budget(self):
         node = o.Node("n01", "analyze", "gemini", [])
         workflow = {"id": "wf_llm_dry"}
