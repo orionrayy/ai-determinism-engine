@@ -103,10 +103,14 @@ def _cache_load(provider: str, query: str, max_results: int) -> dict[str, Any] |
         return None
     if not isinstance(value, dict) or value.get("schema") != 1:
         return None
+    try:
+        cached_max_results = int(value.get("max_results") or 0)
+    except (TypeError, ValueError):
+        return None
     if (
         str(value.get("provider") or "") != str(provider).strip().lower()
         or str(value.get("query") or "") != str(query).strip()
-        or int(value.get("max_results") or 0) != int(max_results)
+        or cached_max_results != int(max_results)
     ):
         return None
     payload = value.get("payload")
