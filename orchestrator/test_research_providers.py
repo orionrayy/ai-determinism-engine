@@ -155,12 +155,15 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(first_providers, second_providers)
 
     def test_provider_failure_is_reported_without_aborting_bundle(self):
-        with patch("research_providers._request_json", side_effect={
-            "openalex": RuntimeError("down")
-        }.get, create=True):
-            # Patched helper is intentionally not used below; verify empty
-            # provider configuration remains safe and deterministic.
-            result = research_records("topic", providers=["core"])
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "false"},
+            clear=False,
+        ), patch(
+            "research_providers._provider_search",
+            side_effect=RuntimeError("down"),
+        ):
+            result = research_records("topic", providers=("core",))
         self.assertEqual(result["evidence_records"], [])
         self.assertIn("core", result["errors"])
 
