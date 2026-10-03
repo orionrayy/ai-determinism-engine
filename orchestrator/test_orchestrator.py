@@ -2673,5 +2673,25 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(node.tool, "connector_bridge")
 
 
+    def test_simulated_research_bundle_defers_provider_contract(self):
+        node = o.Node(
+            "n01", "research", "research_bundle", [],
+            contract={"min_sources": 1},
+        )
+        output = {
+            "simulated": True,
+            "tool": "research_bundle",
+            "capability": "research",
+        }
+        # Dry-run must still enforce deterministic shape checks, but must not
+        # require live provider evidence that was intentionally not fetched.
+        result = o.validate_node_output(node, output)
+        self.assertTrue(result["passed"])
+        self.assertTrue(any(
+            check.get("check") == "adapter_contract"
+            and check.get("deferred") is True
+            for check in result["checks"]
+        ))
+
 if __name__ == "__main__":
     unittest.main()
