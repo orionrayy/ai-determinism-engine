@@ -208,6 +208,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertNotIn("actions/setup-node@", self.tests)
         self.assertNotIn("wrangler@4.146.0", self.tests)
         self.assertNotIn("node workers/private-input/test.mjs", self.tests)
+        self.assertIn("python -m orchestrator.eval_harness --json", self.tests)
 
     def test_private_input_boundary_is_wired(self):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
