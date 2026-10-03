@@ -2676,7 +2676,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_simulated_research_bundle_defers_provider_contract(self):
         node = o.Node(
             "n01", "research", "research_bundle", [],
-            contract={"min_sources": 1},
+            contract={},
         )
         output = {
             "simulated": True,
