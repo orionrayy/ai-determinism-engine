@@ -128,6 +128,7 @@ def research_bundle(
             )
             from .research_budget import (
                 budget_metadata,
+                default_available_providers,
                 normalize_budget,
             )
             from .research_providers import research_records
@@ -139,6 +140,7 @@ def research_bundle(
             )
             from research_budget import (
                 budget_metadata,
+                default_available_providers,
                 normalize_budget,
             )
             from research_providers import research_records
@@ -204,12 +206,8 @@ def research_bundle(
             and len(used_providers) < selected_budget.max_extended_providers
         ):
             remaining = [
-                provider for provider in (
-                    'semantic_scholar',
-                    'openalex',
-                    'europe_pmc',
-                    'core',
-                )
+                provider
+                for provider in default_available_providers()
                 if provider not in used_providers
             ]
             ranked = [
