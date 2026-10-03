@@ -1,6 +1,12 @@
+import sys
 import unittest
+from pathlib import Path
 
-from eval_harness import run_evaluations
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from orchestrator.eval_harness import run_evaluations
 
 
 class EvaluationHarnessTests(unittest.TestCase):
