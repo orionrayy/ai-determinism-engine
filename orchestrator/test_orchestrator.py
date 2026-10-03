@@ -2432,6 +2432,43 @@ class OrchestratorTests(unittest.TestCase):
         self.assertIn("evidence_records", prompt)
         self.assertIn("evidence_refs", prompt)
 
+    def test_side_effect_failure_does_not_switch_adapter_without_equivalence_contract(self):
+        node = o.Node(
+            "n01-publish", "publish", "connector_bridge", [],
+            risk="high", max_retries=0,
+        )
+        node.status = "failed"
+        node.error = {
+            "type": "ConnectorRequestError",
+            "message": "definitive upstream rejection",
+            "failure_class": "permanent",
+        }
+        workflow = {
+            "id": "wf-side-effect-replan",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+            "replan_count": 0,
+            "attempts_used": 1,
+            "max_attempts": 8,
+        }
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": ["webhook"],
+            },
+            "connector_bridge": {
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+            "webhook": {
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+        }
+        self.assertFalse(o.replan_after_failure(workflow, [node], node, registry))
+        self.assertEqual(node.tool, "connector_bridge")
+
 
 if __name__ == "__main__":
     unittest.main()
