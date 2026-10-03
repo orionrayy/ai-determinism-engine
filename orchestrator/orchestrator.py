@@ -864,6 +864,11 @@ def rearm_stale_federation(
     return "rearmed"
 
 
+def quota_sensitive(node: Node) -> bool:
+    """Keep external quota-bound adapters serialized to avoid free-tier bursts."""
+    return node.tool in {"gemini", "openai", "research_bundle"}
+
+
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
     if node.tool == "github":
         action = str(node.input.get("action") or "metadata")
@@ -3722,7 +3727,11 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
         # Side effects remain serialized; independent read/compute nodes may run in parallel.
         safe_ready = [
             node for node in ready
-            if not side_effecting(node, registry) and node.risk not in {"high", "critical"}
+            if (
+                not side_effecting(node, registry)
+                and not quota_sensitive(node)
+                and node.risk not in {"high", "critical"}
+            )
         ]
         unsafe_ready = [node for node in ready if node not in safe_ready]
         batch = (
