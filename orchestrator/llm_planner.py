@@ -92,9 +92,17 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
     capabilities = sorted(
         key.split(':', 1)[1] for key in registry if key.startswith('capability:')
     )
-    tools = sorted(
+    all_tools = sorted(
         key for key in registry if not key.startswith('capability:')
     )
+    if os.environ.get('ORCHESTRATOR_FREE_ONLY', 'true').lower() == 'true':
+        tools = [
+            key for key in all_tools
+            if bool(registry.get(key, {}).get('free_tier', False))
+            or key in {'noop', 'local_validator', 'research_bundle'}
+        ]
+    else:
+        tools = all_tools
     bridge_inventory = {}
     if live:
         bridge_url = os.environ.get('ORCHESTRATOR_CONNECTOR_BRIDGE_URL', '').strip()

@@ -68,6 +68,35 @@ class ContextBudgetTests(unittest.TestCase):
                 repair_feedback={},
                 max_bytes=1024,
             )
+    def test_evidence_records_are_compacted_as_valid_structure(self):
+        from context_budget import pack_node_context
+        output = {
+            "query": "topic",
+            "independent_source_count": 2,
+            "evidence_records": [
+                {"canonical_id": "doi:10.1000/a", "title": "A", "providers": ["openalex"]},
+                {"canonical_id": "doi:10.1000/b", "title": "B", "providers": ["crossref"]},
+            ],
+            "errors": {"core": "unavailable"},
+        }
+        packed = pack_node_context(
+            goal="research",
+            dependencies={"n1": {
+                "capability": "research",
+                "tool": "research_bundle",
+                "status": "completed",
+                "output": output,
+            }},
+            contract={},
+            repair_feedback={},
+            dependency_bytes=700,
+        )
+        value = packed["dependencies"]["n1"]["output"]
+        self.assertIsInstance(value, dict)
+        self.assertIn("evidence_records", value)
+        self.assertIsInstance(value["evidence_records"], list)
+        self.assertIn("independent_source_count", value)
+
 
 if __name__ == "__main__":
     unittest.main()

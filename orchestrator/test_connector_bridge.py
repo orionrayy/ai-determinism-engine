@@ -30,7 +30,7 @@ class ConnectorBridgeTests(unittest.TestCase):
         body = b'{"ok":true}'
         sig = cb.sign(123, body, "secret")
         expected = __import__("hmac").new(
-            b"secret", b"123\n" + body, __import__("hashlib").sha256
+            b"secret", b"123\nPOST\n/bridge\n" + body, __import__("hashlib").sha256
         ).hexdigest()
         self.assertEqual(sig, "sha256=" + expected)
 
@@ -470,6 +470,39 @@ class ConnectorBridgeTests(unittest.TestCase):
         )
         self.assertTrue(captured["headers"]["X-orchestrator-signature"].startswith("sha256="))
         self.assertEqual(result["discovery"]["count"], 1)
+
+    def test_canonical_result_is_exposed_for_contract_validation(self):
+        inventory = {
+            "notion": {
+                "actions": ["create_page"],
+                "configured": True,
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_required": ["bridge_job_id"],
+                        "result_types": {"bridge_job_id": "string"},
+                    }
+                },
+            }
+        }
+        with patch.dict(cb.os.environ, {
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_URL": "https://bridge.example.test/api/bridge",
+            "ORCHESTRATOR_CONNECTOR_BRIDGE_SECRET": "secret",
+        }, clear=True), patch.object(
+            cb, "discover_capabilities", return_value=inventory
+        ), patch.object(
+            cb, "post_request",
+            return_value={
+                "ok": True,
+                "protocol": cb.PROTOCOL,
+                "request_id": cb.execution_id("wf_bridge", "n01-connector"),
+                "connector": "notion",
+                "action": "create_page",
+                "result": {"bridge_job_id": "job-1"},
+            },
+        ):
+            result = cb.execute_connector_bridge(self.node(), "bridge it", dry_run=False)
+        self.assertEqual(result["result"]["bridge_job_id"], "job-1")
 
 
 if __name__ == "__main__":

@@ -81,7 +81,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # Free-first: federated workers may share the same upstream LLM quota.
+      # Serialize by default to avoid quota bursts; the supervisor still bounds task count.
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     permissions:
       contents: read

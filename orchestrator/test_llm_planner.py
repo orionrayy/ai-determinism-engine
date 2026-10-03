@@ -64,6 +64,53 @@ class PlannerTests(unittest.TestCase):
                 lp.plan_goal("analyze", registry, FakeNode, fake_validate)
         post.assert_not_called()
 
+    def test_free_only_planner_inventory_excludes_paid_tools(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            },
+            "noop": {"free_tier": True},
+            "local_validator": {"free_tier": True},
+            "research_bundle": {"free_tier": True},
+            "openai": {"free_tier": False},
+            "firecrawl": {"free_tier": False},
+            "webhook": {"free_tier": False},
+            "capability:analyze": {"default_tool": "gemini", "fallback_tools": []},
+        }
+        response = {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": json.dumps({
+                            "nodes": [{
+                                "id": "n01",
+                                "capability": "analyze",
+                                "tool": "gemini",
+                                "depends_on": [],
+                                "risk": "low",
+                                "instruction": "analyze",
+                                "contract": {},
+                                "artifacts": [],
+                            }]
+                        })
+                    }]
+                }
+            }]
+        }
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "GEMINI_API_KEY": "planner-key"},
+            clear=True,
+        ), patch.object(lp, "_post", return_value=response) as post:
+            lp.plan_goal("analyze", registry, FakeNode, fake_validate)
+        prompt = post.call_args.args[1]["contents"][0]["parts"][0]["text"]
+        self.assertIn("gemini", prompt)
+        self.assertNotIn("openai", prompt)
+        self.assertNotIn("firecrawl", prompt)
+        self.assertNotIn("webhook", prompt)
+
     def test_free_only_accepts_registry_free_planner_model(self):
         registry = {
             "gemini": {

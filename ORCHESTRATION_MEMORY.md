@@ -680,4 +680,27 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Workflow state now carries a generic workload envelope for blueprint/version/digest lineage, compilation manifest identity, unit/wave counts, and optional completed unit/wave progress.
 - Added regression tests for bounded dependency context and workload-state validation.
 - No external side effects or new paid/runtime dependency were added. Existing supervisor policy remains authoritative.
-- Current production baseline is v64.
+- Main remains the v66 production baseline; the current branch contains v67 boundary hardening plus the adaptive research/epistemic upgrades below.
+
+## Orchestration hardening v68 — adaptive free-first research and epistemic measurement
+- Research retrieval now has deterministic fast, balanced, and deep budgets with explicit caps on extended providers and result counts.
+- In ORCHESTRATOR_FREE_ONLY=true mode, research defaults to public unauthenticated providers (Semantic Scholar and Europe PMC). Optional metered/credentialed providers such as OpenAlex and CORE are excluded from the default free-only path.
+- Extended research stops early when canonical independent evidence already meets the selected target, and the extended fabric is allowed to rescue a complete legacy-provider outage instead of failing before the second stage.
+- Research provider calls within an enabled stage execute concurrently, while normalization and final output ordering remain deterministic.
+- Canonical evidence counts now use independence_key semantics rather than raw provider-bucket counts.
+- Research lanes are no longer query-identical: the skeptic lane is deterministically marked as counterevidence and searches for contradictions, limitations, and alternative findings.
+- Epistemic validation now rejects duplicate/malformed evidence identities and duplicate/blank claim identities, while min_coverage is based on evidence linkage rather than forcing contested claims to look supported.
+- Workflow state records deterministic epistemic telemetry for material claims, supported/contested/unknown status, evidence linkage, research evidence counts, and independent-source maxima. These are measurements, not truth scores.
+- The offline evaluation harness covers epistemic boundary and conditional deliberation behavior in addition to existing control-plane cases.
+- Worker/Node validation is path-scoped into a separate CI workflow so ordinary orchestrator changes do not invoke Wrangler/Node checks unnecessarily.
+- No paid runtime, database, broker, queue, or Python/Node package dependency was added to the orchestrator runtime.
+- Known limitations remain explicit: the deliberation module is still a policy primitive rather than a full automatic second-round federation spawn; empirical epistemic quality still needs labeled ground-truth datasets; open-access route resolution is still metadata-only; and run_one_step/run_workflow retain some execution-path duplication that should be refactored only with additional recovery regression coverage.
+
+
+## v68.1 free-first retrieval and quota hardening (2026-10-03)
+
+- Dry-run provider adapters now defer provider-specific output validation while retaining deterministic contract checks; this prevents simulation from being mistaken for live evidence retrieval.
+- Added bounded local research-response cache under `.orchestrator/research-cache`: SHA-256 keyed by provider/query/result limit, 24-hour default TTL, 128-entry cap, atomic writes, and opt-out via `ORCHESTRATOR_RESEARCH_CACHE=false`. Cache failures never block live retrieval.
+- Quota-sensitive adapters (`gemini`, `openai`, `research_bundle`) are serialized in the supervisor batch scheduler to avoid free-tier burst amplification. Independent non-quota-sensitive nodes remain parallelizable.
+- Federated worker matrix default is now `max-parallel: 1` because worker LLM calls execute on separate runners and share upstream quotas. Federation remains opt-in and task-count bounded.
+- Semantic Scholar documents that its public API is rate-limited and may be further throttled; its documentation recommends keys/bulk endpoints for heavier use. The local cache therefore reduces repeated requests but does not imply unlimited provider access. The project must treat “$0” as a deployment/configuration target, not as an upstream guarantee.

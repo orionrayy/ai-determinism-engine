@@ -144,6 +144,14 @@ jobs:
           gh label create orchestrator-approved --description "Approve a high-risk orchestration action" --color 0E8A16 --force
           gh label create orchestrator-rejected --description "Reject a high-risk orchestration action" --color B60205 --force
 
+      - name: Restore research cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: .orchestrator/research-cache
+          key: orchestrator-research-v1-${{ github.ref_name }}
+          restore-keys: |
+            orchestrator-research-v1-
+
       - name: Run orchestrator
         env:
           ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
