@@ -13,13 +13,20 @@ class ResearchBudget:
     target_independent_sources: int
     max_extended_providers: int
     max_results: int
+    legacy_providers: tuple[str, ...]
     stage_size: int = 2
 
 
 BUDGETS = {
-    "fast": ResearchBudget("fast", 4, 1, 5),
-    "balanced": ResearchBudget("balanced", 6, 2, 6),
-    "deep": ResearchBudget("deep", 8, 4, 8),
+    "fast": ResearchBudget(
+        "fast", 4, 1, 5, ("wikipedia",)
+    ),
+    "balanced": ResearchBudget(
+        "balanced", 6, 2, 6, ("wikipedia", "arxiv", "crossref")
+    ),
+    "deep": ResearchBudget(
+        "deep", 8, 4, 8, ("wikipedia", "arxiv", "crossref")
+    ),
 }
 
 DEFAULT_BUDGET = "balanced"
@@ -126,6 +133,7 @@ def budget_metadata(budget: str | ResearchBudget) -> dict[str, int | str]:
         "target_independent_sources": selected.target_independent_sources,
         "max_extended_providers": selected.max_extended_providers,
         "max_results": selected.max_results,
+        "legacy_providers": selected.legacy_providers,
         "stage_size": selected.stage_size,
     }
 
