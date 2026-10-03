@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"Orchestrator Workload Blueprint",
+  "type":"object",
+  "required":["schema_version","blueprint_id","version","requirements"],
+  "properties":{
+    "schema_version":{"type":"integer","const":1},
+    "blueprint_id":{"type":"string","pattern":"^[A-Za-z0-9._-]{1,100}$"},
+    "version":{"type":"string","maxLength":80},
+    "title":{"type":"string","maxLength":300},
+    "constraints":{"type":"array","maxItems":512},
+    "workstreams":{"type":"array","maxItems":128},
+    "requirements":{"type":"array","maxItems":512},
+    "non_goals":{"type":"array","maxItems":128},
+    "policy":{"type":"object"}
+  },
+  "additionalProperties":true
+}

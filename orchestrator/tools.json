@@ -175,5 +175,20 @@
       "verify"
     ],
     "risk": "low"
+  },
+  "capability:blueprint": {
+    "default_tool": "blueprint_compiler",
+    "fallback_tools": [],
+    "description": "Deterministic workload blueprint normalization and bounded execution-unit compilation"
+  },
+  "blueprint_compiler": {
+    "required_env": null,
+    "side_effects": [],
+    "free_tier": true,
+    "risk": "low",
+    "allowed_actions": [
+      "compile"
+    ],
+    "description": "Side-effect-free structured blueprint compiler"
   }
 }

@@ -212,3 +212,9 @@ For live side-effecting nodes, the GitHub Actions worker commits and pushes the 
 ## State durability v15
 
 State JSON writes use same-directory temporary files with flush/fsync followed by atomic replacement. Persisted workflow schemas newer than the supported version fail closed instead of being guessed at.
+
+## General Blueprint Workload Compiler (v63)
+
+The control plane now exposes a deterministic, side-effect-free `blueprint` capability backed by `blueprint_compiler`. Structured workload specifications can be normalized into bounded, traceable execution units without bypassing the authoritative DAG, federation, checkpoint, retry/replan, idempotency, risk, or approval machinery. Markdown/text ingestion only extracts headings and provenance metadata; semantic interpretation remains an explicit research/analysis step.
+
+Bounds are 256 KiB source input, 512 requirements, 64 execution units, 8 requirements per unit, 24 KiB per execution unit/packet, and 480 KiB per compilation manifest. Optional file ingestion is restricted to `ORCHESTRATOR_WORKLOAD_ROOT`, keeping workload repositories separate from this control-plane repository.

@@ -635,3 +635,12 @@ Before changing runtime behavior:
 ## Design principle
 
 The system should fail closed on unsafe tool selection and unknown side-effect outcomes, fail open on optional observability, remain deterministic under duplicate events, and preserve explicit human approval for irreversible external effects.
+
+## Orchestration hardening v63 — general blueprint workload compiler
+- Added `orchestrator/blueprint_compiler.py` as a deterministic, side-effect-free workload compiler for structured blueprints and bounded Markdown/text documents.
+- The compiler preserves provenance, validates requirement dependencies, rejects cycles, and emits bounded execution units with requirement IDs, workstreams, risk, agent-role/capability hints, artifacts, acceptance criteria, source references, and unit dependencies.
+- Resource bounds are explicit: 256 KiB source/structured input, 512 requirements, 64 units, 8 requirements per unit, 24 KiB per unit/packet, and 480 KiB aggregate compilation manifest.
+- Plain Markdown/text ingestion is provenance-only and never invents semantic requirements; semantic extraction remains an explicit research/analysis operation.
+- `blueprint_compiler` is registered as credential-free and free-tier. Execution goes through the existing orchestrator supervisor and therefore retains current policy, checkpoint, retry/replan, federation, idempotency, and approval behavior.
+- File ingestion is restricted to `ORCHESTRATOR_WORKLOAD_ROOT`; path escape is rejected.
+- No paid service or runtime dependency was introduced.

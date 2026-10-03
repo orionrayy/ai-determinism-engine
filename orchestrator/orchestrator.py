@@ -49,6 +49,7 @@ try:
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
+    from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
     from .federation_scheduler import (
         DEFAULT_MAX_BATCHES_PER_WORKFLOW,
@@ -82,6 +83,7 @@ except ImportError:
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
+    from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
     from federation_scheduler import (
         DEFAULT_MAX_BATCHES_PER_WORKFLOW,
@@ -1203,9 +1205,10 @@ def classify_risk(capability: str) -> str:
 RISK_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 BUILTIN_TOOLS = {
     "gemini", "openai", "firecrawl", "research_bundle",
-    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "artifact_verifier", "noop",
+    "wikipedia", "webhook", "github", "connector_bridge", "local_validator", "artifact_verifier",
+    "blueprint_compiler", "noop",
 }
-BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "artifact_verifier", "noop"}
+BUILTIN_FREE_TOOLS = {"gemini", "research_bundle", "wikipedia", "github", "connector_bridge", "local_validator", "artifact_verifier", "blueprint_compiler", "noop"}
 
 def required_risk(node: Node, registry: dict[str, dict[str, Any]]) -> str:
     floor = classify_risk(node.capability)
@@ -1377,7 +1380,13 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
         "execute": "webhook",
     }
 
-    if any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
+    if any(k in g for k in ("blueprint", "visual bible", "technical blueprint", "workload specification")):
+        plan = [
+            ("n01-blueprint-compile", "blueprint", "Compile the bounded workload blueprint into traceable execution units.", [], "architect"),
+            ("n02-blueprint-validate", "validate", "Critically validate compilation coverage, dependency safety, provenance, and resource bounds.", ["n01-blueprint-compile"], "critic"),
+            ("n03-notify", "notify", "Report compiled workload units, evidence, blockers, and next execution boundary.", ["n02-blueprint-validate"], "communicator"),
+        ]
+    elif any(k in g for k in ("website", "web app", "app", "software", "build", "deploy")):
         plan = [
             ("n01-research", "research", "Collect requirements, constraints, and acceptance criteria.", [], "researcher"),
             ("n02-skeptic", "research", "Independently search for missing requirements, risks, counterexamples, and edge cases.", [], "skeptic"),
@@ -2093,6 +2102,59 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
         "dependencies": dependencies,
         "contract": node.contract,
         "repair_feedback": node.input.get("repair_feedback", {}),
+    }
+
+
+def execute_blueprint_compiler(node: Node, goal: str) -> dict[str, Any]:
+    """Compile a workload blueprint without executing external side effects."""
+    source: Any = node.input.get("blueprint")
+    if source is None:
+        source = node.input.get("blueprint_text")
+    files = node.input.get("blueprint_files") or []
+    if files:
+        if not isinstance(files, list) or not files:
+            raise BlueprintError("blueprint_files must be a non-empty list")
+        workload_root = os.environ.get("ORCHESTRATOR_WORKLOAD_ROOT", "").strip()
+        if not workload_root:
+            raise BlueprintError("ORCHESTRATOR_WORKLOAD_ROOT is required for blueprint_files")
+        chunks = []
+        for path in files:
+            chunks.append(
+                "SOURCE_FILE: " + str(path) + "\n" +
+                load_blueprint_file(str(path), root=workload_root)
+            )
+        source = "\n\n---\n\n".join(chunks)
+    if source is None:
+        source = goal
+    if not isinstance(source, (str, dict)):
+        raise BlueprintError("blueprint must be text or an object")
+
+    try:
+        max_requirements_per_unit = int(
+            node.input.get("max_requirements_per_unit", 8)
+        )
+        max_units = int(node.input.get("max_units", 64))
+    except (TypeError, ValueError) as exc:
+        raise BlueprintError("blueprint compiler bounds must be integers") from exc
+
+    manifest = build_compilation_manifest(
+        source,
+        max_requirements_per_unit=max_requirements_per_unit,
+        max_units=max_units,
+    )
+    return {
+        "compiler": manifest["compiler"],
+        "schema_version": manifest["schema_version"],
+        "blueprint_id": manifest["blueprint"]["blueprint_id"],
+        "blueprint_version": manifest["blueprint"]["version"],
+        "blueprint_digest": manifest["blueprint"]["blueprint_digest"],
+        "manifest_digest": manifest["manifest_digest"],
+        "unit_count": manifest["graph"]["unit_count"],
+        "requirement_count": manifest["graph"]["requirement_count"],
+        "root_units": manifest["graph"]["root_units"],
+        "leaf_units": manifest["graph"]["leaf_units"],
+        "parallel_candidate_units": manifest["graph"]["parallel_candidate_units"],
+        "units": manifest["units"],
     }
 
 
