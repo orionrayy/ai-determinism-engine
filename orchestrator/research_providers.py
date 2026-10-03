@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
@@ -63,21 +65,52 @@ def _request_json(
         },
         method="GET",
     )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            raw = response.read(MAX_RESPONSE_BYTES + 1)
-            if len(raw) > MAX_RESPONSE_BYTES:
-                raise ResearchProviderError("research provider response exceeds 512 KiB")
-            if not raw:
-                return {}
-            value = json.loads(raw.decode("utf-8", "replace"))
-            if not isinstance(value, dict):
-                raise ResearchProviderError("research provider returned a non-object")
-            return value
-    except ResearchProviderError:
-        raise
-    except Exception as exc:
-        raise ResearchProviderError(f"research provider request failed: {exc}") from exc
+    max_transient_retries = 2
+    attempt = 0
+    while True:
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read(MAX_RESPONSE_BYTES + 1)
+                if len(raw) > MAX_RESPONSE_BYTES:
+                    raise ResearchProviderError(
+                        "research provider response exceeds 512 KiB"
+                    )
+                if not raw:
+                    return {}
+                value = json.loads(raw.decode("utf-8", "replace"))
+                if not isinstance(value, dict):
+                    raise ResearchProviderError(
+                        "research provider returned a non-object"
+                    )
+                return value
+        except ResearchProviderError:
+            raise
+        except urllib.error.HTTPError as exc:
+            retryable = exc.code == 429 or 500 <= exc.code < 600
+            if not retryable or attempt >= max_transient_retries:
+                raise ResearchProviderError(
+                    f"research provider HTTP {exc.code}: {exc.reason}"
+                ) from exc
+            retry_after = str(exc.headers.get("Retry-After") or "").strip()
+            try:
+                delay = float(retry_after)
+            except (TypeError, ValueError):
+                delay = float(2 ** attempt)
+            delay = max(0.0, min(delay, 8.0))
+            if delay:
+                time.sleep(delay)
+            attempt += 1
+        except (urllib.error.URLError, TimeoutError):
+            if attempt >= max_transient_retries:
+                raise ResearchProviderError(
+                    "research provider transient request failure"
+                ) from exc
+            time.sleep(float(2 ** attempt))
+            attempt += 1
+        except Exception as exc:
+            raise ResearchProviderError(
+                f"research provider request failed: {exc}"
+            ) from exc
 
 
 def search_openalex(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[str, Any]:
