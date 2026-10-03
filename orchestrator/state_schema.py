@@ -77,7 +77,12 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         workflow.setdefault("origin_github_run_attempt", workflow.get("github_run_attempt"))
         workflow.setdefault("private_input_ref", None)
         workflow.setdefault("idempotency_key", None)
-        for field_name in ("private_input_ref", "input_digest", "intent_fingerprint"):
+        for field_name in (
+            "private_input_ref",
+            "input_digest",
+            "intent_fingerprint",
+            "ingress_intent_digest",
+        ):
             value = workflow.get(field_name)
             if value in (None, ""):
                 continue

@@ -8,7 +8,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v63 general blueprint workload compiler + v62 planner input bound + v61 durable event redaction + v60 attempt-budget accounting + v59 resource-safety and durable diagnostics + v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
+Current main baseline: orchestration hardening v65 deterministic context/federation/ingress integrity + v64 deep workload orchestration + v63 general blueprint workload compiler + v62 planner input bound + v61 durable event redaction + v60 attempt-budget accounting + v59 resource-safety and durable diagnostics + v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -162,6 +162,29 @@ Current execution-fabric branch: `main`
 - The bound aligns with the existing `MAX_CONTEXT_BYTES` control-plane budget and prevents oversized ingress from expanding model prompt size and free-tier quota consumption.
 - A regression verifies the external planner adapter is not called when the limit is exceeded.
 - No database, broker, proxy, paid API, or runtime dependency is introduced.
+## Orchestration hardening v64 — deep workload orchestration
+- Added a deterministic aggregate context budget for node handoffs: total context is capped at 48 KiB, dependency count at 24, with bounded dependency bodies, contracts, and repair feedback.
+- Added hierarchical execution waves to the general blueprint compiler. Dependency levels are converted into bounded waves with at most 24 units per wave, preserving a deterministic graph while exposing parallel execution opportunities.
+- Added durable workload lineage in workflow schema v7: compiled blueprint/manifest digests, unit/wave counts, and bounded completed-unit history survive continuation and recovery.
+- The existing supervisor remains authoritative for state and side effects; no new service, queue, broker, database, or paid runtime dependency was introduced.
+
+## Orchestration hardening v65 — deterministic integrity and resource hardening
+- Context provenance is now stable: context_digest excludes only its own self-reference and the mutable used_bytes counter, and final size accounting reserves space for digest metadata before returning the context.
+- Federation aggregate ZIP members are size-checked from ZipInfo.file_size before decompression, with encrypted members rejected and an exact post-read size check. This closes a decompression-expansion resource path while keeping the existing 512 KiB archive transport cap and 128 KiB aggregate cap.
+- Ingress identities now bind a deterministic semantic intent digest derived from the goal, execution mode, external operation identity, and private-input identity. Reuse of an idempotency/event identity with changed semantic intent fails closed instead of silently reusing the workflow.
+- Blueprint wave metadata now marks any multi-unit wave as parallel-capable, including waves that depend on earlier levels; the prior metadata understated available parallelism.
+- Added regression coverage for all four integrity paths. No new service, dependency, database, broker, queue, or paid API was introduced.
+
+## Orchestration hardening v65 — deterministic integrity, liveness, and free-only hardening
+- Context provenance is stable: the context digest excludes its self-reference and mutable byte counter, while final size accounting reserves room for digest metadata.
+- Federation aggregate ZIP members are checked against their declared uncompressed and compressed sizes before decompression; encrypted members are rejected and post-read size is verified.
+- Ingress identities now include a deterministic semantic intent digest, so reusing an event/idempotency identity for a changed goal or external operation fails closed.
+- Safe federated workloads gain a bounded stale-recovery path after 10 minutes; only non-side-effecting delegated nodes can be rearmed and the reserved attempt/federation quota is refunded.
+- Interrupted non-side-effecting nodes are durably marked running before execution and are rearmed on worker recovery, preserving the charged attempt budget instead of silently starting an unrecorded attempt.
+- Gemini/planner prompts explicitly treat dependency and connector context as untrusted data; Gemini node output is capped at 2,048 tokens and planner output at 4,096 tokens with a single candidate to bound free-tier consumption.
+- The free-only supervisor no longer injects disabled paid-adapter credentials into the runtime environment.
+- CI push tests are restricted to main while pull-request checks use concurrency cancellation, avoiding redundant feature-branch execution on every intermediate commit.
+- These changes remain GitHub Actions + stdlib Python with no database, broker, queue, proxy, paid runtime service, or new package dependency.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.

@@ -1186,7 +1186,7 @@ class OrchestratorTests(unittest.TestCase):
         self.assertTrue(idem.startswith("wf-ingress-idempotency-"))
 
     def test_goal_ingress_uses_targeted_identity_before_global_state(self):
-        workflow = {"id": "wf-ingress-event-123", "goal": "same", "status": "running", "nodes": [], "event_id": "evt-123"}
+        workflow = {"id": "wf-ingress-event-123", "goal": "duplicate", "live": False, "status": "running", "nodes": [], "event_id": "evt-123"}
         with patch.object(o, "load_workflow", return_value=workflow) as load_workflow, \
              patch.object(o, "load_state", side_effect=AssertionError("legacy full scan should not run")), \
              patch.object(o, "print_summary"), patch.object(o, "notify_execution_callback"), \
@@ -1229,7 +1229,7 @@ class OrchestratorTests(unittest.TestCase):
     def test_main_goal_ingress_deduplicates_existing_event_id(self):
         existing = {
             "id": "wf-existing",
-            "goal": "already accepted",
+            "goal": "duplicate",
             "status": "running",
             "nodes": [],
             "event_id": "evt-123",

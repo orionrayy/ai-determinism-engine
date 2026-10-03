@@ -159,14 +159,54 @@ def pack_node_context(
         'truncated_contract': contract_truncated,
         'truncated_repair_feedback': repair_truncated,
     }
-    if len(canonical_json(packed)) > max_bytes:
+
+    def projected_final_size(value: Mapping[str, Any]) -> int:
+        # context_digest is fixed-width (64 hex characters). Use a conservative
+        # five-digit used_bytes placeholder because the complete payload is <50 KiB.
+        candidate = dict(value)
+        budget = dict(candidate.get('context_budget') or {})
+        budget['used_bytes'] = max_bytes
+        candidate['context_budget'] = budget
+        candidate['context_digest'] = '0' * 64
+        return len(canonical_json(candidate))
+
+    if projected_final_size(packed) > max_bytes:
         packed['contract'] = {'sha256': digest(contract or {}), 'omitted': True}
         packed['repair_feedback'] = {'sha256': digest(repair_feedback or {}), 'omitted': True}
-        packed['context_budget']['used_bytes'] = len(canonical_json(packed))
-    if len(canonical_json(packed)) > max_bytes:
+        packed['context_budget']['truncated_contract'] = contract_truncated
+        packed['context_budget']['truncated_repair_feedback'] = repair_truncated
+
+    while projected_final_size(packed) > max_bytes and packed['dependencies']:
+        ranked = sorted(
+            packed['dependencies'].items(),
+            key=lambda item: (-len(canonical_json(item[1])), item[0]),
+        )
+        dep_id, dep_value = ranked[0]
+        if isinstance(dep_value, dict) and 'output' in dep_value:
+            compact = dict(dep_value)
+            compact.pop('output', None)
+            compact['omitted'] = True
+            compact['reason'] = 'final_context_budget'
+            packed['dependencies'][dep_id] = compact
+        else:
+            packed['dependencies'].pop(dep_id, None)
+        if dep_id not in omitted:
+            omitted.append(dep_id)
+        packed['context_budget']['omitted_dependencies'] = sorted(omitted)
+
+    if projected_final_size(packed) > max_bytes:
         raise ContextBudgetError('unable to pack context within budget')
-    packed['context_digest'] = digest(packed)
+
+    # The digest intentionally excludes the self-referential digest field and the
+    # mutable diagnostic byte counter. This makes the provenance digest stable:
+    # a verifier removes both fields and hashes the remaining canonical object.
+    digestable = dict(packed)
+    digest_budget = dict(digestable.get('context_budget') or {})
+    digest_budget.pop('used_bytes', None)
+    digestable['context_budget'] = digest_budget
+    packed['context_digest'] = digest(digestable)
+
+    packed['context_budget']['used_bytes'] = len(canonical_json(packed))
     if len(canonical_json(packed)) > max_bytes:
         raise ContextBudgetError('context digest metadata exceeds budget')
-    packed['context_budget']['used_bytes'] = len(canonical_json(packed))
     return packed

@@ -55,6 +55,10 @@ The GitHub adapter allowlists metadata/read operations plus `create_issue`, `cre
 
 State is committed to the repository. Do not place secrets or private payloads in workflow goals when using a public repository.
 
+## v64–v65 Deep Workload Orchestration and Integrity Hardening
+The orchestrator now supports bounded long-horizon workloads through aggregate context budgeting, deterministic execution waves, and durable workload lineage. v65 additionally stabilizes context provenance digests, blocks federation ZIP decompression beyond the aggregate bound before expansion, binds ingress identities to semantic intent, and preserves parallelism metadata for downstream waves.
+Regression coverage exercises the context, federation archive, ingress identity, and blueprint-wave integrity boundaries. No database, queue, broker, paid runtime service, or new dependency was introduced.
+
 ## v62 Planner Input Bound
 
 The Gemini planner now fails closed before any model call when the goal exceeds 48 KiB. This aligns the planner input with the orchestration context budget and prevents oversized ingress from amplifying prompt size, token use, latency, and free-tier quota consumption.

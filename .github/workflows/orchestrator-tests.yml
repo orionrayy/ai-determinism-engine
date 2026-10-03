@@ -2,6 +2,8 @@ name: Orchestrator Tests
 
 on:
   push:
+    branches:
+      - main
     paths:
       - "orchestrator/**"
       - "render.yaml"
@@ -54,6 +56,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: orchestrator-tests-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Health state is derived from STATE_DIR for isolated test/workflow execution.
 jobs:

@@ -29,6 +29,36 @@ class ContextBudgetTests(unittest.TestCase):
             for item in ctx["dependencies"].values()
         ))
 
+    def test_context_digest_is_stable_and_excludes_mutable_byte_counter(self):
+        deps = {
+            "n01": {
+                "capability": "research",
+                "tool": "wikipedia",
+                "status": "completed",
+                "output": {"answer": "42"},
+                "error": {},
+                "evidence_sha256": "b" * 64,
+            }
+        }
+        ctx = pack_node_context(
+            goal="verify digest",
+            dependencies=deps,
+            contract={"required_fields": ["answer"]},
+            repair_feedback={},
+        )
+        stored = ctx["context_digest"]
+        digestable = dict(ctx)
+        digestable.pop("context_digest", None)
+        budget = dict(digestable["context_budget"])
+        budget.pop("used_bytes", None)
+        digestable["context_budget"] = budget
+        actual = pack_node_context.__globals__["digest"](digestable)
+        self.assertEqual(stored, actual)
+        self.assertLessEqual(
+            ctx["context_budget"]["used_bytes"],
+            ctx["context_budget"]["max_bytes"],
+        )
+
     def test_too_small_budget_fails_closed(self):
         with self.assertRaises(ContextBudgetError):
             pack_node_context(
