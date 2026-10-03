@@ -1666,6 +1666,58 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "ready")
         self.assertTrue(all(node.status == "ready" for node in nodes))
 
+    def test_min_sources_uses_independent_evidence_not_provider_bucket_count(self):
+        node = o.Node(
+            "n01",
+            "research",
+            "research_bundle",
+            contract={"min_sources": 3},
+        )
+        output = {
+            "sources": {
+                "wikipedia": {},
+                "arxiv": {},
+                "crossref": {},
+                "semantic_scholar": {},
+            },
+            "evidence_records": [
+                {"canonical_id": "doi:10.1000/a", "independence_key": "doi:10.1000/a"},
+                {"canonical_id": "doi:10.1000/b", "independence_key": "doi:10.1000/b"},
+            ],
+            "independent_source_count": 2,
+        }
+        with self.assertRaisesRegex(RuntimeError, "at least 3 sources"):
+            o.validate_node_output(node, output)
+
+    def test_local_validator_uses_independent_evidence_count(self):
+        node = o.Node(
+            "n02",
+            "validate",
+            "local_validator",
+            contract={"min_sources": 3},
+            input={"context": {
+                "dependencies": {
+                    "n01": {
+                        "status": "completed",
+                        "output": {
+                            "sources": {"a": {}, "b": {}, "c": {}},
+                            "evidence_records": [
+                                {"canonical_id": "doi:10.1000/a"},
+                                {"canonical_id": "doi:10.1000/a"},
+                                {"canonical_id": "doi:10.1000/b"},
+                            ],
+                            "independent_source_count": 2,
+                        },
+                    }
+                }
+            }},
+        )
+        result = o.execute_local_validator(node, "validate research")
+        minimum = [item for item in result["checks"] if item["check"] == "contract:min_sources"]
+        self.assertEqual(len(minimum), 1)
+        self.assertEqual(minimum[0]["actual"], 2)
+        self.assertFalse(minimum[0]["passed"])
+
     def test_deterministic_research_plan_uses_multi_agent_scatter_gather(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
