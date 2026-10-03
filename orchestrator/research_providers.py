@@ -204,10 +204,16 @@ def research_records(
         if providers is None
         else providers
     )
+    free_only = os.environ.get(
+        "ORCHESTRATOR_FREE_ONLY", "true"
+    ).strip().lower() == "true"
+    allowed = set(FREE_PROVIDER_ORDER if free_only else PROVIDER_ORDER)
     normalized_providers: list[str] = []
     seen_providers: set[str] = set()
     for item in requested_providers:
         provider = str(item).strip().lower()
+        if provider not in allowed:
+            continue
         if provider and provider not in seen_providers:
             normalized_providers.append(provider)
             seen_providers.add(provider)
