@@ -43,6 +43,42 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertFalse(br.verify_signature(headers, body, "wrong", now=ts))
         self.assertFalse(br.verify_signature(headers, body, "secret", now=ts + 301))
 
+    def test_capability_discovery_preserves_result_contract(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example/notion",
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_required": ["bridge_job_id"],
+                        "result_types": {"bridge_job_id": "string"},
+                    }
+                },
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertEqual(
+            discovered["notion"]["action_specs"]["create_page"]["result_required"],
+            ["bridge_job_id"],
+        )
+        self.assertEqual(
+            discovered["notion"]["action_specs"]["create_page"]["result_types"],
+            {"bridge_job_id": "string"},
+        )
+
+    def test_signature_is_bound_to_method_and_path(self):
+        body = br.canonical_json(self.payload())
+        ts = int(time.time())
+        signature = br.sign(ts, body, "secret", method="POST", path="/bridge")
+        headers = {
+            "x-orchestrator-timestamp": str(ts),
+            "x-orchestrator-signature": signature,
+        }
+        self.assertTrue(br.verify_signature(headers, body, "secret", now=ts, method="POST", path="/bridge"))
+        self.assertFalse(br.verify_signature(headers, body, "secret", now=ts, method="POST", path="/bridge/reconcile"))
+        self.assertFalse(br.verify_signature(headers, body, "secret", now=ts, method="GET", path="/bridge"))
+
     def test_route_allowlist_rejects_unknown_action(self):
         routes = {"notion": {"actions": ["read_page"]}}
         with self.assertRaises(br.BridgeRuntimeError):
@@ -76,7 +112,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertNotIn("NOTION_SECRET", json.dumps(discovered))
         self.assertEqual(
             discovered["clickup"]["action_specs"]["create_task"],
-            {"required": [], "types": {}, "idempotent": False, "free_tier": False},
+            {"required": [], "types": {}, "result_required": [], "result_types": {}, "idempotent": False, "free_tier": False},
         )
 
     def test_action_free_tier_inherits_and_can_be_overridden(self):
