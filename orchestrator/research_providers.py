@@ -6,6 +6,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
 try:
@@ -179,22 +180,51 @@ def research_records(
     query = str(query or "").strip()
     if not query:
         raise ValueError("research query is required")
+    normalized_providers = [
+        str(item).strip().lower()
+        for item in providers
+        if str(item).strip()
+    ]
     records: list[dict[str, Any]] = []
     errors: dict[str, str] = {}
     provider_counts: dict[str, int] = {}
-    for provider in providers:
-        provider = str(provider).strip().lower()
+    results: dict[str, dict[str, Any]] = {}
+    max_workers = max(1, min(4, len(normalized_providers)))
+    with ThreadPoolExecutor(
+        max_workers=max_workers,
+        thread_name_prefix="research-provider",
+    ) as pool:
+        futures = {
+            pool.submit(
+                _provider_search,
+                provider,
+                query,
+                max_results,
+            ): provider
+            for provider in normalized_providers
+        }
+        for future in as_completed(futures):
+            provider = futures[future]
+            try:
+                results[provider] = future.result()
+            except Exception as exc:
+                errors[provider] = str(exc)
+
+    for provider in normalized_providers:
+        payload = results.get(provider)
+        if payload is None:
+            continue
         try:
-            payload = _provider_search(provider, query, max_results)
             normalized = normalize_provider_payload(provider, payload)
             records.extend(normalized)
             provider_counts[provider] = len(normalized)
         except Exception as exc:
             errors[provider] = str(exc)
+
     deduped = deduplicate_sources(records)
     return {
         "query": query,
-        "providers": [str(item).strip().lower() for item in providers],
+        "providers": normalized_providers,
         "evidence_records": deduped,
         "independent_source_count": len(deduped),
         "provider_counts": provider_counts,
