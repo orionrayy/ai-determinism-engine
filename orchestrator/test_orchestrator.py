@@ -1680,6 +1680,34 @@ class OrchestratorTests(unittest.TestCase):
         )
         self.assertEqual(nodes[4].agent_role, "critic")
 
+    def test_deterministic_research_plan_diversifies_skeptic_lane(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
+                nodes = o.deterministic_plan("research AI safety", {})
+        self.assertEqual(nodes[0].input["research_focus"], "primary_evidence")
+        self.assertEqual(nodes[1].input["research_focus"], "counterevidence")
+
+    def test_skeptic_research_uses_counterevidence_query_variant(self):
+        node = o.Node(
+            id="n02-skeptic",
+            capability="research",
+            tool="research_bundle",
+            input={
+                "query": "AI safety",
+                "research_focus": "counterevidence",
+            },
+            agent_role="skeptic",
+        )
+        with patch("research_bundle.research_bundle", return_value={"ok": True}) as research:
+            result = o.execute_research_bundle(node, "unused goal")
+        self.assertEqual(result, {"ok": True})
+        query = research.call_args.args[0]
+        self.assertIn("AI safety", query)
+        self.assertIn("counterevidence", query)
+        self.assertIn("contradictions", query)
+        self.assertIn("limitations", query)
+        self.assertIn("alternative findings", query)
+
     def test_workflow_creation_persists_agent_team_manifest(self):
         with patch.dict(o.os.environ, {}, clear=True):
             workflow = o.create_workflow("research AI safety", live=False)
