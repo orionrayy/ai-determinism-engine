@@ -97,7 +97,7 @@ jobs:
       - name: Control-plane evaluation harness
         env:
           ORCHESTRATOR_FREE_ONLY: "true"
-        run: python orchestrator/eval_harness.py --json
+        run: python -m orchestrator.eval_harness --json
       - name: Validate private-input Worker
         shell: bash
         run: |
