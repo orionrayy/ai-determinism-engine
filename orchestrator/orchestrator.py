@@ -230,6 +230,54 @@ def _event_file(payload: dict[str, Any]) -> Path:
     return EVENT_DIR / f"{shard}.jsonl"
 
 
+TRACE_SCHEMA_VERSION = 1
+
+
+def _trace_envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    workflow_id = str(payload.get("workflow_id") or "").strip()
+    if not workflow_id:
+        return {}
+    trace_id = hashlib.sha256(
+        ("workflow-trace:" + workflow_id).encode("utf-8")
+    ).hexdigest()
+    node_id = str(payload.get("node_id") or "").strip()
+    agent_id_value = str(payload.get("agent_id") or "").strip()
+    if agent_id_value:
+        span_kind = "agent"
+        span_id = hashlib.sha256(
+            f"{trace_id}:agent:{agent_id_value}".encode("utf-8")
+        ).hexdigest()
+        parent_span_id = (
+            hashlib.sha256(
+                f"{trace_id}:node:{node_id}".encode("utf-8")
+            ).hexdigest()
+            if node_id
+            else None
+        )
+    elif node_id:
+        span_kind = "node"
+        span_id = hashlib.sha256(
+            f"{trace_id}:node:{node_id}".encode("utf-8")
+        ).hexdigest()
+        parent_span_id = hashlib.sha256(
+            f"{trace_id}:workflow".encode("utf-8")
+        ).hexdigest()
+    else:
+        span_kind = "workflow"
+        span_id = hashlib.sha256(
+            f"{trace_id}:workflow".encode("utf-8")
+        ).hexdigest()
+        parent_span_id = None
+    return {
+        "schema_version": TRACE_SCHEMA_VERSION,
+        "trace_id": trace_id,
+        "span_id": span_id,
+        "parent_span_id": parent_span_id,
+        "span_kind": span_kind,
+        "event_name": str(event_type),
+    }
+
+
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
     event_file = _event_file(payload)
     event_file.parent.mkdir(parents=True, exist_ok=True)
@@ -251,6 +299,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     entry = {
         "ts": utc_now(),
         "event_type": str(event_type),
+        "trace": _trace_envelope(event_type, payload),
         "payload": payload,
     }
     encoded = (

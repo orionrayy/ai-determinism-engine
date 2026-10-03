@@ -185,6 +185,12 @@ Current execution-fabric branch: `main`
 - The free-only supervisor no longer injects disabled paid-adapter credentials into the runtime environment.
 - CI push tests are restricted to main while pull-request checks use concurrency cancellation, avoiding redundant feature-branch execution on every intermediate commit.
 - These changes remain GitHub Actions + stdlib Python with no database, broker, queue, proxy, paid runtime service, or new package dependency.
+## Orchestration hardening v66 — trace contract and offline evaluation
+- Durable events now carry a deterministic trace envelope derived from workflow, node, and agent identities. This adds workflow → node → agent correlation without a separate telemetry backend or database.
+- The trace layer intentionally remains an event correlation contract rather than a full external observability product: timestamps and lifecycle events already exist in the durable event stream, while trace IDs provide stable hierarchy.
+- Added a dependency-free control-plane evaluation harness covering blueprint determinism, aggregate context bounds, semantic ingress identity, free-only routing, execution-wave ordering/parallelism, and trace hierarchy.
+- CI executes the evaluation harness with ORCHESTRATOR_FREE_ONLY=true. The harness makes no external model or connector calls.
+- No database, broker, queue, telemetry backend, paid API, or new runtime package was introduced.
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
