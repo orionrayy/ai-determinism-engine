@@ -24,6 +24,21 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(records[0]["canonical_id"], "doi:10.1000/xyz")
         self.assertTrue(records[0]["open_access"])
 
+    def test_explicit_metered_provider_is_blocked_in_free_only_mode(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
+             patch(
+                 "research_providers._provider_search",
+                 return_value={"results": []},
+             ) as search:
+            result = research_records(
+                "topic",
+                providers=("openalex", "semantic_scholar"),
+                max_results=2,
+            )
+        self.assertEqual(result["providers"], ["semantic_scholar"])
+        self.assertNotIn("openalex", result["providers"])
+        self.assertEqual(search.call_count, 1)
+
     def test_default_provider_order_honors_free_only_mode(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
              patch(
