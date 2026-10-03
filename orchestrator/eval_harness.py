@@ -4,18 +4,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
 from typing import Any, Callable
 
-from blueprint_compiler import build_compilation_manifest
-from context_budget import pack_node_context
-from orchestrator import (
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from orchestrator.blueprint_compiler import build_compilation_manifest
+from orchestrator.context_budget import pack_node_context
+from orchestrator.orchestrator import (
     TRACE_SCHEMA_VERSION,
     _trace_envelope,
     build_ingress_intent_digest,
     free_only,
     tool_available,
 )
-from state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION
+from orchestrator.state_schema import CURRENT_WORKFLOW_SCHEMA_VERSION
 
 
 def _case_blueprint_repeatability() -> dict[str, Any]:
