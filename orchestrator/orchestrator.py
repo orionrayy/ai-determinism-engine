@@ -1613,6 +1613,11 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                 "goal": goal,
                 "instruction": instruction,
                 "query": goal if capability == "research" else "",
+                "research_focus": (
+                    "counterevidence"
+                    if role == "skeptic" and capability == "research"
+                    else "primary_evidence"
+                ),
             },
             contract={},
             agent_role=role,
@@ -1826,6 +1831,12 @@ def execute_research_bundle(node: Node, goal: str) -> dict[str, Any]:
     query = str(node.input.get("query") or goal).strip()
     if not query:
         raise RuntimeError("research bundle requires a query")
+    focus = str(node.input.get("research_focus") or "").strip().lower()
+    if focus == "counterevidence":
+        query = (
+            f"{query} counterevidence contradictions limitations "
+            "alternative findings"
+        ).strip()
     budget = str(node.input.get("budget") or "balanced").strip().lower()
     return research_bundle(
         query,
