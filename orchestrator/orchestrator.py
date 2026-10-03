@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .capability_graph import load_health, record_tool_result, route_capability, save_health, execution_eligible
+    from .capability_graph import load_health, record_tool_result, route_capability, save_health
     from .connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -36,6 +36,7 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence, sanitize_for_durable
+    from .epistemic_validation import validate_epistemic_output
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from .plan_integrity import fingerprint_nodes
     from .state_schema import (
@@ -64,7 +65,7 @@ try:
         reserve as reserve_federation_quota,
     )
 except ImportError:
-    from capability_graph import load_health, record_tool_result, route_capability, save_health, execution_eligible
+    from capability_graph import load_health, record_tool_result, route_capability, save_health
     from connector_bridge import (
         ConnectorReconciliationError,
         ConnectorRequestError,
@@ -72,6 +73,7 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence, sanitize_for_durable
+    from epistemic_validation import validate_epistemic_output
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
     from plan_integrity import fingerprint_nodes
     from state_schema import (
@@ -2558,8 +2560,22 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         checks.append({"check": "llm_payload", "passed": has_payload})
         if not has_payload:
             raise RuntimeError("LLM adapter returned no usable payload")
+        verdict = extract_first_llm_json(output)
+        if node.contract.get("epistemic"):
+            if not isinstance(verdict, dict):
+                raise RuntimeError("epistemic validator returned no JSON object")
+            epistemic_result = validate_epistemic_output(
+                verdict,
+                min_coverage=node.contract.get("min_coverage"),
+            )
+            checks.append({
+                "check": "epistemic_validation",
+                "passed": epistemic_result.get("passed") is True,
+                "coverage": epistemic_result.get("coverage"),
+            })
+            if epistemic_result.get("passed") is not True:
+                raise RuntimeError("epistemic validation failed")
         if node.capability == "validate" and node.tool == "gemini":
-            verdict = extract_first_llm_json(output)
             if not isinstance(verdict, dict):
                 raise RuntimeError("semantic validator returned no JSON verdict")
             passed = verdict.get("passed")
