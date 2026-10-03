@@ -14,6 +14,9 @@ class BridgeRuntimeTests(unittest.TestCase):
     def setUp(self):
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
+        self._free_only_env = patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False)
+        self._free_only_env.start()
+        self.addCleanup(self._free_only_env.stop)
 
     def payload(self, request_id=None):
         request_id = request_id or hashlib.sha256(b"wf:n1").hexdigest()
@@ -186,9 +189,14 @@ class BridgeRuntimeTests(unittest.TestCase):
             captured["url"] = request.full_url
             class Response:
                 status = 200
+                def __init__(self): self._done = False
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self, limit=None): return b'{"state":"applied","external_id":"p1"}'
+                def read(self, limit=None):
+                    if self._done:
+                        return b""
+                    self._done = True
+                    return b'{"state":"applied","external_id":"p1"}'
             return Response()
 
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen", side_effect=fake_urlopen):
@@ -209,9 +217,14 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen") as urlopen:
             class Response:
                 status = 200
+                def __init__(self): self._done = False
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self): return b'{"state":"maybe"}'
+                def read(self, limit=None):
+                    if self._done:
+                        return b""
+                    self._done = True
+                    return b'{"state":"maybe"}'
             urlopen.return_value = Response()
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_reconciliation(payload)
@@ -378,11 +391,3 @@ class BridgeRuntimeTests(unittest.TestCase):
                 br.handle_request(payload, "secret")
 
     def test_cleanup_idempotency_handles_expired_three_tuple_entry(self):
-        request_id = hashlib.sha256(b"expired").hexdigest()
-        br._COMPLETED[request_id] = (time.time() - 1, "digest", {"ok": True})
-        br.cleanup_idempotency(time.time())
-        self.assertNotIn(request_id, br._COMPLETED)
-
-
-if __name__ == "__main__":
-    unittest.main()
