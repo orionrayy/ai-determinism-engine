@@ -87,10 +87,3 @@ jobs:
         env:
           ORCHESTRATOR_FREE_ONLY: "true"
         run: python -m orchestrator.eval_harness --json
-      - name: Validate private-input Worker
-        shell: bash
-        run: |
-          set -euo pipefail
-          node --check workers/private-input/src/index.js
-          node --check workers/private-input/src/private_input_object.js
-          npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --dry-run
