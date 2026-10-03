@@ -118,11 +118,25 @@ def _normalize_action_spec(
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+    result_required = raw.get("result_required", [])
+    if not isinstance(result_required, list):
+        result_required = []
+    normalized_result_required = sorted(
+        {str(item).strip() for item in result_required if str(item).strip()}
+    )
+    result_types = raw.get("result_types", {})
+    if not isinstance(result_types, dict):
+        result_types = {}
+    normalized_result_types = {}
+    for key in sorted(result_types):
+        value = str(result_types[key] or "").strip().lower()
+        if str(key).strip() and value in ACTION_TYPE_NAMES:
+            normalized_result_types[str(key).strip()] = value
     return {
         "required": normalized_required,
         "types": normalized_types,
-        "result_required": sorted({str(item).strip() for item in (raw.get("result_required", []) if isinstance(raw.get("result_required", []), list) else []) if str(item).strip()}),
-        "result_types": {str(key).strip(): str(types_value).strip().lower() for key, types_value in sorted((raw.get("result_types", {}) if isinstance(raw.get("result_types", {}) else {})).items()) if str(key).strip() and str(types_value).strip().lower() in ACTION_TYPE_NAMES},
+        "result_required": normalized_result_required,
+        "result_types": normalized_result_types,
         "idempotent": bool(raw.get("idempotent", False)),
         "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
