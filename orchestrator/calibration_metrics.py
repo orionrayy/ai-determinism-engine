@@ -97,7 +97,7 @@ def expected_calibration_error(
     if not values:
         return None
     total = len(values)
-    gaps = reliability_bins(values_as_mappings(values), bins=bins)
+    gaps = reliability_bins(samples, bins=bins)
     return sum(
         (item["count"] / total) * item["gap"]
         for item in gaps
@@ -112,7 +112,7 @@ def maximum_calibration_error(
     values = _samples(samples)
     if not values:
         return None
-    gaps = reliability_bins(values_as_mappings(values), bins=bins)
+    gaps = reliability_bins(samples, bins=bins)
     return max(item["gap"] for item in gaps if item["count"]) if any(
         item["count"] for item in gaps
     ) else 0.0
