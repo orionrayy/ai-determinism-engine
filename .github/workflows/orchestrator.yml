@@ -432,7 +432,7 @@ jobs:
                   continue
 
               event_id = recovery_event_id(workflow)
-              if control_plane is not None and control_plane_event_id:
+              if control_plane is not None and workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
                   try:
                       claim = control_plane.claim_recovery(
                           workflow_id,
@@ -488,7 +488,7 @@ jobs:
                   continue
 
               dispatched += 1
-              if control_plane is not None and control_plane_event_id:
+              if control_plane is not None and workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
                   try:
                       control_plane.ack_recovery(
                           workflow_id,
