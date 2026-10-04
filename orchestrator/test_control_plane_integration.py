@@ -276,6 +276,14 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.7,
                 "evidence_refs": ["x"],
+                "evidence_cards": [
+                    {
+                        "canonical_id": "x",
+                        "title": "Primary source",
+                        "provider": "openalex",
+                        "authority_signals": ["scholarly_index"],
+                    }
+                ],
                 "independent_source_count": 2,
                 "vote_count": 9,
             },
