@@ -2830,11 +2830,45 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
             workflow_id = str(
                 nodes[0].input.get("workflow_id") or ""
             )
+            trusted_by_id = {
+                str(record.get("canonical_id") or "").strip(): dict(record)
+                for record in trusted_evidence
+                if isinstance(record, dict)
+                and str(record.get("canonical_id") or "").strip()
+            }
             for dep_id in node.depends_on:
                 dep = by_id[dep_id]
                 verdict = extract_first_llm_json(dep.output)
                 if not isinstance(verdict, dict):
                     continue
+                claimed_refs = set()
+                claims = verdict.get("claims")
+                if isinstance(claims, list):
+                    for claim in claims:
+                        if not isinstance(claim, dict):
+                            continue
+                        refs = claim.get("evidence_refs")
+                        if isinstance(refs, list):
+                            claimed_refs.update(
+                                str(ref).strip()
+                                for ref in refs
+                                if str(ref).strip()
+                            )
+                direct_refs = verdict.get("evidence_refs")
+                if isinstance(direct_refs, list):
+                    claimed_refs.update(
+                        str(ref).strip()
+                        for ref in direct_refs
+                        if str(ref).strip()
+                    )
+                # Deliberation sees only supervisor-trusted evidence records.
+                # Agent-provided record metadata can never become an authority signal
+                # before the trust boundary has validated it.
+                trusted_for_proposal = [
+                    trusted_by_id[ref]
+                    for ref in sorted(claimed_refs)
+                    if ref in trusted_by_id
+                ]
                 proposals.append(
                     proposal_from_verdict(
                         verdict,
@@ -2843,14 +2877,7 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
                             dep.id,
                             dep.agent_role,
                         ),
-                        evidence_records=(
-                            verdict.get("evidence_records")
-                            if isinstance(
-                                verdict.get("evidence_records"),
-                                list,
-                            )
-                            else []
-                        ),
+                        evidence_records=trusted_for_proposal,
                     )
                 )
             packed["deliberation"] = deliberation_context(
