@@ -161,7 +161,7 @@ def route_capability(
             1 if tool == preferred else 0,
             1 if env_ok else 0,
             1 if free_ok else 0,
-            1 if not _requires_env(tool) else 0,
+            1 if not _requires_env(tool, registry) else 0,
             HEALTH_RANK[status],
             -int(round(float(_health_record(health, tool).get("reliability_score") or 0.5) * 10000)),
             RISK_RANK[risk],
