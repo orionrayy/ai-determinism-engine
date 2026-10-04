@@ -9,6 +9,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
 Current main baseline: orchestration hardening v66 deterministic trace contract + offline evaluation harness + v65 deterministic context/federation/ingress integrity + v64 deep workload orchestration + v63 general blueprint workload compiler + v62 planner input bound + v61 durable event redaction + v60 attempt-budget accounting + v59 resource-safety and durable diagnostics + v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
+Candidate integration branch: v78 recovery-authority consolidation, validated at commit 9bccd7964537c8869cd9c94725283c5786f0f865 on 2026-10-04. v78 does not change the main baseline until PR integration.
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
@@ -191,6 +192,17 @@ Current execution-fabric branch: `main`
 - Added a dependency-free control-plane evaluation harness covering blueprint determinism, aggregate context bounds, semantic ingress identity, free-only routing, execution-wave ordering/parallelism, and trace hierarchy.
 - CI executes the evaluation harness with ORCHESTRATOR_FREE_ONLY=true. The harness makes no external model or connector calls.
 - No database, broker, queue, telemetry backend, paid API, or new runtime package was introduced.
+## v78 checkpoint — recovery authority, distributed state, evidence, and truth-lock
+- fix/v78-recovery-authority-consolidation is based directly on the v77 head and is kept separate from main until explicit merge approval.
+- Scheduled recovery imports are now tested from a fresh checkout; the prior orchestrator.private_input / capability_graph import failure is covered by CI smoke checks.
+- Distributed workflows treat the Durable Object control plane as coordination/state authority while Git remains a durable/discovery replica.
+- Per-workflow recovery alarms, atomic recovery claims, terminal alarm clearing, and authoritative recovery-state refresh are implemented. GitHub cron remains a consumer/backstop rather than the source of recovery truth.
+- Research provider consolidation removes duplicate Crossref requests; strict ORCHESTRATOR_FREE_ONLY=true excludes metered OpenAlex from the zero-cost provider set.
+- Evidence records expose access verification and post-publication retraction signals; retracted works are excluded from positive independence counts; DOI/arXiv bibliographic crosswalk prevents provider duplication from inflating independence.
+- Research drafts use deterministic truth-locking and cannot silently upgrade uncertainty or introduce material claims without adjudicator lineage.
+- Consensus policy now rejects single-proposal consensus; provider concurrency is bounded for free-tier stability; epistemic outputs have deterministic claim/evidence size caps.
+- Validation checkpoint: GitHub Actions run 1904 passed all gates on commit 9bccd7964537c8869cd9c94725283c5786f0f865.
+
 ## Multi-agent coordination
 The orchestration model uses a supervised multi-agent fabric without adding a second control plane:
 - The orchestrator is the sole supervisor and authoritative state/side-effect writer.
