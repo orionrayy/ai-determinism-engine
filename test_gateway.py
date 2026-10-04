@@ -16,9 +16,9 @@ class GatewayTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertFalse(gateway.authorized({}))
 
-    def test_authorization_uses_bearer_secret(self):
+    def test_authorization_requires_hmac_not_static_bearer(self):
         with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
-            self.assertTrue(gateway.authorized({"Authorization": "Bearer test-secret"}))
+            self.assertFalse(gateway.authorized({"Authorization": "Bearer test-secret"}))
             self.assertFalse(gateway.authorized({"Authorization": "Bearer wrong"}))
 
     def test_authorization_accepts_hmac_signature(self):
@@ -109,7 +109,7 @@ class GatewayTests(unittest.TestCase):
             "authorization": "Bearer test-secret",
         }
         with patch.dict(os.environ, {"GATEWAY_SHARED_SECRET": "test-secret"}, clear=False):
-            self.assertTrue(gateway.authorized(headers))
+            self.assertFalse(gateway.authorized(headers))
         headers = {
             "x-orchestrator-timestamp": timestamp,
             "x-orchestrator-signature": signature,
@@ -206,15 +206,33 @@ class GatewayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "execution_id_mismatch"):
             gateway.build_execution_event(payload)
 
-    def test_structured_live_dispatch_failure_cleans_private_input(self):
+    def test_ambiguous_dispatch_failure_retains_private_input(self):
         metadata = {"private_input_ref": "b" * 64}
         with patch.object(
-            gateway, "github_dispatch", side_effect=RuntimeError("dispatch down")
+            gateway, "github_dispatch", side_effect=RuntimeError("dispatch timeout")
         ), patch.object(
             gateway, "delete_private_input", return_value=True
         ) as cleanup:
-            with self.assertRaises(RuntimeError):
+            with self.assertRaisesRegex(RuntimeError, "dispatch timeout"):
                 gateway.dispatch_execution("goal", metadata, event_id="evt-cleanup")
+        cleanup.assert_not_called()
+
+    def test_explicit_dispatch_rejection_cleans_private_input(self):
+        metadata = {"private_input_ref": "b" * 64}
+        error = __import__("urllib.error").error.HTTPError(
+            "https://api.github.com/repos/o/r/dispatches",
+            422,
+            "rejected",
+            {},
+            None,
+        )
+        with patch.object(
+            gateway, "github_dispatch", side_effect=error
+        ), patch.object(
+            gateway, "delete_private_input", return_value=True
+        ) as cleanup:
+            with self.assertRaises(__import__("urllib.error").error.HTTPError):
+                gateway.dispatch_execution("goal", metadata, event_id="evt-rejected")
         cleanup.assert_called_once_with("b" * 64)
 
     def test_dispatch_cleanup_does_not_mask_original_error(self):
