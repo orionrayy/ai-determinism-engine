@@ -2341,7 +2341,9 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
             "evidence_records, confidence, risks, "
             "unresolved, and next_action. Each claim must contain claim_id, statement, material, "
             "status, and evidence_refs. Allowed statuses are SUPPORTED_DIRECT, SUPPORTED_INDIRECT, "
-            "CONTESTED, UNSUPPORTED, UNKNOWN."
+            "CONTESTED, UNSUPPORTED, UNKNOWN. When an abstract or full-text excerpt is present in trusted "
+            "evidence, include evidence_passages with exact excerpt text and evidence_ref for every material "
+            "SUPPORTED_DIRECT claim; never invent quotation text."
         )
         if node.contract.get("deliberation"):
             instruction += (
