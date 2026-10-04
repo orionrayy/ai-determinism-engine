@@ -107,19 +107,8 @@ def deliberation_context(
     }
 
 
-def should_adjudicate(proposals: list[Mapping[str, Any]]) -> bool:
-    decision = debate_decision(
-        [
-            item
-            for item in proposals
-            if isinstance(item, Mapping)
-        ]
-    )
-    return bool(decision.get("required"))
-
 
 __all__ = [
     "deliberation_context",
     "proposal_from_verdict",
-    "should_adjudicate",
 ]
