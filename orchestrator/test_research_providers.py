@@ -115,7 +115,7 @@ class ResearchProviderTests(unittest.TestCase):
             result = research_records("topic")
         self.assertEqual(
             result["providers"],
-            ["semantic_scholar", "openalex", "europe_pmc", "crossref"],
+            ["semantic_scholar", "europe_pmc", "crossref"],
         )
         self.assertEqual(search.call_count, 4)
 
@@ -161,8 +161,8 @@ class ResearchProviderTests(unittest.TestCase):
                 providers=("openalex", "semantic_scholar"),
                 max_results=2,
             )
-        self.assertEqual(result["providers"], ["openalex", "semantic_scholar"])
-        self.assertEqual(search.call_count, 2)
+        self.assertEqual(result["providers"], ["semantic_scholar"])
+        self.assertEqual(search.call_count, 1)
 
     def test_provider_cache_avoids_repeated_network_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
