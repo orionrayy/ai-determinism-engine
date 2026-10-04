@@ -128,10 +128,64 @@ def claim_coverage(claims: list[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _bind_evidence_to_trusted_records(
+    output: Mapping[str, Any],
+    trusted_evidence_records: list[Mapping[str, Any]] | None,
+) -> tuple[list[Mapping[str, Any]], dict[str, Any]]:
+    if trusted_evidence_records is None:
+        records = output.get("evidence_records", [])
+        return (
+            [item for item in records if isinstance(item, Mapping)],
+            {"trusted": False, "untrusted_ids": []},
+        )
+
+    trusted = {
+        str(item.get("canonical_id") or "").strip(): item
+        for item in trusted_evidence_records
+        if isinstance(item, Mapping) and str(item.get("canonical_id") or "").strip()
+    }
+    claimed_records = output.get("evidence_records", [])
+    claimed_ids = {
+        str(item.get("canonical_id") or "").strip()
+        for item in claimed_records
+        if isinstance(item, Mapping) and str(item.get("canonical_id") or "").strip()
+    }
+    claim_refs = set()
+    claims = output.get("claims", [])
+    if isinstance(claims, list):
+        for claim in claims:
+            if not isinstance(claim, Mapping):
+                continue
+            refs = claim.get("evidence_refs", [])
+            if isinstance(refs, list):
+                claim_refs.update(
+                    str(ref).strip() for ref in refs if str(ref).strip()
+                )
+
+    unknown_ids = sorted(
+        (claimed_ids | claim_refs) - set(trusted)
+    )
+    if unknown_ids:
+        return [], {
+            "trusted": True,
+            "untrusted_ids": unknown_ids,
+            "passed": False,
+        }
+
+    bound_ids = sorted(claimed_ids | claim_refs)
+    return [trusted[cid] for cid in bound_ids], {
+        "trusted": True,
+        "untrusted_ids": [],
+        "bound_ids": bound_ids,
+        "passed": True,
+    }
+
+
 def validate_epistemic_output(
     output: Mapping[str, Any],
     *,
     min_coverage: float | None = None,
+    trusted_evidence_records: list[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     claims = output.get("claims", [])
     evidence = output.get("evidence_records", [])
@@ -140,6 +194,24 @@ def validate_epistemic_output(
     if not isinstance(evidence, list):
         return {"passed": False, "reason": "evidence_records must be an array"}
 
+    bound_evidence, binding = _bind_evidence_to_trusted_records(
+        output,
+        trusted_evidence_records,
+    )
+    if binding.get("trusted") and not binding.get("passed", False):
+        return {
+            "passed": False,
+            "evidence": {
+                "passed": False,
+                "reason": "evidence_refs_crossed_trust_boundary",
+                "untrusted_ids": binding.get("untrusted_ids", []),
+            },
+            "claims": {"passed": False, "invalid_claim_ids": []},
+            "evidence_binding": binding,
+            "reason": "LLM attempted to cite evidence outside trusted dependency records",
+        }
+
+    evidence = bound_evidence
     evidence_result = validate_evidence_records(evidence)
     if not evidence_result["passed"]:
         return {
@@ -167,6 +239,8 @@ def validate_epistemic_output(
         "min_coverage": min_coverage,
         "min_coverage_basis": "evidence_coverage",
         "independence": independence,
+        "evidence_binding": binding,
+        "bound_evidence_records": evidence,
     }
     selective = selective_evidence_gate(
         output,
