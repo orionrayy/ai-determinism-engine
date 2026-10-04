@@ -117,6 +117,7 @@ MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
 MAX_GENERIC_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_NODE_ID_LENGTH = 100
 SAFE_NODE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+_EVENT_APPEND_LOCK = threading.Lock()
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -315,10 +316,11 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     encoded = (
         json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "\n"
     ).encode("utf-8")
-    with event_file.open("ab") as handle:
-        handle.write(encoded)
-        handle.flush()
-        os.fsync(handle.fileno())
+    with _EVENT_APPEND_LOCK:
+        with event_file.open("ab") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
 
 def execution_key(workflow: dict[str, Any], node: Node) -> str:
     raw = f"{workflow['id']}:{node.id}"
