@@ -79,7 +79,7 @@ class EpistemicMetricsTests(unittest.TestCase):
             verdict={
                 "claims": [],
                 "confidence": 0.9,
-                "correct": True,
+                "ground_truth_correct": True,
                 "evidence_records": [],
             },
         )
