@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -55,5 +56,13 @@ class ContinuationRuntimeTests(unittest.TestCase):
     def test_multiline_github_output_uses_delimiter_protocol(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "output"
-            with patch.dict(self.__class__.env or {}, {}, clear=False):
-                pass
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}, clear=False):
+                write_github_output({"goal": "line 1\nline 2", "status": "running"})
+            raw = output.read_text(encoding="utf-8")
+            self.assertIn("goal<<ORCHESTRATOR_OUTPUT_", raw)
+            self.assertIn("line 1\nline 2\n", raw)
+            self.assertIn("status=running\n", raw)
+
+
+if __name__ == "__main__":
+    unittest.main()
