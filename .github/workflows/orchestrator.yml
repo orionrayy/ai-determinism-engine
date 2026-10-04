@@ -432,6 +432,23 @@ jobs:
                   continue
 
               event_id = recovery_event_id(workflow)
+              if control_plane is not None and control_plane_event_id:
+                  try:
+                      claim = control_plane.claim_recovery(
+                          workflow_id,
+                          event_id,
+                          owner="scheduled-recovery:" + os.environ["SCHEDULE_RUN_ID"],
+                          ttl_seconds=300,
+                      )
+                  except ControlPlaneError as exc:
+                      dispatch_failures.append(
+                          f"{workflow_id}: recovery claim failed: "
+                          f"{type(exc).__name__}: {exc}"
+                      )
+                      continue
+                  if str(claim.get("status") or "") != "claimed":
+                      continue
+
               payload = {
                   "event_type": "orchestrator.continue",
                   "client_payload": {
