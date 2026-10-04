@@ -52,7 +52,10 @@ export class WorkflowControlPlane {
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS workflow_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), state_version INTEGER NOT NULL, state_json TEXT NOT NULL, updated_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS outbox_created_idx ON outbox(created_at)");
-      ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS recovery (singleton INTEGER PRIMARY KEY CHECK(singleton=1), due_at INTEGER NOT NULL, due INTEGER NOT NULL DEFAULT 0, event_id TEXT NOT NULL, fired_at INTEGER)");
+      ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS recovery (singleton INTEGER PRIMARY KEY CHECK(singleton=1), due_at INTEGER NOT NULL, due INTEGER NOT NULL DEFAULT 0, event_id TEXT NOT NULL, fired_at INTEGER, claimed INTEGER NOT NULL DEFAULT 0, claim_owner TEXT, claim_expires_at INTEGER)");
+      try { ctx.storage.sql.exec("ALTER TABLE recovery ADD COLUMN claimed INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+      try { ctx.storage.sql.exec("ALTER TABLE recovery ADD COLUMN claim_owner TEXT"); } catch (_) {}
+      try { ctx.storage.sql.exec("ALTER TABLE recovery ADD COLUMN claim_expires_at INTEGER"); } catch (_) {}
     });
   }
 
@@ -289,8 +292,8 @@ export class WorkflowControlPlane {
     this.ctx.storage.transactionSync(() => {
       this.requireLease(owner, epoch, at);
       this.ctx.storage.sql.exec(
-        "INSERT INTO recovery(singleton,due_at,due,event_id,fired_at) VALUES(1,?,0,?,NULL) " +
-        "ON CONFLICT(singleton) DO UPDATE SET due_at=excluded.due_at,due=0,event_id=excluded.event_id,fired_at=NULL",
+        "INSERT INTO recovery(singleton,due_at,due,event_id,fired_at,claimed,claim_owner,claim_expires_at) VALUES(1,?,0,?,NULL,0,NULL,NULL) " +
+        "ON CONFLICT(singleton) DO UPDATE SET due_at=excluded.due_at,due=0,event_id=excluded.event_id,fired_at=NULL,claimed=0,claim_owner=NULL,claim_expires_at=NULL",
         scheduledAt,
         eventId
       );
@@ -302,6 +305,36 @@ export class WorkflowControlPlane {
       due_at:scheduledAt,
       event_id:eventId
     });
+  }
+
+  claimRecovery(body) {
+    const workflowId = String(body.workflow_id || "").trim();
+    const eventId = String(body.event_id || "").trim();
+    const owner = String(body.owner || "").trim();
+    if (!workflowId || !eventId || !owner) throw new Error("recovery_claim_invalid");
+    const at = now();
+    const expiresAt = at + Math.max(30, Math.min(Number(body.ttl_seconds) || 300, 600));
+    const result = this.ctx.storage.transactionSync(() => {
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT due,event_id,claimed,claim_owner,claim_expires_at FROM recovery WHERE singleton=1"
+      ).toArray();
+      if (!rows.length) return "absent";
+      const row = rows[0];
+      if (String(row.event_id) !== eventId || Number(row.due) !== 1) return "not_due";
+      const existingExpiry = Number(row.claim_expires_at || 0);
+      if (Number(row.claimed) === 1 && existingExpiry > at && String(row.claim_owner || "") !== owner) {
+        return "already_claimed";
+      }
+      this.ctx.storage.sql.exec(
+        "UPDATE recovery SET claimed=1,claim_owner=?,claim_expires_at=? WHERE singleton=1",
+        owner,
+        expiresAt
+      );
+      return "claimed";
+    });
+    return result === "already_claimed"
+      ? json({error:"recovery_claimed"},409)
+      : json({status:result,workflow_id:workflowId,event_id:eventId,claim_owner:owner,claim_expires_at:expiresAt});
   }
 
   ackRecovery(body) {
@@ -323,14 +356,17 @@ export class WorkflowControlPlane {
 
   readRecovery() {
     const rows = this.ctx.storage.sql.exec(
-      "SELECT due_at,due,event_id,fired_at FROM recovery WHERE singleton=1"
+      "SELECT due_at,due,event_id,fired_at,claimed,claim_owner,claim_expires_at FROM recovery WHERE singleton=1"
     ).toArray();
     return json(rows.length ? {
       status:"stored",
       due_at:Number(rows[0].due_at),
       due:Boolean(rows[0].due),
       event_id:String(rows[0].event_id),
-      fired_at:rows[0].fired_at == null ? null : Number(rows[0].fired_at)
+      fired_at:rows[0].fired_at == null ? null : Number(rows[0].fired_at),
+      claimed:Boolean(rows[0].claimed),
+      claim_owner:rows[0].claim_owner == null ? "" : String(rows[0].claim_owner),
+      claim_expires_at:rows[0].claim_expires_at == null ? null : Number(rows[0].claim_expires_at)
     } : {status:"absent"});
   }
 
@@ -349,7 +385,7 @@ export class WorkflowControlPlane {
         return {status:"not_due",due_at:Number(row.due_at)};
       }
       this.ctx.storage.sql.exec(
-        "UPDATE recovery SET due=1,fired_at=? WHERE singleton=1",
+        "UPDATE recovery SET due=1,fired_at=?,claimed=0,claim_owner=NULL,claim_expires_at=NULL WHERE singleton=1",
         at
       );
       this.ctx.storage.sql.exec(
@@ -543,6 +579,7 @@ export class WorkflowControlPlane {
       if (request.method === "GET" && url.pathname.endsWith("/state")) return this.readWorkflowState();
       if (request.method === "GET" && url.pathname.endsWith("/recovery")) return this.readRecovery();
       if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return this.armRecovery(body);
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/claim")) return this.claimRecovery(body);
       if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return this.ackRecovery(body);
       if (request.method === "PUT" && url.pathname.endsWith("/state")) return this.writeWorkflowState(body);
       if (request.method === "POST" && url.pathname.endsWith("/outbox")) return this.appendOutbox(body);
