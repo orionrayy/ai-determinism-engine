@@ -16,7 +16,7 @@ class EffectAdmissionTests(unittest.TestCase):
             workflow_id="wf-1",
             owner="worker",
             fence_epoch=4,
-            expires_at=int(time.time()) + 10,
+            expires_at=1010,
         )
         with self.assertRaises(o.EffectLeaseAdmissionError):
             o.ensure_effect_lease_horizon(
@@ -30,7 +30,7 @@ class EffectAdmissionTests(unittest.TestCase):
             workflow_id="wf-1",
             owner="worker",
             fence_epoch=4,
-            expires_at=int(time.time()) + 151,
+            expires_at=1151,
         )
         self.assertIsNone(
             o.ensure_effect_lease_horizon(
