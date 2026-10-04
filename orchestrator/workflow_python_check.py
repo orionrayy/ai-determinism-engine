@@ -8,7 +8,7 @@ import re
 import textwrap
 
 HEREDOC_RE = re.compile(
-    r"(?m)^\s*(?:python3?|python)\s+-\s+<<(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1\s*$"
+    r"(?m)^\s*(?:python3?|python)\s+-\s+<<(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1.*$"
 )
 
 
