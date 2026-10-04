@@ -2010,7 +2010,29 @@ def gemini_model_allowed(
     if not isinstance(allowed, list):
         return False
     selected = str(model or configured_gemini_model()).strip()
-    return selected in {str(item).strip() for item in allowed}
+    if selected not in {str(item).strip() for item in allowed}:
+        return False
+
+    # Free-tier availability is time-bounded by the provider. A missing
+    # deadline preserves backward compatibility; an expired deadline fails
+    # closed instead of silently entering a paid tier.
+    deadlines = spec.get("free_until")
+    if isinstance(deadlines, dict):
+        deadline = deadlines.get(selected)
+    else:
+        deadline = deadlines
+    if deadline:
+        try:
+            cutoff = datetime.fromisoformat(
+                str(deadline).replace("Z", "+00:00")
+            )
+            if cutoff.tzinfo is None:
+                cutoff = cutoff.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) > cutoff:
+                return False
+        except ValueError:
+            return False
+    return True
 
 
 def tool_available(
