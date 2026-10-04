@@ -2093,7 +2093,7 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
         raise RuntimeError(
             f"Gemini model {model!r} is not allowed by the free-only model registry"
         )
-    role = str(node.agent_role or "operator")
+    role = assign_role(node)
     if node.contract.get("epistemic"):
         instruction = (
             role_instruction(role, node.capability) + " "
@@ -3157,12 +3157,15 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         if node.contract.get("epistemic") and not defer_epistemic:
             if not isinstance(verdict, dict):
                 raise RuntimeError("epistemic validator returned no JSON object")
-            trusted_records = node.input.get("context", {}).get(
-                "trusted_evidence", []
-            ) if isinstance(node.input.get("context"), dict) else []
+            context_value = node.input.get("context")
+            trusted_records = (
+                context_value.get("trusted_evidence", [])
+                if isinstance(context_value, dict) and "trusted_evidence" in context_value
+                else None
+            )
             if isinstance(trusted_records, dict) and trusted_records.get("truncated"):
                 trusted_records = []
-            if not isinstance(trusted_records, list):
+            if trusted_records is not None and not isinstance(trusted_records, list):
                 trusted_records = []
             epistemic_result = validate_epistemic_output(
                 verdict,
