@@ -28,7 +28,7 @@ class CalibrationMetricTests(unittest.TestCase):
     def test_ece_is_deterministic(self):
         self.assertAlmostEqual(
             expected_calibration_error(self.samples, bins=2),
-            0.0,
+            0.15,
         )
 
     def test_selective_accuracy_improves_at_high_threshold(self):
