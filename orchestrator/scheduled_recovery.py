@@ -91,6 +91,10 @@ def is_recovery_candidate(
     status = str(workflow.get("status") or "")
     if not str(workflow.get("id") or "").strip():
         return False
+    if active_run_status == "unknown":
+        return False
+    if active_run_status in ACTIVE_RUN_STATUSES:
+        return False
     if status == "waiting_approval":
         return False
     if status == "running":

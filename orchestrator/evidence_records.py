@@ -133,11 +133,106 @@ def _full_text_url(record: Mapping[str, Any]) -> str:
             value = best_oa.get(key)
             if value:
                 return str(value)
-    for key in ("full_text_url", "pdf_url", "url"):
+    for key in ("full_text_url", "pdf_url"):
         value = record.get(key)
         if value:
             return str(value)
+    links = record.get("link")
+    if isinstance(links, list):
+        for item in links:
+            if not isinstance(item, Mapping):
+                continue
+            value = item.get("URL") or item.get("url")
+            content_type = str(
+                item.get("content-type") or item.get("content_type") or ""
+            ).lower()
+            if value and (
+                "pdf" in content_type
+                or "fulltext" in content_type
+                or "xhtml" in content_type
+            ):
+                return str(value)
     return ""
+
+
+def _abstract_text(record: Mapping[str, Any]) -> str:
+    value = _first_nonempty(
+        record.get("abstract"),
+        record.get("abstractText"),
+    )
+    if not value:
+        return ""
+    text = str(value)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return " ".join(text.split())[:16000]
+
+
+def _access_metadata(
+    provider: str,
+    record: Mapping[str, Any],
+    abstract: str,
+    full_text_url: str,
+) -> dict[str, Any]:
+    explicit_full_text = bool(full_text_url)
+    best_oa = record.get("best_oa_location")
+    has_oa_pdf = (
+        isinstance(record.get("openAccessPdf"), Mapping)
+        and bool(record.get("openAccessPdf", {}).get("url"))
+    ) or (
+        isinstance(best_oa, Mapping)
+        and bool(best_oa.get("pdf_url"))
+    )
+    publisher_url = str(record.get("URL") or record.get("url") or "").strip()
+
+    if has_oa_pdf:
+        access_level = "L3"
+        access_route = "open_access_pdf"
+    elif explicit_full_text:
+        access_level = "L3"
+        access_route = "full_text_url"
+    elif abstract:
+        access_level = "L2"
+        access_route = "abstract"
+    elif publisher_url:
+        access_level = "L1"
+        access_route = "publisher_url"
+    elif full_text_url:
+        access_level = "L1"
+        access_route = "locator"
+    else:
+        access_level = "L0"
+        access_route = "identifier"
+
+    source_type = _norm_text(
+        _first_nonempty(record.get("source_type"), record.get("type"))
+    )
+    peer_reviewed = record.get("peer_reviewed") is True
+    if peer_reviewed:
+        authority_tier = "peer_review_signal"
+        authority_score = 0.80
+    elif provider == "arxiv":
+        authority_tier = "preprint_repository"
+        authority_score = 0.45
+    elif provider == "europe_pmc":
+        authority_tier = "biomedical_index"
+        authority_score = 0.55
+    elif provider in {"crossref", "openalex", "semantic_scholar"}:
+        authority_tier = "scholarly_index"
+        authority_score = 0.55
+    elif source_type in {"journal-article", "journal article"}:
+        authority_tier = "journal_metadata"
+        authority_score = 0.60
+    else:
+        authority_tier = "metadata_index"
+        authority_score = 0.40
+
+    return {
+        "access_level": access_level,
+        "access_route": access_route,
+        "authority_tier": authority_tier,
+        "authority_score": authority_score,
+        "authority_heuristic": True,
+    }
 
 
 def _identifiers(record: Mapping[str, Any]) -> dict[str, str]:
@@ -214,6 +309,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
     year = _first_nonempty(record.get("year"), record.get("publication_year"))
     source_type = _norm_text(_first_nonempty(record.get("source_type"), record.get("type")))
     primaryity = str(_first_nonempty(record.get("primaryity"), "unknown"))
+    abstract = _abstract_text(record)
     authority = []
     if source_type in {"journal-article", "journal article"}:
         authority.append("journal_metadata")
@@ -228,6 +324,12 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
     if record.get("peer_reviewed") is True:
         authority.append("peer_reviewed")
     work_identity = source_work_identity({**record, "provider": provider})
+    access = _access_metadata(
+        provider,
+        record,
+        abstract,
+        _full_text_url(record),
+    )
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
@@ -239,6 +341,8 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         "year": int(year) if str(year or "").isdigit() else None,
         **ids,
         "venue": _venue(record),
+        "abstract": abstract,
+        **access,
         "citation_count": citation_count,
         "open_access": open_access,
         "full_text_url": _full_text_url(record),

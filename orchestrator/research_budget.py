@@ -35,11 +35,13 @@ _GENERAL_ORDER = (
     "semantic_scholar",
     "openalex",
     "europe_pmc",
+    "crossref",
     "core",
 )
 FREE_PROVIDER_ORDER = (
     "semantic_scholar",
     "europe_pmc",
+    "crossref",
 )
 
 

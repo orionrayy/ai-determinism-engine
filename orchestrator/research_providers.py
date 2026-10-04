@@ -37,11 +37,13 @@ PROVIDER_ORDER = (
     "openalex",
     "semantic_scholar",
     "europe_pmc",
+    "crossref",
     "core",
 )
 FREE_PROVIDER_ORDER = (
     "semantic_scholar",
     "europe_pmc",
+    "crossref",
 )
 
 
@@ -225,6 +227,19 @@ def _request_json(
             ) from exc
 
 
+def search_crossref(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[str, Any]:
+    params = {
+        "query": query[:400],
+        "rows": max(1, min(int(max_results), 50)),
+    }
+    mailto = os.environ.get("CROSSREF_MAILTO", "").strip()
+    if mailto:
+        params["mailto"] = mailto
+    return _request_json(
+        "https://api.crossref.org/works?" + urllib.parse.urlencode(params),
+    )
+
+
 def search_openalex(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[str, Any]:
     params = {
         "search": query[:400],
@@ -242,7 +257,7 @@ def search_semantic_scholar(query: str, max_results: int = DEFAULT_MAX_RESULTS) 
     params = urllib.parse.urlencode({
         "query": query[:400],
         "limit": max(1, min(int(max_results), 100)),
-        "fields": "paperId,title,year,authors,citationCount,openAccessPdf,url,journal",
+        "fields": "paperId,title,year,authors,citationCount,openAccessPdf,url,journal,abstract",
     })
     headers = {}
     key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
@@ -301,6 +316,11 @@ def normalize_provider_payload(
         results = payload.get("data")
         if isinstance(results, list):
             raw_items = [item for item in results if isinstance(item, Mapping)]
+    elif provider == "crossref":
+        message = payload.get("message")
+        results = message.get("items") if isinstance(message, Mapping) else None
+        if isinstance(results, list):
+            raw_items = [item for item in results if isinstance(item, Mapping)]
     elif provider == "europe_pmc":
         result_list = payload.get("resultList", {})
         results = result_list.get("result") if isinstance(result_list, Mapping) else None
@@ -331,6 +351,7 @@ def _provider_search(provider: str, query: str, max_results: int) -> dict[str, A
         "openalex": search_openalex,
         "semantic_scholar": search_semantic_scholar,
         "europe_pmc": search_europe_pmc,
+        "crossref": search_crossref,
         "core": search_core,
     }
     fn = functions.get(provider)
@@ -422,6 +443,7 @@ def research_records(
 
 __all__ = [
     "ResearchProviderError",
+    "search_crossref",
     "search_openalex",
     "search_semantic_scholar",
     "search_europe_pmc",

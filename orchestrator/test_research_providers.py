@@ -12,6 +12,74 @@ from research_providers import (
 )
 
 class ResearchProviderTests(unittest.TestCase):
+    def test_crossref_public_payload_normalizes_and_classifies_access(self):
+        payload = {
+            "message": {
+                "items": [{
+                    "DOI": "10.1000/crossref",
+                    "title": ["Crossref Example"],
+                    "author": [{"given": "Jane", "family": "Doe"}],
+                    "published": {"date-parts": [[2026, 10, 4]]},
+                    "type": "journal-article",
+                    "abstract": "<jats:p>Structured abstract.</jats:p>",
+                    "URL": "https://publisher.example/article",
+                    "link": [{
+                        "URL": "https://publisher.example/article.pdf",
+                        "content-type": "application/pdf",
+                    }],
+                }]
+            }
+        }
+        records = normalize_provider_payload("crossref", payload)
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record["canonical_id"], "doi:10.1000/crossref")
+        self.assertEqual(record["access_level"], "L3")
+        self.assertEqual(record["access_route"], "full_text_url")
+        self.assertTrue(0.0 <= record["authority_score"] <= 1.0)
+        self.assertTrue(record["authority_heuristic"])
+
+    def test_publisher_url_without_full_text_is_only_metadata_access(self):
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/locator-only",
+                        "title": ["Locator Only"],
+                        "URL": "https://publisher.example/article",
+                    }]
+                }
+            },
+        )
+        self.assertEqual(records[0]["access_level"], "L1")
+        self.assertEqual(records[0]["access_route"], "publisher_url")
+
+    def test_abstract_without_full_text_is_l2(self):
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/abstract-only",
+                        "title": ["Abstract Only"],
+                        "abstract": "<p>Abstract text.</p>",
+                    }]
+                }
+            },
+        )
+        self.assertEqual(records[0]["access_level"], "L2")
+        self.assertEqual(records[0]["access_route"], "abstract")
+
+    def test_crossref_is_available_in_free_only_mode(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False),              patch("research_providers._provider_search", return_value={"message": {"items": []}}) as search:
+            result = research_records("topic")
+        self.assertEqual(
+            result["providers"],
+            ["semantic_scholar", "europe_pmc", "crossref"],
+        )
+        self.assertEqual(search.call_count, 3)
+
     def test_openalex_payload_normalizes_to_evidence_records(self):
         payload = {
             "results": [{
@@ -159,7 +227,7 @@ class ResearchProviderTests(unittest.TestCase):
              ):
             self.assertEqual(
                 research_records("topic")["providers"],
-                ["semantic_scholar", "europe_pmc"],
+                ["semantic_scholar", "europe_pmc", "crossref"],
             )
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False), \
              patch(
@@ -168,8 +236,17 @@ class ResearchProviderTests(unittest.TestCase):
              ):
             self.assertEqual(
                 research_records("topic")["providers"],
-                ["openalex", "semantic_scholar", "europe_pmc", "core"],
+                ["openalex", "semantic_scholar", "europe_pmc", "crossref", "core"],
             )
+
+    def test_crossref_search_is_public_with_optional_polite_identity(self):
+        with patch.dict(os.environ, {"CROSSREF_MAILTO": "test@example.invalid"}, clear=False),              patch("research_providers._request_json", return_value={"message": {"items": []}}) as request:
+            from research_providers import search_crossref
+            search_crossref("topic", max_results=3)
+        url = request.call_args.args[0]
+        self.assertIn("api.crossref.org/works?", url)
+        self.assertIn("mailto=test%40example.invalid", url)
+        self.assertIn("rows=3", url)
 
     def test_provider_requests_run_in_parallel_with_deterministic_output_order(self):
         def fake(provider, query, max_results):

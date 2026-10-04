@@ -56,7 +56,7 @@ class ScheduledRecoveryTests(unittest.TestCase):
                     )
                 )
 
-    def test_missing_or_unknown_github_run_allows_recovery(self):
+    def test_missing_github_run_allows_recovery_but_unknown_status_fails_closed(self):
         workflow = {
             "id": "wf-missing-run",
             "status": "running",
@@ -69,7 +69,7 @@ class ScheduledRecoveryTests(unittest.TestCase):
                 active_run_status=None,
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             is_recovery_candidate(
                 workflow,
                 self.now,
@@ -121,6 +121,21 @@ class ScheduledRecoveryTests(unittest.TestCase):
             }],
         }
         self.assertFalse(is_recovery_candidate(workflow, self.now))
+
+    def test_active_run_suppression_also_covers_waiting_agents(self):
+        workflow = {
+            "id": "wf-agents",
+            "status": "waiting_agents",
+            "federation": {"status": "prepared"},
+            "updated_at": "2026-10-04T00:00:00+00:00",
+        }
+        self.assertFalse(
+            is_recovery_candidate(
+                workflow,
+                self.now,
+                active_run_status="in_progress",
+            )
+        )
 
     def test_recovery_event_id_changes_when_plan_or_effect_intent_changes(self):
         base = {
