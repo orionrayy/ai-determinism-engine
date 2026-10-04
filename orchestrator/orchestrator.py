@@ -4487,6 +4487,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             )
 
             executable = []
+            resource_leases_by_node: dict[str, list[Any]] = {}
             for node in batch:
                 if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
                     transition(node, "waiting_approval")
@@ -4543,6 +4544,32 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 transition(node, "running")
 
                 execution_id = execution_key(workflow, node)
+                try:
+                    resource_leases_by_node[node.id] = acquire_node_resource_locks(
+                        workflow,
+                        node,
+                        control_plane,
+                    )
+                except ControlPlaneError as resource_exc:
+                    attempt_budget.refund(1)
+                    node.error = {
+                        "type": type(resource_exc).__name__,
+                        "message": str(resource_exc),
+                        "failure_class": "dependency",
+                        "retry_allowed": False,
+                        "resource_lock_wait": True,
+                    }
+                    transition(node, "ready")
+                    workflow["status"] = "running"
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    attempt_budget.sync()
+                    persist_workflow(workflow)
+                    append_event("resource.lock_wait", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "resources": node_resource_keys(node),
+                    })
+                    return
                 if side_effecting(node, registry):
                     record = workflow.setdefault("executions", {}).get(execution_id)
                     if record and record.get("status") == "started":
@@ -4719,9 +4746,19 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                                 else None
                             ),
                             before_attempt=(
-                                (lambda: control_plane.renew_lease(
-                                    workflow["id"],
-                                    control_plane_lease.fence_epoch,
+                                (lambda cp_node=node: (
+                                    control_plane.renew_lease(
+                                        workflow["id"],
+                                        control_plane_lease.fence_epoch,
+                                    ),
+                                    resource_leases_by_node.__setitem__(
+                                        cp_node.id,
+                                        renew_node_resource_locks(
+                                            workflow,
+                                            resource_leases_by_node.get(cp_node.id, []),
+                                            control_plane,
+                                        ),
+                                    ),
                                 ))
                                 if control_plane is not None and control_plane_lease is not None
                                 else None
