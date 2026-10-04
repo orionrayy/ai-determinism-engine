@@ -14,6 +14,15 @@ Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
 
+### Candidate v79.1 efficiency and evidence hardening
+- Distributed provider rate gate is implemented for Crossref and uses the public 1 req/s profile without `CROSSREF_MAILTO`, or polite 3 req/s profile when mailto is configured. Local semaphores remain the concurrency backstop.
+- Research bundle is no longer globally classified as quota-sensitive; provider-level throttling now controls upstream research, allowing independent research nodes to run in parallel.
+- Workflow state CAS and recovery alarm mutation can be sent as one fenced control-plane transaction, reducing one RPC per distributed state persistence and keeping recovery state atomic with the state version.
+- Trusted evidence context is explicitly bounded; canonical IDs remain available while abstract excerpts are included only in a bounded lane for exact passage validation.
+- Exact normalized evidence-passage validation is available through `evidence_passages`; strict mode can require passages for direct-supported claims.
+- OpenAlex remains a free-allowance provider in hard-free mode, and Unpaywall is DOI-only and opt-in.
+- Latest verified CI head before this checkpoint: 5ac812e9012831bfd037a8efee96515ee540f46c2 had Unit Tests, Actionlint, and Control-plane evaluation success. Latest subsequent commits are staged in the same PR branch and must be checked again if merged.
+
 ### Candidate orchestration hardening v79
 - PR #142 branch: `feat/v79-boundary-evidence-efficiency`.
 - Distributed control-plane v78 remains operational authority for live workflows; Git remains the state/audit replica.
