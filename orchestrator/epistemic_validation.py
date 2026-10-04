@@ -242,8 +242,10 @@ def validate_epistemic_output(
         "evidence_binding": binding,
         "bound_evidence_records": evidence,
     }
+    selective_input = dict(output)
+    selective_input["evidence_records"] = evidence
     selective = selective_evidence_gate(
-        output,
+        selective_input,
         base_result,
     )
     passed = bool(
