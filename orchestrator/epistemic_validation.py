@@ -322,7 +322,10 @@ def validate_epistemic_output(
             isinstance(claim, Mapping)
             and str(claim.get("status") or "") == "SUPPORTED_DIRECT"
             and bool(claim.get("evidence_refs"))
-            and not isinstance(claim.get("evidence_passages"), list)
+            and (
+                not isinstance(claim.get("evidence_passages"), list)
+                or not claim.get("evidence_passages")
+            )
             for claim in claims
         )
     )
