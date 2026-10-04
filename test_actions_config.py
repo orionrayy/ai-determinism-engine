@@ -114,18 +114,21 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("queue: max", self.orchestrator)
         self.assertIn("cancel-in-progress: false", self.orchestrator)
 
-    def test_continuation_carries_exact_workflow_identity(self):
+    def test_continuation_uses_testable_python_runtime(self):
+        self.assertIn("python3 -m orchestrator.continuation_runtime", self.continuation)
+        self.assertNotIn("python3 - <<'PY'", self.continuation)
         self.assertIn("WORKFLOW_ID", self.continuation)
-        self.assertIn("'workflow_id':os.environ['WORKFLOW_ID']", self.continuation)
         self.assertIn("github.event.client_payload.workflow_id", self.orchestrator)
-
 
     def test_workflow_target_is_preferred_for_approval(self):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)
         self.assertIn('args=(--workflow-id "$ORCHESTRATOR_TARGET_WORKFLOW_ID" --step)', self.orchestrator)
 
-    def test_source_issue_trigger_binds_event_action(self):
+    def test_source_issue_trigger_binds_revision_identity(self):
         self.assertIn('ISSUE_ACTION: ${{ github.event.action }}', self.orchestrator)
+        self.assertIn('ISSUE_UPDATED_AT: ${{ github.event.issue.updated_at }}', self.orchestrator)
+        self.assertIn('event_id="issue:${GITHUB_REPOSITORY}:${ISSUE_NUMBER}:${ISSUE_ACTION}:${ISSUE_UPDATED_AT}"', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}', self.orchestrator)
 
     def test_continuation_dispatch_carries_exact_run_attempt(self):
         self.assertIn('WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}', self.continuation)
@@ -146,14 +149,15 @@ class ActionsConfigTests(unittest.TestCase):
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
 
-    def test_scheduled_recovery_compacts_terminal_state(self):
+    def test_scheduled_recovery_uses_testable_python_runtime(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('compact_terminal_workflows', recovery)
-        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
+        self.assertIn('python3 -m orchestrator.scheduled_recovery', recovery)
+        self.assertNotIn("python3 - <<'PY'", recovery)
         self.assertIn('git add .orchestrator/workflows', recovery)
         self.assertIn('if [ -d .orchestrator/workflows ]; then', recovery)
         self.assertIn('scheduled recovery is a no-op', recovery)
+
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
@@ -161,13 +165,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('"workflow_id": workflow_id', self.orchestrator)
         self.assertIn('"orchestrator.continue"', self.orchestrator)
 
-    def test_scheduled_recovery_uses_canonical_loader(self):
-        start = self.orchestrator.index('schedule-recovery:')
-        recovery = self.orchestrator[start:]
-        self.assertIn('from orchestrator.orchestrator import (', recovery)
-        self.assertIn('load_state', recovery)
-        self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
-
+    def test_scheduled_recovery_runtime_is_importable(self):
+        self.assertIn('orchestrator.scheduled_recovery', self.tests)
+        self.assertNotIn('state_path = Path(".orchestrator/state.json")', self.orchestrator)
 
     def test_checkout_action_sha_is_consistent_across_all_workflows(self):
         expected = "d23441a48e516b6c34aea4fa41551a30e30af803"
