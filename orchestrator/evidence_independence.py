@@ -151,8 +151,9 @@ def _bibliographic_crosswalk_key(record: Mapping[str, Any]) -> str:
 def independence_summary(
     records: list[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    identity_rows: list[tuple[dict[str, Any], str, str]] = []
+    rows: list[tuple[Mapping[str, Any], dict[str, Any], str, str]] = []
     parent: dict[str, str] = {}
+    crosswalk_anchor: dict[str, str] = {}
 
     def find(key: str) -> str:
         parent.setdefault(key, key)
@@ -165,7 +166,6 @@ def independence_summary(
         if a != b:
             parent[b] = a
 
-    crosswalk_anchor: dict[str, str] = {}
     for record in records:
         if not isinstance(record, Mapping):
             continue
@@ -173,7 +173,7 @@ def independence_summary(
         key = str(identity["work_key"])
         find(key)
         crosswalk = _bibliographic_crosswalk_key(record)
-        identity_rows.append((identity, key, crosswalk))
+        rows.append((record, identity, key, crosswalk))
         if crosswalk:
             anchor = crosswalk_anchor.get(crosswalk)
             if anchor is None:
@@ -181,47 +181,16 @@ def independence_summary(
             else:
                 union(anchor, key)
 
+    basis_rank = {
+        "weak_title_only": 0,
+        "provider_identifier": 1,
+        "heuristic_bibliographic": 2,
+        "canonical_identifier": 3,
+        "strong": 4,
+    }
     groups: dict[str, dict[str, Any]] = {}
-    for identity, key, crosswalk in identity_rows:
-        root = find(key)
-        group = groups.setdefault(
-            root,
-            {
-                "work_key": str(identity["work_key"]),
-                "basis": str(identity["basis"]),
-                "confidence": float(identity["confidence"]),
-                "providers": set(),
-                "authors": set(),
-                "titles": set(),
-                "identity_keys": set(),
-                "crosswalked": False,
-            },
-        )
-        group["confidence"] = min(
-            float(group["confidence"]),
-            float(identity["confidence"]),
-        )
-        group["identity_keys"].add(key)
-        group["crosswalked"] = bool(group["crosswalked"] or crosswalk)
-        provider = _norm(next(
-            (
-                record.get("provider")
-                for record in records
-                if isinstance(record, Mapping)
-                and str(source_work_identity(record)["work_key"]) == key
-            ),
-            "",
-        ))
-        if provider:
-            group["providers"].add(provider)
-        # Recover author/title evidence directly from the matching identity rows.
-    # Rebuild author/provider/title aggregates in one deterministic pass.
-    groups = {}
-    for record in records:
-        if not isinstance(record, Mapping):
-            continue
-        identity = source_work_identity(record)
-        key = str(identity["work_key"])
+
+    for record, identity, key, crosswalk in rows:
         root = find(key)
         group = groups.setdefault(
             root,
@@ -242,7 +211,7 @@ def independence_summary(
         )
         group["identity_keys"].add(key)
         group["crosswalked"] = bool(
-            group["crosswalked"] or _bibliographic_crosswalk_key(record)
+            group["crosswalked"] or (crosswalk and len(group["identity_keys"]) > 1)
         )
         provider = _norm(record.get("provider"))
         if provider:
@@ -253,14 +222,9 @@ def independence_summary(
         title = _norm(record.get("title") or record.get("display_name"))
         if title:
             group["titles"].add(title)
-        basis_rank = {
-            "weak_title_only": 0,
-            "provider_identifier": 1,
-            "heuristic_bibliographic": 2,
-            "canonical_identifier": 3,
-            "strong": 4,
-        }
-        if basis_rank.get(str(identity["basis"]), 0) > basis_rank.get(str(group["basis"]), 0):
+        current_rank = basis_rank.get(str(group["basis"]), 0)
+        candidate_rank = basis_rank.get(str(identity["basis"]), 0)
+        if candidate_rank > current_rank:
             group["basis"] = str(identity["basis"])
 
     normalized_groups = [
@@ -271,7 +235,7 @@ def independence_summary(
             "providers": sorted(group["providers"]),
             "author_count": len(group["authors"]),
             "title_count": len(group["titles"]),
-            "crosswalked": bool(group["crosswalked"] and len(group["identity_keys"]) > 1),
+            "crosswalked": bool(group["crosswalked"]),
         }
         for group in groups.values()
     ]
