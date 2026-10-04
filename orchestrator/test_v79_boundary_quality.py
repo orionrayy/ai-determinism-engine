@@ -286,6 +286,25 @@ class V79BoundaryQualityTests(unittest.TestCase):
         self.assertEqual(record["access_verification"], "metadata_only")
         self.assertEqual(record["access_level"], "L1")
 
+    def test_high_utility_full_text_gets_bounded_text_fallback(self):
+        packed = pack_node_context(
+            goal="research",
+            dependencies={},
+            contract={"epistemic": True},
+            repair_feedback={},
+            trusted_evidence_records=[{
+                "canonical_id": "doi:fulltext",
+                "authority_score": 1.0,
+                "independence_confidence": 1.0,
+                "access_verification": "verified",
+                "publication_status": "normal",
+                "year": 2026,
+                "full_text": "Full-text passage " + ("x" * 1000),
+            }],
+        )
+        record = packed["trusted_evidence"][0]
+        self.assertEqual(record["text"], "Full-text passage " + ("x" * 686))
+
     def test_strict_passage_length_is_bounded(self):
         long_text = "x" * 701
         verdict = {
