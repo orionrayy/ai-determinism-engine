@@ -945,6 +945,78 @@ EFFECT_RUNTIME_INPUT_KEYS = {
 }
 
 
+DEFAULT_EFFECT_ATTEMPT_SECONDS = 120
+DEFAULT_EFFECT_LEASE_SAFETY_SECONDS = 30
+MIN_EFFECT_LEASE_HORIZON_SECONDS = 1
+MAX_EFFECT_LEASE_HORIZON_SECONDS = 900
+
+
+class EffectLeaseAdmissionError(ControlPlaneError):
+    """The control-plane lease does not cover the next external side effect safely."""
+
+
+def parse_positive_seconds(
+    value: str,
+    field_name: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} must be an integer number of seconds") from exc
+    if parsed < int(minimum) or parsed > int(maximum):
+        raise ValueError(
+            f"{field_name} must be between {int(minimum)} and {int(maximum)} seconds"
+        )
+    return parsed
+
+
+def configured_effect_lease_horizon() -> tuple[int, int]:
+    expected = parse_positive_seconds(
+        os.environ.get(
+            "ORCHESTRATOR_EFFECT_ATTEMPT_SECONDS",
+            str(DEFAULT_EFFECT_ATTEMPT_SECONDS),
+        ),
+        "ORCHESTRATOR_EFFECT_ATTEMPT_SECONDS",
+        minimum=MIN_EFFECT_LEASE_HORIZON_SECONDS,
+        maximum=MAX_EFFECT_LEASE_HORIZON_SECONDS,
+    )
+    safety = parse_positive_seconds(
+        os.environ.get(
+            "ORCHESTRATOR_EFFECT_LEASE_SAFETY_SECONDS",
+            str(DEFAULT_EFFECT_LEASE_SAFETY_SECONDS),
+        ),
+        "ORCHESTRATOR_EFFECT_LEASE_SAFETY_SECONDS",
+        minimum=MIN_EFFECT_LEASE_HORIZON_SECONDS,
+        maximum=MAX_EFFECT_LEASE_HORIZON_SECONDS,
+    )
+    return expected, safety
+
+
+def ensure_effect_lease_horizon(
+    lease: Any,
+    *,
+    expected_seconds: int = DEFAULT_EFFECT_ATTEMPT_SECONDS,
+    safety_seconds: int = DEFAULT_EFFECT_LEASE_SAFETY_SECONDS,
+    now: int | None = None,
+) -> None:
+    try:
+        expires_at = int(lease.expires_at)
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise EffectLeaseAdmissionError(
+            "control-plane lease expiry is unavailable"
+        ) from exc
+    current = int(time.time()) if now is None else int(now)
+    required = int(expected_seconds) + int(safety_seconds)
+    remaining = expires_at - current
+    if remaining < required:
+        raise EffectLeaseAdmissionError(
+            f"effect lease horizon too short: remaining={remaining}s required={required}s"
+        )
+
+
 def effect_semantic_digest(node: Node) -> str:
     """Digest stable external intent while excluding mutable runtime metadata."""
     semantic_input = {
@@ -4440,7 +4512,17 @@ def _run_one_step_inner(
             if control_plane_lease is None:
                 raise ControlPlaneError("control-plane lease is missing")
             try:
-                control_plane_lease = control_plane.acquire_lease(workflow["id"])
+                expected_seconds, safety_seconds = configured_effect_lease_horizon()
+                control_plane_lease = control_plane.renew_lease(
+                    workflow["id"],
+                    control_plane_lease.fence_epoch,
+                )
+                ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
+                ensure_effect_lease_horizon(
+                    control_plane_lease,
+                    expected_seconds=expected_seconds,
+                    safety_seconds=safety_seconds,
+                )
                 fence_epoch = int(control_plane_lease.fence_epoch)
                 semantic_digest = effect_semantic_digest(node)
                 claim = control_plane.claim_effect(
@@ -4505,6 +4587,33 @@ def _run_one_step_inner(
         'agent_id': agent_id(workflow['id'], node.id, node.agent_role),
         'role': node.agent_role,
     })
+    def renew_execution_context() -> None:
+        nonlocal control_plane_lease, resource_leases
+        if control_plane is not None and control_plane_lease is not None and (
+            side_effecting(node, registry) or resource_leases
+        ):
+            control_plane_lease = control_plane.renew_lease(
+                workflow["id"],
+                control_plane_lease.fence_epoch,
+            )
+            ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
+            if side_effecting(node, registry):
+                expected_seconds, safety_seconds = configured_effect_lease_horizon()
+                ensure_effect_lease_horizon(
+                    control_plane_lease,
+                    expected_seconds=expected_seconds,
+                    safety_seconds=safety_seconds,
+                )
+            if resource_leases:
+                resource_leases = renew_node_resource_locks(
+                    workflow,
+                    resource_leases,
+                    control_plane,
+                )
+
+    def noop_before_attempt() -> None:
+        return None
+
     success, error = execute_with_retries(
         node,
         workflow['goal'],
@@ -4521,26 +4630,11 @@ def _run_one_step_inner(
             if side_effecting(node, registry)
             else None
         ),
-        before_attempt=(
-            (lambda: (
-                control_plane.renew_lease(
-                    workflow["id"],
-                    control_plane_lease.fence_epoch,
-                ),
-                resource_leases.__setitem__(
-                    slice(None),
-                    renew_node_resource_locks(
-                        workflow,
-                        resource_leases,
-                        control_plane,
-                    ),
-                ),
-            ))
-            if control_plane is not None and control_plane_lease is not None and (
+        before_attempt=renew_execution_context if (
+            control_plane is not None and control_plane_lease is not None and (
                 side_effecting(node, registry) or resource_leases
             )
-            else None
-        ),
+        ) else noop_before_attempt,
         on_success=(
             (lambda completed_node: control_plane.complete_effect(
                 workflow["id"],
