@@ -8,8 +8,10 @@ import re
 from typing import Any, Mapping
 try:
     from .evidence_independence import source_work_identity
+    from .source_authority import source_authority
 except ImportError:
     from evidence_independence import source_work_identity
+    from source_authority import source_authority
 
 
 _DOI_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*", re.IGNORECASE)
@@ -228,6 +230,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
     if record.get("peer_reviewed") is True:
         authority.append("peer_reviewed")
     work_identity = source_work_identity({**record, "provider": provider})
+    authority_profile = source_authority(provider, {**record, "authority_signals": authority})
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
@@ -244,6 +247,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         "full_text_url": _full_text_url(record),
         "primaryity": primaryity,
         "authority_signals": sorted(set(authority)),
+        **authority_profile,
         "independence_key": str(work_identity["work_key"]),
         "independence_basis": str(work_identity["basis"]),
         "independence_confidence": float(work_identity["confidence"]),
