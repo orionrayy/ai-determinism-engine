@@ -57,6 +57,7 @@ FREE_PROVIDER_ORDER = (
     "semantic_scholar",
     "europe_pmc",
     "crossref",
+    "openalex",
 )
 METERED_FREE_PROVIDER_ORDER = (
     "openalex",
@@ -253,6 +254,11 @@ def search_crossref(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[
         params["mailto"] = mailto
     return _request_json(
         "https://api.crossref.org/works?" + urllib.parse.urlencode(params),
+        headers=(
+            {"User-Agent": "ai-orchestrator-research/2.0; mailto=" + mailto}
+            if mailto
+            else None
+        ),
     )
 
 
@@ -262,9 +268,18 @@ def search_openalex(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[
         "per-page": str(max(1, min(int(max_results), 50))),
         "select": "id,doi,title,authorships,publication_year,primary_location,cited_by_count,open_access,best_oa_location",
     }
+    # In hard free-only mode, deliberately omit a user-supplied OpenAlex key so
+    # the engine cannot silently consume prepaid/paid balance. Anonymous usage
+    # remains zero-dollar but is subject to OpenAlex's stricter public budget.
+    free_only = os.environ.get(
+        "ORCHESTRATOR_FREE_ONLY", "true"
+    ).strip().lower() == "true"
     key = os.environ.get("OPENALEX_API_KEY", "").strip()
-    if key:
+    if key and not free_only:
         params["api_key"] = key
+    mailto = os.environ.get("OPENALEX_MAILTO", "").strip()
+    if mailto:
+        params["mailto"] = mailto[:256]
     url = "https://api.openalex.org/works?" + urllib.parse.urlencode(params)
     return _request_json(url)
 
