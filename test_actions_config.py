@@ -61,7 +61,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("fail-fast: false", self.federation)
         self.assertIn("contents: read", self.federation)
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
-        self.assertIn("retention-days: 1", self.federation)
+        self.assertIn("retention-days: 3", self.federation)
         self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", self.federation)
         self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", self.federation)
 
