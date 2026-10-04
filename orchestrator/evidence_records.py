@@ -133,10 +133,28 @@ def _full_text_url(record: Mapping[str, Any]) -> str:
             value = best_oa.get(key)
             if value:
                 return str(value)
-    for key in ("full_text_url", "pdf_url", "url"):
+    for key in ("full_text_url", "pdf_url"):
         value = record.get(key)
         if value:
             return str(value)
+    links = record.get("link")
+    if isinstance(links, list):
+        for item in links:
+            if not isinstance(item, Mapping):
+                continue
+            value = item.get("URL") or item.get("url")
+            content_type = str(
+                item.get("content-type") or item.get("content_type") or ""
+            ).lower()
+            if value and (
+                "pdf" in content_type
+                or "fulltext" in content_type
+                or "xhtml" in content_type
+            ):
+                return str(value)
+    value = record.get("url") or record.get("URL")
+    if value:
+        return str(value)
     return ""
 
 
