@@ -56,7 +56,7 @@ export class WorkflowControlPlane {
   }
 
   lease() {
-    const rows = this.ctx.storage.sql.exec("SELECT owner, fence_epoch, expires_at FROM lease WHERE singleton=1").toArray();
+    const rows = this.ctx.storage.sql.exec("SELECT owner, workflow_id, fence_epoch, expires_at FROM lease WHERE singleton=1").toArray();
     return rows.length ? rows[0] : null;
   }
 
