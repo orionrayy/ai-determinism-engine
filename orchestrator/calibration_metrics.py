@@ -31,6 +31,9 @@ def _samples(
             continue
         if "correct" not in sample:
             continue
+        label_source = str(sample.get("label_source") or "").strip().lower()
+        if label_source not in {"ground_truth", "benchmark", "human_eval"}:
+            continue
         result.append(
             (
                 _probability(sample["confidence"]),
