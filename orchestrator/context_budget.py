@@ -18,6 +18,34 @@ class ContextBudgetError(ValueError):
     pass
 
 
+def _bounded_score(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _trusted_evidence_utility(record: Mapping[str, Any]) -> float:
+    authority = _bounded_score(record.get("authority_score"))
+    independence = _bounded_score(record.get("independence_confidence"))
+    access = 1.0 if str(record.get("access_verification") or "") not in {
+        "", "identifier_only", "metadata_only"
+    } else 0.0
+    integrity = 0.0 if str(record.get("publication_status") or "normal") != "normal" else 1.0
+    try:
+        year = int(record.get("year"))
+    except (TypeError, ValueError):
+        year = 0
+    recency = _bounded_score((year - 2015) / 11.0) if year else 0.0
+    return (
+        0.38 * authority
+        + 0.22 * independence
+        + 0.15 * access
+        + 0.20 * integrity
+        + 0.05 * recency
+    )
+
+
 def canonical_json(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -194,8 +222,20 @@ def pack_node_context(
             ),
             key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
         )
+        bounded_records = raw_records[:64]
+        abstract_ids = {
+            str(item.get("canonical_id") or "")
+            for item in sorted(
+                bounded_records,
+                key=lambda item: (
+                    -_trusted_evidence_utility(item),
+                    str(item.get("canonical_id") or item.get("title") or ""),
+                ),
+            )[:32]
+            if str(item.get("canonical_id") or "").strip() and item.get("abstract")
+        }
         evidence = []
-        for index, raw in enumerate(raw_records[:64]):
+        for raw in bounded_records:
             record = {
                 "canonical_id": str(raw.get("canonical_id") or ""),
                 "provider": str(raw.get("provider") or ""),
@@ -221,9 +261,13 @@ def pack_node_context(
                 "independence_key": str(raw.get("independence_key") or ""),
                 "independence_confidence": float(raw.get("independence_confidence") or 0.0),
             }
-            # Passage validation gets an abstract window only for the first
-            # bounded evidence lane; all canonical IDs remain available.
-            if index < 32 and raw.get("abstract"):
+            # Preserve canonical metadata for the bounded lane, while giving
+            # abstract-bearing slots to the highest-utility records rather than
+            # whichever canonical IDs happen to sort first.
+            if (
+                str(raw.get("canonical_id") or "") in abstract_ids
+                and raw.get("abstract")
+            ):
                 record["abstract"] = str(raw.get("abstract") or "")[:700]
             evidence.append(record)
         if len(raw_records) > 64:
