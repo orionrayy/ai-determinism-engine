@@ -2635,7 +2635,11 @@ class OrchestratorTests(unittest.TestCase):
                             "status": "SUPPORTED_DIRECT",
                             "evidence_refs": ["doi:10.1/a"],
                         }],
-                        "evidence_records": [{"canonical_id": "doi:10.1/a"}],
+                        "evidence_records": [{
+                            "canonical_id": "doi:10.1/a",
+                            "authority_score": 0.90,
+                            "authority_class": "peer_reviewed",
+                        }],
                         "risks": [],
                         "next_action": "done",
                     })
