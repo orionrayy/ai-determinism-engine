@@ -1,3 +1,4 @@
+# v70 branch-tip validation
 name: Orchestrator Tests
 
 on:
@@ -41,6 +42,7 @@ on:
       - ".github/workflows/bridge-deploy.yml"
       - "gateway.py"
       - "bridge_runtime.py"
+      - "test_bridge_runtime.py"
       - "bridge_server.py"
       - "test_gateway.py"
       - "ORCHESTRATION_MEMORY.md"
