@@ -12,10 +12,6 @@ except ImportError:
     from selective_evidence_gate import selective_evidence_gate
 
 
-MAX_EVIDENCE_RECORDS = 64
-MAX_CLAIMS = 48
-MAX_EVIDENCE_REFS_PER_CLAIM = 32
-
 VALID_STATUSES = {
     "SUPPORTED_DIRECT",
     "SUPPORTED_INDIRECT",
@@ -117,7 +113,6 @@ def claim_coverage(claims: list[Mapping[str, Any]]) -> dict[str, Any]:
         "evidence_linked_material_claims": len(evidence_linked),
         # Retained as the semantic "supported claim coverage" metric.
         "coverage": (len(supported) / total) if total else 1.0,
-        "supported_coverage": (len(supported) / total) if total else 1.0,
         # Used for minimum coverage because contested/unknown claims can be
         # honest while still being explicitly evidence-linked.
         "evidence_coverage": (len(evidence_linked) / total) if total else 1.0,
@@ -133,10 +128,64 @@ def claim_coverage(claims: list[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _bind_evidence_to_trusted_records(
+    output: Mapping[str, Any],
+    trusted_evidence_records: list[Mapping[str, Any]] | None,
+) -> tuple[list[Mapping[str, Any]], dict[str, Any]]:
+    if trusted_evidence_records is None:
+        records = output.get("evidence_records", [])
+        return (
+            [item for item in records if isinstance(item, Mapping)],
+            {"trusted": False, "untrusted_ids": []},
+        )
+
+    trusted = {
+        str(item.get("canonical_id") or "").strip(): item
+        for item in trusted_evidence_records
+        if isinstance(item, Mapping) and str(item.get("canonical_id") or "").strip()
+    }
+    claimed_records = output.get("evidence_records", [])
+    claimed_ids = {
+        str(item.get("canonical_id") or "").strip()
+        for item in claimed_records
+        if isinstance(item, Mapping) and str(item.get("canonical_id") or "").strip()
+    }
+    claim_refs = set()
+    claims = output.get("claims", [])
+    if isinstance(claims, list):
+        for claim in claims:
+            if not isinstance(claim, Mapping):
+                continue
+            refs = claim.get("evidence_refs", [])
+            if isinstance(refs, list):
+                claim_refs.update(
+                    str(ref).strip() for ref in refs if str(ref).strip()
+                )
+
+    unknown_ids = sorted(
+        (claimed_ids | claim_refs) - set(trusted)
+    )
+    if unknown_ids:
+        return [], {
+            "trusted": True,
+            "untrusted_ids": unknown_ids,
+            "passed": False,
+        }
+
+    bound_ids = sorted(claimed_ids | claim_refs)
+    return [trusted[cid] for cid in bound_ids], {
+        "trusted": True,
+        "untrusted_ids": [],
+        "bound_ids": bound_ids,
+        "passed": True,
+    }
+
+
 def validate_epistemic_output(
     output: Mapping[str, Any],
     *,
     min_coverage: float | None = None,
+    trusted_evidence_records: list[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     claims = output.get("claims", [])
     evidence = output.get("evidence_records", [])
@@ -145,32 +194,24 @@ def validate_epistemic_output(
     if not isinstance(evidence, list):
         return {"passed": False, "reason": "evidence_records must be an array"}
 
-    if len(evidence) > MAX_EVIDENCE_RECORDS:
+    bound_evidence, binding = _bind_evidence_to_trusted_records(
+        output,
+        trusted_evidence_records,
+    )
+    if binding.get("trusted") and not binding.get("passed", False):
         return {
             "passed": False,
-            "reason": f"evidence_records exceeds limit {MAX_EVIDENCE_RECORDS}",
-            "limits": {"max_evidence_records": MAX_EVIDENCE_RECORDS},
+            "evidence": {
+                "passed": False,
+                "reason": "evidence_refs_crossed_trust_boundary",
+                "untrusted_ids": binding.get("untrusted_ids", []),
+            },
+            "claims": {"passed": False, "invalid_claim_ids": []},
+            "evidence_binding": binding,
+            "reason": "LLM attempted to cite evidence outside trusted dependency records",
         }
-    if len(claims) > MAX_CLAIMS:
-        return {
-            "passed": False,
-            "reason": f"claims exceeds limit {MAX_CLAIMS}",
-            "limits": {"max_claims": MAX_CLAIMS},
-        }
-    for claim in claims:
-        if isinstance(claim, Mapping) and isinstance(claim.get("evidence_refs"), list):
-            if len(claim["evidence_refs"]) > MAX_EVIDENCE_REFS_PER_CLAIM:
-                return {
-                    "passed": False,
-                    "reason": (
-                        "claim evidence_refs exceeds limit "
-                        f"{MAX_EVIDENCE_REFS_PER_CLAIM}"
-                    ),
-                    "limits": {
-                        "max_evidence_refs_per_claim": MAX_EVIDENCE_REFS_PER_CLAIM
-                    },
-                }
 
+    evidence = bound_evidence
     evidence_result = validate_evidence_records(evidence)
     if not evidence_result["passed"]:
         return {
@@ -198,16 +239,20 @@ def validate_epistemic_output(
         "min_coverage": min_coverage,
         "min_coverage_basis": "evidence_coverage",
         "independence": independence,
+        "evidence_binding": binding,
+        "bound_evidence_records": evidence,
     }
+    selective_input = dict(output)
+    selective_input["evidence_records"] = evidence
     selective = selective_evidence_gate(
-        output,
+        selective_input,
         base_result,
     )
     passed = bool(
         evidence_result["passed"]
         and claim_result["passed"]
         and threshold_ok
-        and not selective.get("abstain")
+        and not bool(selective.get("abstain"))
     )
     return {
         **base_result,
@@ -219,9 +264,6 @@ def validate_epistemic_output(
 
 __all__ = [
     "VALID_STATUSES",
-    "MAX_EVIDENCE_RECORDS",
-    "MAX_CLAIMS",
-    "MAX_EVIDENCE_REFS_PER_CLAIM",
     "validate_evidence_records",
     "validate_claims",
     "claim_coverage",
