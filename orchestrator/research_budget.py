@@ -47,6 +47,13 @@ def default_available_providers() -> tuple[str, ...]:
     free_only = os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").strip().lower() == "true"
     return FREE_PROVIDER_ORDER if free_only else _GENERAL_ORDER
 
+
+def provider_billing_class(provider: str) -> str:
+    return PROVIDER_BILLING_CLASS.get(
+        str(provider).strip().lower(),
+        "unknown",
+    )
+
 _TOPIC_HINTS = {
     "europe_pmc": (
         "medical", "medicine", "clinical", "health", "disease", "patient",
@@ -143,7 +150,10 @@ __all__ = [
     "ResearchBudget",
     "DEFAULT_BUDGET",
     "FREE_PROVIDER_ORDER",
+    "METERED_FREE_PROVIDER_ORDER",
+    "PROVIDER_BILLING_CLASS",
     "default_available_providers",
+    "provider_billing_class",
     "normalize_budget",
     "budget_for_goal",
     "choose_extended_providers",
