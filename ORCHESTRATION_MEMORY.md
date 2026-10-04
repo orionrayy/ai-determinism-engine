@@ -746,3 +746,12 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Reconcile-based retry is permitted only when the contract declares an actual reconciliation mechanism.
 - Generic webhook effects are intentionally opaque/non-retryable; GitHub create/update/delete effects are deterministic-reconcilable; workflow dispatch remains blocked on uncertain outcome; connector bridge uses a wildcard provider-idempotency/reconciliation contract because the vendor action is dynamic.
 - This is a correctness policy layer, not a provider-side fencing guarantee. Providers remain responsible for honoring provider idempotency keys and reconciliation APIs.
+
+
+## v72 conditional blind deliberation (2026-10-04)
+- Research/compare/literature/study/analysis workloads use two bounded reasoning lanes (primary analyst + contrarian skeptic) followed by a critic adjudicator, draft, and final validation.
+- The adjudicator activates the existing debate_decision() policy conditionally and receives blind/anonymized candidate views. Candidate ordering is derived from candidate content rather than agent identity; evidence cards are preserved separately from raw dependency outputs.
+- Deliberation is capped at two rounds and is not an unbounded peer-to-peer debate. The goal is information gain only when disagreement, uncertainty, or evidence insufficiency warrants adjudication.
+- Epistemic outputs request an explicit confidence value. Final validation remains separate from adjudication.
+- The critic role is explicitly allowed to perform analyze + validate so the adjudicator keeps critic semantics without introducing a second role taxonomy.
+- Multi-agent debate quality remains task/protocol dependent; current design therefore prefers conditional bounded deliberation over always-on debate.
