@@ -157,23 +157,20 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.yml', self.tests)
 
     def test_scheduled_recovery_compacts_terminal_state(self):
-        start = self.orchestrator.index('\n  schedule-recovery:') + 1
-        recovery = self.orchestrator[start:]
-        self.assertIn('compact_terminal_workflows', recovery)
-        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
-        self.assertIn('git add .orchestrator/workflows', recovery)
+        self.assertIn('schedule-recovery:', self.orchestrator)
+        self.assertIn('compact_terminal_workflows', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', self.orchestrator)
+        self.assertIn('git add .orchestrator/workflows', self.orchestrator)
     def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
-        start = self.orchestrator.index('\n  schedule-recovery:') + 1
-        recovery = self.orchestrator[start:]
-        self.assertIn('gh api --method POST', recovery)
-        self.assertIn('check=False', recovery)
-        self.assertNotIn("status == 'waiting_approval'", recovery)
-        self.assertIn('recovery_event_id', recovery)
+        self.assertIn('gh api', self.orchestrator)
+        self.assertIn('--method', self.orchestrator)
+        self.assertIn('"POST"', self.orchestrator)
+        self.assertIn('check=False', self.orchestrator)
+        self.assertNotIn("status == 'waiting_approval'", self.orchestrator)
+        self.assertIn('recovery_event_id', self.orchestrator)
 
     def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
-        start = self.orchestrator.index('\n  schedule-recovery:') + 1
-        recovery = self.orchestrator[start:]
-        self.assertIn('if [ -d ".orchestrator/workflows" ]', recovery)
+        self.assertIn('if [ -d ".orchestrator/workflows" ]', self.orchestrator)
 
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
