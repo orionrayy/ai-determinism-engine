@@ -50,6 +50,7 @@ try:
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .control_plane import ControlPlaneClient, ControlPlaneError
     from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -88,6 +89,7 @@ except ImportError:
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from control_plane import ControlPlaneClient, ControlPlaneError
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -867,6 +869,67 @@ def rearm_stale_federation(
 def quota_sensitive(node: Node) -> bool:
     """Keep external quota-bound adapters serialized to avoid free-tier bursts."""
     return node.tool in {"gemini", "openai", "research_bundle"}
+
+
+EFFECT_RUNTIME_INPUT_KEYS = {
+    "context",
+    "repair_feedback",
+    "retry_jitter_seed",
+    "approval_granted",
+    "approval_issue",
+    "previous_tool",
+    "private_input_ref",
+    "private_input_execution_id",
+    "private_input_digest",
+    "private_input_intent_fingerprint",
+    "attempt",
+}
+
+
+def effect_semantic_digest(node: Node) -> str:
+    """Digest stable external intent while excluding mutable runtime metadata."""
+    semantic_input = {
+        str(key): value
+        for key, value in sorted(node.input.items(), key=lambda item: str(item[0]))
+        if str(key) not in EFFECT_RUNTIME_INPUT_KEYS
+        and str(key) != "payload"
+    }
+    raw = json.dumps(
+        {
+            "schema_version": 1,
+            "tool": node.tool,
+            "capability": node.capability,
+            "risk": node.risk,
+            "input": semantic_input,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def record_effect_claim(
+    workflow: dict[str, Any],
+    effect_id: str,
+    semantic_digest: str,
+    fence_epoch: int,
+) -> None:
+    record = workflow.setdefault("executions", {}).setdefault(effect_id, {})
+    record.update({
+        "effect_id": effect_id,
+        "effect_semantic_digest": semantic_digest,
+        "fence_epoch": int(fence_epoch),
+        "control_plane_claimed_at": utc_now(),
+    })
+
+
+def control_plane_configured() -> bool:
+    return bool(
+        os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
+        or os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
+    )
 
 
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
@@ -2906,6 +2969,8 @@ def execute_with_retries(
     attempt_budget: AttemptBudget | None = None,
     initial_attempt_reserved: bool = False,
     before_retry: Any | None = None,
+    before_attempt: Any | None = None,
+    on_success: Any | None = None,
     llm_budget_workflow: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any] | None]:
     registry = load_registry()
@@ -2944,12 +3009,29 @@ def execute_with_retries(
         first_attempt = False
 
         try:
+            if before_attempt is not None:
+                before_attempt()
             output = execute_node(node, goal, dry_run=dry_run)
             node.output = output
             output["validation"] = validate_node_output(node, output)
+            if on_success is not None:
+                on_success(node)
             transition(node, "validating")
             transition(node, "completed")
             return True, None
+        except ControlPlaneError as exc:
+            node.error = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "failure_class": "uncertain",
+                "retry_allowed": False,
+                "execution_uncertain": True,
+                "reconciliation_required": True,
+                "control_plane_error": True,
+            }
+            if node.status == "running":
+                transition(node, "failed")
+            return False, node.error
         except Exception as exc:
             node.error = {
                 "type": type(exc).__name__,
@@ -3429,6 +3511,8 @@ def reconcile_first_uncertain(
     workflow: dict[str, Any],
     nodes: list[Node],
     registry: dict[str, dict[str, Any]],
+    control_plane: ControlPlaneClient | None = None,
+    control_plane_lease: Any | None = None,
 ) -> str | None:
     if not workflow.get("live"):
         return None
@@ -3482,6 +3566,48 @@ def reconcile_first_uncertain(
 
     state = str(result.get("state") or "unknown").lower()
     workflow.setdefault("reconciliations", {})[node.id] = result
+
+    if control_plane is not None and control_plane_lease is not None:
+        try:
+            digest = effect_semantic_digest(node)
+            if state == "applied":
+                control_plane.resolve_effect(
+                    workflow["id"],
+                    execution_id,
+                    digest,
+                    control_plane_lease.fence_epoch,
+                    outcome="completed",
+                )
+            elif state == "not_applied":
+                control_plane.resolve_effect(
+                    workflow["id"],
+                    execution_id,
+                    digest,
+                    control_plane_lease.fence_epoch,
+                    outcome="not_applied",
+                )
+        except ControlPlaneError as exc:
+            node.error = {
+                **node.error,
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "reconciliation_state": state,
+                "reconciliation_required": True,
+                "execution_uncertain": True,
+                "control_plane_error": True,
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            append_event("node.control_plane_resolution_failed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "execution_id": execution_id,
+                "state": state,
+                "error": str(exc),
+            })
+            return "failed"
+
     if state == "applied":
         node.output = {
             "reconciled": True,
@@ -3557,7 +3683,63 @@ def reconcile_first_uncertain(
     return "failed"
 
 
-def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+def run_one_step(
+    workflow: dict[str, Any],
+    approve_high_risk: bool = False,
+) -> str:
+    control_plane: ControlPlaneClient | None = None
+    control_plane_lease: Any | None = None
+
+    if bool(workflow.get("live")) and control_plane_configured():
+        try:
+            control_plane = ControlPlaneClient.from_env()
+            control_plane_lease = control_plane.acquire_lease(workflow["id"])
+            workflow["control_plane"] = {
+                "enabled": True,
+                "owner": control_plane.owner,
+                "fence_epoch": int(control_plane_lease.fence_epoch),
+            }
+            workflow.pop("control_plane_blocked", None)
+            persist_workflow(workflow)
+        except ControlPlaneError as exc:
+            workflow["status"] = "running"
+            workflow["control_plane_blocked"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "blocked_at": utc_now(),
+            }
+            persist_workflow(workflow)
+            append_event("control_plane.blocked", {
+                "workflow_id": workflow["id"],
+                "error": str(exc),
+            })
+            raise
+
+    try:
+        return _run_one_step_inner(
+            workflow,
+            approve_high_risk=approve_high_risk,
+            control_plane=control_plane,
+            control_plane_lease=control_plane_lease,
+        )
+    finally:
+        if control_plane is not None and control_plane_lease is not None:
+            try:
+                control_plane.release_lease(
+                    workflow["id"],
+                    control_plane_lease.fence_epoch,
+                )
+            except ControlPlaneError:
+                pass
+
+
+def _run_one_step_inner(
+    workflow: dict[str, Any],
+    approve_high_risk: bool = False,
+    *,
+    control_plane: ControlPlaneClient | None = None,
+    control_plane_lease: Any | None = None,
+) -> str:
     active_federation = workflow.get("federation") or {}
     if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
         return "waiting_agents"
@@ -3606,7 +3788,13 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         attempt_budget.sync()
         persist_workflow(workflow)
     recover_inflight_side_effects(workflow, nodes, registry)
-    reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
+    reconciliation = reconcile_first_uncertain(
+        workflow,
+        nodes,
+        registry,
+        control_plane=control_plane,
+        control_plane_lease=control_plane_lease,
+    )
     if reconciliation is not None:
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
@@ -3755,6 +3943,66 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                     'error': str(barrier_exc),
                 })
                 return 'failed'
+
+        if control_plane is not None:
+            if control_plane_lease is None:
+                raise ControlPlaneError("control-plane lease is missing")
+            try:
+                control_plane_lease = control_plane.acquire_lease(workflow["id"])
+                fence_epoch = int(control_plane_lease.fence_epoch)
+                semantic_digest = effect_semantic_digest(node)
+                claim = control_plane.claim_effect(
+                    workflow["id"],
+                    execution_id,
+                    semantic_digest,
+                    fence_epoch,
+                )
+            except ControlPlaneError as cp_exc:
+                node.error = {
+                    "type": type(cp_exc).__name__,
+                    "message": str(cp_exc),
+                    "failure_class": "uncertain",
+                    "retry_allowed": False,
+                    "execution_uncertain": True,
+                    "reconciliation_required": True,
+                    "control_plane_error": True,
+                    "execution_id": execution_id,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return "failed"
+
+            if claim.status != "claimed":
+                node.error = {
+                    "type": "execution_uncertain",
+                    "message": (
+                        "The distributed control plane already owns or completed "
+                        "this effect; external execution will not be replayed."
+                    ),
+                    "failure_class": "uncertain",
+                    "retry_allowed": False,
+                    "execution_uncertain": True,
+                    "reconciliation_required": True,
+                    "control_plane_status": claim.status,
+                    "execution_id": execution_id,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return "failed"
+
+            record_effect_claim(
+                workflow,
+                execution_id,
+                semantic_digest,
+                fence_epoch,
+            )
+
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
     append_event('agent.started', {
         'workflow_id': workflow['id'],
@@ -3778,12 +4026,43 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             if side_effecting(node, registry)
             else None
         ),
+        before_attempt=(
+            (lambda: control_plane.renew_lease(
+                workflow["id"],
+                control_plane_lease.fence_epoch,
+            ))
+            if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+            else None
+        ),
+        on_success=(
+            (lambda completed_node: control_plane.complete_effect(
+                workflow["id"],
+                execution_id,
+                effect_semantic_digest(completed_node),
+                control_plane_lease.fence_epoch,
+                output_sha256=hashlib.sha256(
+                    json.dumps(
+                        completed_node.output,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+            ))
+            if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+            else None
+        ),
     )
     attempt_budget.sync()
 
     if success:
         if side_effecting(node, registry):
             mark_execution_completed(workflow, execution_id, node.output)
+            if control_plane is not None:
+                workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                    "control_plane_completed_at"
+                ] = utc_now()
         update_tool_health(node, True, registry)
         node_success_checkpoint(workflow, node)
         append_event('node.completed', {
