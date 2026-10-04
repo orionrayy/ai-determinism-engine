@@ -83,8 +83,8 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_state_uses_sharded_storage_format(self):
         self.assertEqual(self.state.get('storage_format'), 'sharded-v1')
-        self.assertIn('from orchestrator.orchestrator import load_state', self.continuation)
-        self.assertIn('from orchestrator.orchestrator import load_state', self.orchestrator)
+        self.assertIn('python3 -m orchestrator.continuation_runtime', self.continuation)
+        self.assertIn('from .orchestrator import load_state', (ROOT / 'orchestrator' / 'continuation_runtime.py').read_text())
         self.assertNotIn('json.load(open(\'.orchestrator/state.json\'))', self.continuation)
         self.assertNotIn('json.load(open(".orchestrator/state.json"))', self.orchestrator)
 
@@ -142,8 +142,9 @@ class ActionsConfigTests(unittest.TestCase):
     def test_continuation_binds_to_originating_run(self):
         self.assertIn('workflow_run.id', self.continuation)
         self.assertIn('workflow_run.run_attempt', self.continuation)
-        self.assertIn("item.get('github_run_id')", self.continuation)
-        self.assertIn("item.get('github_run_attempt')", self.continuation)
+        runtime = (ROOT / 'orchestrator' / 'continuation_runtime.py').read_text()
+        self.assertIn("item.get("github_run_id")", runtime)
+        self.assertIn("item.get("github_run_attempt")", runtime)
         self.assertIn("orchestrator-continuation-", self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
@@ -162,8 +163,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
         self.assertIn("github.event_name != 'schedule'", self.orchestrator)
-        self.assertIn('"workflow_id": workflow_id', self.orchestrator)
-        self.assertIn('"orchestrator.continue"', self.orchestrator)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('"workflow_id": workflow_id', runtime)
+        self.assertIn('"orchestrator.continue"', runtime)
 
     def test_scheduled_recovery_runtime_is_importable(self):
         self.assertIn('orchestrator.scheduled_recovery', self.orchestrator)
