@@ -1838,12 +1838,41 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             return
         remote_state = sanitize_for_durable(workflow)
         expected = max(0, int(workflow.get("control_plane_state_version", 0)))
+
+        try:
+            from .scheduled_recovery import recovery_event_id
+        except ImportError:
+            from scheduled_recovery import recovery_event_id
+
+        recovery_spec: dict[str, Any] = {"action": "none"}
+        if workflow.get("status") in {"completed", "cancelled"}:
+            recovery_spec = {"action": "clear"}
+        elif workflow.get("status") in {"running", "waiting_agents"}:
+            try:
+                stale_seconds = max(
+                    1,
+                    int(
+                        os.environ.get(
+                            "ORCHESTRATOR_RECOVERY_STALE_SECONDS",
+                            "1500",
+                        ) or "1500"
+                    ),
+                )
+            except ValueError:
+                stale_seconds = 1500
+            recovery_spec = {
+                "action": "arm",
+                "due_at": int(time.time()) + stale_seconds,
+                "event_id": recovery_event_id(workflow),
+            }
+
         workflow["control_plane_state_version"] = control_plane.put_workflow_state(
             workflow_id,
             owner=control_plane.owner,
             fence_epoch=lease.fence_epoch,
             expected_state_version=expected,
             state=remote_state,
+            recovery=recovery_spec,
         )
         try:
             _write_workflow_shard(workflow)
@@ -1856,49 +1885,6 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
         else:
             workflow.pop("state_replica_error", None)
 
-        try:
-            from .scheduled_recovery import recovery_event_id
-        except ImportError:
-            from scheduled_recovery import recovery_event_id
-        if workflow.get("status") in {"completed", "cancelled"}:
-            try:
-                control_plane.clear_recovery(
-                    workflow_id,
-                    owner=control_plane.owner,
-                    fence_epoch=lease.fence_epoch,
-                )
-            except ControlPlaneError as clear_exc:
-                workflow["recovery_alarm_error"] = {
-                    "type": type(clear_exc).__name__,
-                    "message": str(clear_exc),
-                    "at": utc_now(),
-                }
-        elif workflow.get("status") in {"running", "waiting_agents"}:
-            try:
-                stale_seconds = max(
-                    1,
-                    int(os.environ.get(
-                        "ORCHESTRATOR_RECOVERY_STALE_SECONDS",
-                        "1500",
-                    ) or "1500"),
-                )
-            except ValueError:
-                stale_seconds = 1500
-            due_at = int(time.time()) + stale_seconds
-            try:
-                control_plane.arm_recovery(
-                    workflow_id,
-                    owner=control_plane.owner,
-                    fence_epoch=lease.fence_epoch,
-                    due_at=due_at,
-                    event_id=recovery_event_id(workflow),
-                )
-            except ControlPlaneError as alarm_exc:
-                workflow["recovery_alarm_error"] = {
-                    "type": type(alarm_exc).__name__,
-                    "message": str(alarm_exc),
-                    "at": utc_now(),
-                }
         ACTIVE_HOT_STATE_DIGEST.set(digest)
         return
 
