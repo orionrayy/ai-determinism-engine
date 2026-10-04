@@ -262,11 +262,17 @@ def pack_node_context(
             # Preserve canonical metadata for the bounded lane, while giving
             # abstract-bearing slots to the highest-utility records rather than
             # whichever canonical IDs happen to sort first.
-            if (
-                str(raw.get("canonical_id") or "") in abstract_ids
-                and raw.get("abstract")
-            ):
-                record["abstract"] = str(raw.get("abstract") or "")[:700]
+            if str(raw.get("canonical_id") or "") in abstract_ids:
+                if raw.get("abstract"):
+                    record["abstract"] = str(raw.get("abstract") or "")[:700]
+                else:
+                    full_text = str(
+                        raw.get("full_text")
+                        or raw.get("text")
+                        or ""
+                    ).strip()
+                    if full_text:
+                        record["text"] = full_text[:700]
             evidence.append(record)
         if len(raw_records) > 64:
             trusted_evidence_truncated = True
