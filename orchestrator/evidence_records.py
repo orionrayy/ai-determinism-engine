@@ -157,6 +157,45 @@ def _full_text_url(record: Mapping[str, Any]) -> str:
     return ""
 
 
+def _publication_integrity(record: Mapping[str, Any]) -> dict[str, Any]:
+    raw_updates = record.get("update-to")
+    if raw_updates is None:
+        raw_updates = record.get("update_to")
+    updates = raw_updates if isinstance(raw_updates, list) else []
+    update_types = {
+        str(item.get("type") or "").strip().lower()
+        for item in updates
+        if isinstance(item, Mapping)
+    }
+    direct_flag = bool(
+        record.get("is_retracted")
+        or record.get("isRetracted")
+        or record.get("retraction_signal")
+    )
+    concern_flag = bool(
+        record.get("expression_of_concern")
+        or record.get("expressionOfConcern")
+    )
+    correction_flag = bool(
+        record.get("corrected")
+        or record.get("is_corrected")
+        or record.get("isCorrected")
+    )
+    if direct_flag or "retraction" in update_types:
+        status = "retracted"
+    elif concern_flag or "expression-of-concern" in update_types or "expression of concern" in update_types:
+        status = "expression_of_concern"
+    elif correction_flag or "correction" in update_types:
+        status = "corrected"
+    else:
+        status = "normal"
+    return {
+        "publication_status": status,
+        "update_types": sorted(item for item in update_types if item),
+        "retraction_signal": status == "retracted",
+    }
+
+
 def _identifiers(record: Mapping[str, Any]) -> dict[str, str]:
     doi = _norm_doi(_first_nonempty(record.get("DOI"), record.get("doi")))
     arxiv_id = _norm_arxiv(_first_nonempty(record.get("arxiv_id"), record.get("arxivId"), record.get("arxiv")))
@@ -246,6 +285,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         authority.append("peer_reviewed")
     work_identity = source_work_identity({**record, "provider": provider})
     authority_profile = source_authority(provider, {**record, "authority_signals": authority})
+    integrity = _publication_integrity(record)
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
@@ -263,6 +303,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         "primaryity": primaryity,
         "authority_signals": sorted(set(authority)),
         **authority_profile,
+        **integrity,
         "independence_key": str(work_identity["work_key"]),
         "independence_basis": str(work_identity["basis"]),
         "independence_confidence": float(work_identity["confidence"]),
