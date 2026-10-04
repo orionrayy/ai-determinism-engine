@@ -12,7 +12,21 @@ Current main baseline: orchestration hardening v66 deterministic trace contract 
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
+Feature validation line: feat/v75-validation (pending merge; exact validated head tracked by PR #140)
 
+## Orchestration hardening v75 — boundary, authority, epistemic quality, and free-first reliability
+- Gateway authentication is HMAC-only for structured event delivery; static bearer-secret authentication is no longer accepted. Requests bind timestamp, method, path, idempotency key, and raw body.
+- Private input is retained after ambiguous GitHub dispatch failures (timeouts, connection failures, and non-deterministic upstream errors). Cleanup is restricted to explicit pre-acceptance HTTP rejection, avoiding loss of input when delivery may already have succeeded.
+- Workflow authority is immutable at creation: Git-backed workflows remain Git-authoritative even when a control-plane endpoint is configured; distributed-authority workflows fail closed when their configured control plane is unavailable. Control-plane lease acquisition is deduplicated into one supervisor session path.
+- Gemini 3.8 generation uses thinkingConfig.thinkingLevel instead of deprecated sampling/candidate fields. Reasoning/validation roles receive bounded medium/high thinking by policy; the authoritative packed context is no longer destructively prefix-truncated a second time.
+- Capability routing now honors explicit provider preference and records deterministic Bayesian-style reliability from existing success/failure history. This is a routing signal, not a truth score.
+- Evidence records carry explainable source-authority tier/score metadata derived from typed provenance signals, not self-asserted model labels. Deduplication preserves the strongest authority profile.
+- LLM evidence is bound to trusted dependency evidence IDs at the execution boundary. Fabricated evidence IDs or model-supplied authority metadata cannot cross into the authoritative epistemic verdict.
+- High-confidence asserted claims require sufficient supported coverage and authoritative evidence; selective epistemic abstention is a real validation failure/admission gate rather than telemetry-only output.
+- Debate independence is computed from evidence records rather than self-reported source counts. Agents remain independently seeded until conflict detection, then deliberation can be invoked selectively.
+- Federation artifacts use a bounded three-day retention window to improve recovery without introducing paid storage services.
+- Public approval issues and Actions summaries expose only goal digests, not raw goals.
+- The v75 line remains free-first: no required paid API, queue, database, broker, or runtime dependency is introduced.
 
 ## Orchestration hardening v42 — free Gemini model gate
 - `orchestrator/tools.json` is now authoritative for Gemini model cost policy: it declares the default model plus an explicit `free_models` allowlist.
