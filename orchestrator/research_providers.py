@@ -16,6 +16,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
 try:
+    from .control_plane import (
+        ControlPlaneClient,
+        ControlPlaneError,
+    )
+except ImportError:
+    from control_plane import ControlPlaneClient, ControlPlaneError
+
+try:
     from .evidence_records import (
         count_independent_sources,
         deduplicate_sources,
@@ -41,6 +49,75 @@ PROVIDER_CONCURRENCY = {
     "openalex": 2,
     "core": 2,
 }
+_DISTRIBUTED_RATE_CLIENT: ControlPlaneClient | None = None
+_DISTRIBUTED_RATE_CLIENT_INITIALIZED = False
+_DISTRIBUTED_RATE_LOCK = threading.Lock()
+
+
+def _distributed_rate_client() -> ControlPlaneClient | None:
+    global _DISTRIBUTED_RATE_CLIENT, _DISTRIBUTED_RATE_CLIENT_INITIALIZED
+    if _DISTRIBUTED_RATE_CLIENT_INITIALIZED:
+        return _DISTRIBUTED_RATE_CLIENT
+    with _DISTRIBUTED_RATE_LOCK:
+        if _DISTRIBUTED_RATE_CLIENT_INITIALIZED:
+            return _DISTRIBUTED_RATE_CLIENT
+        _DISTRIBUTED_RATE_CLIENT_INITIALIZED = True
+        url = os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
+        secret = os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
+        if not url or not secret:
+            return None
+        try:
+            _DISTRIBUTED_RATE_CLIENT = ControlPlaneClient(url, secret)
+        except Exception:
+            _DISTRIBUTED_RATE_CLIENT = None
+        return _DISTRIBUTED_RATE_CLIENT
+
+
+_LOCAL_RATE_LOCK = threading.Lock()
+_LOCAL_RATE_NEXT_AT: dict[str, float] = {}
+
+
+def _provider_local_rate(provider: str) -> float:
+    return {
+        "crossref": 2.0,
+        "semantic_scholar": 5.0,
+        "europe_pmc": 5.0,
+        "openalex": 10.0,
+        "core": 2.0,
+    }.get(provider, 1.0)
+
+
+def _wait_local_provider_rate(provider: str) -> None:
+    rate = _provider_local_rate(provider)
+    interval = 1.0 / max(rate, 0.1)
+    with _LOCAL_RATE_LOCK:
+        now = time.monotonic()
+        next_at = _LOCAL_RATE_NEXT_AT.get(provider, 0.0)
+        wait_for = max(0.0, next_at - now)
+        _LOCAL_RATE_NEXT_AT[provider] = max(next_at, now) + interval
+    if wait_for:
+        time.sleep(min(wait_for, 8.0))
+
+
+def _wait_provider_rate(provider: str) -> None:
+    # Crossref is the critical global bottleneck: if a control plane exists,
+    # coordinate its rate across Actions runners. Local fallback remains safe
+    # but cannot provide cross-runner coordination.
+    client = _distributed_rate_client() if provider == "crossref" else None
+    if client is not None:
+        for _ in range(4):
+            try:
+                result = client.acquire_provider_rate_slot(provider)
+            except ControlPlaneError:
+                break
+            status = str(result.get("status") or "").strip().lower()
+            if status == "granted":
+                return
+            delay = max(0.05, min(float(result.get("retry_after") or 0.5), 8.0))
+            time.sleep(delay)
+    _wait_local_provider_rate(provider)
+
+
 _PROVIDER_SEMAPHORES = {
     provider: threading.BoundedSemaphore(limit)
     for provider, limit in PROVIDER_CONCURRENCY.items()
@@ -449,9 +526,11 @@ def _provider_search(provider: str, query: str, max_results: int) -> dict[str, A
         raise ResearchProviderError(f"unsupported research provider: {provider}")
     semaphore = _PROVIDER_SEMAPHORES.get(provider)
     if semaphore is None:
+        _wait_provider_rate(provider)
         payload = fn(query, max_results=max_results)
     else:
         with semaphore:
+            _wait_provider_rate(provider)
             payload = fn(query, max_results=max_results)
     if isinstance(payload, dict):
         _cache_store(provider, query, max_results, payload)
