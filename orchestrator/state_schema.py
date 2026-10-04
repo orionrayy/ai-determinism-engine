@@ -217,6 +217,7 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             node.setdefault("error", {})
             node.setdefault("contract", {})
             node.setdefault("agent_role", "")
+            node.setdefault("resources", [])
 
     state["workflows"] = workflows
     state.setdefault("last_workflow_id", None)
