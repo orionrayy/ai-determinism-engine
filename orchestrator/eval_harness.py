@@ -19,6 +19,8 @@ try:
     from .context_budget import pack_node_context
     from .epistemic_deliberation import debate_decision
     from .epistemic_validation import validate_epistemic_output
+    from .calibration_metrics import calibration_summary
+    from .evidence_independence import independence_summary
     from .orchestrator import (
         TRACE_SCHEMA_VERSION,
         _trace_envelope,
@@ -32,6 +34,8 @@ except ImportError:
     from context_budget import pack_node_context
     from epistemic_deliberation import debate_decision
     from epistemic_validation import validate_epistemic_output
+    from calibration_metrics import calibration_summary
+    from evidence_independence import independence_summary
     from orchestrator import (
         TRACE_SCHEMA_VERSION,
         _trace_envelope,
@@ -62,6 +66,47 @@ def _case_blueprint_repeatability() -> dict[str, Any]:
         "name": "blueprint_repeatability",
         "passed": passed,
         "manifest_digest": first["manifest_digest"],
+    }
+
+
+def _case_epistemic_integrity() -> dict[str, Any]:
+    evidence = [
+        {
+            "doi": "10.1000/demo",
+            "provider": "openalex",
+            "title": "Demo",
+        },
+        {
+            "doi": "10.1000/demo",
+            "provider": "semantic_scholar",
+            "title": "Demo",
+        },
+        {
+            "doi": "10.2000/other",
+            "provider": "crossref",
+            "title": "Other",
+        },
+    ]
+    independence = independence_summary(evidence)
+    calibration = calibration_summary([
+        {"confidence": 0.9, "correct": True},
+        {"confidence": 0.2, "correct": False},
+        {"confidence": 0.8, "correct": True},
+        {"confidence": 0.1, "correct": False},
+    ], bins=2)
+    passed = (
+        independence["distinct_work_count"] == 2
+        and independence["strong_work_count"] == 2
+        and calibration["available"] is True
+        and calibration["sample_count"] == 4
+    )
+    return {
+        "name": "epistemic_integrity",
+        "passed": passed,
+        "distinct_work_count": independence["distinct_work_count"],
+        "independence_proxy_confidence": independence["independence_proxy_confidence"],
+        "brier_score": calibration["brier_score"],
+        "ece": calibration["ece"],
     }
 
 
@@ -283,6 +328,7 @@ def _case_trace_contract() -> dict[str, Any]:
 
 
 CASES: tuple[Callable[[], dict[str, Any]], ...] = (
+    _case_epistemic_integrity,
     _case_blueprint_repeatability,
     _case_context_budget,
     _case_ingress_binding,
