@@ -2685,14 +2685,25 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
     for dep_id in node.depends_on:
         dep = by_id[dep_id]
         evidence = dep.output.get("evidence", {}) if isinstance(dep.output, dict) else {}
-        dependencies[dep_id] = {
-            "capability": dep.capability,
-            "tool": dep.tool,
-            "status": dep.status,
-            "output": dep.output,
-            "error": dep.error,
-            "evidence_sha256": evidence.get("evidence_sha256"),
-        }
+        if node.contract.get("deliberation"):
+            # Candidate analyses are carried separately below. Avoid duplicating
+            # their full raw outputs in the ordinary dependency context.
+            dependencies[dep_id] = {
+                "capability": dep.capability,
+                "tool": dep.tool,
+                "status": dep.status,
+                "evidence_sha256": evidence.get("evidence_sha256"),
+            }
+        else:
+            dependencies[dep_id] = {
+                "capability": dep.capability,
+                "tool": dep.tool,
+                "status": dep.status,
+                "output": dep.output,
+                "error": dep.error,
+                "evidence_sha256": evidence.get("evidence_sha256"),
+            }
+
     try:
         packed = pack_node_context(
             goal=node.input.get("goal", ""),
@@ -2702,6 +2713,9 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
         )
         if node.contract.get("deliberation"):
             proposals = []
+            workflow_id = str(
+                nodes[0].input.get("workflow_id") or ""
+            )
             for dep_id in node.depends_on:
                 dep = by_id[dep_id]
                 verdict = extract_first_llm_json(dep.output)
@@ -2711,30 +2725,23 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
                     proposal_from_verdict(
                         verdict,
                         agent_id=agent_id(
-                            str(nodes[0].input.get("workflow_id") or ""),
+                            workflow_id,
                             dep.id,
                             dep.agent_role,
                         ),
                         evidence_records=(
                             verdict.get("evidence_records")
-                            if isinstance(verdict.get("evidence_records"), list)
+                            if isinstance(
+                                verdict.get("evidence_records"),
+                                list,
+                            )
                             else []
                         ),
                     )
                 )
-            if proposals:
-                packed["deliberation"] = deliberation_context(proposals)
-            else:
-                packed["deliberation"] = {
-                    "policy_version": 1,
-                    "decision": {
-                        "required": True,
-                        "reason": "no_valid_proposals",
-                        "max_rounds": 2,
-                    },
-                    "candidates": [],
-                    "candidate_count": 0,
-                }
+            packed["deliberation"] = deliberation_context(
+                proposals,
+            )
         return packed
     except ContextBudgetError as exc:
         raise RuntimeError(f"node context budget exceeded: {exc}") from exc
