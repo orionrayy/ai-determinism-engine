@@ -187,8 +187,14 @@ export class WorkflowControlPlane {
       europe_pmc: {rate: 5, burst: 5},
       openalex: {rate: 10, burst: 10},
     };
-    const config = LIMITS[requested];
+    let config = LIMITS[requested];
     if (!config) throw new Error("provider_rate_unsupported");
+    const pool = String(body.pool || "public").trim().toLowerCase();
+    if (requested === "crossref" && pool === "polite") {
+      config = {rate: 3, burst: 3};
+    } else if (requested === "crossref" && pool !== "public") {
+      throw new Error("provider_rate_pool_invalid");
+    }
     const at = Date.now() / 1000;
     const result = this.ctx.storage.transactionSync(() => {
       const rows = this.ctx.storage.sql.exec(
