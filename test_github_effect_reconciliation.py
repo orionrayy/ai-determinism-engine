@@ -6,7 +6,7 @@ import unittest
 import urllib.error
 from unittest.mock import patch
 
-from orchestrator import orchestrator as o
+import orchestrator as o
 
 
 class GitHubEffectReconciliationTests(unittest.TestCase):
