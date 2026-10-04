@@ -724,3 +724,5 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Runtime metadata is excluded from semantic effect identity, while private-input digests/fingerprints remain identity-bearing.
 - Control-plane failures do not silently fall back to Git-only live side effects; they persist as running/control_plane_blocked so stale-running recovery can retry later.
 - Cloudflare Durable Objects are coordination authority only; Git remains source/audit persistence. Cloudflare Queues are intentionally outside the mandatory control path.
+
+- When the distributed control plane is active, its durable effect claim replaces the Git side-effect durability barrier; Git barrier remains used for Git-only live execution.
