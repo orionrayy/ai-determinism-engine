@@ -135,6 +135,49 @@ def _dependency_record(
     return record
 
 
+def _pack_trusted_evidence(
+    records: list[Mapping[str, Any]],
+    max_bytes: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Keep complete evidence records; prune whole records deterministically."""
+    candidates = []
+    for raw in records:
+        if not isinstance(raw, Mapping):
+            continue
+        cid = str(raw.get("canonical_id") or "").strip()
+        if not cid:
+            continue
+        candidates.append(dict(raw))
+    candidates.sort(
+        key=lambda item: (
+            -float(item.get("authority_score") or 0.0),
+            -float(item.get("independence_confidence") or 0.0),
+            str(item.get("canonical_id") or ""),
+        )
+    )
+
+    selected: list[dict[str, Any]] = []
+    omitted: list[str] = []
+    for raw in candidates:
+        compact = {
+            key: raw[key]
+            for key in (
+                "canonical_id", "provider", "provider_id", "title", "published",
+                "year", "doi", "arxiv_id", "pmid", "pmcid", "venue",
+                "full_text_url", "url", "authority_signals", "authority_class",
+                "authority_score", "authority_tier", "independence_key",
+                "independence_confidence",
+            )
+            if key in raw
+        }
+        probe = canonical_json(selected + [compact])
+        if len(probe) <= max_bytes:
+            selected.append(compact)
+        else:
+            omitted.append(str(compact["canonical_id"]))
+    return selected, omitted
+
+
 def pack_node_context(
     *,
     goal: Any,
@@ -175,23 +218,16 @@ def pack_node_context(
         item for item in (trusted_evidence_records or [])
         if isinstance(item, Mapping)
     ][:24]
-    trusted_json, trusted_truncated = bounded_json(
+    trusted_budget = min(12 * 1024, max_bytes // 4)
+    packed_trusted, omitted_trusted = _pack_trusted_evidence(
         trusted_records,
-        min(12 * 1024, max_bytes // 4),
+        trusted_budget,
     )
 
     packed: dict[str, Any] = {
         "goal": str(goal or ""),
         "dependencies": {},
-        "trusted_evidence": (
-            json.loads(trusted_json)
-            if not trusted_truncated
-            else {
-                "truncated": True,
-                "sha256": digest(trusted_records),
-                "preview": trusted_json,
-            }
-        ),
+        "trusted_evidence": packed_trusted,
         "contract": json.loads(contract_json) if not contract_truncated else {
             "truncated": True,
             "sha256": digest(contract or {}),
@@ -241,8 +277,8 @@ def pack_node_context(
         'max_bytes': max_bytes,
         'used_bytes': len(canonical_json(packed)),
         'dependency_bytes': dependency_bytes,
-        'trusted_evidence_count': len(trusted_records),
-        'trusted_evidence_truncated': trusted_truncated,
+        'trusted_evidence_count': len(packed_trusted),
+        'trusted_evidence_omitted': omitted_trusted,
         'omitted_dependencies': sorted(omitted),
         'truncated_contract': contract_truncated,
         'truncated_repair_feedback': repair_truncated,
