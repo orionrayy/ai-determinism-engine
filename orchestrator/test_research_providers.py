@@ -265,7 +265,7 @@ class ResearchProviderTests(unittest.TestCase):
              ):
             self.assertEqual(
                 research_records("topic")["providers"],
-                ["semantic_scholar", "europe_pmc", "crossref"],
+                ["semantic_scholar", "openalex", "europe_pmc", "crossref"],
             )
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False), \
              patch(
