@@ -219,7 +219,7 @@ class ResearchProviderTests(unittest.TestCase):
                 max_results=2,
             )
             self.assertEqual(result["providers"], ["crossref"])
-            fake.acquire_provider_rate_slot.assert_called_once_with("crossref")
+            fake.acquire_provider_rate_slot.assert_called_once_with("crossref", pool="public")
 
     def test_provider_cache_avoids_repeated_network_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
