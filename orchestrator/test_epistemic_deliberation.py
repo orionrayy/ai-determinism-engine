@@ -18,7 +18,7 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["y"],
-                "independent_source_count": 2,
+                "independence": {"distinct_work_count": 2},
             },
         ]
         result = debate_decision(proposals)
@@ -40,7 +40,7 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["y"],
-                "independent_source_count": 1,
+                "independence": {"distinct_work_count": 1},
             },
         ]
         result = debate_decision(proposals)
