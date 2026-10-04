@@ -45,6 +45,7 @@ try:
         StateSchemaError,
         CURRENT_WORKFLOW_SCHEMA_VERSION,
         migrate_state,
+        MAX_NODES as STATE_MAX_NODES,
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
@@ -81,6 +82,7 @@ except ImportError:
         StateSchemaError,
         CURRENT_WORKFLOW_SCHEMA_VERSION,
         migrate_state,
+        MAX_NODES as STATE_MAX_NODES,
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
