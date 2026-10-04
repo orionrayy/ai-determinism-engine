@@ -92,6 +92,36 @@ class ScheduledRecoveryTests(unittest.TestCase):
         self.assertEqual(recovery_event_id(first), recovery_event_id(second))
         self.assertEqual(recovery_generation(first), recovery_generation(second))
 
+    def test_failed_durability_barrier_is_recoverable(self):
+        workflow = {
+            "id": "wf-barrier",
+            "status": "failed",
+            "nodes": [{"id": "n1", "status": "failed"}],
+            "executions": {
+                "placeholder": {"status": "barrier_failed"},
+            },
+        }
+        execution_id = __import__("hashlib").sha256(
+            b"wf-barrier:n1"
+        ).hexdigest()
+        workflow["executions"] = {
+            execution_id: {"status": "barrier_failed"},
+        }
+        self.assertTrue(is_recovery_candidate(workflow, self.now))
+
+    def test_uncertain_non_connector_tool_does_not_trigger_side_effect_recovery(self):
+        workflow = {
+            "id": "wf-uncertain",
+            "status": "failed",
+            "nodes": [{
+                "id": "n1",
+                "status": "failed",
+                "tool": "github",
+                "error": {"execution_uncertain": True},
+            }],
+        }
+        self.assertFalse(is_recovery_candidate(workflow, self.now))
+
     def test_recovery_event_id_changes_when_recovery_state_changes(self):
         first = {
             "id": "wf-change",
