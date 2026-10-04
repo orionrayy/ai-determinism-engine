@@ -135,6 +135,21 @@ def _full_text_url(record: Mapping[str, Any]) -> str:
             value = best_oa.get(key)
             if value:
                 return str(value)
+
+    full_text_list = record.get("fullTextUrlList")
+    if isinstance(full_text_list, Mapping):
+        nested = full_text_list.get("fullTextUrl")
+        if isinstance(nested, list):
+            for item in nested:
+                if isinstance(item, Mapping):
+                    value = _first_nonempty(item.get("url"), item.get("URL"))
+                    if value:
+                        return str(value)
+        elif isinstance(nested, Mapping):
+            value = _first_nonempty(nested.get("url"), nested.get("URL"))
+            if value:
+                return str(value)
+
     for key in ("full_text_url", "pdf_url", "url"):
         value = record.get(key)
         if value:
