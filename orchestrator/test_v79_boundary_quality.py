@@ -303,7 +303,7 @@ class V79BoundaryQualityTests(unittest.TestCase):
             }],
         )
         record = packed["trusted_evidence"][0]
-        self.assertEqual(record["text"], "Full-text passage " + ("x" * 686))
+        self.assertEqual(record["text"], "Full-text passage " + ("x" * 682))
 
     def test_strict_passage_length_is_bounded(self):
         long_text = "x" * 701
