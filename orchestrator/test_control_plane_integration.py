@@ -102,10 +102,37 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
         self.assertEqual(lock_map, {})
 
     def test_remote_event_path_is_opt_in(self):
-        self.assertIn(
-            "ORCHESTRATOR_CONTROL_PLANE_REMOTE_EVENTS",
-            o.append_event.__code__.co_names,
-        )
+        class Stub:
+            owner = "worker"
+
+            def append_outbox_event(self, *args, **kwargs):
+                self.called = True
+
+        stub = Stub()
+        lease = type("Lease", (), {"fence_epoch": 1})()
+        token1 = o.ACTIVE_CONTROL_PLANE.set(stub)
+        token2 = o.ACTIVE_CONTROL_PLANE_LEASE.set(lease)
+        try:
+            with patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_CONTROL_PLANE_REMOTE_EVENTS": "false"},
+                clear=False,
+            ):
+                stub.called = False
+                o.append_event("node.completed", {"workflow_id": "wf", "node_id": "n1"})
+                self.assertFalse(stub.called)
+
+            with patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_CONTROL_PLANE_REMOTE_EVENTS": "true"},
+                clear=False,
+            ):
+                stub.called = False
+                o.append_event("node.completed", {"workflow_id": "wf", "node_id": "n1"})
+                self.assertTrue(stub.called)
+        finally:
+            o.ACTIVE_CONTROL_PLANE.reset(token1)
+            o.ACTIVE_CONTROL_PLANE_LEASE.reset(token2)
 
 
 if __name__ == "__main__":
