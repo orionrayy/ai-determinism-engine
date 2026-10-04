@@ -176,6 +176,7 @@ def validate_epistemic_output(
         evidence_result["passed"]
         and claim_result["passed"]
         and threshold_ok
+        and not bool(selective.get("abstain"))
     )
     return {
         **base_result,
