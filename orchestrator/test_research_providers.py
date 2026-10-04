@@ -190,6 +190,33 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertIn("unpaywall.org/v2/10.1000%2Ftest", request.call_args.args[0])
         self.assertIn("email=research@example.org", request.call_args.args[0])
 
+    def test_crossref_uses_distributed_rate_gate_when_configured(self):
+        with patch.dict(
+            os.environ,
+            {
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "https://control.example",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "s",
+            },
+            clear=False,
+        ), patch(
+            "research_providers._distributed_rate_client"
+        ) as client_factory, patch(
+            "research_providers._provider_search",
+            return_value={"message": {"items": []}},
+        ):
+            fake = client_factory.return_value
+            fake.acquire_provider_rate_slot.return_value = {
+                "status": "granted",
+                "retry_after": 0,
+            }
+            result = research_records(
+                "topic",
+                providers=("crossref",),
+                max_results=2,
+            )
+            self.assertEqual(result["providers"], ["crossref"])
+            fake.acquire_provider_rate_slot.assert_called_once_with("crossref")
+
     def test_provider_cache_avoids_repeated_network_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(
