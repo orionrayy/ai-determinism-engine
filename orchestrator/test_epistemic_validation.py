@@ -82,6 +82,47 @@ class EpistemicValidationTests(unittest.TestCase):
         self.assertEqual(result["coverage"], 0.5)
         self.assertEqual(result["evidence_coverage"], 1.0)
 
+    def test_claim_coverage_exposes_supported_coverage(self):
+        result = claim_coverage([
+            {
+                "claim_id": "c1",
+                "material": True,
+                "status": "SUPPORTED_DIRECT",
+                "evidence_refs": ["a"],
+            },
+        ])
+        self.assertEqual(result["supported_coverage"], 1.0)
+
+    def test_high_confidence_sufficient_evidence_does_not_abstain(self):
+        result = validate_epistemic_output({
+            "confidence": 0.95,
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "supported",
+                "material": True,
+                "status": "SUPPORTED_DIRECT",
+                "evidence_refs": ["doi:10.1/a"],
+            }],
+            "evidence_records": [{"canonical_id": "doi:10.1/a"}],
+        })
+        self.assertTrue(result["passed"])
+        self.assertFalse(result["selective_abstention"])
+
+    def test_selective_abstention_blocks_validation(self):
+        result = validate_epistemic_output({
+            "confidence": 0.95,
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "unsupported",
+                "material": True,
+                "status": "UNKNOWN",
+                "evidence_refs": [],
+            }],
+            "evidence_records": [{"canonical_id": "doi:10.1/a"}],
+        })
+        self.assertTrue(result["selective_abstention"])
+        self.assertFalse(result["passed"])
+
     def test_contested_claim_with_evidence_counts_toward_min_coverage(self):
         result = validate_epistemic_output(
             {
