@@ -3181,6 +3181,15 @@ def replan_after_failure(
     ):
         return False
 
+    # An uncertain execution has an externally observable outcome that has not
+    # been proven. Replanning would change the effect identity and can duplicate
+    # the original side effect. Keep this invariant centralized rather than
+    # relying on every caller to check it first.
+    if failed_node.error.get("execution_uncertain"):
+        return False
+    if failed_node.error.get("replan_blocked_after_side_effect_start"):
+        return False
+
     # A different adapter can have different side-effect semantics even when it
     # advertises the same capability. Require the existing retry/reconciliation
     # path to handle side effects rather than silently changing the operation.
