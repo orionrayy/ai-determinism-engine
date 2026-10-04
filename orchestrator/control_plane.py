@@ -53,6 +53,9 @@ class EffectClaim:
 class WorkflowState:
     state: dict[str, Any]
     state_version: int
+    recovery_due: bool = False
+    recovery_event_id: str = ""
+    recovery_due_at: int | None = None
 
 def canonical_json(value: Any) -> bytes:
     return json.dumps(
@@ -404,9 +407,18 @@ class ControlPlaneClient:
             raise ControlPlaneUnavailable(
                 "control-plane workflow state is not an object"
             )
+        recovery = result.get("recovery")
+        recovery = recovery if isinstance(recovery, dict) else {}
         return WorkflowState(
             state=state,
             state_version=int(result.get("state_version", 0)),
+            recovery_due=bool(recovery.get("due")),
+            recovery_event_id=str(recovery.get("event_id") or ""),
+            recovery_due_at=(
+                int(recovery["due_at"])
+                if recovery.get("due_at") is not None
+                else None
+            ),
         )
 
     def put_workflow_state(
