@@ -65,7 +65,7 @@ try:
         resolve_effect_contract,
     )
     from .epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
-    from .private_input import PrivateInputError, fetch_private_input
+    from private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .context_budget import ContextBudgetError, pack_node_context
