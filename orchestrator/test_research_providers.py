@@ -195,7 +195,7 @@ class ResearchProviderTests(unittest.TestCase):
              ):
             self.assertEqual(
                 research_records("topic")["providers"],
-                ["semantic_scholar", "europe_pmc"],
+                ["semantic_scholar", "europe_pmc", "crossref"],
             )
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False), \
              patch(
@@ -206,6 +206,15 @@ class ResearchProviderTests(unittest.TestCase):
                 research_records("topic")["providers"],
                 ["openalex", "semantic_scholar", "europe_pmc", "crossref", "core"],
             )
+
+    def test_crossref_search_is_public_with_optional_polite_identity(self):
+        with patch.dict(os.environ, {"CROSSREF_MAILTO": "test@example.invalid"}, clear=False),              patch("research_providers._request_json", return_value={"message": {"items": []}}) as request:
+            from research_providers import search_crossref
+            search_crossref("topic", max_results=3)
+        url = request.call_args.args[0]
+        self.assertIn("api.crossref.org/works?", url)
+        self.assertIn("mailto=test%40example.invalid", url)
+        self.assertIn("rows=3", url)
 
     def test_provider_requests_run_in_parallel_with_deterministic_output_order(self):
         def fake(provider, query, max_results):
