@@ -81,7 +81,7 @@ jobs:
       - name: Compile orchestrator/aggregate_agent_results.py orchestrator/agent_worker.py
         run: python -m compileall -q orchestrator && python -m py_compile bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
       - name: Contract schema syntax
-        run: python -m json.tool contracts/task-envelope.schema.json >/dev/null && python -m json.tool contracts/skill-manifest.schema.json >/dev/null
+        run: python -m json.tool contracts/task-envelope.schema.json >/dev/null && python -m json.tool contracts/skill-manifest.schema.json >/dev/null && python -m json.tool contracts/checkpoint-manifest.schema.json >/dev/null && python -m json.tool contracts/worker-registration.schema.json >/dev/null
       - name: Control-plane Worker syntax
         run: node --check control-plane/cloudflare/src/worker.js
       - name: Import smoke
