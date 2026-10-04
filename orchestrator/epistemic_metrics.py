@@ -66,11 +66,26 @@ def _summarize_epistemic(verdict: Mapping[str, Any]) -> dict[str, Any]:
     independent_count = int(independence["distinct_work_count"])
 
     calibration_inputs = verdict.get("calibration_samples")
-    calibration = calibration_summary(
-        calibration_inputs
-        if isinstance(calibration_inputs, list)
-        else [],
-    )
+    if not isinstance(calibration_inputs, list):
+        calibration_outcome = None
+        for key in (
+            "correct",
+            "outcome_correct",
+            "ground_truth_correct",
+        ):
+            if key in verdict:
+                calibration_outcome = verdict.get(key)
+                break
+        calibration_inputs = (
+            [{"confidence": verdict.get("confidence"), "correct": calibration_outcome}]
+            if calibration_outcome is not None and "confidence" in verdict
+            else []
+        )
+    calibration_inputs = [
+        item for item in calibration_inputs
+        if isinstance(item, Mapping) and "confidence" in item and "correct" in item
+    ][:64]
+    calibration = calibration_summary(calibration_inputs)
     total = len(material)
     linked_total = len(linked)
     return {
@@ -96,6 +111,7 @@ def _summarize_epistemic(verdict: Mapping[str, Any]) -> dict[str, Any]:
             independence["independence_proxy_confidence"]
         ),
         "calibration": calibration,
+        "calibration_samples": calibration_inputs,
     }
 
 
@@ -157,15 +173,12 @@ def record_node_metrics(
                 aggregate["distinct_evidence_work_count_max"],
                 int(item.get("distinct_evidence_work_count") or 0),
             )
-            confidence = item.get("calibration")
-            if isinstance(confidence, Mapping) and confidence.get("available"):
-                for sample in (
-                    confidence.get("samples", [])
-                    if isinstance(confidence.get("samples"), list)
-                    else []
-                ):
-                    if isinstance(sample, Mapping):
-                        calibration_samples.append(sample)
+            samples = item.get("calibration_samples")
+            if isinstance(samples, list):
+                calibration_samples.extend(
+                    sample for sample in samples
+                    if isinstance(sample, Mapping)
+                )
         elif item.get("type") == "research":
             aggregate["research_nodes"] += 1
             aggregate["research_evidence_record_count"] += int(
