@@ -2206,6 +2206,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
             node.contract = {
                 "epistemic": True,
                 "min_coverage": 0.8,
+                "require_passages": True,
             }
             if node_id == "n06-draft":
                 node.contract["truth_lock"] = True
@@ -2331,6 +2332,15 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
             "evidence, include evidence_passages with exact excerpt text and evidence_ref for every material "
             "SUPPORTED_DIRECT claim; never invent quotation text."
         )
+        if node.contract.get("require_passages"):
+            instruction += (
+                " Evidence passages are mandatory for every material SUPPORTED_DIRECT claim. "
+                "Each evidence_passages entry must quote an exact normalized substring from the "
+                "referenced trusted evidence record and its evidence_ref must also appear in that "
+                "claim's evidence_refs. Do not mark a claim SUPPORTED_DIRECT when no verifiable "
+                "passage is available; use SUPPORTED_INDIRECT, CONTESTED, UNSUPPORTED, or UNKNOWN "
+                "as appropriate."
+            )
         if node.contract.get("deliberation"):
             instruction += (
                 " You are the adjudicator. Compare the independent candidate analyses "
@@ -3430,6 +3440,7 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
                 verdict,
                 min_coverage=node.contract.get("min_coverage"),
                 trusted_evidence_records=trusted_records,
+                require_passages=node.contract.get("require_passages") is True,
             )
             deliberation_result = (
                 validate_deliberation_responses(
