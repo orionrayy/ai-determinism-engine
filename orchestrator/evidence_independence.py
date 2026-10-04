@@ -169,6 +169,8 @@ def independence_summary(
     for record in records:
         if not isinstance(record, Mapping):
             continue
+        if str(record.get("publication_status") or "normal") == "retracted":
+            continue
         identity = source_work_identity(record)
         key = str(identity["work_key"])
         find(key)
