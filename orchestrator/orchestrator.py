@@ -4518,6 +4518,33 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                                 if side_effecting(node, registry)
                                 else None
                             ),
+                            before_attempt=(
+                                (lambda: control_plane.renew_lease(
+                                    workflow["id"],
+                                    control_plane_lease.fence_epoch,
+                                ))
+                                if control_plane is not None and control_plane_lease is not None
+                                else None
+                            ),
+                            on_success=(
+                                (lambda completed_node, cp_execution_id=execution_id: control_plane.complete_effect(
+                                    workflow["id"],
+                                    cp_execution_id,
+                                    effect_semantic_digest(completed_node),
+                                    control_plane_lease.fence_epoch,
+                                    output_sha256=hashlib.sha256(
+                                        json.dumps(
+                                            completed_node.output,
+                                            ensure_ascii=False,
+                                            sort_keys=True,
+                                            default=str,
+                                            separators=(",", ":"),
+                                        ).encode("utf-8")
+                                    ).hexdigest(),
+                                ))
+                                if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+                                else None
+                            ),
                         ),
                     ))
             else:
