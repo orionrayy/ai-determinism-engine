@@ -289,20 +289,44 @@ export class WorkflowControlPlane {
     }
     const at = now();
     const scheduledAt = Math.max(at, dueAt);
+    let result;
     this.ctx.storage.transactionSync(() => {
       this.requireLease(owner, epoch, at);
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT due_at,due,event_id FROM recovery WHERE singleton=1"
+      ).toArray();
+      if (
+        rows.length &&
+        String(rows[0].event_id) === eventId &&
+        Number(rows[0].due) === 0 &&
+        Number(rows[0].due_at) >= scheduledAt
+      ) {
+        result = {
+          status:"already_armed",
+          due_at:Number(rows[0].due_at),
+          event_id:eventId
+        };
+        return;
+      }
       this.ctx.storage.sql.exec(
         "INSERT INTO recovery(singleton,due_at,due,event_id,fired_at,claimed,claim_owner,claim_expires_at) VALUES(1,?,0,?,NULL,0,NULL,NULL) " +
         "ON CONFLICT(singleton) DO UPDATE SET due_at=excluded.due_at,due=0,event_id=excluded.event_id,fired_at=NULL,claimed=0,claim_owner=NULL,claim_expires_at=NULL",
         scheduledAt,
         eventId
       );
+      result = {
+        status:"armed",
+        due_at:scheduledAt,
+        event_id:eventId
+      };
     });
-    await this.ctx.storage.setAlarm(scheduledAt * 1000);
+    if (result.status === "armed") {
+      await this.ctx.storage.setAlarm(Number(result.due_at) * 1000);
+    }
     return json({
-      status:"armed",
+      status:result.status,
       workflow_id:workflowId,
-      due_at:scheduledAt,
+      due_at:Number(result.due_at),
       event_id:eventId
     });
   }
