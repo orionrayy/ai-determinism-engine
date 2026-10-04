@@ -880,8 +880,6 @@ EFFECT_RUNTIME_INPUT_KEYS = {
     "previous_tool",
     "private_input_ref",
     "private_input_execution_id",
-    "private_input_digest",
-    "private_input_intent_fingerprint",
     "attempt",
 }
 
