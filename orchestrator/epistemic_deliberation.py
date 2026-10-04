@@ -24,12 +24,6 @@ def _computed_independent_source_count(item: Mapping[str, Any]) -> int:
             ).get("distinct_work_count")
             or 0
         )
-    independence = item.get("independence")
-    if isinstance(independence, Mapping):
-        try:
-            return max(0, int(independence.get("distinct_work_count") or 0))
-        except (TypeError, ValueError):
-            return 0
     return 0
 
 
