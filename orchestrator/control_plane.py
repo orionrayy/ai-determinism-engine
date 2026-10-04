@@ -142,6 +142,7 @@ class ControlPlaneClient:
             {"provider": str(provider).strip().lower()},
         )
 
+    @staticmethod
     def _workflow_path(workflow_id: str, suffix: str) -> str:
         return (
             "/v1/workflows/"
