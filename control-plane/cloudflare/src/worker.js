@@ -337,6 +337,22 @@ export class WorkflowControlPlane {
       : json({status:result,workflow_id:workflowId,event_id:eventId,claim_owner:owner,claim_expires_at:expiresAt});
   }
 
+  async clearRecovery(body) {
+    const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
+    const epoch = Number(body.fence_epoch);
+    if (!owner || !workflowId || !Number.isInteger(epoch)) {
+      throw new Error("recovery_clear_invalid");
+    }
+    const at = now();
+    this.ctx.storage.transactionSync(() => {
+      this.requireLease(owner, epoch, at);
+      this.ctx.storage.sql.exec("DELETE FROM recovery WHERE singleton=1");
+    });
+    await this.ctx.storage.deleteAlarm();
+    return json({status:"cleared",workflow_id:workflowId});
+  }
+
   ackRecovery(body) {
     const workflowId = String(body.workflow_id || "").trim();
     const eventId = String(body.event_id || "").trim();
@@ -580,6 +596,7 @@ export class WorkflowControlPlane {
       if (request.method === "GET" && url.pathname.endsWith("/recovery")) return this.readRecovery();
       if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return this.armRecovery(body);
       if (request.method === "POST" && url.pathname.endsWith("/recovery/claim")) return this.claimRecovery(body);
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/clear")) return this.clearRecovery(body);
       if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return this.ackRecovery(body);
       if (request.method === "PUT" && url.pathname.endsWith("/state")) return this.writeWorkflowState(body);
       if (request.method === "POST" && url.pathname.endsWith("/outbox")) return this.appendOutbox(body);
