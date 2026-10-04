@@ -379,8 +379,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
         "payload": payload,
     }
     encoded = (
-        json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "
-"
+        json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "\n"
     ).encode("utf-8")
     with event_file.open("ab") as handle:
         handle.write(encoded)
