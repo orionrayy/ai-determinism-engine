@@ -11,7 +11,7 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["x"],
-                "independent_source_count": 2,
+                "independence": {"distinct_work_count": 2},
             },
             {
                 "agent_id": "a2",
@@ -33,7 +33,7 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["x"],
-                "independent_source_count": 1,
+                "independence": {"distinct_work_count": 1},
             },
             {
                 "agent_id": "a2",
