@@ -227,7 +227,23 @@ def validate_deliberation_responses(
         if status not in {"resolved", "contested", "unknown"}:
             invalid.append(claim_id)
             continue
+        challenge = next(
+            (
+                item for item in challenges
+                if isinstance(item, Mapping)
+                and str(item.get("claim_id") or "").strip() == claim_id
+            ),
+            None,
+        )
+        challenge_refs = {
+            str(ref).strip()
+            for ref in (challenge.get("evidence_refs") or [])
+            if str(ref).strip()
+        } if isinstance(challenge, Mapping) else set()
         if any(ref not in allowed_refs for ref in refs):
+            invalid.append(claim_id)
+            continue
+        if challenge_refs and any(ref not in challenge_refs for ref in refs):
             invalid.append(claim_id)
             continue
         if status in {"resolved", "contested"} and not refs:
