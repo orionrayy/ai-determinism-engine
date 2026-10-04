@@ -726,3 +726,14 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Cloudflare Durable Objects are coordination authority only; Git remains source/audit persistence. Cloudflare Queues are intentionally outside the mandatory control path.
 
 - When the distributed control plane is active, its durable effect claim replaces the Git side-effect durability barrier; Git barrier remains used for Git-only live execution.
+
+
+## v70 resource-scoped locks and hot state (2026-10-04)
+- Nodes support explicit resource keys through Node.resources or input.resource_keys; keys are normalized, deduplicated, sorted, and bounded.
+- Resource locks use separate Durable Object identities per resource key and bind ownership to both worker owner and workflow ID.
+- Locks are acquired before side-effect preparation/effect claims. Contention refunds both attempt and LLM admission budget, returns the node to ready, and exits the supervisor with a running/resource-waiting state.
+- Resource-bearing nodes are excluded from the parallel-safe batch; resource leases renew before retry attempts and release in deterministic reverse order.
+- Active live control-plane sessions persist workflow state through a monotonically increasing state_version CAS in Durable Object storage. Targeted load_workflow reads remote hot state first when configured.
+- Global recovery hydrates the remote workflow snapshot before executing a Git-discovered candidate, preventing stale Git snapshots from overwriting newer control-plane state.
+- Selected lifecycle/control events use a bounded Durable Object outbox (latest 256 events per workflow object); high-volume diagnostics remain local.
+- Git remains eventual source/audit snapshot storage; active distributed live execution does not require Git round-trips for each hot-state mutation.
