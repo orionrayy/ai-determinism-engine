@@ -143,8 +143,8 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('workflow_run.id', self.continuation)
         self.assertIn('workflow_run.run_attempt', self.continuation)
         runtime = (ROOT / 'orchestrator' / 'continuation_runtime.py').read_text()
-        self.assertIn("item.get("github_run_id")", runtime)
-        self.assertIn("item.get("github_run_attempt")", runtime)
+        self.assertIn('item.get("github_run_id")', runtime)
+        self.assertIn('item.get("github_run_attempt")', runtime)
         self.assertIn("orchestrator-continuation-", self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
