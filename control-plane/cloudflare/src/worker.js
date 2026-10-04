@@ -174,6 +174,13 @@ export class WorkflowControlPlane {
       this.requireLease(owner, epoch, at);
       const rows = this.ctx.storage.sql.exec("SELECT semantic_digest,status FROM effect WHERE effect_id=?", effectId).toArray();
       if (!rows.length && outcome === "not_applied") return "not_applied";
+      if (!rows.length && outcome === "completed") {
+        this.ctx.storage.sql.exec(
+          "INSERT INTO effect(effect_id,semantic_digest,status,owner,fence_epoch,created_at,completed_at,output_sha256) VALUES(?,?,'completed',?,?,?,?,?)",
+          effectId,digest,owner,epoch,at,at,output
+        );
+        return "completed";
+      }
       if (!rows.length) throw conflict("effect_missing");
       if (String(rows[0].semantic_digest) !== digest) throw conflict("effect_semantic_conflict");
       if (outcome === "completed") {
