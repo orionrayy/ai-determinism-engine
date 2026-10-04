@@ -48,8 +48,11 @@ try:
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
-    from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
+    try:
+        from .private_input import PrivateInputError, fetch_private_input
+    except ImportError:
+        from private_input import PrivateInputError, fetch_private_input
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .context_budget import ContextBudgetError, pack_node_context
     from .agent_protocol import AgentResult, build_manifest, build_task, validate_result as validate_agent_result
