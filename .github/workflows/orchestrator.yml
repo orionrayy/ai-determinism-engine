@@ -388,7 +388,6 @@ jobs:
 
               candidate_workflow = workflow
               recovery_due = None
-              control_plane_event_id = ""
               if workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
                   if control_plane is None:
                       dispatch_failures.append(
@@ -408,10 +407,14 @@ jobs:
                           f"{workflow_id}: control-plane state absent"
                       )
                       continue
+                  if str(remote.state.get("id") or "").strip() != workflow_id:
+                      dispatch_failures.append(
+                          f"{workflow_id}: control-plane workflow identity mismatch"
+                      )
+                      continue
                   candidate_workflow = dict(remote.state)
                   candidate_workflow["control_plane_state_version"] = remote.state_version
                   recovery_due = bool(remote.recovery_due)
-                  control_plane_event_id = str(remote.recovery_event_id or "")
 
               active_run_status = None
               if (
@@ -431,7 +434,7 @@ jobs:
               ):
                   continue
 
-              event_id = recovery_event_id(workflow)
+              event_id = recovery_event_id(candidate_workflow)
               if control_plane is not None and workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
                   try:
                       claim = control_plane.claim_recovery(
