@@ -8,8 +8,10 @@ import re
 from typing import Any, Mapping
 try:
     from .evidence_independence import source_work_identity
+    from .source_authority import source_authority
 except ImportError:
     from evidence_independence import source_work_identity
+    from source_authority import source_authority
 
 
 _DOI_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*", re.IGNORECASE)
@@ -393,23 +395,10 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
     )
     integrity = _publication_integrity(record)
 
-    authority_components = {
-        "peer_review_signal": 0.80 if record.get("peer_reviewed") is True else 0.0,
-        "journal_metadata_signal": (
-            0.60 if source_type in {"journal-article", "journal article"} else 0.0
-        ),
-        "index_signal": (
-            0.55 if provider in {"crossref", "openalex", "semantic_scholar"} else
-            0.55 if provider == "europe_pmc" else
-            0.45 if provider == "arxiv" else
-            0.40 if provider == "core" else
-            0.0
-        ),
-        "verified_access_signal": (
-            0.20 if access.get("access_verification") != "identifier_only" else 0.0
-        ),
-        "integrity_signal": 1.0 if integrity.get("publication_status") == "normal" else 0.0,
-    }
+    authority_profile = source_authority(
+        provider,
+        {**record, "authority_signals": authority},
+    )
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
