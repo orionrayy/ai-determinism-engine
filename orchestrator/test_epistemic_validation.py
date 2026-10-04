@@ -93,6 +93,59 @@ class EpistemicValidationTests(unittest.TestCase):
         ])
         self.assertEqual(result["supported_coverage"], 1.0)
 
+    def test_trusted_evidence_boundary_rejects_untrusted_claim_reference(self):
+        result = validate_epistemic_output(
+            {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "supported",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["doi:untrusted"],
+                }],
+                "evidence_records": [{"canonical_id": "doi:untrusted"}],
+            },
+            trusted_evidence_records=[
+                {"canonical_id": "doi:trusted"},
+            ],
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(
+            result["evidence"]["reason"],
+            "evidence_refs_crossed_trust_boundary",
+        )
+
+    def test_trusted_evidence_binding_canonicalizes_agent_record_metadata(self):
+        result = validate_epistemic_output(
+            {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "supported",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["doi:trusted"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "doi:trusted",
+                    "authority_score": 0.01,
+                }],
+            },
+            trusted_evidence_records=[
+                {
+                    "canonical_id": "doi:trusted",
+                    "authority_score": 0.95,
+                    "publication_status": "normal",
+                },
+            ],
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(
+            result["bound_evidence_records"][0]["authority_score"],
+            0.95,
+        )
+
     def test_epistemic_output_limits_are_enforced(self):
         evidence = [
             {"canonical_id": f"doi:10.1/{index}"}
