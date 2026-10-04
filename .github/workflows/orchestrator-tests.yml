@@ -58,6 +58,7 @@ on:
       - ".github/workflows/orchestrator-tests.yml"
       - ".github/workflows/orchestrator-agent-federation.yml"
       - "test_actions_config.py"
+      - "contracts/**"
   workflow_dispatch:
 
 permissions:
