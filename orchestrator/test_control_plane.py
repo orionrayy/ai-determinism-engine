@@ -49,6 +49,24 @@ class ControlPlaneClientTests(unittest.TestCase):
             request.call_args.args[1],
         )
 
+    def test_provider_rate_slot_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={
+                "status": "granted",
+                "provider": "crossref",
+                "retry_after": 0,
+            },
+        ) as request:
+            result = client.acquire_provider_rate_slot("crossref")
+        self.assertEqual(result["status"], "granted")
+        self.assertIn(
+            "/v1/resources/provider%3Acrossref/rate/acquire",
+            request.call_args.args[1],
+        )
+
     def test_clear_recovery_path(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
         with patch.object(
