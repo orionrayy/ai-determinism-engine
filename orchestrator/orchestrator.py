@@ -3215,6 +3215,20 @@ def release_node_resource_locks(
             pass
 
 
+def release_node_resource_lock_map(
+    workflow: dict[str, Any],
+    lock_map: dict[str, list[Any]],
+    control_plane: ControlPlaneClient | None,
+) -> None:
+    for node_id in sorted(list(lock_map)):
+        release_node_resource_locks(
+            workflow,
+            lock_map.get(node_id, []),
+            control_plane,
+        )
+        lock_map.pop(node_id, None)
+
+
 def execute_with_retries(
     node: Node,
     goal: str,
@@ -4643,6 +4657,11 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         "node_id": node.id,
                         "resources": node_resource_keys(node),
                     })
+                    release_node_resource_lock_map(
+                        workflow,
+                        resource_leases_by_node,
+                        control_plane,
+                    )
                     return
                 if side_effecting(node, registry):
                     record = workflow.setdefault("executions", {}).get(execution_id)
