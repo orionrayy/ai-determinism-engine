@@ -78,8 +78,10 @@ _LOCAL_RATE_NEXT_AT: dict[str, float] = {}
 
 
 def _provider_local_rate(provider: str) -> float:
+    if provider == "crossref":
+        # Crossref public list/filter pool is 1 req/s; the polite pool is 3 req/s.
+        return 3.0 if os.environ.get("CROSSREF_MAILTO", "").strip() else 1.0
     return {
-        "crossref": 2.0,
         "semantic_scholar": 5.0,
         "europe_pmc": 5.0,
         "openalex": 10.0,
