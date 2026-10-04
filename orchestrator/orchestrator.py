@@ -4162,6 +4162,11 @@ def _run_one_step_inner(
         )
     except ControlPlaneError as resource_exc:
         attempt_budget.refund(1)
+        if live and node.tool in {"gemini", "openai"}:
+            workflow["llm_calls_used"] = max(
+                0,
+                int(workflow.get("llm_calls_used", 0)) - 1,
+            )
         node.error = {
             "type": type(resource_exc).__name__,
             "message": str(resource_exc),
@@ -4617,6 +4622,11 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     )
                 except ControlPlaneError as resource_exc:
                     attempt_budget.refund(1)
+                    if live and node.tool in {"gemini", "openai"}:
+                        workflow["llm_calls_used"] = max(
+                            0,
+                            int(workflow.get("llm_calls_used", 0)) - 1,
+                        )
                     node.error = {
                         "type": type(resource_exc).__name__,
                         "message": str(resource_exc),
