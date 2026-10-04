@@ -3033,6 +3033,10 @@ def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
 
 
 def extract_first_llm_json(output: dict[str, Any]) -> dict[str, Any] | None:
+    bound = output.get("epistemic_verdict")
+    if isinstance(bound, dict):
+        # The supervisor-bound verdict is authoritative after provenance validation.
+        return bound
     candidates = output.get("candidates")
     if not isinstance(candidates, list):
         return None
