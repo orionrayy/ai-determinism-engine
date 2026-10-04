@@ -2327,7 +2327,12 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
                 "without using candidate identity or majority signals. Explicitly preserve "
                 "material disagreement and unknowns. Return a decision summary, confidence, "
                 "and claim-level evidence references. Do not resolve a disagreement merely "
-                "because one candidate sounds more certain."
+                "because one candidate sounds more certain. For every claim-level challenge "
+                "in the deliberation context, return deliberation_responses with claim_id, "
+                "status (resolved, contested, or unknown), evidence_refs, and evidence_delta. "
+                "evidence_delta.mode must be added, reassessed, or preserved_uncertainty; "
+                "added requires attached_refs, while reassessed carries no attached/detached refs. "
+                "Use only evidence records from the trusted context."
             )
         if node.contract.get("truth_lock"):
             instruction += (
