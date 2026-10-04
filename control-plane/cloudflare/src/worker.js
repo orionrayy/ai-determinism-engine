@@ -332,6 +332,9 @@ export class WorkflowControlPlane {
         "INSERT INTO outbox(event_type,payload_json,created_at) VALUES(?,?,?)",
         eventType, raw, at
       );
+      this.ctx.storage.sql.exec(
+        "DELETE FROM outbox WHERE sequence <= COALESCE((SELECT MAX(sequence) FROM outbox) - 256, -1)"
+      );
       return Number(result.meta.last_row_id);
     });
     return json({status:"appended",sequence});
