@@ -3309,10 +3309,7 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         dependencies = context.get("dependencies", {}) if isinstance(context, dict) else {}
         source_id = str(node.contract.get("truth_lock_source_node") or "").strip()
         source_output = dependencies.get(source_id, {}).get("output") if isinstance(dependencies.get(source_id), dict) else None
-        source_verdict = (
-            source_output if isinstance(source_output, dict)
-            else None
-        )
+        source_verdict = extract_first_llm_json(source_output) if isinstance(source_output, dict) else None
         draft_verdict = extract_first_llm_json(output)
         if not isinstance(source_verdict, dict) or not isinstance(draft_verdict, dict):
             raise RuntimeError("truth-lock validation requires structured source and draft verdicts")
