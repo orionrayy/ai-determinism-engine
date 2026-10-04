@@ -126,10 +126,11 @@
     "risk": "low"
   },
   "openalex": {
-    "required_env": "OPENALEX_API_KEY",
+    "required_env": null,
     "side_effects": [],
-    "free_tier": false,
-    "cost_class": "metered_free_allowance",
+    "free_tier": true,
+    "cost_class": "free_allowance",
+    "hard_free_requires_no_key": true,
     "risk": "low"
   },
   "webhook": {
