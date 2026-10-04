@@ -315,6 +315,27 @@ class V75BoundaryHardeningTests(unittest.TestCase):
             "medium",
         )
 
+    def test_extractor_prefers_supervisor_bound_epistemic_verdict(self):
+        bound = {"confidence": 0.4, "claims": [], "evidence_records": []}
+        raw = {"confidence": 0.99, "claims": [{"claim_id": "forged"}]}
+        result = o.extract_first_llm_json({
+            "epistemic_verdict": bound,
+            "candidates": [{
+                "content": {"parts": [{"text": __import__("json").dumps(raw)}]}
+            }],
+        })
+        self.assertEqual(result, bound)
+
+    def test_source_authority_ignores_self_asserted_class(self):
+        result = sa.source_authority(
+            "arxiv",
+            {
+                "authority_class": "official_primary",
+                "title": "A preprint",
+            },
+        )
+        self.assertEqual(result["authority_class"], "preprint")
+
     def test_gemini_uses_thinking_config_and_authoritative_packed_context(self):
         context = {
             "dependencies": {
