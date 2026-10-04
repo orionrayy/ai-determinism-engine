@@ -3189,39 +3189,6 @@ def execution_failure_policy(
     )
 
 
-def execute_with_resource_locks(
-    workflow: dict[str, Any],
-    node: Node,
-    registry: dict[str, dict[str, Any]],
-    execute: Any,
-    *,
-    control_plane: ControlPlaneClient | None,
-    control_plane_lease: Any | None,
-):
-    if control_plane is None or not node_resource_keys(node):
-        return execute()
-
-    locks = []
-    try:
-        for resource_key in node_resource_keys(node):
-            lock = control_plane.acquire_resource(
-                resource_key,
-                workflow_id=workflow["id"],
-            )
-            locks.append(lock)
-        return execute(locks)
-    finally:
-        for lock in reversed(locks):
-            try:
-                control_plane.release_resource(
-                    lock.resource_key,
-                    workflow_id=workflow["id"],
-                    fence_epoch=lock.fence_epoch,
-                )
-            except ControlPlaneError:
-                pass
-
-
 def acquire_node_resource_locks(
     workflow: dict[str, Any],
     node: Node,
