@@ -159,21 +159,21 @@ class ActionsConfigTests(unittest.TestCase):
     def test_scheduled_recovery_compacts_terminal_state(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('compact_terminal_workflows', recovery)
-        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
-        self.assertIn('git add .orchestrator/workflows', recovery)
+        self.assertIn('compact_terminal_workflows', self.recovery_worker)
+        self.assertIn('compact_terminal_workflows(compact_state', self.recovery_worker)
+        self.assertIn('git add -A .orchestrator', self.orchestrator)
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
         self.assertIn("github.event_name != 'schedule'", self.orchestrator)
-        self.assertIn('"workflow_id": workflow_id', self.orchestrator)
-        self.assertIn('"orchestrator.continue"', self.orchestrator)
+        self.assertIn('"workflow_id": current_id', self.recovery_worker)
+        self.assertIn('"orchestrator.continue"', self.recovery_worker)
 
     def test_scheduled_recovery_uses_canonical_loader(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('from orchestrator.orchestrator import (', recovery)
-        self.assertIn('load_state', recovery)
+        self.assertIn('from orchestrator.orchestrator import compact_terminal_workflows, load_state', self.recovery_worker)
+        self.assertIn('load_state()', self.recovery_worker)
         self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
 
 
