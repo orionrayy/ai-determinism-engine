@@ -3964,7 +3964,7 @@ def _run_one_step_inner(
         mark_execution_started(workflow, node, execution_id)
         workflow['nodes'] = [asdict(item) for item in nodes]
         persist_workflow(workflow)
-        if live and side_effecting(node, registry):
+        if live and side_effecting(node, registry) and control_plane is None:
             try:
                 commit_side_effect_start(
                     ROOT,
@@ -4052,6 +4052,9 @@ def _run_one_step_inner(
                 semantic_digest,
                 fence_epoch,
             )
+            workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                "durability_authority"
+            ] = "control_plane"
 
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
     append_event('agent.started', {
@@ -4372,7 +4375,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     mark_execution_started(workflow, node, execution_id)
                     workflow["nodes"] = [asdict(item) for item in nodes]
                     persist_workflow(workflow)
-                    if live and side_effecting(node, registry):
+                                if live and side_effecting(node, registry) and control_plane is None:
                         try:
                             commit_side_effect_start(
                                 ROOT,
@@ -4460,6 +4463,9 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         semantic_digest,
                         fence_epoch,
                     )
+                    workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                        "durability_authority"
+                    ] = "control_plane"
                     append_event("node.control_plane_claimed", {
                         "workflow_id": workflow["id"],
                         "node_id": node.id,
