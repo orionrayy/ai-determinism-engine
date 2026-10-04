@@ -168,9 +168,8 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('git add .orchestrator/workflows', self.orchestrator)
     def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
         workflow = read_workflow_text()
-        self.assertIn('gh api', workflow)
-        self.assertIn('--method', workflow)
-        self.assertIn('"POST"', workflow)
+        self.assertIn('"gh",\n                          "api",', workflow)
+        self.assertIn('"--method",\n                          "POST"', workflow)
         self.assertIn('check=False', workflow)
         self.assertNotIn("status == 'waiting_approval'", workflow)
         self.assertIn('recovery_event_id', workflow)
