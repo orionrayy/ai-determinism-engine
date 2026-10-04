@@ -157,7 +157,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.yml', self.tests)
 
     def test_scheduled_recovery_compacts_terminal_state(self):
-        start = self.orchestrator.index('schedule-recovery:')
+        start = self.orchestrator.index('\n  schedule-recovery:') + 1
         recovery = self.orchestrator[start:]
         self.assertIn('compact_terminal_workflows', recovery)
         self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
