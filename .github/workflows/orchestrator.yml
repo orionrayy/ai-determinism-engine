@@ -290,6 +290,8 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           SCHEDULE_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_RECOVERY_STALE_SECONDS: ${{ vars.ORCHESTRATOR_RECOVERY_STALE_SECONDS || '1500' }}
+          ORCHESTRATOR_CONTROL_PLANE_URL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_URL }}
+          ORCHESTRATOR_CONTROL_PLANE_SECRET: ${{ secrets.ORCHESTRATOR_CONTROL_PLANE_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
@@ -300,10 +302,13 @@ jobs:
           from datetime import datetime, timezone
 
           from orchestrator.orchestrator import (
+              AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
               DEFAULT_TERMINAL_COMPACTION_DAYS,
               compact_terminal_workflows,
               load_state,
+              workflow_authority_mode,
           )
+          from orchestrator.control_plane import ControlPlaneClient, ControlPlaneError
           from orchestrator.scheduled_recovery import (
               DEFAULT_STALE_SECONDS,
               is_recovery_candidate,
@@ -364,6 +369,15 @@ jobs:
 
           dispatched = 0
           dispatch_failures = []
+          control_plane = None
+          if (
+              os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
+              and os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
+          ):
+              try:
+                  control_plane = ControlPlaneClient.from_env()
+              except ControlPlaneError as exc:
+                  print(f"control_plane_config_failed: {type(exc).__name__}: {exc}")
 
           for workflow in state.get("workflows", {}).values():
               if not isinstance(workflow, dict):
@@ -372,20 +386,50 @@ jobs:
               if not workflow_id:
                   continue
 
+              candidate_workflow = workflow
+              recovery_due = None
+              control_plane_event_id = ""
+              if workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
+                  if control_plane is None:
+                      dispatch_failures.append(
+                          f"{workflow_id}: distributed state authority unavailable"
+                      )
+                      continue
+                  try:
+                      remote = control_plane.get_workflow_state(workflow_id)
+                  except ControlPlaneError as exc:
+                      dispatch_failures.append(
+                          f"{workflow_id}: control-plane read failed: "
+                          f"{type(exc).__name__}: {exc}"
+                      )
+                      continue
+                  if remote is None:
+                      dispatch_failures.append(
+                          f"{workflow_id}: control-plane state absent"
+                      )
+                      continue
+                  candidate_workflow = dict(remote.state)
+                  candidate_workflow["control_plane_state_version"] = remote.state_version
+                  recovery_due = bool(candidate_workflow.get("recovery_due"))
+                  control_plane_event_id = str(
+                      candidate_workflow.get("recovery_event_id") or ""
+                  )
+
               active_run_status = None
               if (
-                  workflow.get("status") == "running"
-                  and workflow.get("github_run_id")
+                  candidate_workflow.get("status") == "running"
+                  and candidate_workflow.get("github_run_id")
               ):
                   active_run_status = github_run_status(
-                      str(workflow.get("github_run_id"))
+                      str(candidate_workflow.get("github_run_id"))
                   )
 
               if not is_recovery_candidate(
-                  workflow,
+                  candidate_workflow,
                   now,
                   active_run_status=active_run_status,
                   stale_seconds=stale_seconds,
+                  recovery_due=recovery_due,
               ):
                   continue
 
@@ -429,6 +473,17 @@ jobs:
                   continue
 
               dispatched += 1
+              if control_plane is not None and control_plane_event_id:
+                  try:
+                      control_plane.ack_recovery(
+                          workflow_id,
+                          event_id,
+                      )
+                  except ControlPlaneError as exc:
+                      print(
+                          f"recovery_ack_failed workflow_id={workflow_id}: "
+                          f"{type(exc).__name__}: {exc}"
+                      )
 
           retention_raw = os.environ.get(
               "ORCHESTRATOR_TERMINAL_COMPACTION_DAYS",
