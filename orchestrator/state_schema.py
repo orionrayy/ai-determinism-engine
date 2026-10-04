@@ -21,7 +21,7 @@ except ImportError:
     )
 
 CURRENT_STATE_VERSION = 4
-CURRENT_WORKFLOW_SCHEMA_VERSION = 7
+CURRENT_WORKFLOW_SCHEMA_VERSION = 8
 MAX_PARALLEL = 8
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
@@ -82,6 +82,8 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             "input_digest",
             "intent_fingerprint",
             "ingress_intent_digest",
+            "plan_intent_fingerprint",
+            "provider_resolution_fingerprint",
         ):
             value = workflow.get(field_name)
             if value in (None, ""):
@@ -203,6 +205,13 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 f"workflow {workflow_id!r}.authority_mode is invalid"
             )
         workflow.setdefault("plan_fingerprint", None)
+        workflow.setdefault("plan_intent_fingerprint", None)
+        workflow.setdefault("provider_resolution_fingerprint", None)
+        provider_change = workflow.get("provider_resolution_change")
+        if provider_change is not None and not isinstance(provider_change, dict):
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.provider_resolution_change must be an object or null"
+            )
         if "plan_integrity" not in workflow:
             workflow["plan_integrity"] = (
                 "legacy_unverified" if workflow.get("plan_fingerprint") is None else "pending"
