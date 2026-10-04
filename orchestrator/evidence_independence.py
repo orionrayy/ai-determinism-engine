@@ -54,6 +54,8 @@ def _identifier(record: Mapping[str, Any]) -> tuple[str, str]:
     ):
         value = _norm(record.get(field))
         if value:
+            if prefix == "arxiv":
+                value = re.sub(r"v[0-9]+$", "", value)
             return f"{prefix}:{value}", "strong"
 
     canonical = _norm(record.get("canonical_id"))
