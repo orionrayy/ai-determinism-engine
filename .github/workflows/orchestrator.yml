@@ -410,10 +410,8 @@ jobs:
                       continue
                   candidate_workflow = dict(remote.state)
                   candidate_workflow["control_plane_state_version"] = remote.state_version
-                  recovery_due = bool(candidate_workflow.get("recovery_due"))
-                  control_plane_event_id = str(
-                      candidate_workflow.get("recovery_event_id") or ""
-                  )
+                  recovery_due = bool(remote.recovery_due)
+                  control_plane_event_id = str(remote.recovery_event_id or "")
 
               active_run_status = None
               if (
