@@ -580,6 +580,29 @@ Phase 6 — production:
 - security hardening;
 - workload SLOs.
 
+## 18. Workload classes
+
+High-volume systems become unstable when fundamentally different workloads share one queue and one concurrency policy. v80 should classify work before scheduling it.
+
+| Class | Examples | Queue policy | Worker policy | State policy |
+|---|---|---|---|---|
+| Microtask | validation, normalization, routing | high-throughput, short visibility | many cheap slots | inline result or tiny shard |
+| I/O research | provider search, fetch, extraction | provider-aware rate limits | I/O-oriented pool | blob references |
+| LLM reasoning | planning, analysis, adjudication | token-aware priority | low concurrency, high timeout | bounded prompt/result shards |
+| Long task | crawling, batch conversion, simulation | long visibility, heartbeats | dedicated pool | checkpoint frequently |
+| Side effect | publish, payment-like API, mutation | strict admission, effect fencing | isolated/trusted pool | effect record mandatory |
+| Recovery | reconciliation, stale lease repair | high priority, bounded concurrency | control/recovery pool | control metadata only |
+
+Scheduling keys should therefore include both capability and workload class.
+
+A practical deterministic priority function is:
+
+priority = deadline urgency + workflow weight + tenant fairness + class priority + starvation protection
+
+The scheduler must not use LLM output to decide raw infrastructure priority. The LLM may recommend a workflow plan, but queue admission and worker placement remain deterministic policy.
+
+For exploration mode, the engine should prefer breadth with strict budgets. For production research, it should prefer verified source quality and provider-aware throughput. For side effects, correctness dominates throughput. This avoids forcing every future skill into the same execution envelope.
+
 ## 18. Non-goals
 
 - pretending Cloudflare Free is an enterprise SLA;
