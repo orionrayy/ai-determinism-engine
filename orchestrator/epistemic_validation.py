@@ -113,6 +113,7 @@ def claim_coverage(claims: list[Mapping[str, Any]]) -> dict[str, Any]:
         "evidence_linked_material_claims": len(evidence_linked),
         # Retained as the semantic "supported claim coverage" metric.
         "coverage": (len(supported) / total) if total else 1.0,
+        "supported_coverage": (len(supported) / total) if total else 1.0,
         # Used for minimum coverage because contested/unknown claims can be
         # honest while still being explicitly evidence-linked.
         "evidence_coverage": (len(evidence_linked) / total) if total else 1.0,
@@ -176,6 +177,7 @@ def validate_epistemic_output(
         evidence_result["passed"]
         and claim_result["passed"]
         and threshold_ok
+        and not selective.get("abstain")
     )
     return {
         **base_result,
