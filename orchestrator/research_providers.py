@@ -231,9 +231,17 @@ def search_openalex(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[
         "per-page": str(max(1, min(int(max_results), 50))),
         "select": "id,doi,title,authorships,publication_year,primary_location,cited_by_count,open_access,best_oa_location",
     }
+    free_only = os.environ.get(
+        "ORCHESTRATOR_FREE_ONLY", "true"
+    ).strip().lower() == "true"
     key = os.environ.get("OPENALEX_API_KEY", "").strip()
-    if key:
+    # Hard free-only mode never sends a key, avoiding accidental consumption
+    # of prepaid/paid OpenAlex balance. The anonymous API remains zero-dollar.
+    if key and not free_only:
         params["api_key"] = key
+    mailto = os.environ.get("OPENALEX_MAILTO", "").strip()
+    if mailto:
+        params["mailto"] = mailto[:256]
     url = "https://api.openalex.org/works?" + urllib.parse.urlencode(params)
     return _request_json(url)
 
