@@ -12,6 +12,38 @@ from research_providers import (
 )
 
 class ResearchProviderTests(unittest.TestCase):
+    def test_crossref_public_payload_normalizes_and_classifies_access(self):
+        payload = {
+            "message": {
+                "items": [{
+                    "DOI": "10.1000/crossref",
+                    "title": ["Crossref Example"],
+                    "author": [{"given": "Jane", "family": "Doe"}],
+                    "published": {"date-parts": [[2026, 10, 4]]},
+                    "type": "journal-article",
+                    "abstract": "<jats:p>Structured abstract.</jats:p>",
+                    "URL": "https://publisher.example/article",
+                }]
+            }
+        }
+        records = normalize_provider_payload("crossref", payload)
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record["canonical_id"], "doi:10.1000/crossref")
+        self.assertEqual(record["access_level"], "L3")
+        self.assertEqual(record["access_route"], "publisher_url")
+        self.assertTrue(0.0 <= record["authority_score"] <= 1.0)
+        self.assertTrue(record["authority_heuristic"])
+
+    def test_crossref_is_available_in_free_only_mode(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False),              patch("research_providers._provider_search", return_value={"message": {"items": []}}) as search:
+            result = research_records("topic")
+        self.assertEqual(
+            result["providers"],
+            ["semantic_scholar", "europe_pmc", "crossref"],
+        )
+        self.assertEqual(search.call_count, 3)
+
     def test_openalex_payload_normalizes_to_evidence_records(self):
         payload = {
             "results": [{
