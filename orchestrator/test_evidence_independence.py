@@ -58,6 +58,27 @@ class EvidenceIndependenceTests(unittest.TestCase):
         self.assertEqual(summary["heuristic_work_count"], 1)
         self.assertEqual(summary["independence_proxy_confidence"], 0.8)
 
+    def test_doi_and_arxiv_versions_with_matching_bibliography_count_as_one_work(self):
+        records = [
+            {
+                "doi": "10.1234/example",
+                "provider": "crossref",
+                "title": "Example Study",
+                "authors": ["Alice Example", "Bob Example"],
+                "year": 2026,
+            },
+            {
+                "arxiv_id": "2601.1234v2",
+                "provider": "arxiv",
+                "title": "Example Study",
+                "authors": ["Alice Example", "Bob Example"],
+                "year": 2026,
+            },
+        ]
+        summary = independence_summary(records)
+        self.assertEqual(summary["distinct_work_count"], 1)
+        self.assertEqual(summary["crosswalked_work_count"], 1)
+
     def test_provider_identifier_is_not_called_strong(self):
         summary = independence_summary([
             {"provider": "example", "provider_id": "x"},
