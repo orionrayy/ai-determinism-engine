@@ -109,14 +109,14 @@ class ScheduledRecoveryTests(unittest.TestCase):
         }
         self.assertTrue(is_recovery_candidate(workflow, self.now))
 
-    def test_uncertain_non_connector_tool_does_not_trigger_side_effect_recovery(self):
+    def test_uncertain_non_reconcilable_tool_does_not_trigger_side_effect_recovery(self):
         workflow = {
             "id": "wf-uncertain",
             "status": "failed",
             "nodes": [{
                 "id": "n1",
                 "status": "failed",
-                "tool": "github",
+                "tool": "openai",
                 "error": {"execution_uncertain": True},
             }],
         }
