@@ -69,7 +69,8 @@ export class WorkflowControlPlane {
 
   acquire(body) {
     const owner = String(body.owner || "").trim();
-    if (!owner || owner.length > 128) throw new Error("owner_invalid");
+    const workflowId = String(body.workflow_id || "").trim();
+    if (!owner || owner.length > 128 || !workflowId) throw new Error("workflow_lease_identity_invalid");
     const at = now();
     const result = this.ctx.storage.transactionSync(() => {
       const current = this.lease();
@@ -79,34 +80,50 @@ export class WorkflowControlPlane {
       const epoch = current && Number(current.expires_at) > at ? Number(current.fence_epoch) : (current ? Number(current.fence_epoch) + 1 : 1);
       const expires = at + ttl(body.ttl_seconds);
       this.ctx.storage.sql.exec(
-        "INSERT INTO lease(singleton,owner,fence_epoch,expires_at) VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET owner=excluded.owner,fence_epoch=excluded.fence_epoch,expires_at=excluded.expires_at",
-        owner, epoch, expires
+        "INSERT INTO lease(singleton,owner,fence_epoch,expires_at,workflow_id) VALUES(1,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET owner=excluded.owner,fence_epoch=excluded.fence_epoch,expires_at=excluded.expires_at,workflow_id=excluded.workflow_id",
+        owner, epoch, expires, workflowId
       );
-      return {status: current && Number(current.expires_at) > at ? "renewed" : "acquired", owner, fence_epoch:epoch, expires_at:expires};
+      return {
+        status: current && Number(current.expires_at) > at ? "renewed" : "acquired",
+        owner,
+        workflow_id: workflowId,
+        fence_epoch: epoch,
+        expires_at: expires
+      };
     });
     return result.conflict ? json({error:"lease_held",expires_at:result.expires_at},409) : json(result);
   }
 
   renew(body) {
     const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
     const epoch = Number(body.fence_epoch);
     const at = now();
     const result = this.ctx.storage.transactionSync(() => {
+      const current = this.lease();
+      if (!current || String(current.workflow_id || "") !== workflowId) {
+        throw conflict("workflow_lease_identity_mismatch");
+      }
       this.requireLease(owner, epoch, at);
       const expires = at + ttl(body.ttl_seconds);
       this.ctx.storage.sql.exec("UPDATE lease SET expires_at=? WHERE singleton=1 AND owner=? AND fence_epoch=?", expires, owner, epoch);
-      return {status:"renewed", owner, fence_epoch:epoch, expires_at:expires};
+      return {status:"renewed", owner, workflow_id:workflowId, fence_epoch:epoch, expires_at:expires};
     });
     return json(result);
   }
 
   release(body) {
     const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
     const epoch = Number(body.fence_epoch);
     return json({status:this.ctx.storage.transactionSync(() => {
       const current = this.lease();
       if (!current) return "already_released";
-      if (String(current.owner) !== owner || Number(current.fence_epoch) !== epoch) throw conflict("stale_or_missing_lease");
+      if (
+        String(current.owner) !== owner ||
+        String(current.workflow_id || "") !== workflowId ||
+        Number(current.fence_epoch) !== epoch
+      ) throw conflict("stale_or_missing_lease");
       this.ctx.storage.sql.exec("DELETE FROM lease WHERE singleton=1");
       return "released";
     })});
