@@ -372,6 +372,23 @@ class ControlPlaneClient:
             },
         )
 
+    def clear_recovery(
+        self,
+        workflow_id: str,
+        *,
+        owner: str,
+        fence_epoch: int,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/clear"),
+            {
+                "workflow_id": str(workflow_id),
+                "owner": str(owner),
+                "fence_epoch": int(fence_epoch),
+            },
+        )
+
     def claim_recovery(
         self,
         workflow_id: str,
