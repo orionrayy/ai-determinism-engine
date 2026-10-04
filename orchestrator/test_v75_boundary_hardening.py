@@ -336,6 +336,36 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         )
         self.assertEqual(result["authority_class"], "preprint")
 
+    def test_trusted_evidence_is_pruned_by_complete_records(self):
+        from context_budget import pack_node_context
+        records = [
+            {
+                "canonical_id": f"source:{i}",
+                "title": "x" * 2000,
+                "authority_score": 0.5 + (i / 100),
+                "independence_confidence": 0.9,
+            }
+            for i in range(20)
+        ]
+        packed = pack_node_context(
+            goal="evidence pruning",
+            dependencies={},
+            contract={},
+            repair_feedback={},
+            trusted_evidence_records=records,
+            max_bytes=48 * 1024,
+        )
+        self.assertIsInstance(packed["trusted_evidence"], list)
+        self.assertTrue(packed["trusted_evidence"])
+        self.assertEqual(
+            len(packed["trusted_evidence"]),
+            packed["context_budget"]["trusted_evidence_count"],
+        )
+        self.assertTrue(
+            packed["context_budget"]["trusted_evidence_omitted"]
+            or len(packed["trusted_evidence"]) == len(records)
+        )
+
     def test_gemini_uses_thinking_config_and_authoritative_packed_context(self):
         context = {
             "dependencies": {
