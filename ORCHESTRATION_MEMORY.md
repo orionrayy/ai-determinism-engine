@@ -704,3 +704,12 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Quota-sensitive adapters (`gemini`, `openai`, `research_bundle`) are serialized in the supervisor batch scheduler to avoid free-tier burst amplification. Independent non-quota-sensitive nodes remain parallelizable.
 - Federated worker matrix default is now `max-parallel: 1` because worker LLM calls execute on separate runners and share upstream quotas. Federation remains opt-in and task-count bounded.
 - Semantic Scholar documents that its public API is rate-limited and may be further throttled; its documentation recommends keys/bulk endpoints for heavier use. The local cache therefore reduces repeated requests but does not imply unlimited provider access. The project must treat “$0” as a deployment/configuration target, not as an upstream guarantee.
+
+
+## v68.2 control-plane boundary hardening (2026-10-04)
+- Direct GitHub side effects now have deterministic reconciliation semantics where GitHub exposes enough observable state: issue creation uses a durable execution marker in the issue body; file create/update proves an already-applied effect by exact content equality; file deletion proves an already-applied effect by a 404.
+- GitHub workflow dispatch remains explicitly non-reconcilable in the generic adapter because the dispatch API does not provide a durable caller idempotency key or returned run identifier. The runtime therefore fails closed instead of guessing.
+- Bridge runtime now supports an optional stdlib SQLite idempotency ledger through ORCHESTRATOR_BRIDGE_IDEMPOTENCY_DB. Completed responses survive process restart and multiple bridge processes sharing the same database file. In-flight entries are retained on owner failure so an uncertain upstream side effect cannot become an automatic replay.
+- Durable bridge idempotency is deployment-storage dependent: a shared persistent SQLite file improves process/multiprocess safety on one host; it is not a substitute for a distributed database or fencing-aware external provider.
+- Added regression coverage for SQLite-backed replay and GitHub-effect reconciliation boundaries.
+- Kept all runtime dependencies stdlib-only and did not introduce a paid service.
