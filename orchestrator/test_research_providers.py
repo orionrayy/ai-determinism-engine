@@ -62,6 +62,22 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertTrue(record["retraction_signal"])
         self.assertEqual(record["access_verification"], "metadata_only")
 
+    def test_retracted_work_is_not_counted_as_independent_evidence(self):
+        from evidence_records import count_independent_sources
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/retracted-only",
+                        "title": ["Retracted Only"],
+                        "update-to": [{"type": "retraction", "source": "retraction-watch"}],
+                    }]
+                }
+            },
+        )
+        self.assertEqual(count_independent_sources(records), 0)
+
     def test_publisher_url_without_full_text_is_only_metadata_access(self):
         records = normalize_provider_payload(
             "crossref",
