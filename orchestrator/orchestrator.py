@@ -4673,11 +4673,12 @@ def _run_one_step_inner(
         persist_workflow(workflow)
         return "failed"
     workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
+    transition(node, "running")
+    workflow["nodes"] = [asdict(item) for item in nodes]
+    # One durable write captures both budget reservation and the running state.
+    # Side-effecting nodes still perform their separate prepared/started barrier
+    # writes below; the consolidation only removes a redundant pre-transition write.
     persist_workflow(workflow)
-    transition(node, 'running')
-    if not side_effecting(node, registry):
-        workflow['nodes'] = [asdict(item) for item in nodes]
-        persist_workflow(workflow)
     execution_id = execution_key(workflow, node)
     resource_leases = []
     try:
