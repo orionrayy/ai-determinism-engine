@@ -1,0 +1,227 @@
+import json
+import os
+import unittest
+from contextlib import nullcontext
+from unittest.mock import patch
+
+import capability_graph as cg
+import epistemic_deliberation as ed
+import epistemic_validation as ev
+import orchestrator as o
+
+
+class V75BoundaryHardeningTests(unittest.TestCase):
+    def test_control_plane_configuration_requires_both_coordinates(self):
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example", "ORCHESTRATOR_CONTROL_PLANE_SECRET": ""},
+            clear=True,
+        ):
+            self.assertFalse(o.control_plane_configured())
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_CONTROL_PLANE_URL": "", "ORCHESTRATOR_CONTROL_PLANE_SECRET": "secret"},
+            clear=True,
+        ):
+            self.assertFalse(o.control_plane_configured())
+
+    def test_git_authority_does_not_open_control_plane_session(self):
+        workflow = {"id": "wf-git", "live": True, "authority_mode": "git_durable"}
+        with patch.object(o.ControlPlaneClient, "from_env", side_effect=AssertionError("unexpected control plane")),              patch.object(o, "persist_workflow"):
+            with patch.dict(o.os.environ, {}, clear=True):
+                with o.control_plane_session(workflow) as context:
+                    self.assertEqual(context, (None, None))
+
+    def test_distributed_authority_fails_closed_when_control_plane_missing(self):
+        workflow = {"id": "wf-dist", "live": True, "authority_mode": "distributed_control_plane"}
+        with patch.object(o, "persist_workflow"), patch.object(o, "append_event"):
+            with patch.dict(o.os.environ, {}, clear=True):
+                with self.assertRaisesRegex(RuntimeError, "distributed control-plane authority"):
+                    with o.control_plane_session(workflow):
+                        pass
+
+    def test_create_workflow_persists_immutable_authority_mode(self):
+        with patch.dict(o.os.environ, {}, clear=True),              patch.object(o, "load_registry", return_value={}),              patch.object(o, "tool_available", return_value=False):
+            git_workflow = o.create_workflow("do work", live=True)
+        self.assertEqual(git_workflow["authority_mode"], "git_durable")
+
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "secret",
+            },
+            clear=True,
+        ), patch.object(o, "load_registry", return_value={}),              patch.object(o, "tool_available", return_value=False):
+            distributed_workflow = o.create_workflow("do work", live=True)
+        self.assertEqual(
+            distributed_workflow["authority_mode"],
+            "distributed_control_plane",
+        )
+
+    def test_preferred_capability_tool_is_a_real_preference(self):
+        registry = {
+            "capability:analyze": {
+                "default_tool": "free",
+                "fallback_tools": ["free_keyed"],
+            },
+            "free": {"free_tier": True, "required_env": None, "risk": "low"},
+            "free_keyed": {"free_tier": True, "required_env": "FREE_KEY", "risk": "low"},
+        }
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "FREE_KEY": "x"},
+            clear=True,
+        ):
+            self.assertEqual(
+                cg.route_capability(
+                    "analyze",
+                    registry,
+                    live=True,
+                    preferred="free_keyed",
+                ),
+                "free_keyed",
+            )
+
+    def test_selective_gate_uses_canonical_coverage_and_blocks_high_confidence_mismatch(self):
+        output = {
+            "confidence": 0.95,
+            "claims": [
+                {
+                    "claim_id": "c1",
+                    "statement": "supported",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["a"],
+                },
+                {
+                    "claim_id": "c2",
+                    "statement": "contested",
+                    "material": True,
+                    "status": "CONTESTED",
+                    "evidence_refs": ["b"],
+                },
+            ],
+            "evidence_records": [
+                {"canonical_id": "a"},
+                {"canonical_id": "b"},
+            ],
+        }
+        result = ev.validate_epistemic_output(output)
+        self.assertFalse(result["passed"])
+        self.assertTrue(result["selective"]["abstain"])
+        self.assertIn("supported_coverage", result["selective"]["failed_checks"])
+
+    def test_selective_abstention_is_not_telemetry_only(self):
+        output = {
+            "confidence": 0.95,
+            "claims": [
+                {
+                    "claim_id": "c1",
+                    "statement": "supported",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["a"],
+                },
+                {
+                    "claim_id": "c2",
+                    "statement": "unsupported",
+                    "material": True,
+                    "status": "UNSUPPORTED",
+                    "evidence_refs": [],
+                },
+            ],
+            "evidence_records": [{"canonical_id": "a"}],
+        }
+        result = ev.validate_epistemic_output(output)
+        self.assertFalse(result["passed"])
+        self.assertTrue(result["selective_abstention"])
+
+    def test_debate_ignores_self_reported_independence_count(self):
+        proposals = [
+            {
+                "agent_id": "a1",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["x"],
+                "independent_source_count": 99,
+            },
+            {
+                "agent_id": "a2",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["x"],
+                "independent_source_count": 99,
+            },
+        ]
+        result = ed.debate_decision(proposals)
+        self.assertTrue(result["required"])
+        self.assertEqual(result["reason"], "insufficient_evidence")
+
+    def test_debate_accepts_computed_independence(self):
+        proposals = [
+            {
+                "agent_id": "a1",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["x"],
+                "independence": {"distinct_work_count": 2},
+            },
+            {
+                "agent_id": "a2",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["y"],
+                "independence": {"distinct_work_count": 2},
+            },
+        ]
+        result = ed.debate_decision(proposals)
+        self.assertFalse(result["required"])
+        self.assertEqual(result["reason"], "stable_consensus")
+
+    def test_gemini_uses_thinking_config_and_authoritative_packed_context(self):
+        context = {"dependencies": {"d1": {"output": {"text": "x" * 30000}}}}
+        node = o.Node(
+            "n1",
+            "analyze",
+            "gemini",
+            [],
+            input={"workflow_id": "wf", "instruction": "analyze", "context": context},
+        )
+        captured = {}
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "required_env": "GEMINI_API_KEY",
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            }
+        }
+        def fake_http(url, **kwargs):
+            captured["payload"] = kwargs["body"]
+            return {"candidates": [{"content": {"parts": [{"text": '{"result":"ok"}'}]}}]}
+
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_FREE_ONLY": "true",
+                "GEMINI_API_KEY": "x",
+            },
+            clear=True,
+        ), patch.object(o, "load_registry", return_value=registry),              patch.object(o, "http_json", side_effect=fake_http):
+            o.execute_gemini(node, "analyze")
+
+        generation = captured["payload"]["generationConfig"]
+        self.assertNotIn("temperature", generation)
+        self.assertNotIn("candidateCount", generation)
+        self.assertEqual(
+            generation["thinkingConfig"]["thinkingLevel"],
+            "medium",
+        )
+        context_text = captured["payload"]["contents"][0]["parts"][0]["text"]
+        self.assertIn('"text":', context_text)
+        self.assertIn("xxxxxxxxxx", context_text)
+
+
+if __name__ == "__main__":
+    unittest.main()
