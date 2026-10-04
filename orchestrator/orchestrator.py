@@ -108,7 +108,7 @@ EVENT_DIR = STATE_DIR / "events"
 CHECKPOINT_DIR = STATE_DIR / "checkpoints"
 REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 
-MAX_NODES = 24
+MAX_NODES = STATE_MAX_NODES
 MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
@@ -188,9 +188,18 @@ class Node:
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-def write_json(path: Path, value: Any) -> None:
+def write_json(
+    path: Path,
+    value: Any,
+    *,
+    max_bytes: int | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    if max_bytes is not None and len(payload) > int(max_bytes):
+        raise RuntimeError(
+            f"serialized JSON for {path.name} exceeds {int(max_bytes)} bytes"
+        )
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.",
         suffix=".tmp",
@@ -282,6 +291,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     event_file = _event_file(payload)
     event_file.parent.mkdir(parents=True, exist_ok=True)
     payload = sanitize_for_durable(payload)
+    trace = _trace_envelope(event_type, payload)
     raw_payload = json.dumps(
         payload,
         ensure_ascii=False,
@@ -299,7 +309,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     entry = {
         "ts": utc_now(),
         "event_type": str(event_type),
-        "trace": _trace_envelope(event_type, payload),
+        "trace": trace,
         "payload": payload,
     }
     encoded = (
@@ -1320,6 +1330,7 @@ def _write_workflow_shard(workflow: dict[str, Any]) -> None:
     write_json(
         workflow_shard_path(workflow_id),
         durable_workflow,
+        max_bytes=MAX_WORKFLOW_SHARD_BYTES,
     )
 
 
