@@ -945,8 +945,8 @@ def rearm_stale_federation(
 
 
 def quota_sensitive(node: Node) -> bool:
-    """Keep external quota-bound adapters serialized to avoid free-tier bursts."""
-    return node.tool in {"gemini", "openai", "research_bundle"}
+    """Serialize model APIs; provider-level research throttling is handled separately."""
+    return node.tool in {"gemini", "openai"}
 
 
 EFFECT_RUNTIME_INPUT_KEYS = {
