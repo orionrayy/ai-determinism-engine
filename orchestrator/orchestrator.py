@@ -2522,7 +2522,7 @@ def create_approval_issue(workflow: dict[str, Any], node: Node) -> int:
                 "High-risk orchestration action is waiting for explicit approval.\n\n"
                 f"Workflow: {workflow['id']}\nNode: {node.id}\n"
                 f"Capability: {node.capability}\nTool: {node.tool}\n"
-                f"Goal: {workflow['goal']}\n"
+                f"Goal digest: {hashlib.sha256(str(workflow.get('goal') or '').encode('utf-8')).hexdigest()}\n"
                 f"Approval fingerprint: {approval_fingerprint}\n\n"
                 "Add label 'orchestrator-approved' to approve this action. "
                 "Add label 'orchestrator-rejected' to reject it."
