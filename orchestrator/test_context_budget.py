@@ -95,7 +95,9 @@ class ContextBudgetTests(unittest.TestCase):
         self.assertIsInstance(value, dict)
         self.assertIn("evidence_records", value)
         self.assertIsInstance(value["evidence_records"], list)
-        self.assertIn("independent_source_count", value)
+        self.assertNotIn("independent_source_count", value)
+        self.assertIn("authority_class", value["evidence_records"][0])
+        self.assertIn("authority_score", value["evidence_records"][0])
 
 
 if __name__ == "__main__":
