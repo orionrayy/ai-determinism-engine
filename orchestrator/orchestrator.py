@@ -987,6 +987,12 @@ ACTIVE_CONTROL_PLANE_LEASE: ContextVar[Any | None] = ContextVar(
 )
 
 
+ACTIVE_HOT_STATE_DIGEST: ContextVar[str | None] = ContextVar(
+    "active_hot_state_digest",
+    default=None,
+)
+
+
 @contextmanager
 def control_plane_session(workflow: dict[str, Any]):
     """Hold a workflow-scoped distributed lease for one supervisor turn."""
@@ -1571,6 +1577,22 @@ def _write_workflow_shard(workflow: dict[str, Any]) -> None:
     )
 
 
+def hot_state_digest(workflow: dict[str, Any]) -> str:
+    value = sanitize_for_durable(workflow)
+    if isinstance(value, dict):
+        value = dict(value)
+        value.pop("updated_at", None)
+        value.pop("control_plane_state_version", None)
+    raw = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
 def persist_workflow(workflow: dict[str, Any]) -> None:
     current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
     raw_attempt = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
@@ -1603,6 +1625,10 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     control_plane = ACTIVE_CONTROL_PLANE.get()
     lease = ACTIVE_CONTROL_PLANE_LEASE.get()
     if control_plane is not None and lease is not None and bool(workflow.get("live")):
+        digest = hot_state_digest(workflow)
+        previous_digest = ACTIVE_HOT_STATE_DIGEST.get()
+        if previous_digest == digest:
+            return
         remote_state = sanitize_for_durable(workflow)
         expected = max(0, int(workflow.get("control_plane_state_version", 0)))
         workflow["control_plane_state_version"] = control_plane.put_workflow_state(
@@ -1612,6 +1638,7 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             expected_state_version=expected,
             state=remote_state,
         )
+        ACTIVE_HOT_STATE_DIGEST.set(digest)
         return
 
     _write_workflow_shard(workflow)
