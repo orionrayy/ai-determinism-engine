@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+try:
+    from .calibration_metrics import calibration_summary
+    from .evidence_independence import independence_summary
+except ImportError:
+    from calibration_metrics import calibration_summary
+    from evidence_independence import independence_summary
+
 
 
 def _empty() -> dict[str, Any]:
@@ -20,6 +27,13 @@ def _empty() -> dict[str, Any]:
         "claim_evidence_ref_count": 0,
         "research_evidence_record_count": 0,
         "independent_source_count_max": 0,
+        "distinct_evidence_work_count_max": 0,
+        "independence_proxy_confidence_min": 1.0,
+        "calibration": {
+            "available": False,
+            "sample_count": 0,
+            "reason": "no_explicit_confidence_outcome_labels",
+        },
         "by_node": {},
     }
 
@@ -42,13 +56,21 @@ def _summarize_epistemic(verdict: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(item.get("evidence_refs"), list) and bool(item.get("evidence_refs"))
     ]
     evidence = verdict.get("evidence_records")
-    evidence_count = len(evidence) if isinstance(evidence, list) else 0
-    try:
-        independent_count = max(0, int(verdict.get("independent_source_count") or 0))
-    except (TypeError, ValueError):
-        independent_count = 0
-    if independent_count == 0:
-        independent_count = evidence_count
+    evidence_records = (
+        [item for item in evidence if isinstance(item, Mapping)]
+        if isinstance(evidence, list)
+        else []
+    )
+    independence = independence_summary(evidence_records)
+    evidence_count = len(evidence_records)
+    independent_count = int(independence["distinct_work_count"])
+
+    calibration_inputs = verdict.get("calibration_samples")
+    calibration = calibration_summary(
+        calibration_inputs
+        if isinstance(calibration_inputs, list)
+        else [],
+    )
     total = len(material)
     linked_total = len(linked)
     return {
@@ -68,6 +90,12 @@ def _summarize_epistemic(verdict: Mapping[str, Any]) -> dict[str, Any]:
         ),
         "research_evidence_record_count": evidence_count,
         "independent_source_count": independent_count,
+        "distinct_evidence_work_count": independent_count,
+        "independence_proxy": True,
+        "independence_proxy_confidence": float(
+            independence["independence_proxy_confidence"]
+        ),
+        "calibration": calibration,
     }
 
 
@@ -84,15 +112,23 @@ def record_node_metrics(
         summary = _summarize_epistemic(verdict)
     elif research_output is not None:
         evidence = research_output.get("evidence_records")
-        evidence_count = len(evidence) if isinstance(evidence, list) else 0
-        try:
-            independent_count = max(0, int(research_output.get("independent_source_count") or 0))
-        except (TypeError, ValueError):
-            independent_count = 0
+        evidence_records = (
+            [item for item in evidence if isinstance(item, Mapping)]
+            if isinstance(evidence, list)
+            else []
+        )
+        evidence_count = len(evidence_records)
+        independence = independence_summary(evidence_records)
+        independent_count = int(independence["distinct_work_count"])
         summary = {
             "type": "research",
             "research_evidence_record_count": evidence_count,
             "independent_source_count": independent_count,
+            "distinct_evidence_work_count": independent_count,
+            "independence_proxy": True,
+            "independence_proxy_confidence": float(
+                independence["independence_proxy_confidence"]
+            ),
             "budget": str((research_output.get("research_budget") or {}).get("name") or ""),
             "extended_providers_used": list(research_output.get("extended_providers_used") or [])[:8],
         }
@@ -102,6 +138,7 @@ def record_node_metrics(
     by_node[str(node_id)] = summary
     aggregate = _empty()
     aggregate["by_node"] = by_node
+    calibration_samples: list[Mapping[str, Any]] = []
     for item in by_node.values():
         if item.get("type") == "epistemic":
             aggregate["epistemic_nodes"] += 1
@@ -116,6 +153,19 @@ def record_node_metrics(
                 aggregate["independent_source_count_max"],
                 int(item.get("independent_source_count") or 0),
             )
+            aggregate["distinct_evidence_work_count_max"] = max(
+                aggregate["distinct_evidence_work_count_max"],
+                int(item.get("distinct_evidence_work_count") or 0),
+            )
+            confidence = item.get("calibration")
+            if isinstance(confidence, Mapping) and confidence.get("available"):
+                for sample in (
+                    confidence.get("samples", [])
+                    if isinstance(confidence.get("samples"), list)
+                    else []
+                ):
+                    if isinstance(sample, Mapping):
+                        calibration_samples.append(sample)
         elif item.get("type") == "research":
             aggregate["research_nodes"] += 1
             aggregate["research_evidence_record_count"] += int(
@@ -125,6 +175,9 @@ def record_node_metrics(
                 aggregate["independent_source_count_max"],
                 int(item.get("independent_source_count") or 0),
             )
+    aggregate["calibration"] = calibration_summary(
+        calibration_samples,
+    )
     material = aggregate["material_claims"]
     linked = aggregate["evidence_linked_material_claims"]
     supported = aggregate["supported_material_claims"]
