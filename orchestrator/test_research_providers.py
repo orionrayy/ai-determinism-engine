@@ -117,7 +117,7 @@ class ResearchProviderTests(unittest.TestCase):
             result["providers"],
             ["semantic_scholar", "openalex", "europe_pmc", "crossref"],
         )
-        self.assertEqual(search.call_count, 3)
+        self.assertEqual(search.call_count, 4)
 
     def test_openalex_payload_normalizes_to_evidence_records(self):
         payload = {
