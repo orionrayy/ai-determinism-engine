@@ -3151,6 +3151,71 @@ def execute_with_resource_locks(
                 pass
 
 
+def acquire_node_resource_locks(
+    workflow: dict[str, Any],
+    node: Node,
+    control_plane: ControlPlaneClient | None,
+) -> list[Any]:
+    if control_plane is None:
+        return []
+    leases = []
+    try:
+        for resource_key in node_resource_keys(node):
+            leases.append(
+                control_plane.acquire_resource(
+                    resource_key,
+                    workflow_id=workflow["id"],
+                )
+            )
+        return leases
+    except ControlPlaneError:
+        for lease in reversed(leases):
+            try:
+                control_plane.release_resource(
+                    lease.resource_key,
+                    workflow_id=workflow["id"],
+                    fence_epoch=lease.fence_epoch,
+                )
+            except ControlPlaneError:
+                pass
+        raise
+
+
+def renew_node_resource_locks(
+    workflow: dict[str, Any],
+    leases: list[Any],
+    control_plane: ControlPlaneClient | None,
+) -> list[Any]:
+    if control_plane is None:
+        return leases
+    return [
+        control_plane.renew_resource(
+            lease.resource_key,
+            workflow_id=workflow["id"],
+            fence_epoch=lease.fence_epoch,
+        )
+        for lease in leases
+    ]
+
+
+def release_node_resource_locks(
+    workflow: dict[str, Any],
+    leases: list[Any],
+    control_plane: ControlPlaneClient | None,
+) -> None:
+    if control_plane is None:
+        return
+    for lease in reversed(leases):
+        try:
+            control_plane.release_resource(
+                lease.resource_key,
+                workflow_id=workflow["id"],
+                fence_epoch=lease.fence_epoch,
+            )
+        except ControlPlaneError:
+            pass
+
+
 def execute_with_retries(
     node: Node,
     goal: str,
