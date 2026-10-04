@@ -1,7 +1,5 @@
-import json
 import os
 import unittest
-from contextlib import nullcontext
 from unittest.mock import patch
 
 import capability_graph as cg
@@ -180,7 +178,12 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         self.assertEqual(result["reason"], "stable_consensus")
 
     def test_gemini_uses_thinking_config_and_authoritative_packed_context(self):
-        context = {"dependencies": {"d1": {"output": {"text": "x" * 30000}}}}
+        context = {
+            "dependencies": {
+                f"d{i}": {"output": {"text": "x" * 9000}}
+                for i in range(1, 6)
+            }
+        }
         node = o.Node(
             "n1",
             "analyze",
@@ -220,7 +223,8 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         )
         context_text = captured["payload"]["contents"][0]["parts"][0]["text"]
         self.assertIn('"text":', context_text)
-        self.assertIn("xxxxxxxxxx", context_text)
+        self.assertGreater(len(context_text.encode("utf-8")), 24 * 1024)
+        self.assertIn('"d5"', context_text)
 
 
 if __name__ == "__main__":
