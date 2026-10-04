@@ -2764,7 +2764,13 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
     for dep_id in node.depends_on:
         dep = by_id[dep_id]
         dep_output = dep.output if isinstance(dep.output, dict) else {}
-        candidate_records = dep_output.get("evidence_records")
+        bound_verdict = dep_output.get("epistemic_verdict")
+        if isinstance(bound_verdict, dict) and isinstance(
+            bound_verdict.get("evidence_records"), list
+        ):
+            candidate_records = bound_verdict["evidence_records"]
+        else:
+            candidate_records = dep_output.get("evidence_records")
         if not isinstance(candidate_records, list):
             candidate_records = []
         for record in candidate_records:
