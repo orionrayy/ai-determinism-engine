@@ -737,3 +737,12 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Global recovery hydrates the remote workflow snapshot before executing a Git-discovered candidate, preventing stale Git snapshots from overwriting newer control-plane state.
 - Selected lifecycle/control events use a bounded Durable Object outbox (latest 256 events per workflow object); high-volume diagnostics remain local.
 - Git remains eventual source/audit snapshot storage; active distributed live execution does not require Git round-trips for each hot-state mutation.
+
+
+## v71 effect contracts (2026-10-04)
+- Side-effect adapters declare action-aware effect contracts in orchestrator/tools.json.
+- Contracts specify effect identity, retry mode, reconciliation mode, and fencing model.
+- Live execution rejects a side-effect action with no effect identity contract.
+- Reconcile-based retry is permitted only when the contract declares an actual reconciliation mechanism.
+- Generic webhook effects are intentionally opaque/non-retryable; GitHub create/update/delete effects are deterministic-reconcilable; workflow dispatch remains blocked on uncertain outcome; connector bridge uses a wildcard provider-idempotency/reconciliation contract because the vendor action is dynamic.
+- This is a correctness policy layer, not a provider-side fencing guarantee. Providers remain responsible for honoring provider idempotency keys and reconciliation APIs.
