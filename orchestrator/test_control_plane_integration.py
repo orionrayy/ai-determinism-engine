@@ -219,5 +219,21 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
         self.assertTrue(contract.can_reconcile)
 
 
+    def test_noop_never_becomes_side_effect_from_capability_name(self):
+        n = o.Node(
+            "n1",
+            "deploy",
+            "noop",
+            [],
+            risk="high",
+        )
+        self.assertFalse(
+            o.side_effecting(
+                n,
+                {"noop": {"free_tier": True}},
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
