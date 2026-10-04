@@ -2,6 +2,9 @@
 """Compatibility facade for the canonical orchestrator.private_input module."""
 from __future__ import annotations
 
+import urllib
+import urllib.request
+
 from orchestrator.private_input import (
     DEFAULT_TTL_SECONDS,
     DIGEST_RE,
