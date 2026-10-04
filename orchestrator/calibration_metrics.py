@@ -161,7 +161,11 @@ def calibration_summary(
     *,
     bins: int = 10,
 ) -> dict[str, Any]:
-    values = _samples(samples)
+    raw_samples = [
+        sample for sample in samples
+        if isinstance(sample, Mapping)
+    ]
+    values = _samples(raw_samples)
     if not values:
         return {
             "available": False,
@@ -169,24 +173,23 @@ def calibration_summary(
             "reason": "no_explicit_confidence_outcome_labels",
         }
 
-    materialized = values_as_mappings(values)
     return {
         "available": True,
         "sample_count": len(values),
-        "brier_score": round(brier_score(materialized) or 0.0, 6),
+        "brier_score": round(brier_score(raw_samples) or 0.0, 6),
         "ece": round(
-            expected_calibration_error(materialized, bins=bins) or 0.0,
+            expected_calibration_error(raw_samples, bins=bins) or 0.0,
             6,
         ),
         "mce": round(
-            maximum_calibration_error(materialized, bins=bins) or 0.0,
+            maximum_calibration_error(raw_samples, bins=bins) or 0.0,
             6,
         ),
         "reliability_bins": reliability_bins(
-            materialized,
+            raw_samples,
             bins=bins,
         ),
-        "selective": selective_metrics(materialized),
+        "selective": selective_metrics(raw_samples),
     }
 
 
