@@ -30,7 +30,7 @@ def _evidence_strength(proposal: Mapping[str, Any]) -> float:
             0.0,
             min(1.0, float(record.get("independence_confidence") or 0.0)),
         )
-        access = 1.0 if str(record.get("access_verification") or "") != "identifier_only" else 0.0
+        access = 1.0 if str(record.get("access_verification") or "") == "verified" else 0.0
         integrity = 1.0 if str(record.get("publication_status") or "normal") == "normal" else 0.0
         scores.append(
             0.45 * authority
