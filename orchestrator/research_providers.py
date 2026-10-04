@@ -312,6 +312,65 @@ def search_europe_pmc(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dic
     )
 
 
+def resolve_unpaywall(
+    doi: str,
+    *,
+    email: str | None = None,
+) -> dict[str, Any]:
+    """Resolve one DOI to free/open-access locations without API credentials."""
+    normalized = str(doi or "").strip().lower()
+    if normalized.startswith("https://doi.org/"):
+        normalized = normalized.rsplit("/", 1)[-1]
+    if not normalized:
+        raise ValueError("doi is required")
+    contact = str(
+        email or os.environ.get("UNPAYWALL_EMAIL", "").strip()
+    ).strip()
+    if not contact:
+        raise ResearchProviderError(
+            "UNPAYWALL_EMAIL is required for DOI open-access resolution"
+        )
+    encoded_doi = urllib.parse.quote(normalized, safe="")
+    encoded_email = urllib.parse.quote(contact[:256], safe="@.")
+    return _request_json(
+        f"https://api.unpaywall.org/v2/{encoded_doi}?email={encoded_email}",
+        timeout=30,
+    )
+
+
+def _apply_unpaywall_to_record(
+    record: dict[str, Any],
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    location = payload.get("best_oa_location")
+    if not isinstance(location, Mapping):
+        locations = payload.get("oa_locations")
+        if isinstance(locations, list) and locations:
+            location = next(
+                (item for item in locations if isinstance(item, Mapping)),
+                None,
+            )
+    if not isinstance(location, Mapping):
+        return record
+    url = str(
+        location.get("url_for_pdf")
+        or location.get("url")
+        or location.get("landing_page_url")
+        or ""
+    ).strip()
+    if not url:
+        return record
+    enriched = dict(record)
+    enriched["full_text_url"] = url
+    enriched["open_access"] = True
+    if str(enriched.get("access_verification") or "") in {"", "identifier_only", "metadata_only"}:
+        enriched["access_level"] = "L3"
+        enriched["access_route"] = "unpaywall_oa"
+        enriched["access_verification"] = "declared_only"
+    enriched["oa_resolver"] = "unpaywall"
+    return enriched
+
+
 def search_core(query: str, max_results: int = DEFAULT_MAX_RESULTS) -> dict[str, Any]:
     key = os.environ.get("CORE_API_KEY", "").strip()
     if not key:
@@ -467,6 +526,41 @@ def research_records(
             errors[provider] = str(exc)
 
     deduped = deduplicate_sources(records)
+
+    # Optional DOI-only OA enrichment. Disabled unless an email is explicitly
+    # configured, so the hard-free default performs zero extra network calls.
+    resolver_email = os.environ.get("UNPAYWALL_EMAIL", "").strip()
+    if resolver_email:
+        enriched: list[dict[str, Any]] = []
+        resolver_attempts = 0
+        resolver_successes = 0
+        for record in deduped[:4]:
+            doi = str(record.get("doi") or "").strip()
+            if not doi or str(record.get("full_text_url") or "").strip():
+                enriched.append(record)
+                continue
+            resolver_attempts += 1
+            try:
+                payload = resolve_unpaywall(doi, email=resolver_email)
+                record = _apply_unpaywall_to_record(record, payload)
+                if record.get("oa_resolver") == "unpaywall":
+                    resolver_successes += 1
+            except Exception as exc:
+                record = dict(record)
+                record["oa_resolver_error"] = type(exc).__name__
+            enriched.append(record)
+        deduped = deduplicate_sources(enriched + deduped[4:])
+        resolver_metadata = {
+            "provider": "unpaywall",
+            "attempts": resolver_attempts,
+            "successes": resolver_successes,
+        }
+    else:
+        resolver_metadata = {
+            "provider": "unpaywall",
+            "enabled": False,
+        }
+
     return {
         "query": query,
         "providers": normalized_providers,
@@ -474,6 +568,7 @@ def research_records(
         "independent_source_count": count_independent_sources(deduped),
         "provider_counts": provider_counts,
         "errors": errors,
+        "oa_resolver": resolver_metadata,
     }
 
 
@@ -484,6 +579,7 @@ __all__ = [
     "search_semantic_scholar",
     "search_europe_pmc",
     "search_core",
+    "resolve_unpaywall",
     "normalize_provider_payload",
     "research_records",
     "default_provider_order",
