@@ -92,6 +92,57 @@ class EpistemicDeliberationTests(unittest.TestCase):
         self.assertEqual(result["reason"], "material_disagreement")
         self.assertEqual(result["max_rounds"], 2)
 
+    def test_strong_evidence_minority_triggers_escalation(self):
+        proposals = [
+            {
+                "agent_id": "a1",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["a"],
+                "evidence_records": [
+                    {
+                        "canonical_id": "a",
+                        "authority_score": 0.55,
+                        "independence_confidence": 0.8,
+                        "access_verification": "metadata_only",
+                    }
+                ],
+            },
+            {
+                "agent_id": "a2",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["b"],
+                "evidence_records": [
+                    {
+                        "canonical_id": "b",
+                        "authority_score": 0.55,
+                        "independence_confidence": 0.8,
+                        "access_verification": "metadata_only",
+                    }
+                ],
+            },
+            {
+                "agent_id": "a3",
+                "answer": "B",
+                "confidence": 0.7,
+                "evidence_refs": ["c"],
+                "evidence_records": [
+                    {
+                        "canonical_id": "c",
+                        "authority_score": 1.0,
+                        "independence_confidence": 1.0,
+                        "access_verification": "verified",
+                        "publication_status": "normal",
+                    }
+                ],
+            },
+        ]
+        result = debate_decision(proposals)
+        self.assertTrue(result["required"])
+        self.assertEqual(result["reason"], "minority_evidence_escalation")
+        self.assertEqual(result["minority_answers"], ["B"])
+
     def test_blind_view_is_identity_opaque(self):
         view = blind_challenge_view([
             {
