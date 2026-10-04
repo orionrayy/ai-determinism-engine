@@ -13,8 +13,6 @@ on:
       - "test_bridge_runtime.py"
       - "api/bridge.py"
       - "bridge_runtime.py"
-      - "test_bridge_runtime.py"
-      - "test_bridge_runtime.py"
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
       - "bridge_server.py"
