@@ -4547,6 +4547,10 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 if success:
                     if side_effecting(node, registry):
                         mark_execution_completed(workflow, execution_id, node.output)
+                        if control_plane is not None:
+                            workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                                "control_plane_completed_at"
+                            ] = utc_now()
                     update_tool_health(node, True, registry)
                     node_success_checkpoint(workflow, node)
                     append_event("node.completed", {
@@ -4567,7 +4571,11 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     )
                 else:
                     update_tool_health(node, False, registry)
-                    if not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
+                    if (
+                        not node.error.get("execution_uncertain")
+                        and not node.error.get("replan_blocked_after_side_effect_start")
+                        and replan_after_failure(workflow, nodes, node, registry)
+                    ):
                         replan_needed = True
                     else:
                         workflow["status"] = "failed"
