@@ -53,6 +53,10 @@ try:
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .control_plane import ControlPlaneClient, ControlPlaneError
+    from .effect_contract import (
+        require_live_effect_contract,
+        resolve_effect_contract,
+    )
     from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -92,6 +96,10 @@ except ImportError:
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from control_plane import ControlPlaneClient, ControlPlaneError
+    from effect_contract import (
+        require_live_effect_contract,
+        resolve_effect_contract,
+    )
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -3122,6 +3130,7 @@ def execution_failure_policy(
     *,
     dry_run: bool,
 ) -> tuple[str, bool, bool]:
+    contract = resolve_effect_contract(node, registry)
     decision = decide_retry(
         classify_failure(exc),
         explicitly_retryable=None,
@@ -3129,6 +3138,21 @@ def execution_failure_policy(
         side_effect_started=side_effecting(node, registry) and not dry_run,
         idempotent=bool(getattr(exc, "idempotent", False)),
     )
+    if (
+        not dry_run
+        and side_effecting(node, registry)
+        and contract.retry == "blocked"
+    ):
+        decision["retry_allowed"] = False
+        decision["reason"] = "effect_contract_retry_blocked"
+    elif (
+        not dry_run
+        and side_effecting(node, registry)
+        and bool(getattr(exc, "uncertain", False))
+        and contract.retry == "reconcile"
+    ):
+        decision["retry_allowed"] = False
+        decision["reason"] = "effect_contract_requires_reconciliation"
     node.error["failure_class"] = decision["failure_class"]
     node.error["retry_allowed"] = decision["retry_allowed"]
     node.error["retry_reason"] = decision["reason"]
@@ -3391,6 +3415,12 @@ def execute_with_retries(
 def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
     registry = load_registry()
     spec = registry.get(node.tool, {})
+    if not dry_run and side_effecting(node, registry):
+        require_live_effect_contract(
+            node,
+            registry,
+            dry_run=dry_run,
+        )
     if free_only() and not dry_run:
         is_free = bool(spec.get("free_tier", False))
         if not spec and node.tool in BUILTIN_FREE_TOOLS:
