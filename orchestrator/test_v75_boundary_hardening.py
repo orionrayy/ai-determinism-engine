@@ -348,6 +348,43 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         )
         self.assertEqual(result["authority_class"], "preprint")
 
+    def test_downstream_context_uses_bound_epistemic_evidence_not_raw_model_records(self):
+        dependency = o.Node(
+            "d1",
+            "draft",
+            "gemini",
+            [],
+            input={"goal": "g"},
+            output={
+                "evidence_records": [{
+                    "canonical_id": "forged",
+                    "authority_score": 0.99,
+                }],
+                "epistemic_verdict": {
+                    "evidence_records": [{
+                        "canonical_id": "real",
+                        "authority_score": 0.90,
+                    }],
+                },
+            },
+            status="completed",
+        )
+        child = o.Node(
+            "n1",
+            "validate",
+            "local_validator",
+            ["d1"],
+            input={"goal": "g"},
+        )
+        context = o.build_node_context([dependency, child], child)
+        ids = {
+            str(item.get("canonical_id"))
+            for item in context.get("trusted_evidence", [])
+            if isinstance(item, dict)
+        }
+        self.assertIn("real", ids)
+        self.assertNotIn("forged", ids)
+
     def test_trusted_evidence_is_pruned_by_complete_records(self):
         from context_budget import pack_node_context
         records = [
