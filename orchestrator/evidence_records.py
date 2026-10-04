@@ -133,6 +133,22 @@ def _full_text_url(record: Mapping[str, Any]) -> str:
             value = best_oa.get(key)
             if value:
                 return str(value)
+
+    # Europe PMC Core records expose full text through fullTextUrlList.
+    full_text_list = record.get("fullTextUrlList")
+    if isinstance(full_text_list, Mapping):
+        nested = full_text_list.get("fullTextUrl")
+        if isinstance(nested, list):
+            for item in nested:
+                if isinstance(item, Mapping):
+                    value = _first_nonempty(item.get("url"), item.get("URL"))
+                    if value:
+                        return str(value)
+        elif isinstance(nested, Mapping):
+            value = _first_nonempty(nested.get("url"), nested.get("URL"))
+            if value:
+                return str(value)
+
     for key in ("full_text_url", "pdf_url"):
         value = record.get(key)
         if value:
@@ -250,11 +266,25 @@ def _publication_integrity(record: Mapping[str, Any]) -> dict[str, Any]:
         for item in updates
         if isinstance(item, Mapping)
     }
-    if "retraction" in types:
+
+    retracted_flag = any(
+        record.get(key) is True
+        for key in ("is_retracted", "isRetracted", "retracted", "is_retraction")
+    )
+    expression_flag = any(
+        record.get(key) is True
+        for key in ("expression_of_concern", "expressionOfConcern")
+    )
+    corrected_flag = any(
+        record.get(key) is True
+        for key in ("corrected", "is_corrected", "isCorrected")
+    )
+
+    if retracted_flag or "retraction" in types:
         status = "retracted"
-    elif "expression-of-concern" in types or "expression of concern" in types:
+    elif expression_flag or "expression-of-concern" in types or "expression of concern" in types:
         status = "expression_of_concern"
-    elif "correction" in types:
+    elif corrected_flag or "correction" in types:
         status = "corrected"
     else:
         status = "normal"
@@ -354,13 +384,32 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
     if record.get("peer_reviewed") is True:
         authority.append("peer_reviewed")
     work_identity = source_work_identity({**record, "provider": provider})
+    full_text_url = _full_text_url(record)
     access = _access_metadata(
         provider,
         record,
         abstract,
-        _full_text_url(record),
+        full_text_url,
     )
     integrity = _publication_integrity(record)
+
+    authority_components = {
+        "peer_review_signal": 0.80 if record.get("peer_reviewed") is True else 0.0,
+        "journal_metadata_signal": (
+            0.60 if source_type in {"journal-article", "journal article"} else 0.0
+        ),
+        "index_signal": (
+            0.55 if provider in {"crossref", "openalex", "semantic_scholar"} else
+            0.55 if provider == "europe_pmc" else
+            0.45 if provider == "arxiv" else
+            0.40 if provider == "core" else
+            0.0
+        ),
+        "verified_access_signal": (
+            0.20 if access.get("access_verification") != "identifier_only" else 0.0
+        ),
+        "integrity_signal": 1.0 if integrity.get("publication_status") == "normal" else 0.0,
+    }
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
@@ -377,7 +426,8 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         **integrity,
         "citation_count": citation_count,
         "open_access": open_access,
-        "full_text_url": _full_text_url(record),
+        "full_text_url": full_text_url,
+        "authority_components": authority_components,
         "primaryity": primaryity,
         "authority_signals": sorted(set(authority)),
         "independence_key": str(work_identity["work_key"]),
