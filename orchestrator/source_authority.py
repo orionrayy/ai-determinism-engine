@@ -23,9 +23,8 @@ AUTHORITY_CLASSES = {
 
 
 def _class_from_record(provider: str, record: Mapping[str, Any]) -> str:
-    explicit = str(record.get("authority_class") or "").strip().lower()
-    if explicit in AUTHORITY_CLASSES:
-        return explicit
+    # Provider/model-supplied authority labels are not self-authenticating.
+    # Authority is derived only from typed provenance signals the normalizer controls.
 
     if record.get("peer_reviewed") is True:
         return "peer_reviewed"
