@@ -1,6 +1,6 @@
 const E = new TextEncoder();
 const SKEW = 300;
-const MAX_BODY = 65536;
+const MAX_BODY = 768 * 1024;
 
 const json = (value, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -47,7 +47,11 @@ export class WorkflowControlPlane {
     this.env = env;
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS lease (singleton INTEGER PRIMARY KEY CHECK(singleton=1), owner TEXT NOT NULL, fence_epoch INTEGER NOT NULL, expires_at INTEGER NOT NULL)");
+      try { ctx.storage.sql.exec("ALTER TABLE lease ADD COLUMN workflow_id TEXT NOT NULL DEFAULT ''"); } catch (_) {}
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS effect (effect_id TEXT PRIMARY KEY, semantic_digest TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('inflight','completed')), owner TEXT NOT NULL, fence_epoch INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, output_sha256 TEXT)");
+      ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS workflow_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), state_version INTEGER NOT NULL, state_json TEXT NOT NULL, updated_at INTEGER NOT NULL)");
+      ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL)");
+      ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS outbox_created_idx ON outbox(created_at)");
     });
   }
 
@@ -149,6 +153,187 @@ export class WorkflowControlPlane {
     return json(result);
   }
 
+  resourceAcquire(body) {
+    const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
+    if (!owner || !workflowId) throw new Error("resource_lock_identity_invalid");
+    const at = now();
+    const result = this.ctx.storage.transactionSync(() => {
+      const current = this.lease();
+      if (
+        current &&
+        Number(current.expires_at) > at &&
+        String(current.owner) !== owner
+      ) {
+        return {conflict: true, expires_at: Number(current.expires_at)};
+      }
+      const currentEpoch = current ? Number(current.fence_epoch) : 0;
+      const renewing =
+        Boolean(current) &&
+        Number(current.expires_at) > at &&
+        String(current.owner) === owner &&
+        String(current.workflow_id || "") === workflowId;
+      const epoch = renewing ? currentEpoch : currentEpoch + 1;
+      const expires = at + ttl(body.ttl_seconds);
+      this.ctx.storage.sql.exec(
+        "INSERT INTO lease(singleton,owner,fence_epoch,expires_at,workflow_id) " +
+        "VALUES(1,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET " +
+        "owner=excluded.owner,fence_epoch=excluded.fence_epoch," +
+        "expires_at=excluded.expires_at,workflow_id=excluded.workflow_id",
+        owner, epoch, expires, workflowId
+      );
+      return {
+        status:"acquired",
+        owner,
+        workflow_id:workflowId,
+        fence_epoch:epoch,
+        expires_at:expires
+      };
+    });
+    return result.conflict
+      ? json({error:"resource_lock_held",expires_at:result.expires_at},409)
+      : json(result);
+  }
+
+  resourceRenew(body) {
+    const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
+    const epoch = Number(body.fence_epoch);
+    const at = now();
+    const result = this.ctx.storage.transactionSync(() => {
+      const row = this.lease();
+      if (
+        !row ||
+        String(row.owner) !== owner ||
+        String(row.workflow_id || "") !== workflowId ||
+        Number(row.fence_epoch) !== epoch ||
+        Number(row.expires_at) <= at
+      ) {
+        throw conflict("stale_or_missing_resource_lock");
+      }
+      const expires = at + ttl(body.ttl_seconds);
+      this.ctx.storage.sql.exec(
+        "UPDATE lease SET expires_at=? WHERE singleton=1 AND owner=? AND fence_epoch=?",
+        expires, owner, epoch
+      );
+      return {
+        status:"renewed",
+        owner,
+        workflow_id:workflowId,
+        fence_epoch:epoch,
+        expires_at:expires
+      };
+    });
+    return json(result);
+  }
+
+  resourceRelease(body) {
+    const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
+    const epoch = Number(body.fence_epoch);
+    const result = this.ctx.storage.transactionSync(() => {
+      const row = this.lease();
+      if (!row) return "already_released";
+      if (
+        String(row.owner) !== owner ||
+        String(row.workflow_id || "") !== workflowId ||
+        Number(row.fence_epoch) !== epoch
+      ) {
+        throw conflict("stale_or_missing_resource_lock");
+      }
+      this.ctx.storage.sql.exec("DELETE FROM lease WHERE singleton=1");
+      return "released";
+    });
+    return json({status:result});
+  }
+
+  readWorkflowState() {
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT state_version,state_json,updated_at FROM workflow_state WHERE singleton=1"
+    ).toArray();
+    if (!rows.length) return json({status:"absent"});
+    let state;
+    try {
+      state = JSON.parse(String(rows[0].state_json));
+    } catch (_) {
+      throw new Error("workflow_state_corrupt");
+    }
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      throw new Error("workflow_state_corrupt");
+    }
+    return json({
+      status:"stored",
+      state_version:Number(rows[0].state_version),
+      updated_at:Number(rows[0].updated_at),
+      state
+    });
+  }
+
+  writeWorkflowState(body) {
+    const owner = String(body.owner || "").trim();
+    const epoch = Number(body.fence_epoch);
+    const expected = Number(body.expected_state_version);
+    const state = body.state;
+    if (!owner || !Number.isInteger(epoch) || !Number.isInteger(expected)) {
+      throw new Error("workflow_state_identity_invalid");
+    }
+    if (!state || typeof state !== "object" || Array.isArray(state)) {
+      throw new Error("workflow_state_must_be_object");
+    }
+    const stateJson = JSON.stringify(state);
+    if (stateJson.length > 600 * 1024) {
+      throw new Error("workflow_state_too_large");
+    }
+    const at = now();
+    const result = this.ctx.storage.transactionSync(() => {
+      this.requireLease(owner, epoch, at);
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT state_version FROM workflow_state WHERE singleton=1"
+      ).toArray();
+      const actual = rows.length ? Number(rows[0].state_version) : 0;
+      if (actual !== expected) {
+        throw new Response(
+          JSON.stringify({
+            error:"workflow_state_conflict",
+            state_version:actual
+          }),
+          {status:409,headers:{"content-type":"application/json"}}
+        );
+      }
+      const next = actual + 1;
+      this.ctx.storage.sql.exec(
+        "INSERT INTO workflow_state(singleton,state_version,state_json,updated_at) " +
+        "VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET " +
+        "state_version=excluded.state_version,state_json=excluded.state_json,updated_at=excluded.updated_at",
+        next, stateJson, at
+      );
+      return {status:"stored",state_version:next,updated_at:at};
+    });
+    return json(result);
+  }
+
+  appendOutbox(body) {
+    const owner = String(body.owner || "").trim();
+    const epoch = Number(body.fence_epoch);
+    const eventType = String(body.event_type || "").trim();
+    const payload = body.payload;
+    if (!owner || !eventType || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("outbox_event_invalid");
+    }
+    const raw = JSON.stringify(payload);
+    if (raw.length > 16 * 1024) throw new Error("outbox_payload_too_large");
+    const at = now();
+    const sequence = this.ctx.storage.transactionSync(() => {
+      this.requireLease(owner, epoch, at);
+      const result = this.ctx.storage.sql.exec(
+        "INSERT INTO outbox(event_type,payload_json,created_at) VALUES(?,?,?)",
+        eventType, raw, at
+      );
+      return Number(result.meta.last_row_id);
+    });
+    return json({status:"appended",sequence});
+  }
+
   inspect(url) {
     const effectId = url.searchParams.get("effect_id") || "";
     if (!/^[0-9a-f]{64}$/.test(effectId)) throw new Error("effect_id_invalid");
@@ -209,6 +394,15 @@ export class WorkflowControlPlane {
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("body_must_be_object");
     } catch (e) { return json({error:String(e.message || "invalid_json")},400); }
     try {
+      if (url.pathname.startsWith("/v1/resources/")) {
+        if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return this.resourceAcquire(body);
+        if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return this.resourceRenew(body);
+        if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return this.resourceRelease(body);
+        return json({error:"not_found"},404);
+      }
+      if (request.method === "GET" && url.pathname.endsWith("/state")) return this.readWorkflowState();
+      if (request.method === "PUT" && url.pathname.endsWith("/state")) return this.writeWorkflowState(body);
+      if (request.method === "POST" && url.pathname.endsWith("/outbox")) return this.appendOutbox(body);
       if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return this.acquire(body);
       if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return this.renew(body);
       if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return this.release(body);
@@ -227,12 +421,22 @@ export class WorkflowControlPlane {
 export default {
   async fetch(request,env) {
     const url = new URL(request.url);
-    const match = url.pathname.match(/^\/v1\/workflows\/([^/]+)(?:\/.*)?$/);
-    if (!match) return json({error:"not_found"},404);
-    let workflowId;
-    try { workflowId = decodeURIComponent(match[1]); } catch (_) { return json({error:"workflow_id_invalid"},400); }
-    if (!workflowId || workflowId.length > 128) return json({error:"workflow_id_invalid"},400);
-    const stub = env.WORKFLOW_CONTROL.get(env.WORKFLOW_CONTROL.idFromName(workflowId));
+    const workflowMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)(?:\/.*)?$/);
+    const resourceMatch = url.pathname.match(/^\/v1\/resources\/([^/]+)(?:\/.*)?$/);
+    if (!workflowMatch && !resourceMatch) return json({error:"not_found"},404);
+
+    let logicalId;
+    let objectNamePrefix;
+    try {
+      logicalId = decodeURIComponent((workflowMatch || resourceMatch)[1]);
+      objectNamePrefix = workflowMatch ? "workflow:" : "resource:";
+    } catch (_) {
+      return json({error:"resource_id_invalid"},400);
+    }
+    if (!logicalId || logicalId.length > 128) return json({error:"resource_id_invalid"},400);
+
+    const objectName = objectNamePrefix + logicalId;
+    const stub = env.WORKFLOW_CONTROL.get(env.WORKFLOW_CONTROL.idFromName(objectName));
     return stub.fetch(request);
   }
 };
