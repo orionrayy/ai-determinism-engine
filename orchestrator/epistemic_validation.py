@@ -131,7 +131,17 @@ def validate_claim_passages(
                 or ""
             ).strip()
             text = _normalize_passage(passage.get("text"))
-            if not ref or not text or ref not in evidence_by_id:
+            claim_refs = {
+                str(item).strip()
+                for item in (claim.get("evidence_refs") or [])
+                if str(item).strip()
+            } if isinstance(claim.get("evidence_refs"), list) else set()
+            if (
+                not ref
+                or not text
+                or ref not in evidence_by_id
+                or ref not in claim_refs
+            ):
                 invalid.append(str(claim.get("claim_id") or "unknown"))
                 continue
             record = evidence_by_id[ref]
@@ -318,15 +328,18 @@ def validate_epistemic_output(
     passage_result = validate_claim_passages(claims, evidence)
     passage_required_failure = (
         require_passages
-        and any(
-            isinstance(claim, Mapping)
-            and str(claim.get("status") or "") == "SUPPORTED_DIRECT"
-            and bool(claim.get("evidence_refs"))
-            and (
-                not isinstance(claim.get("evidence_passages"), list)
-                or not claim.get("evidence_passages")
+        and (
+            bool(passage_result.get("missing_corpus"))
+            or any(
+                isinstance(claim, Mapping)
+                and str(claim.get("status") or "") == "SUPPORTED_DIRECT"
+                and bool(claim.get("evidence_refs"))
+                and (
+                    not isinstance(claim.get("evidence_passages"), list)
+                    or not claim.get("evidence_passages")
+                )
+                for claim in claims
             )
-            for claim in claims
         )
     )
     coverage = claim_coverage(claims)
