@@ -4228,7 +4228,13 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 attempt_budget.sync()
                 persist_workflow(workflow)
             recover_inflight_side_effects(workflow, nodes, registry)
-            reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
+            reconciliation = reconcile_first_uncertain(
+                workflow,
+                nodes,
+                registry,
+                control_plane=control_plane,
+                control_plane_lease=control_plane_lease,
+            )
             if reconciliation == "failed":
                 workflow["nodes"] = [asdict(node) for node in nodes]
                 persist_workflow(workflow)
