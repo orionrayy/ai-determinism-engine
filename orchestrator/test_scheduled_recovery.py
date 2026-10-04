@@ -70,10 +70,7 @@ class ScheduledRecoveryRuntimeTests(unittest.TestCase):
                     event_id="scheduled-recovery:wf-1:r1",
                     schedule_run_id="99",
                 )
-            self.assertEqual(
-                captured["args"][-3:],
-                ["--input", "-"],
-            )
+            self.assertEqual(captured["args"][-2:], ["--input", "-"])
             self.assertEqual(
                 captured["payload"]["client_payload"]["workflow_id"],
                 "wf-1",
