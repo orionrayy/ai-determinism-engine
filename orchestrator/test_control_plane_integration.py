@@ -64,6 +64,11 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
                 self.kwargs = kwargs
                 return 3
 
+            def arm_recovery(self, *args, **kwargs):
+                self.recovery_kwargs = kwargs
+                return {"status": "armed"}
+
+
         stub = Stub()
         lease = type("Lease", (), {"fence_epoch": 8})()
         token1 = o.ACTIVE_CONTROL_PLANE.set(stub)
