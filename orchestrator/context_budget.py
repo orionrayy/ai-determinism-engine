@@ -41,6 +41,69 @@ def bounded_json(value: Any, max_bytes: int) -> tuple[str, bool]:
     return clipped + "...[truncated]", True
 
 
+def _compact_evidence_output(
+    output: Any,
+    max_bytes: int,
+) -> tuple[dict[str, Any] | None, bool]:
+    if not isinstance(output, dict) or not isinstance(output.get("evidence_records"), list):
+        return None, False
+
+    compact: dict[str, Any] = {
+        "query": str(output.get("query") or ""),
+        "evidence_records": [],
+    }
+    if isinstance(output.get("provider_counts"), dict):
+        compact["provider_counts"] = {
+            str(k): int(v)
+            for k, v in sorted(output["provider_counts"].items())
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+    if isinstance(output.get("extended_errors"), dict):
+        compact["extended_errors"] = {
+            str(k): bounded_json(v, 512)[0]
+            for k, v in sorted(output["extended_errors"].items())
+        }
+
+    truncated = False
+    for raw in sorted(
+        (item for item in output["evidence_records"] if isinstance(item, dict)),
+        key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
+    ):
+        record = {
+            "canonical_id": str(raw.get("canonical_id") or ""),
+            "title": str(raw.get("title") or ""),
+            "providers": sorted(str(v) for v in (raw.get("providers") or []) if str(v)),
+            "year": raw.get("year"),
+            "doi": str(raw.get("doi") or ""),
+            "arxiv_id": str(raw.get("arxiv_id") or ""),
+            "pmid": str(raw.get("pmid") or ""),
+            "pmcid": str(raw.get("pmcid") or ""),
+            "venue": str(raw.get("venue") or ""),
+            "citation_count": int(raw.get("citation_count") or 0),
+            "open_access": bool(raw.get("open_access")),
+            "full_text_url": str(raw.get("full_text_url") or ""),
+            "primaryity": str(raw.get("primaryity") or "unknown"),
+            "authority_signals": sorted(str(v) for v in (raw.get("authority_signals") or []) if str(v)),
+            "authority_class": str(raw.get("authority_class") or "unknown"),
+            "authority_score": float(raw.get("authority_score") or 0.0),
+            "authority_tier": str(raw.get("authority_tier") or "tier4"),
+            "independence_key": str(raw.get("independence_key") or ""),
+            "independence_confidence": float(raw.get("independence_confidence") or 0.0),
+        }
+        probe = dict(compact)
+        probe["evidence_records"] = compact["evidence_records"] + [record]
+        if len(canonical_json(probe)) > max_bytes:
+            truncated = True
+            break
+        compact["evidence_records"].append(record)
+
+    if len(canonical_json(compact)) > max_bytes:
+        compact["evidence_records"] = []
+        compact["evidence_records_truncated"] = True
+        truncated = True
+    return compact, truncated
+
+
 def _dependency_record(
     dependency_id: str,
     dependency: Mapping[str, Any],
@@ -48,7 +111,15 @@ def _dependency_record(
     max_output_bytes: int,
 ) -> dict[str, Any]:
     output = dependency.get("output")
-    output_json, truncated = bounded_json(output, max_output_bytes)
+    structured_output, structured_truncated = _compact_evidence_output(
+        output,
+        max_output_bytes,
+    )
+    if structured_output is not None:
+        output_json = structured_output
+        truncated = structured_truncated
+    else:
+        output_json, truncated = bounded_json(output, max_output_bytes)
     output_sha256 = digest(output)
     evidence_sha256 = dependency.get("evidence_sha256")
     record = {
@@ -68,12 +139,56 @@ def _dependency_record(
     return record
 
 
+def _pack_trusted_evidence(
+    records: list[Mapping[str, Any]],
+    max_bytes: int,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Keep complete evidence records; prune whole records deterministically."""
+    candidates = []
+    for raw in records:
+        if not isinstance(raw, Mapping):
+            continue
+        cid = str(raw.get("canonical_id") or "").strip()
+        if not cid:
+            continue
+        candidates.append(dict(raw))
+    candidates.sort(
+        key=lambda item: (
+            -float(item.get("authority_score") or 0.0),
+            -float(item.get("independence_confidence") or 0.0),
+            str(item.get("canonical_id") or ""),
+        )
+    )
+
+    selected: list[dict[str, Any]] = []
+    omitted: list[str] = []
+    for raw in candidates:
+        compact = {
+            key: raw[key]
+            for key in (
+                "canonical_id", "provider", "provider_id", "title", "published",
+                "year", "doi", "arxiv_id", "pmid", "pmcid", "venue",
+                "full_text_url", "url", "authority_signals", "authority_class",
+                "authority_score", "authority_tier", "independence_key",
+                "independence_confidence",
+            )
+            if key in raw
+        }
+        probe = canonical_json(selected + [compact])
+        if len(probe) <= max_bytes:
+            selected.append(compact)
+        else:
+            omitted.append(str(compact["canonical_id"]))
+    return selected, omitted
+
+
 def pack_node_context(
     *,
     goal: Any,
     dependencies: Mapping[str, Any] | None,
     contract: Mapping[str, Any] | None,
     repair_feedback: Mapping[str, Any] | None,
+    trusted_evidence_records: list[Mapping[str, Any]] | None = None,
     max_bytes: int = MAX_CONTEXT_BYTES,
     dependency_bytes: int = DEFAULT_DEPENDENCY_BYTES,
 ) -> dict[str, Any]:
@@ -103,9 +218,20 @@ def pack_node_context(
     if effective_max_bytes < 8 * 1024:
         raise ContextBudgetError('context budget leaves insufficient metadata reserve')
 
+    trusted_records = [
+        item for item in (trusted_evidence_records or [])
+        if isinstance(item, Mapping)
+    ][:24]
+    trusted_budget = min(12 * 1024, max_bytes // 4)
+    packed_trusted, omitted_trusted = _pack_trusted_evidence(
+        trusted_records,
+        trusted_budget,
+    )
+
     packed: dict[str, Any] = {
         "goal": str(goal or ""),
         "dependencies": {},
+        "trusted_evidence": packed_trusted,
         "contract": json.loads(contract_json) if not contract_truncated else {
             "truncated": True,
             "sha256": digest(contract or {}),
@@ -155,6 +281,8 @@ def pack_node_context(
         'max_bytes': max_bytes,
         'used_bytes': len(canonical_json(packed)),
         'dependency_bytes': dependency_bytes,
+        'trusted_evidence_count': len(packed_trusted),
+        'trusted_evidence_omitted': omitted_trusted,
         'omitted_dependencies': sorted(omitted),
         'truncated_contract': contract_truncated,
         'truncated_repair_feedback': repair_truncated,

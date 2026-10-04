@@ -65,6 +65,45 @@ def _free_allowed(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
     return _free(tool, registry)
 
 
+
+def configured_model(tool: str, registry: dict[str, dict[str, Any]]) -> str | None:
+    if tool != "gemini":
+        return None
+    spec = registry.get("gemini", {})
+    default_model = str(spec.get("default_model") or "").strip()
+    if not default_model:
+        return None
+    return (
+        os.environ.get("GEMINI_MODEL")
+        or default_model
+    ).strip()
+
+
+def execution_eligible(
+    tool: str,
+    registry: dict[str, dict[str, Any]],
+    health: dict[str, Any] | None = None,
+    *,
+    live: bool = False,
+    model: str | None = None,
+    now: int | None = None,
+) -> bool:
+    health = health or {}
+    spec = registry.get(tool, {})
+    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true" and not bool(spec.get("free_tier", False)):
+        return False
+    if live and not _env_available(tool, registry, True):
+        return False
+    if effective_health(health, tool, now=now) == QUARANTINED:
+        return False
+    if tool == "gemini" and os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true":
+        selected_model = (model or configured_model(tool, registry) or "").strip()
+        allowed = registry.get("gemini", {}).get("free_models")
+        if not isinstance(allowed, list) or selected_model not in {str(item).strip() for item in allowed}:
+            return False
+    return True
+
+
 def _health_record(health: dict[str, Any], tool: str) -> dict[str, Any]:
     value = health.get(tool)
     return value if isinstance(value, dict) else {}
@@ -109,21 +148,23 @@ def route_capability(
         if tool in exclude:
             continue
         spec = registry.get(tool, {})
-        free_ok = _free_allowed(tool, registry)
+        free_ok = execution_eligible(tool, registry, health, live=live, now=now)
         env_ok = _env_available(tool, registry, live)
         status = effective_health(health, tool, now=now)
-        if status == QUARANTINED:
+        if not free_ok or status == QUARANTINED:
             continue
         risk = _risk(spec)
-        # Higher-priority dimensions come first. Lexical order is the final
-        # deterministic tie-breaker, so identical health/config always routes
-        # the same way.
+        # Explicit preference is meaningful, but availability/free policy still
+        # gates the candidate. Health, credential burden, risk, and lexical order
+        # provide deterministic tie-breakers after the preference.
         score = (
+            1 if tool == preferred else 0,
             1 if env_ok else 0,
             1 if free_ok else 0,
             1 if not _requires_env(tool, registry) else 0,
-            -HEALTH_RANK[status],
-            -RISK_RANK[risk],
+            HEALTH_RANK[status],
+            -int(round(float(_health_record(health, tool).get("reliability_score") or 0.5) * 10000)),
+            RISK_RANK[risk],
             tool,
         )
         scored.append((score, tool))
@@ -131,7 +172,7 @@ def route_capability(
     if not scored:
         raise ValueError(f"no candidate tools remain for capability {capability}")
 
-    available = [item for item in scored if item[0][0] == 1 and item[0][1] == 1]
+    available = [item for item in scored if item[0][1] == 1 and item[0][2] == 1]
     if live and not available:
         raise ValueError(
             f"no available tool for capability {capability} under current policy"
@@ -142,8 +183,10 @@ def route_capability(
             -item[0][0],
             -item[0][1],
             -item[0][2],
-            item[0][3] * -1,
-            item[0][4] * -1,
+            -item[0][3],
+            item[0][4],
+            item[0][5],
+            item[0][6],
             item[1],
         ),
     )[1]
@@ -161,19 +204,30 @@ def record_tool_result(
     current = dict(_health_record(health, tool))
     streak = int(current.get("failure_streak") or 0)
 
+    successes = max(0, int(current.get("success_count") or 0))
+    failures = max(0, int(current.get("failure_count") or 0))
     if success:
+        successes += 1
+        streak = 0
         updated = {
             "status": HEALTHY,
             "failure_streak": 0,
+            "success_count": successes,
+            "failure_count": failures,
+            "reliability_score": round((successes + 1) / (successes + failures + 2), 4),
             "last_success_at": now,
             "cooldown_until": 0,
         }
     else:
+        failures += 1
         streak += 1
         quarantine = side_effecting or streak >= MAX_FAILURE_STREAK
         updated = {
             "status": QUARANTINED if quarantine else DEGRADED,
             "failure_streak": streak,
+            "success_count": successes,
+            "failure_count": failures,
+            "reliability_score": round((successes + 1) / (successes + failures + 2), 4),
             "last_failure_at": now,
             "cooldown_until": now + (
                 SIDE_EFFECT_COOLDOWN_SECONDS if side_effecting else DEFAULT_COOLDOWN_SECONDS
@@ -216,7 +270,5 @@ def available_tools(
     candidates = _candidates(registry, capability)
     return [
         tool for tool in candidates
-        if _free_allowed(tool, registry)
-        and _env_available(tool, registry, live)
-        and effective_health(health, tool, now=now) != QUARANTINED
+        if execution_eligible(tool, registry, health, live=live, now=now)
     ]

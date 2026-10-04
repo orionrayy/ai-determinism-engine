@@ -14,9 +14,11 @@ class ActionsConfigTests(unittest.TestCase):
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
         cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
+        cls.recovery_worker = (ROOT / 'orchestrator' / 'recovery_worker.py').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
         cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
+        cls.private_input_tests = (ROOT / '.github' / 'workflows' / 'private-input-tests.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
     def test_free_only_workflow_does_not_expose_paid_adapter_secrets(self):
@@ -47,7 +49,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
         self.assertIn("merge-multiple: false", self.federation)
         self.assertIn("fail-fast: false", self.federation)
-        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("max-parallel: 1", self.federation)
     def test_federation_uses_fixed_concurrency_slots(self):
         self.assertIn("agent-federation-", self.federation)
         self.assertIn("github.event.client_payload.slot", self.federation)
@@ -56,11 +58,11 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_federated_matrix_is_bounded_and_read_only(self):
         self.assertIn("types: [orchestrator.federate]", self.federation)
-        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("max-parallel: 1", self.federation)
         self.assertIn("fail-fast: false", self.federation)
         self.assertIn("contents: read", self.federation)
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
-        self.assertIn("retention-days: 1", self.federation)
+        self.assertIn("retention-days: 3", self.federation)
         self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", self.federation)
         self.assertIn("actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093", self.federation)
 
@@ -68,6 +70,15 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("aggregate:", self.federation)
         self.assertIn("contents: write", self.federation)
         self.assertIn("orchestrator.federation.completed", self.federation)
+
+    def test_supervisor_persists_bounded_research_cache(self):
+        self.assertIn("Restore research cache", self.orchestrator)
+        self.assertIn(
+            "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809",
+            self.orchestrator,
+        )
+        self.assertIn(".orchestrator/research-cache", self.orchestrator)
+        self.assertIn("orchestrator-research-v1-", self.orchestrator)
 
     def test_supervisor_exposes_opt_in_federation_control(self):
         self.assertIn("federate_safe_agents:", self.orchestrator)
@@ -149,21 +160,21 @@ class ActionsConfigTests(unittest.TestCase):
     def test_scheduled_recovery_compacts_terminal_state(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('compact_terminal_workflows', recovery)
-        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
-        self.assertIn('git add .orchestrator/workflows', recovery)
+        self.assertIn('compact_terminal_workflows', self.recovery_worker)
+        self.assertIn('compact_terminal_workflows(compact_state', self.recovery_worker)
+        self.assertIn('git add -A .orchestrator', self.orchestrator)
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
         self.assertIn("github.event_name != 'schedule'", self.orchestrator)
-        self.assertIn('"workflow_id": workflow_id', self.orchestrator)
-        self.assertIn('"orchestrator.continue"', self.orchestrator)
+        self.assertIn('"workflow_id": current_id', self.recovery_worker)
+        self.assertIn('"orchestrator.continue"', self.recovery_worker)
 
     def test_scheduled_recovery_uses_canonical_loader(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('from orchestrator.orchestrator import (', recovery)
-        self.assertIn('load_state', recovery)
+        self.assertIn('compact_terminal_workflows, load_state', self.recovery_worker)
+        self.assertIn('load_state()', self.recovery_worker)
         self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
 
 
@@ -202,15 +213,24 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
 
+    def test_orchestrator_ci_avoids_unused_node_and_worker_validation(self):
+        self.assertIn("timeout-minutes: 10", self.tests)
+        self.assertNotIn("actions/setup-node@", self.tests)
+        self.assertNotIn("wrangler@4.146.0", self.tests)
+        self.assertNotIn("node workers/private-input/test.mjs", self.tests)
+        self.assertIn("python -m compileall -q orchestrator", self.tests)
+        self.assertIn("python -m orchestrator.eval_harness --json", self.tests)
+
     def test_private_input_boundary_is_wired(self):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_REF", self.orchestrator)
         self.assertIn("ORCHESTRATOR_IDEMPOTENCY_KEY", self.orchestrator)
         self.assertIn("private_input_unavailable", Path("gateway.py").read_text())
-        self.assertIn("workers/private-input/**", self.tests)
-        self.assertIn("node workers/private-input/test.mjs", self.tests)
-        self.assertIn("wrangler@4.146.0", self.tests)
+        self.assertIn("workers/private-input/**", self.private_input_tests)
+        self.assertIn("node workers/private-input/test.mjs", self.private_input_tests)
+        self.assertIn("wrangler@4.146.0", self.private_input_tests)
+        self.assertNotIn("workers/private-input/**", self.tests)
 
     def test_gemini_free_model_allowlist_is_registry_pinned(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())

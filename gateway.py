@@ -9,6 +9,7 @@ import re
 import secrets
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -251,20 +252,33 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
         return {"github_status": response.status}
 
 
+def _definitely_not_delivered(exc: Exception) -> bool:
+    """Return True only when GitHub explicitly rejected the dispatch before acceptance."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return int(exc.code) in {400, 401, 403, 404, 422}
+    return False
+
+
 def dispatch_execution(goal: str, metadata: dict, event_id: str | None = None) -> dict:
     try:
         return github_dispatch(goal, metadata, event_id=event_id)
-    except Exception:
+    except Exception as exc:
         private_ref = str(metadata.get("private_input_ref") or "").strip()
-        if private_ref:
+        if private_ref and _definitely_not_delivered(exc):
             try:
                 delete_private_input(private_ref)
             except Exception as cleanup_exc:
                 print(
-                    "private input cleanup unavailable after dispatch failure",
+                    "private input cleanup unavailable after rejected dispatch",
                     type(cleanup_exc).__name__,
                     flush=True,
                 )
+        elif private_ref:
+            print(
+                "private input retained after ambiguous dispatch failure",
+                type(exc).__name__,
+                flush=True,
+            )
         raise
 
 
@@ -310,16 +324,9 @@ def authorized(
     path: str = "/event",
 ) -> bool:
     configured = os.environ.get("GATEWAY_SHARED_SECRET")
-    if not configured:
+    if not configured or raw_body is None:
         return False
     normalized = normalized_headers(headers)
-    supplied = normalized.get("authorization", "")
-    expected = "Bearer " + configured
-    if secrets.compare_digest(supplied, expected):
-        return True
-
-    if raw_body is None:
-        return False
     timestamp = normalized.get("x-orchestrator-timestamp", "")
     signature = normalized.get("x-orchestrator-signature", "")
     try:

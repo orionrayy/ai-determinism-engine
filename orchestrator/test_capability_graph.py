@@ -96,6 +96,18 @@ class CapabilityGraphTests(unittest.TestCase):
             cg.save_health(path, health)
             self.assertEqual(cg.load_health(path), health)
 
+    def test_route_rejects_gemini_model_not_allowed_by_registry(self):
+        registry = {
+            "capability:analyze": {"default_tool": "gemini", "fallback_tools": ["free"]},
+            "gemini": {"required_env": "GEMINI_API_KEY", "free_tier": True,
+                       "default_model": "gemini-3.8-flash", "free_models": ["gemini-3.8-flash"]},
+            "free": {"required_env": None, "free_tier": True, "risk": "low"},
+        }
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true", "GEMINI_API_KEY":"x",
+            "GEMINI_MODEL":"gemini-3.8-pro"}, clear=True):
+            self.assertEqual(cg.route_capability("analyze", registry, live=True), "free")
+
 
 if __name__ == "__main__":
     unittest.main()

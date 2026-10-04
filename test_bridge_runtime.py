@@ -14,6 +14,9 @@ class BridgeRuntimeTests(unittest.TestCase):
     def setUp(self):
         br._COMPLETED.clear()
         br._INFLIGHT.clear()
+        self._free_only_env = patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False)
+        self._free_only_env.start()
+        self.addCleanup(self._free_only_env.stop)
 
     def payload(self, request_id=None):
         request_id = request_id or hashlib.sha256(b"wf:n1").hexdigest()
@@ -39,6 +42,42 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertTrue(br.verify_signature(headers, body, "secret", now=ts))
         self.assertFalse(br.verify_signature(headers, body, "wrong", now=ts))
         self.assertFalse(br.verify_signature(headers, body, "secret", now=ts + 301))
+
+    def test_capability_discovery_preserves_result_contract(self):
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example/notion",
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_required": ["bridge_job_id"],
+                        "result_types": {"bridge_job_id": "string"},
+                    }
+                },
+            }
+        }
+        discovered = br.describe_routes(routes)
+        self.assertEqual(
+            discovered["notion"]["action_specs"]["create_page"]["result_required"],
+            ["bridge_job_id"],
+        )
+        self.assertEqual(
+            discovered["notion"]["action_specs"]["create_page"]["result_types"],
+            {"bridge_job_id": "string"},
+        )
+
+    def test_signature_is_bound_to_method_and_path(self):
+        body = br.canonical_json(self.payload())
+        ts = int(time.time())
+        signature = br.sign(ts, body, "secret", method="POST", path="/bridge")
+        headers = {
+            "x-orchestrator-timestamp": str(ts),
+            "x-orchestrator-signature": signature,
+        }
+        self.assertTrue(br.verify_signature(headers, body, "secret", now=ts, method="POST", path="/bridge"))
+        self.assertFalse(br.verify_signature(headers, body, "secret", now=ts, method="POST", path="/bridge/reconcile"))
+        self.assertFalse(br.verify_signature(headers, body, "secret", now=ts, method="GET", path="/bridge"))
 
     def test_route_allowlist_rejects_unknown_action(self):
         routes = {"notion": {"actions": ["read_page"]}}
@@ -73,7 +112,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertNotIn("NOTION_SECRET", json.dumps(discovered))
         self.assertEqual(
             discovered["clickup"]["action_specs"]["create_task"],
-            {"required": [], "types": {}, "idempotent": False},
+            {"required": [], "types": {}, "result_required": [], "result_types": {}, "idempotent": False, "free_tier": False},
         )
 
     def test_action_free_tier_inherits_and_can_be_overridden(self):
@@ -127,6 +166,8 @@ class BridgeRuntimeTests(unittest.TestCase):
                 "types": {"properties.name": "string", "title": "string"},
                 "idempotent": True,
                 "free_tier": False,
+                "result_required": [],
+                "result_types": {},
             },
         )
         with patch.object(br, "load_routes", return_value=routes), patch.object(
@@ -140,6 +181,7 @@ class BridgeRuntimeTests(unittest.TestCase):
             bad["input"] = {"title": 42, "properties": {"name": "N"}}
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_request(bad, "secret")
+
 
 
     def test_reconciliation_capability_is_discovered(self):
@@ -185,9 +227,14 @@ class BridgeRuntimeTests(unittest.TestCase):
             captured["url"] = request.full_url
             class Response:
                 status = 200
+                def __init__(self): self._done = False
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self): return b'{"state":"applied","external_id":"p1"}'
+                def read(self, limit=None):
+                    if self._done:
+                        return b""
+                    self._done = True
+                    return b'{"state":"applied","external_id":"p1"}'
             return Response()
 
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen", side_effect=fake_urlopen):
@@ -208,9 +255,14 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br, "load_routes", return_value=routes),              patch.object(br.urllib.request, "urlopen") as urlopen:
             class Response:
                 status = 200
+                def __init__(self): self._done = False
                 def __enter__(self): return self
                 def __exit__(self, *args): return None
-                def read(self): return b'{"state":"maybe"}'
+                def read(self, limit=None):
+                    if self._done:
+                        return b""
+                    self._done = True
+                    return b'{"state":"maybe"}'
             urlopen.return_value = Response()
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_reconciliation(payload)
@@ -220,8 +272,7 @@ class BridgeRuntimeTests(unittest.TestCase):
             "actions": ["create_page"],
             "url": "https://upstream.example.test/invoke",
         }}
-        with patch.object(br, "load_routes", return_value=routes), \
-             patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}) as dispatch:
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}) as dispatch:
             br.handle_request(payload, "secret")
             changed = self.payload()
             changed["input"] = {"title": "Different"}
@@ -236,12 +287,10 @@ class BridgeRuntimeTests(unittest.TestCase):
             "url": "https://upstream.example.test/invoke",
             "free_tier": True,
         }}
-        with patch.object(br, "load_routes", return_value=routes), \
-             patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}):
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={"status_code": 200, "data": {"id": "p1"}}):
             br.handle_request(payload, "secret")
             routes["notion"]["free_tier"] = False
-            with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True), \
-                 self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
+            with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=True),                  self.assertRaisesRegex(br.BridgeRuntimeError, "not certified for free-only execution"):
                 br.handle_request(payload, "secret")
 
     def test_upstream_http_error_is_not_cached(self):
@@ -249,9 +298,9 @@ class BridgeRuntimeTests(unittest.TestCase):
         routes = {"notion": {
             "actions": ["create_page"],
             "url": "https://upstream.example.test/invoke",
+            "free_tier": True,
         }}
-        with patch.object(br, "load_routes", return_value=routes), \
-             patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", side_effect=br.BridgeUpstreamError("upstream down")) as dispatch:
             with self.assertRaises(br.BridgeUpstreamError):
                 br.handle_request(payload, "secret")
             dispatch.assert_called_once()
@@ -262,7 +311,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         class Response:
             status = 503
             def __enter__(self): return self
-            def __exit__(self, *args): return None
+            def __exit__(self, *args): return False
             def read(self, limit=None): return b'{"error":"down"}'
         with patch.object(br.urllib.request, "urlopen", return_value=Response()):
             with self.assertRaisesRegex(br.BridgeUpstreamError, "HTTP 503") as ctx:
@@ -276,7 +325,7 @@ class BridgeRuntimeTests(unittest.TestCase):
         class Response:
             status = 200
             def __enter__(self): return self
-            def __exit__(self, *args): return None
+            def __exit__(self, *args): return False
             def read(self, limit=None): return b"x" * (br.MAX_UPSTREAM_RESPONSE_BYTES + 1)
         with patch.object(br.urllib.request, "urlopen", return_value=Response()):
             with self.assertRaisesRegex(br.BridgeUpstreamError, "exceeds 128 KiB"):
@@ -349,6 +398,36 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertFalse(a.get("idempotent_replay", False))
         self.assertTrue(b["idempotent_replay"])
 
+    def test_durable_idempotency_survives_in_process_cache_reset(self):
+        payload = self.payload(
+            request_id=hashlib.sha256(b"wf:durable-replay").hexdigest()
+        )
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        with self.subTest("sqlite-backed replay"):
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                db_path = os.path.join(tmp, "idempotency.sqlite3")
+                with patch.dict(
+                    os.environ,
+                    {"ORCHESTRATOR_BRIDGE_IDEMPOTENCY_DB": db_path},
+                    clear=False,
+                ), patch.object(
+                    br, "load_routes", return_value=routes
+                ), patch.object(
+                    br, "dispatch_upstream",
+                    return_value={"status_code": 200, "data": {"id": "p1"}},
+                ) as dispatch:
+                    first = br.handle_request(payload, "secret")
+                    br._COMPLETED.clear()
+                    br._INFLIGHT.clear()
+                    second = br.handle_request(payload, "secret")
+        self.assertFalse(first.get("idempotent_replay", False))
+        self.assertTrue(second.get("idempotent_replay", False))
+        self.assertEqual(dispatch.call_count, 1)
+
     def test_free_only_blocks_uncertified_invocation(self):
         routes = {
             "notion": {
@@ -378,6 +457,36 @@ class BridgeRuntimeTests(unittest.TestCase):
         with patch.object(br, "load_routes", return_value=routes):
             with self.assertRaises(br.BridgeRuntimeError):
                 br.handle_request(payload, "secret")
+
+    def test_cleanup_idempotency_handles_expired_three_tuple_entry(self):
+        request_id = hashlib.sha256(b"expired").hexdigest()
+        br._COMPLETED[request_id] = (time.time() - 1, "digest", {"ok": True})
+        br.cleanup_idempotency(time.time())
+        self.assertNotIn(request_id, br._COMPLETED)
+
+    def test_handle_request_promotes_validated_upstream_result(self):
+        payload = self.payload(
+            request_id=hashlib.sha256(b"wf:promote-result").hexdigest()
+        )
+        routes = {
+            "notion": {
+                "actions": ["create_page"],
+                "url": "https://upstream.example.test/invoke",
+                "free_tier": True,
+                "action_specs": {
+                    "create_page": {
+                        "result_required": ["bridge_job_id"],
+                        "result_types": {"bridge_job_id": "string"},
+                    }
+                },
+            }
+        }
+        with patch.object(br, "load_routes", return_value=routes),              patch.object(br, "dispatch_upstream", return_value={
+                 "status_code": 200,
+                 "data": {"bridge_job_id": "job-1"},
+             }):
+            result = br.handle_request(payload, "secret")
+        self.assertEqual(result["result"], {"bridge_job_id": "job-1"})
 
 
 if __name__ == "__main__":

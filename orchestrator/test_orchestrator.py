@@ -3,6 +3,7 @@ import tempfile
 import sys
 import threading
 import unittest
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1475,6 +1476,10 @@ class OrchestratorTests(unittest.TestCase):
             second["workflows"]["wf_1"]["schema_version"],
             CURRENT_WORKFLOW_SCHEMA_VERSION,
         )
+        self.assertIsNone(second["workflows"]["wf_1"]["plan_intent_fingerprint"])
+        self.assertIsNone(
+            second["workflows"]["wf_1"]["provider_resolution_fingerprint"]
+        )
 
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(o.StateSchemaError):
@@ -1666,12 +1671,69 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "ready")
         self.assertTrue(all(node.status == "ready" for node in nodes))
 
+    def test_min_sources_uses_independent_evidence_not_provider_bucket_count(self):
+        node = o.Node(
+            "n01",
+            "research",
+            "research_bundle",
+            contract={"min_sources": 3},
+        )
+        output = {
+            "sources": {
+                "wikipedia": {},
+                "arxiv": {},
+                "crossref": {},
+                "semantic_scholar": {},
+            },
+            "evidence_records": [
+                {"canonical_id": "doi:10.1000/a", "independence_key": "doi:10.1000/a"},
+                {"canonical_id": "doi:10.1000/b", "independence_key": "doi:10.1000/b"},
+            ],
+            "independent_source_count": 2,
+        }
+        with self.assertRaisesRegex(RuntimeError, "at least 3 sources"):
+            o.validate_node_output(node, output)
+
+    def test_local_validator_uses_independent_evidence_count(self):
+        node = o.Node(
+            "n02",
+            "validate",
+            "local_validator",
+            contract={"min_sources": 3},
+            input={"context": {
+                "dependencies": {
+                    "n01": {
+                        "status": "completed",
+                        "output": {
+                            "sources": {"a": {}, "b": {}, "c": {}},
+                            "evidence_records": [
+                                {"canonical_id": "doi:10.1000/a"},
+                                {"canonical_id": "doi:10.1000/a"},
+                                {"canonical_id": "doi:10.1000/b"},
+                            ],
+                            "independent_source_count": 2,
+                        },
+                    }
+                }
+            }},
+        )
+        result = o.execute_local_validator(node, "validate research")
+        minimum = [
+            item for item in result["checks"]
+            if item.get("check") == "contract:min_sources"
+        ]
+        self.assertEqual(len(minimum), 1)
+        self.assertEqual(minimum[0]["actual"], 2)
+        self.assertFalse(minimum[0]["passed"])
+
     def test_deterministic_research_plan_uses_multi_agent_scatter_gather(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
                 nodes = o.deterministic_plan("research AI safety", {})
         self.assertEqual(nodes[0].agent_role, "researcher")
+        self.assertEqual(nodes[0].input["budget"], "balanced")
         self.assertEqual(nodes[1].agent_role, "skeptic")
+        self.assertEqual(nodes[1].input["budget"], "balanced")
         self.assertEqual(nodes[1].depends_on, [])
         self.assertEqual(nodes[2].agent_role, "analyst")
         self.assertEqual(
@@ -1679,6 +1741,34 @@ class OrchestratorTests(unittest.TestCase):
             ["n01-research", "n02-skeptic"],
         )
         self.assertEqual(nodes[4].agent_role, "critic")
+
+    def test_deterministic_research_plan_diversifies_skeptic_lane(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
+                nodes = o.deterministic_plan("research AI safety", {})
+        self.assertEqual(nodes[0].input["research_focus"], "primary_evidence")
+        self.assertEqual(nodes[1].input["research_focus"], "counterevidence")
+
+    def test_skeptic_research_uses_counterevidence_query_variant(self):
+        node = o.Node(
+            id="n02-skeptic",
+            capability="research",
+            tool="research_bundle",
+            input={
+                "query": "AI safety",
+                "research_focus": "counterevidence",
+            },
+            agent_role="skeptic",
+        )
+        with patch("research_bundle.research_bundle", return_value={"ok": True}) as research:
+            result = o.execute_research_bundle(node, "unused goal")
+        self.assertEqual(result, {"ok": True})
+        query = research.call_args.args[0]
+        self.assertIn("AI safety", query)
+        self.assertIn("counterevidence", query)
+        self.assertIn("contradictions", query)
+        self.assertIn("limitations", query)
+        self.assertIn("alternative findings", query)
 
     def test_workflow_creation_persists_agent_team_manifest(self):
         with patch.dict(o.os.environ, {}, clear=True):
@@ -1845,6 +1935,150 @@ class OrchestratorTests(unittest.TestCase):
         with patch.object(o, "safe_public_https_json", return_value={"status_code": 200, "data": {"ok": True}}):
             result = o.execute_artifact_verifier(node, "verify")
         self.assertTrue(result["checks"][0]["passed"])
+
+    def test_llm_retry_consumes_second_budget_slot(self):
+        node = o.Node(
+            "n01", "analyze", "gemini", [],
+            status="running",
+            max_retries=1,
+        )
+        workflow = {"id": "wf_llm_retry", "llm_calls_used": 1}
+        budget = o.AttemptBudget({
+            "attempts_used": 1,
+            "max_attempts": 4,
+        })
+        with patch.object(
+            o,
+            "execute_node",
+            side_effect=[
+                RuntimeError("transient"),
+                {"candidates": [{"content": {"parts": [{"text": "{}"}]}}],
+                 },
+            ],
+        ), patch.object(
+            o,
+            "execution_failure_policy",
+            return_value=("transient", True, False),
+        ), patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "ORCHESTRATOR_MAX_LLM_CALLS": "2"},
+            clear=False,
+        ):
+            ok, error = o.execute_with_retries(
+                node,
+                "goal",
+                False,
+                attempt_budget=budget,
+                initial_attempt_reserved=True,
+                llm_budget_workflow=workflow,
+            )
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(workflow["llm_calls_used"], 2)
+        self.assertEqual(budget.used, 2)
+
+    def test_llm_retry_fails_closed_when_budget_is_exhausted(self):
+        node = o.Node(
+            "n01", "analyze", "gemini", [],
+            status="running",
+            max_retries=1,
+        )
+        workflow = {"id": "wf_llm_retry_limit", "llm_calls_used": 1}
+        budget = o.AttemptBudget({
+            "attempts_used": 1,
+            "max_attempts": 4,
+        })
+        with patch.object(
+            o,
+            "execute_node",
+            side_effect=RuntimeError("transient"),
+        ) as execute, patch.object(
+            o,
+            "execution_failure_policy",
+            return_value=("transient", True, False),
+        ), patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "ORCHESTRATOR_MAX_LLM_CALLS": "1"},
+            clear=False,
+        ):
+            ok, error = o.execute_with_retries(
+                node,
+                "goal",
+                False,
+                attempt_budget=budget,
+                initial_attempt_reserved=True,
+                llm_budget_workflow=workflow,
+            )
+        self.assertFalse(ok)
+        self.assertEqual(error["type"], "llm_call_budget_exhausted")
+        self.assertEqual(workflow["llm_calls_used"], 1)
+        self.assertEqual(budget.used, 1)
+        self.assertEqual(execute.call_count, 1)
+
+    def test_free_only_llm_call_budget_is_bounded_and_persisted(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {"id": "wf_llm_budget", "llm_calls_used": 11}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertTrue(o.reserve_llm_call(workflow, node, live=True))
+            self.assertEqual(workflow["llm_calls_used"], 12)
+            self.assertEqual(workflow["llm_call_limit"], 12)
+            self.assertFalse(o.reserve_llm_call(workflow, node, live=True))
+        self.assertEqual(node.error["type"], "llm_call_budget_exhausted")
+
+    def test_llm_budget_exhaustion_survives_resume_state(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {
+            "id": "wf_llm_resume_budget",
+            "goal": "analyze",
+            "live": True,
+            "llm_calls_used": 12,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_FREE_ONLY": "true"},
+                clear=False,
+            ), patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={"gemini": {"free_tier": True}}),                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow)
+                self.assertEqual(result, "failed")
+                execute.assert_not_called()
+                shard = o.workflow_shard_path(workflow["id"])
+                persisted = json.loads(shard.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["llm_calls_used"], 12)
+        self.assertEqual(
+            persisted["nodes"][0]["error"]["type"],
+            "llm_call_budget_exhausted",
+        )
+
+    def test_dry_run_does_not_consume_llm_call_budget(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {"id": "wf_llm_dry"}
+        self.assertTrue(o.reserve_llm_call(workflow, node, live=False))
+        self.assertNotIn("llm_calls_used", workflow)
+
+    def test_simulated_output_still_enforces_deterministic_contracts(self):
+        node = o.Node(
+            "n01", "execute", "noop", [],
+            contract={"required_fields": ["answer"], "min_sources": 1},
+        )
+        with self.assertRaisesRegex(RuntimeError, "contract field missing: answer"):
+            o.validate_node_output(
+                node,
+                {"simulated": True},
+            )
+
+    def test_simulated_epistemic_output_defers_only_epistemic_validation(self):
+        node = o.Node(
+            "n01", "execute", "gemini", [],
+            contract={"epistemic": True, "min_coverage": 0.8},
+        )
+        result = o.validate_node_output(
+            node,
+            {"simulated": True, "candidates": []},
+        )
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["checks"][0]["epistemic_deferred"])
 
     def test_contract_required_field_is_enforced(self):
         node = o.Node(
@@ -2130,6 +2364,41 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(execute.call_count, 0)
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "attempt_budget_exhausted")
 
+    def test_quota_sensitive_nodes_are_serialized(self):
+        nodes = [
+            o.Node("n01-llm-a", "analyze", "gemini", []),
+            o.Node("n02-llm-b", "analyze", "gemini", []),
+        ]
+        workflow = {
+            "id": "wf_quota_serial",
+            "goal": "analysis",
+            "live": True,
+            "max_parallel": 2,
+            "nodes": [o.asdict(n) for n in nodes],
+        }
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def fake_execute(node, goal, dry_run):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return {"output": "ok"}
+
+        registry = {
+            "gemini": {"free_tier": True, "free_models": ["test-model"]},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=fake_execute),                  patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(maximum, 1)
+
     def test_parallel_independent_nodes_execute_concurrently(self):
         barrier = threading.Barrier(2)
 
@@ -2353,6 +2622,146 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(result, "failed")
         self.assertIn("500", workflow["nodes"][0]["error"]["message"])
 
+    def test_epistemic_contract_accepts_supported_claims(self):
+        node = o.Node(
+            "n01", "draft", "gemini", [],
+            contract={"epistemic": True, "min_coverage": 1.0},
+        )
+        output = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "text": json.dumps({
+                        "result": "answer",
+                        "claims": [{
+                            "claim_id": "c1",
+                            "statement": "fact",
+                            "material": True,
+                            "status": "SUPPORTED_DIRECT",
+                            "evidence_refs": ["doi:10.1/a"],
+                        }],
+                        "evidence_records": [{
+                            "canonical_id": "doi:10.1/a",
+                            "authority_score": 0.90,
+                            "authority_class": "peer_reviewed",
+                        }],
+                        "risks": [],
+                        "next_action": "done",
+                    })
+                }]}
+            }]
+        }
+        result = o.validate_node_output(node, output)
+        self.assertTrue(result["passed"])
+
+    def test_epistemic_contract_rejects_unknown_evidence_reference(self):
+        node = o.Node(
+            "n01", "draft", "gemini", [],
+            contract={"epistemic": True},
+        )
+        output = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "text": json.dumps({
+                        "result": "answer",
+                        "claims": [{
+                            "claim_id": "c1",
+                            "statement": "fact",
+                            "material": True,
+                            "status": "SUPPORTED_DIRECT",
+                            "evidence_refs": ["missing"],
+                        }],
+                        "evidence_records": [{"canonical_id": "doi:10.1/a"}],
+                        "risks": [],
+                        "next_action": "revise",
+                    })
+                }]}
+            }]
+        }
+        with self.assertRaisesRegex(RuntimeError, "epistemic validation failed"):
+            o.validate_node_output(node, output)
+
+    def test_epistemic_gemini_prompt_requires_claim_evidence_contract(self):
+        node = o.Node(
+            "n01", "draft", "gemini", [],
+            contract={"epistemic": True},
+            agent_role="analyst",
+            input={"instruction":"draft from evidence", "workflow_id":"wf-ep"},
+        )
+        captured = {}
+        def fake_http(url, method="GET", body=None, headers=None, timeout=60, max_response_bytes=o.MAX_GENERIC_HTTP_RESPONSE_BYTES):
+            captured["body"] = body
+            return {"status_code": 200, "data": {"ok": True}}
+        registry = {"gemini": {
+            "default_model":"gemini-3.8-flash",
+            "free_models":["gemini-3.8-flash"],
+            "free_tier":True,
+        }}
+        with patch.dict(o.os.environ, {"GEMINI_API_KEY":"x","ORCHESTRATOR_FREE_ONLY":"true"}, clear=True), \
+             patch.object(o, "load_registry", return_value=registry), \
+             patch.object(o, "http_json", side_effect=fake_http):
+            o.execute_gemini(node, "goal")
+        prompt = captured["body"]["contents"][0]["parts"][0]["text"]
+        self.assertIn("claims", prompt)
+        self.assertIn("evidence_records", prompt)
+        self.assertIn("evidence_refs", prompt)
+
+    def test_side_effect_failure_does_not_switch_adapter_without_equivalence_contract(self):
+        node = o.Node(
+            "n01-publish", "publish", "connector_bridge", [],
+            risk="high", max_retries=0,
+        )
+        node.status = "failed"
+        node.error = {
+            "type": "ConnectorRequestError",
+            "message": "definitive upstream rejection",
+            "failure_class": "permanent",
+        }
+        workflow = {
+            "id": "wf-side-effect-replan",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+            "replan_count": 0,
+            "attempts_used": 1,
+            "max_attempts": 8,
+        }
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": ["webhook"],
+            },
+            "connector_bridge": {
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+            "webhook": {
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+        }
+        self.assertFalse(o.replan_after_failure(workflow, [node], node, registry))
+        self.assertEqual(node.tool, "connector_bridge")
+
+
+    def test_simulated_research_bundle_defers_provider_contract(self):
+        node = o.Node(
+            "n01", "research", "research_bundle", [],
+            contract={},
+        )
+        output = {
+            "simulated": True,
+            "tool": "research_bundle",
+            "capability": "research",
+        }
+        # Dry-run must still enforce deterministic shape checks, but must not
+        # require live provider evidence that was intentionally not fetched.
+        result = o.validate_node_output(node, output)
+        self.assertTrue(result["passed"])
+        self.assertTrue(any(
+            check.get("check") == "adapter_contract"
+            and check.get("deferred") is True
+            for check in result["checks"]
+        ))
 
 if __name__ == "__main__":
     unittest.main()

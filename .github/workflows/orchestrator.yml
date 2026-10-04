@@ -144,6 +144,14 @@ jobs:
           gh label create orchestrator-approved --description "Approve a high-risk orchestration action" --color 0E8A16 --force
           gh label create orchestrator-rejected --description "Reject a high-risk orchestration action" --color B60205 --force
 
+      - name: Restore research cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: .orchestrator/research-cache
+          key: orchestrator-research-v1-${{ github.ref_name }}
+          restore-keys: |
+            orchestrator-research-v1-
+
       - name: Run orchestrator
         env:
           ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
@@ -171,6 +179,9 @@ jobs:
           ORCHESTRATOR_REQUESTED_MODE: ${{ github.event.client_payload.requested_mode || 'dry-run' }}
           ORCHESTRATOR_CALLBACK_URL: ${{ secrets.ORCHESTRATOR_CALLBACK_URL }}
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
+          ORCHESTRATOR_CONTROL_PLANE_URL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_URL }}
+          ORCHESTRATOR_CONTROL_PLANE_SECRET: ${{ secrets.ORCHESTRATOR_CONTROL_PLANE_SECRET }}
+          ORCHESTRATOR_CONTROL_PLANE_LEASE_TTL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_LEASE_TTL || '1200' }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
@@ -235,10 +246,16 @@ jobs:
         if: always()
         shell: bash
         run: |
+          goal_sha256="$(python3 - <<'PY'
+          import hashlib
+          from pathlib import Path
+          print(hashlib.sha256(Path('/tmp/orchestrator_goal.txt').read_bytes()).hexdigest())
+          PY
+          )"
           printf '%s\n' \
             "## AI Orchestrator" \
             "" \
-            "- Goal: $(cat /tmp/orchestrator_goal.txt)" \
+            "- Goal: [redacted; digest=$goal_sha256]" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           from orchestrator.orchestrator import load_state
@@ -268,124 +285,33 @@ jobs:
       actions: read
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30af803
         with:
           ref: main
           fetch-depth: 1
-      - name: Dispatch stale workflows
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Run scheduled recovery
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           SCHEDULE_RUN_ID: ${{ github.run_id }}
+          ORCHESTRATOR_CONTROL_PLANE_URL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_URL }}
+          ORCHESTRATOR_CONTROL_PLANE_SECRET: ${{ secrets.ORCHESTRATOR_CONTROL_PLANE_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          import subprocess
-          from datetime import datetime, timezone
-          from orchestrator.orchestrator import (
-              DEFAULT_TERMINAL_COMPACTION_DAYS,
-              compact_terminal_workflows,
-              load_state,
-          )
-
-          state = load_state()
-          now = datetime.now(timezone.utc)
-
-          def stale_running(workflow):
-              raw = str(workflow.get("updated_at") or "")
-              if not raw:
-                  return True
-              try:
-                  updated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-              except ValueError:
-                  return True
-              if updated.tzinfo is None:
-                  updated = updated.replace(tzinfo=timezone.utc)
-              return (now - updated).total_seconds() >= 300
-
-          def barrier_failed(workflow):
-              executions = workflow.get("executions")
-              if not isinstance(executions, dict):
-                  return False
-              for node in workflow.get("nodes", []):
-                  if not isinstance(node, dict) or node.get("status") != "failed":
-                      continue
-                  if not isinstance(node.get("id"), str):
-                      continue
-                  key = hashlib.sha256(
-                      f"{workflow.get('id')}:{node['id']}".encode("utf-8")
-                  ).hexdigest()
-                  record = executions.get(key)
-                  if isinstance(record, dict) and record.get("status") == "barrier_failed":
-                      return True
-              return False
-
-          dispatched = 0
-          for workflow in state.get("workflows", {}).values():
-              if not isinstance(workflow, dict):
-                  continue
-              workflow_id = str(workflow.get("id") or "").strip()
-              if not workflow_id:
-                  continue
-              status = workflow.get("status")
-              federation = workflow.get("federation") or {}
-              uncertain = any(
-                  isinstance(node, dict)
-                  and node.get("status") == "failed"
-                  and isinstance(node.get("error"), dict)
-                  and node["error"].get("execution_uncertain")
-                  and node.get("tool") == "connector_bridge"
-                  for node in workflow.get("nodes", [])
-              )
-              candidate = (
-                  status == 'waiting_approval'
-                  or (status == 'running' and stale_running(workflow))
-                  or (status == 'waiting_agents' and federation.get('status') in {'prepared', 'dispatched'})
-                  or (status == 'failed' and (uncertain or barrier_failed(workflow)))
-              )
-              if not candidate:
-                  continue
-              event_id = "scheduled-recovery:" + workflow_id + ":" + str(workflow.get("updated_at") or "")
-              payload = {
-                  "event_type": "orchestrator.continue",
-                  "client_payload": {
-                      "workflow_id": workflow_id,
-                      "event_id": event_id,
-                      "scheduled_recovery": True,
-                      "schedule_run_id": os.environ["SCHEDULE_RUN_ID"],
-                  },
-              }
-              subprocess.run(
-                  ["gh", "api", f"repos/{os.environ['REPOSITORY']}/dispatches", "--input", "-"],
-                  input=json.dumps(payload),
-                  text=True,
-                  check=True,
-              )
-              dispatched += 1
-          retention_raw = os.environ.get(
-              "ORCHESTRATOR_TERMINAL_COMPACTION_DAYS",
-              str(DEFAULT_TERMINAL_COMPACTION_DAYS),
-          )
-          try:
-              retention_days = int(retention_raw)
-          except ValueError:
-              retention_days = DEFAULT_TERMINAL_COMPACTION_DAYS
-          compacted = compact_terminal_workflows(
-              state,
-              now=now,
-              retention_days=retention_days,
-          )
-          print(f"dispatched={dispatched}")
-          print(f"compacted={len(compacted)}")
-          PY
-
+          python3 -m orchestrator.recovery_worker
+      - name: Persist compacted state
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .orchestrator/workflows
+          git add -A .orchestrator
           if git diff --cached --quiet; then
             exit 0
           fi
@@ -398,11 +324,11 @@ jobs:
             git fetch origin main
             if ! git rebase origin/main; then
               git rebase --abort || true
-              echo "Terminal-state compaction rebase conflict; refusing to overwrite concurrent state."
+              echo "State persistence rebase conflict; refusing to overwrite concurrent state."
               exit 1
             fi
             sleep $((attempt * 2))
           done
 
-          echo "Terminal-state compaction push failed after bounded retries."
+          echo "State persistence push failed after bounded retries."
           exit 1

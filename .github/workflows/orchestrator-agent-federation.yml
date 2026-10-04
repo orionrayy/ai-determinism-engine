@@ -74,14 +74,16 @@ jobs:
           name: federation-manifest-${{ steps.manifest.outputs.federation_id }}
           path: manifest.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   agents:
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: 4
+      # Free-first: federated workers may share the same upstream LLM quota.
+      # Serialize by default to avoid quota bursts; the supervisor still bounds task count.
+      max-parallel: 1
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     permissions:
       contents: read
@@ -109,7 +111,7 @@ jobs:
           name: agent-result-${{ matrix.task.task_id }}
           path: result.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   aggregate:
     needs: [prepare, agents]
@@ -152,7 +154,7 @@ jobs:
           name: federation-results-${{ needs.prepare.outputs.federation_id }}
           path: aggregate.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Dispatch completion to supervisor
         env:
           GH_TOKEN: ${{ github.token }}

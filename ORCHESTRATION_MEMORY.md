@@ -12,7 +12,33 @@ Current main baseline: orchestration hardening v66 deterministic trace contract 
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
+Feature validation line: feat/v75-validation (pending merge; integrated review remains PR #141)
 
+## Orchestration hardening v76 — split plan intent/provider binding and claim-level deliberation
+- Plan integrity now separates semantic workflow intent from concrete provider resolution. The semantic intent fingerprint deliberately excludes the selected tool, while provider-resolution fingerprinting records the concrete tool binding separately.
+- Legacy workflows are migrated conservatively: an existing v75 strict plan fingerprint is checked before split fingerprints are initialized. Intent drift remains fail-closed even during provider reselection.
+- Provider changes are accepted only through the orchestrator's explicit failure-replan transition. The previous provider fingerprint remains authoritative until the next integrity pass consumes the re-selection marker, making an adapter switch auditable rather than self-authorized.
+- Workflow schema version 8 persists plan_intent_fingerprint, provider_resolution_fingerprint, and the controlled provider_resolution_change marker without removing the legacy plan_fingerprint.
+- Deliberation now builds a deterministic claim-level challenge queue for material disagreement, status conflict, missing evidence, weak authority, and one-sided candidate claims. Challenges are anonymized and bounded before reaching the adjudicator.
+- A deliberation response gate requires one response per challenge with an explicit resolved/contested/unknown status; resolved or contested responses must cite evidence from the candidate verdict's evidence set, which is subsequently rebound to trusted dependency evidence at the epistemic boundary.
+- Adaptive round metadata now distinguishes blind claim challenge from rebuttal/evidence recheck while preserving the existing two-round maximum and deterministic stop conditions.
+- Regression coverage was extended for split fingerprints, unauthorized provider drift, intent drift during provider switching, claim-level challenge generation, adaptive deliberation context, and node-output deliberation gating.
+- Exact v76 validation head: 6ef1523cbc2677fd7e1dd3714b4ce77d773e20d3. CI run #1956 passed compile checks, Control-plane Worker syntax, actionlint, 387 unit tests, and the control-plane evaluation harness. Private Input Worker Tests also passed.
+- No paid runtime, new database, broker, queue, or external orchestration dependency was added. The existing optional SQLite bridge ledger and Cloudflare Durable Object control-plane remain unchanged.
+
+## Orchestration hardening v75 — boundary, authority, epistemic quality, and free-first reliability
+- Gateway authentication is HMAC-only for structured event delivery; static bearer-secret authentication is no longer accepted. Requests bind timestamp, method, path, idempotency key, and raw body.
+- Private input is retained after ambiguous GitHub dispatch failures (timeouts, connection failures, and non-deterministic upstream errors). Cleanup is restricted to explicit pre-acceptance HTTP rejection, avoiding loss of input when delivery may already have succeeded.
+- Workflow authority is immutable at creation: Git-backed workflows remain Git-authoritative even when a control-plane endpoint is configured; distributed-authority workflows fail closed when their configured control plane is unavailable. Control-plane lease acquisition is deduplicated into one supervisor session path.
+- Gemini 3.8 generation uses thinkingConfig.thinkingLevel instead of deprecated sampling/candidate fields. Reasoning/validation roles receive bounded medium/high thinking by policy; the authoritative packed context is no longer destructively prefix-truncated a second time.
+- Capability routing now honors explicit provider preference and records deterministic Bayesian-style reliability from existing success/failure history. This is a routing signal, not a truth score.
+- Evidence records carry explainable source-authority tier/score metadata derived from typed provenance signals, not self-asserted model labels. Deduplication preserves the strongest authority profile.
+- LLM evidence is bound to trusted dependency evidence IDs at the execution boundary. Fabricated evidence IDs or model-supplied authority metadata cannot cross into the authoritative epistemic verdict.
+- High-confidence asserted claims require sufficient supported coverage and authoritative evidence; selective epistemic abstention is a real validation failure/admission gate rather than telemetry-only output.
+- Debate independence is computed from evidence records rather than self-reported source counts. Agents remain independently seeded until conflict detection, then deliberation can be invoked selectively.
+- Federation artifacts use a bounded three-day retention window to improve recovery without introducing paid storage services.
+- Public approval issues and Actions summaries expose only goal digests, not raw goals.
+- The v75 line remains free-first: no required paid API, queue, database, broker, or runtime dependency is introduced.
 
 ## Orchestration hardening v42 — free Gemini model gate
 - `orchestrator/tools.json` is now authoritative for Gemini model cost policy: it declares the default model plus an explicit `free_models` allowlist.
@@ -680,4 +706,87 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Workflow state now carries a generic workload envelope for blueprint/version/digest lineage, compilation manifest identity, unit/wave counts, and optional completed unit/wave progress.
 - Added regression tests for bounded dependency context and workload-state validation.
 - No external side effects or new paid/runtime dependency were added. Existing supervisor policy remains authoritative.
-- Current production baseline is v64.
+- Main remains the v66 production baseline; the current branch contains v67 boundary hardening plus the adaptive research/epistemic upgrades below.
+
+## Orchestration hardening v68 — adaptive free-first research and epistemic measurement
+- Research retrieval now has deterministic fast, balanced, and deep budgets with explicit caps on extended providers and result counts.
+- In ORCHESTRATOR_FREE_ONLY=true mode, research defaults to public unauthenticated providers (Semantic Scholar and Europe PMC). Optional metered/credentialed providers such as OpenAlex and CORE are excluded from the default free-only path.
+- Extended research stops early when canonical independent evidence already meets the selected target, and the extended fabric is allowed to rescue a complete legacy-provider outage instead of failing before the second stage.
+- Research provider calls within an enabled stage execute concurrently, while normalization and final output ordering remain deterministic.
+- Canonical evidence counts now use independence_key semantics rather than raw provider-bucket counts.
+- Research lanes are no longer query-identical: the skeptic lane is deterministically marked as counterevidence and searches for contradictions, limitations, and alternative findings.
+- Epistemic validation now rejects duplicate/malformed evidence identities and duplicate/blank claim identities, while min_coverage is based on evidence linkage rather than forcing contested claims to look supported.
+- Workflow state records deterministic epistemic telemetry for material claims, supported/contested/unknown status, evidence linkage, research evidence counts, and independent-source maxima. These are measurements, not truth scores.
+- The offline evaluation harness covers epistemic boundary and conditional deliberation behavior in addition to existing control-plane cases.
+- Worker/Node validation is path-scoped into a separate CI workflow so ordinary orchestrator changes do not invoke Wrangler/Node checks unnecessarily.
+- No paid runtime, database, broker, queue, or Python/Node package dependency was added to the orchestrator runtime.
+- Known limitations remain explicit: the deliberation module is still a policy primitive rather than a full automatic second-round federation spawn; empirical epistemic quality still needs labeled ground-truth datasets; open-access route resolution is still metadata-only; and run_one_step/run_workflow retain some execution-path duplication that should be refactored only with additional recovery regression coverage.
+
+
+## v68.1 free-first retrieval and quota hardening (2026-10-03)
+
+- Dry-run provider adapters now defer provider-specific output validation while retaining deterministic contract checks; this prevents simulation from being mistaken for live evidence retrieval.
+- Added bounded local research-response cache under `.orchestrator/research-cache`: SHA-256 keyed by provider/query/result limit, 24-hour default TTL, 128-entry cap, atomic writes, and opt-out via `ORCHESTRATOR_RESEARCH_CACHE=false`. Cache failures never block live retrieval.
+- Quota-sensitive adapters (`gemini`, `openai`, `research_bundle`) are serialized in the supervisor batch scheduler to avoid free-tier burst amplification. Independent non-quota-sensitive nodes remain parallelizable.
+- Federated worker matrix default is now `max-parallel: 1` because worker LLM calls execute on separate runners and share upstream quotas. Federation remains opt-in and task-count bounded.
+- Semantic Scholar documents that its public API is rate-limited and may be further throttled; its documentation recommends keys/bulk endpoints for heavier use. The local cache therefore reduces repeated requests but does not imply unlimited provider access. The project must treat “$0” as a deployment/configuration target, not as an upstream guarantee.
+
+
+## v68.2 control-plane boundary hardening (2026-10-04)
+- Direct GitHub side effects now have deterministic reconciliation semantics where GitHub exposes enough observable state: issue creation uses a durable execution marker in the issue body; file create/update proves an already-applied effect by exact content equality; file deletion proves an already-applied effect by a 404.
+- GitHub workflow dispatch remains explicitly non-reconcilable in the generic adapter because the dispatch API does not provide a durable caller idempotency key or returned run identifier. The runtime therefore fails closed instead of guessing.
+- Bridge runtime now supports an optional stdlib SQLite idempotency ledger through ORCHESTRATOR_BRIDGE_IDEMPOTENCY_DB. Completed responses survive process restart and multiple bridge processes sharing the same database file. In-flight entries are retained on owner failure so an uncertain upstream side effect cannot become an automatic replay.
+- Durable bridge idempotency is deployment-storage dependent: a shared persistent SQLite file improves process/multiprocess safety on one host; it is not a substitute for a distributed database or fencing-aware external provider.
+- Added regression coverage for SQLite-backed replay and GitHub-effect reconciliation boundaries.
+- Kept all runtime dependencies stdlib-only and did not introduce a paid service.
+
+
+## v69 distributed control-plane boundary (2026-10-04)
+- Live one-step execution can use an optional HTTPS control plane configured through GitHub vars/secrets.
+- Workflow leases are per workflow ID and use a monotonically increasing fence_epoch. Side effects use stable effect IDs plus semantic intent digests.
+- Live side-effect order is local prepared/started persistence -> durability barrier -> distributed claim -> external execution -> validation -> distributed completion -> local completion.
+- Existing inflight/completed claims are never auto-replayed; ambiguous outcomes remain fail-closed and require reconciliation.
+- Reconciliation can create a completed control-plane record when a crash happened after the local barrier but before the first distributed claim. A proven not_applied outcome clears the claim before replay.
+- Runtime metadata is excluded from semantic effect identity, while private-input digests/fingerprints remain identity-bearing.
+- Control-plane failures do not silently fall back to Git-only live side effects; they persist as running/control_plane_blocked so stale-running recovery can retry later.
+- Cloudflare Durable Objects are coordination authority only; Git remains source/audit persistence. Cloudflare Queues are intentionally outside the mandatory control path.
+
+- When the distributed control plane is active, its durable effect claim replaces the Git side-effect durability barrier; Git barrier remains used for Git-only live execution.
+
+
+## v70 resource-scoped locks and hot state (2026-10-04)
+- Nodes support explicit resource keys through Node.resources or input.resource_keys; keys are normalized, deduplicated, sorted, and bounded.
+- Resource locks use separate Durable Object identities per resource key and bind ownership to both worker owner and workflow ID.
+- Locks are acquired before side-effect preparation/effect claims. Contention refunds both attempt and LLM admission budget, returns the node to ready, and exits the supervisor with a running/resource-waiting state.
+- Resource-bearing nodes are excluded from the parallel-safe batch; resource leases renew before retry attempts and release in deterministic reverse order.
+- Active live control-plane sessions persist workflow state through a monotonically increasing state_version CAS in Durable Object storage. Targeted load_workflow reads remote hot state first when configured.
+- Global recovery hydrates the remote workflow snapshot before executing a Git-discovered candidate, preventing stale Git snapshots from overwriting newer control-plane state.
+- Selected lifecycle/control events use a bounded Durable Object outbox (latest 256 events per workflow object); high-volume diagnostics remain local.
+- Git remains eventual source/audit snapshot storage; active distributed live execution does not require Git round-trips for each hot-state mutation.
+
+
+## v71 effect contracts (2026-10-04)
+- Side-effect adapters declare action-aware effect contracts in orchestrator/tools.json.
+- Contracts specify effect identity, retry mode, reconciliation mode, and fencing model.
+- Live execution rejects a side-effect action with no effect identity contract.
+- Reconcile-based retry is permitted only when the contract declares an actual reconciliation mechanism.
+- Generic webhook effects are intentionally opaque/non-retryable; GitHub create/update/delete effects are deterministic-reconcilable; workflow dispatch remains blocked on uncertain outcome; connector bridge uses a wildcard provider-idempotency/reconciliation contract because the vendor action is dynamic.
+- This is a correctness policy layer, not a provider-side fencing guarantee. Providers remain responsible for honoring provider idempotency keys and reconciliation APIs.
+
+
+## v72 conditional blind deliberation (2026-10-04)
+- Research/compare/literature/study/analysis workloads use two bounded reasoning lanes (primary analyst + contrarian skeptic) followed by a critic adjudicator, draft, and final validation.
+- The adjudicator activates the existing debate_decision() policy conditionally and receives blind/anonymized candidate views. Candidate ordering is derived from candidate content rather than agent identity; evidence cards are preserved separately from raw dependency outputs.
+- Deliberation is capped at two rounds and is not an unbounded peer-to-peer debate. The goal is information gain only when disagreement, uncertainty, or evidence insufficiency warrants adjudication.
+- Epistemic outputs request an explicit confidence value. Final validation remains separate from adjudication.
+- The critic role is explicitly allowed to perform analyze + validate so the adjudicator keeps critic semantics without introducing a second role taxonomy.
+- Multi-agent debate quality remains task/protocol dependent; current design therefore prefers conditional bounded deliberation over always-on debate.
+
+
+## v73 evidence independence and calibration (2026-10-04)
+- "independent_source_count" remains as a compatibility field but is computed as a distinct evidence-work count rather than trusted from an LLM self-report.
+- Evidence work identity prefers DOI/arXiv/PMID/PMCID, collapses arXiv versions to one work, then falls back to canonical identifiers, bibliographic fingerprints, or weak provider identity. Each work carries an identity basis and proxy confidence.
+- The independence layer explicitly marks itself as a proxy. It does not claim proof of independent authorship, datasets, citations, or study populations.
+- Calibration metrics (Brier, ECE, MCE, reliability bins, selective risk) are label-dependent. Samples are accepted only with label_source in ground_truth, benchmark, or human_eval.
+- Confidence alone is never treated as calibrated accuracy. Production/runtime metrics remain "unavailable" until explicit outcome labels exist.
+- The evaluation harness contains a deterministic calibration/independence case so the epistemic quality layer is CI-gated without consuming live provider calls.

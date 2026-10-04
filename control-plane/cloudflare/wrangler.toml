@@ -1,0 +1,11 @@
+name = "ai-determinism-control-plane"
+main = "src/worker.js"
+compatibility_date = "2026-10-01"
+
+[[durable_objects.bindings]]
+name = "WORKFLOW_CONTROL"
+class_name = "WorkflowControlPlane"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WorkflowControlPlane"]
