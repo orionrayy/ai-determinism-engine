@@ -13,10 +13,10 @@ from calibration_metrics import (
 class CalibrationMetricTests(unittest.TestCase):
     def setUp(self):
         self.samples = [
-            {"confidence": 0.9, "correct": True},
-            {"confidence": 0.8, "correct": True},
-            {"confidence": 0.2, "correct": False},
-            {"confidence": 0.1, "correct": False},
+            {"confidence": 0.9, "correct": True, "label_source": "benchmark"},
+            {"confidence": 0.8, "correct": True, "label_source": "benchmark"},
+            {"confidence": 0.2, "correct": False, "label_source": "benchmark"},
+            {"confidence": 0.1, "correct": False, "label_source": "benchmark"},
         ]
 
     def test_brier_score(self):
