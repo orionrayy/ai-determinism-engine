@@ -104,6 +104,13 @@ def selective_evidence_gate(
     }
     low_authority_material_claims = []
     for claim in material:
+        status = str(claim.get("status") or "UNKNOWN")
+        if status not in {
+            "SUPPORTED_DIRECT",
+            "SUPPORTED_INDIRECT",
+            "CONTESTED",
+        }:
+            continue
         refs = claim.get("evidence_refs")
         if not isinstance(refs, list) or not refs:
             low_authority_material_claims.append(str(claim.get("claim_id") or ""))
