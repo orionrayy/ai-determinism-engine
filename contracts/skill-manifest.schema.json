@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-determinism-engine.local/contracts/skill-manifest.schema.json",
+  "title": "AI Determinism Engine Skill Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["skill_id","version","description","capabilities","input_schema","output_schema","permissions","effect_contract","resource_profile","trust","provenance","policy"],
+  "properties": {
+    "skill_id":{"type":"string","pattern":"^[a-z0-9][a-z0-9._/-]{0,159}$"},
+    "version":{"type":"string","minLength":1,"maxLength":64},
+    "description":{"type":"string","minLength":1,"maxLength":4096},
+    "capabilities":{"type":"array","items":{"type":"string","maxLength":128},"minItems":1,"maxItems":64,"uniqueItems":true},
+    "input_schema":{"type":"object"},
+    "output_schema":{"type":"object"},
+    "dependencies":{"type":"array","items":{"type":"string","maxLength":256},"maxItems":64,"uniqueItems":true},
+    "permissions":{
+      "type":"object","additionalProperties":false,"required":["network","secrets","storage"],
+      "properties":{
+        "network":{
+          "type":"object","additionalProperties":false,"required":["mode"],
+          "properties":{
+            "mode":{"type":"string","enum":["none","allowlist","open"]},
+            "hosts":{"type":"array","items":{"type":"string","maxLength":255},"maxItems":128,"uniqueItems":true},
+            "ports":{"type":"array","items":{"type":"integer","minimum":1,"maximum":65535},"maxItems":32,"uniqueItems":true}
+          }
+        },
+        "secrets":{"type":"array","items":{"type":"string","maxLength":256},"maxItems":64,"uniqueItems":true},
+        "storage":{
+          "type":"object","additionalProperties":false,
+          "properties":{
+            "read":{"type":"boolean"},
+            "write":{"type":"boolean"},
+            "scopes":{"type":"array","items":{"type":"string","maxLength":256},"maxItems":64,"uniqueItems":true}
+          }
+        }
+      }
+    },
+    "effect_contract":{
+      "type":"object","additionalProperties":false,"required":["identity","retry","reconciliation","fencing"],
+      "properties":{
+        "identity":{"type":"string","enum":["none","engine","provider"]},
+        "retry":{"type":"string","enum":["safe","reconcile","blocked"]},
+        "reconciliation":{"type":"string","enum":["none","deterministic","provider"]},
+        "fencing":{"type":"string","enum":["none","engine","provider"]}
+      }
+    },
+    "evidence":{
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "required":{"type":"boolean"},
+        "min_independent_sources":{"type":"integer","minimum":0,"maximum":64},
+        "require_passages":{"type":"boolean"},
+        "allowed_statuses":{
+          "type":"array",
+          "items":{"type":"string","enum":["SUPPORTED_DIRECT","SUPPORTED_INDIRECT","CONTESTED","UNSUPPORTED","UNKNOWN"]},
+          "maxItems":5,"uniqueItems":true
+        }
+      }
+    },
+    "resource_profile":{
+      "type":"object","additionalProperties":false,"required":["cpu_class","memory_mb","max_concurrency"],
+      "properties":{
+        "cpu_class":{"type":"string","maxLength":64},
+        "memory_mb":{"type":"integer","minimum":1,"maximum":1048576},
+        "max_concurrency":{"type":"integer","minimum":1,"maximum":1024},
+        "estimated_seconds":{"type":"integer","minimum":0},
+        "max_output_bytes":{"type":"integer","minimum":1}
+      }
+    },
+    "trust":{
+      "type":"object","additionalProperties":false,"required":["level"],
+      "properties":{
+        "level":{"type":"string","enum":["untrusted","standard","trusted","isolated"]},
+        "publisher":{"type":"string","maxLength":256},
+        "signature":{"type":"string","maxLength":4096}
+      }
+    },
+    "provenance":{
+      "type":"object","additionalProperties":false,"required":["source","digest"],
+      "properties":{
+        "source":{"type":"string","minLength":1,"maxLength":2048},
+        "digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+        "commit":{"type":"string","pattern":"^[0-9a-f]{7,64}$"}
+      }
+    },
+    "adapters":{
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "mcp":{"type":"boolean"},
+        "a2a":{"type":"boolean"},
+        "openapi":{"type":"boolean"}
+      }
+    },
+    "policy":{
+      "type":"object","additionalProperties":false,"required":["free_tier_eligible","side_effecting"],
+      "properties":{
+        "free_tier_eligible":{"type":"boolean"},
+        "billing_class":{"type":"string","enum":["free_public","free_allowance","credentialed_optional","paid","unknown"]},
+        "side_effecting":{"type":"boolean"},
+        "required_approval":{"type":"boolean"},
+        "allowed_tenants":{"type":"array","items":{"type":"string","maxLength":128},"maxItems":128,"uniqueItems":true}
+      }
+    }
+  }
+}
