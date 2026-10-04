@@ -4401,6 +4401,72 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                                 "error": str(barrier_exc),
                             })
                             return
+                
+                if control_plane is not None:
+                    if control_plane_lease is None:
+                        raise ControlPlaneError("control-plane lease is missing")
+                    control_plane_lease = control_plane.renew_lease(
+                        workflow["id"],
+                        control_plane_lease.fence_epoch,
+                    )
+                    fence_epoch = int(control_plane_lease.fence_epoch)
+                    semantic_digest = effect_semantic_digest(node)
+                    try:
+                        claim = control_plane.claim_effect(
+                            workflow["id"],
+                            execution_id,
+                            semantic_digest,
+                            fence_epoch,
+                        )
+                    except ControlPlaneError as cp_exc:
+                        node.error = {
+                            "type": type(cp_exc).__name__,
+                            "message": str(cp_exc),
+                            "failure_class": "uncertain",
+                            "retry_allowed": False,
+                            "execution_uncertain": True,
+                            "reconciliation_required": True,
+                            "control_plane_error": True,
+                            "execution_id": execution_id,
+                        }
+                        transition(node, "failed")
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
+
+                    if claim.status != "claimed":
+                        node.error = {
+                            "type": "execution_uncertain",
+                            "message": "The distributed control plane already owns or completed this effect; external execution will not be replayed.",
+                            "failure_class": "uncertain",
+                            "retry_allowed": False,
+                            "execution_uncertain": True,
+                            "reconciliation_required": True,
+                            "control_plane_status": claim.status,
+                            "execution_id": execution_id,
+                        }
+                        transition(node, "failed")
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
+
+                    record_effect_claim(
+                        workflow,
+                        execution_id,
+                        semantic_digest,
+                        fence_epoch,
+                    )
+                    append_event("node.control_plane_claimed", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "execution_id": execution_id,
+                        "fence_epoch": fence_epoch,
+                    })
+
 
                 append_event("node.started", {
                     "workflow_id": workflow["id"],
