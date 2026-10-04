@@ -3145,6 +3145,15 @@ def execution_failure_policy(
     ):
         decision["retry_allowed"] = False
         decision["reason"] = "effect_contract_retry_blocked"
+        if decision.get("uncertain") or decision.get("failure_class") in {
+            "transient",
+            "dependency",
+            "permanent",
+            "uncertain",
+        }:
+            node.error["post_start_side_effect_failure"] = True
+            node.error["retry_blocked_after_side_effect_start"] = True
+            node.error["replan_blocked_after_side_effect_start"] = True
     elif (
         not dry_run
         and side_effecting(node, registry)
@@ -3153,6 +3162,9 @@ def execution_failure_policy(
     ):
         decision["retry_allowed"] = False
         decision["reason"] = "effect_contract_requires_reconciliation"
+        node.error["post_start_side_effect_failure"] = True
+        node.error["retry_blocked_after_side_effect_start"] = True
+        node.error["replan_blocked_after_side_effect_start"] = True
     node.error["failure_class"] = decision["failure_class"]
     node.error["retry_allowed"] = decision["retry_allowed"]
     node.error["retry_reason"] = decision["reason"]
