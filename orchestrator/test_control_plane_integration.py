@@ -253,8 +253,14 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
             ],
         )
         by_id = {node.id: node for node in nodes}
-        self.assertEqual(by_id["n03-analyze-primary"].depends_on, ["n01-research"])
-        self.assertEqual(by_id["n04-analyze-contrarian"].depends_on, ["n02-skeptic"])
+        self.assertEqual(
+            by_id["n03-analyze-primary"].depends_on,
+            ["n01-research", "n02-skeptic"],
+        )
+        self.assertEqual(
+            by_id["n04-analyze-contrarian"].depends_on,
+            ["n01-research", "n02-skeptic"],
+        )
         self.assertEqual(
             by_id["n05-adjudicate"].depends_on,
             ["n03-analyze-primary", "n04-analyze-contrarian"],
