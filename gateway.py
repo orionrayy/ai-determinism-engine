@@ -255,7 +255,7 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
 def _definitely_not_delivered(exc: Exception) -> bool:
     """Return True only when GitHub explicitly rejected the dispatch before acceptance."""
     if isinstance(exc, urllib.error.HTTPError):
-        return int(exc.code) in {400, 401, 403, 404, 409, 422}
+        return int(exc.code) in {400, 401, 403, 404, 422}
     return False
 
 
