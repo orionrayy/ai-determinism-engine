@@ -41,6 +41,12 @@ class CalibrationMetricTests(unittest.TestCase):
         self.assertFalse(result["available"])
         self.assertIn("no_explicit", result["reason"])
 
+    def test_unlabelled_correct_is_not_calibration(self):
+        result = calibration_summary([
+            {"confidence": 0.9, "correct": True},
+        ])
+        self.assertFalse(result["available"])
+
     def test_calibration_summary_available_with_explicit_labels(self):
         result = calibration_summary(self.samples, bins=2)
         self.assertTrue(result["available"])
