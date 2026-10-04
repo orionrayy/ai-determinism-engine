@@ -143,6 +143,30 @@ class ControlPlaneClientTests(unittest.TestCase):
         self.assertEqual(state.recovery_event_id, "recovery:1")
         self.assertEqual(state.recovery_due_at, 200)
 
+    def test_hot_state_cas_accepts_atomic_recovery_spec(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "stored", "state_version": 4},
+        ) as request:
+            version = client.put_workflow_state(
+                "wf",
+                owner="w",
+                fence_epoch=2,
+                expected_state_version=3,
+                state={"id": "wf", "status": "running"},
+                recovery={
+                    "action": "arm",
+                    "due_at": 200,
+                    "event_id": "recovery:1",
+                },
+            )
+        self.assertEqual(version, 4)
+        payload = request.call_args.args[2]
+        self.assertEqual(payload["recovery"]["action"], "arm")
+        self.assertEqual(payload["recovery"]["event_id"], "recovery:1")
+
     def test_hot_state_cas_and_outbox_paths(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
         with patch.object(
