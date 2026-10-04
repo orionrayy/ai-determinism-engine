@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any, Mapping
 
 try:
@@ -61,6 +63,34 @@ def proposal_from_verdict(
     except (TypeError, ValueError):
         confidence = 0.0
 
+    evidence_cards = []
+    for record in records[:8]:
+        if not isinstance(record, Mapping):
+            continue
+        card = {
+            "canonical_id": str(
+                _first_nonempty(
+                    record.get("canonical_id"),
+                    record.get("id"),
+                )
+                or ""
+            ),
+            "title": str(record.get("title") or "")[:500],
+            "provider": str(record.get("provider") or "")[:120],
+            "venue": str(record.get("venue") or "")[:200],
+            "year": record.get("year"),
+            "doi": str(record.get("doi") or "")[:200],
+            "url": str(
+                _first_nonempty(
+                    record.get("url"),
+                    record.get("landing_url"),
+                )
+                or ""
+            )[:500],
+            "authority_signals": record.get("authority_signals", {}),
+        }
+        evidence_cards.append(card)
+
     return {
         "agent_id": str(agent_id),
         "answer": str(
@@ -70,11 +100,12 @@ def proposal_from_verdict(
                 verdict.get("summary"),
             )
             or ""
-        ),
+        )[:6000],
         "confidence": max(0.0, min(1.0, confidence)),
-        "evidence_refs": evidence_refs,
+        "evidence_refs": evidence_refs[:32],
         "independent_source_count": independent_count,
         "claims": claims if isinstance(claims, list) else [],
+        "evidence_cards": evidence_cards,
     }
 
 
@@ -91,7 +122,21 @@ def deliberation_context(
     # Remove voting/majority signals, then anonymize agent identity for the
     # adjudicator. Candidate ordering is deterministic, but no candidate is
     # privileged by an exposed agent identifier.
-    blind = blind_challenge_view(normalized)
+    blind_inputs = []
+    for item in normalized:
+        candidate = dict(item)
+        real_agent = str(candidate.pop("agent_id", "") or "")
+        canonical = json.dumps(
+            candidate,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        candidate["agent_id"] = hashlib.sha256(canonical).hexdigest()
+        blind_inputs.append(candidate)
+
+    blind = blind_challenge_view(blind_inputs)
     anonymized = []
     for index, item in enumerate(blind, start=1):
         candidate = dict(item)
