@@ -93,6 +93,63 @@ class EpistemicValidationTests(unittest.TestCase):
         ])
         self.assertEqual(result["supported_coverage"], 1.0)
 
+    def test_exact_evidence_passage_is_validated_against_trusted_abstract(self):
+        result = validate_epistemic_output(
+            {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "Treatment A improved survival.",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["doi:trusted"],
+                    "evidence_passages": [{
+                        "evidence_ref": "doi:trusted",
+                        "text": "Treatment A improved survival.",
+                    }],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "doi:trusted",
+                    "authority_score": 0.9,
+                }],
+            },
+            trusted_evidence_records=[{
+                "canonical_id": "doi:trusted",
+                "authority_score": 0.9,
+                "abstract": "Treatment A improved survival.",
+            }],
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["passage_validation"]["checked_passages"], 1)
+
+    def test_fabricated_evidence_passage_is_rejected(self):
+        result = validate_epistemic_output(
+            {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "Treatment A improved survival.",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["doi:trusted"],
+                    "evidence_passages": [{
+                        "evidence_ref": "doi:trusted",
+                        "text": "Treatment A eliminated mortality completely.",
+                    }],
+                }],
+                "evidence_records": [{"canonical_id": "doi:trusted"}],
+            },
+            trusted_evidence_records=[{
+                "canonical_id": "doi:trusted",
+                "abstract": "Treatment A improved survival.",
+            }],
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(
+            result["passage_validation"]["mode"],
+            "exact_normalized_substring",
+        )
+
     def test_trusted_evidence_boundary_rejects_untrusted_claim_reference(self):
         result = validate_epistemic_output(
             {
