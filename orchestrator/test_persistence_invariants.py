@@ -35,7 +35,7 @@ class PersistenceInvariantTests(unittest.TestCase):
                 "workflow_id": "wf-trace",
                 "node_id": "n01",
                 "agent_id": "agent-1",
-                "large": "x" * (o.MAX_EVENT_PAYLOAD_BYTES + 1024),
+                "large": {f"k{i:03d}": "x" * 200 for i in range(128)},
             }
             with patch.object(o, "EVENT_DIR", root / "events"), patch.object(
                 o, "EVENT_FILE", root / "events.jsonl"
