@@ -94,6 +94,71 @@ def validate_claims(
     }
 
 
+def _normalize_passage(value: Any) -> str:
+    return " ".join(str(value or "").split()).strip().lower()
+
+
+def validate_claim_passages(
+    claims: list[Mapping[str, Any]],
+    evidence_records: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    evidence_by_id = {
+        str(record.get("canonical_id") or "").strip(): record
+        for record in evidence_records
+        if isinstance(record, Mapping)
+        and str(record.get("canonical_id") or "").strip()
+    }
+    invalid: list[str] = []
+    checked = 0
+    missing = 0
+
+    for claim in claims:
+        if not isinstance(claim, Mapping):
+            continue
+        passages = claim.get("evidence_passages")
+        if passages is None:
+            continue
+        if not isinstance(passages, list):
+            invalid.append(str(claim.get("claim_id") or "unknown"))
+            continue
+        for passage in passages[:8]:
+            if not isinstance(passage, Mapping):
+                invalid.append(str(claim.get("claim_id") or "unknown"))
+                continue
+            ref = str(
+                passage.get("evidence_ref")
+                or passage.get("ref")
+                or ""
+            ).strip()
+            text = _normalize_passage(passage.get("text"))
+            if not ref or not text or ref not in evidence_by_id:
+                invalid.append(str(claim.get("claim_id") or "unknown"))
+                continue
+            record = evidence_by_id[ref]
+            corpus_parts = [
+                record.get("abstract"),
+                record.get("full_text"),
+                record.get("text"),
+            ]
+            corpus = _normalize_passage(" ".join(
+                str(item or "") for item in corpus_parts
+            ))
+            checked += 1
+            if not corpus:
+                missing += 1
+                continue
+            if text not in corpus:
+                invalid.append(str(claim.get("claim_id") or "unknown"))
+
+    return {
+        "passed": not invalid,
+        "checked_passages": checked,
+        "missing_corpus": missing,
+        "invalid_claim_ids": sorted(set(invalid)),
+        "mode": "exact_normalized_substring",
+    }
+
+
 def claim_coverage(claims: list[Mapping[str, Any]]) -> dict[str, Any]:
     material = [
         claim for claim in claims
@@ -191,6 +256,7 @@ def validate_epistemic_output(
     *,
     min_coverage: float | None = None,
     trusted_evidence_records: list[Mapping[str, Any]] | None = None,
+    require_passages: bool = False,
 ) -> dict[str, Any]:
     claims = output.get("claims", [])
     evidence = output.get("evidence_records", [])
@@ -249,6 +315,17 @@ def validate_epistemic_output(
         }
 
     claim_result = validate_claims(claims, evidence)
+    passage_result = validate_claim_passages(claims, evidence)
+    passage_required_failure = (
+        require_passages
+        and any(
+            isinstance(claim, Mapping)
+            and str(claim.get("status") or "") == "SUPPORTED_DIRECT"
+            and bool(claim.get("evidence_refs"))
+            and not isinstance(claim.get("evidence_passages"), list)
+            for claim in claims
+        )
+    )
     coverage = claim_coverage(claims)
     threshold_ok = (
         min_coverage is None
@@ -267,6 +344,7 @@ def validate_epistemic_output(
         "min_coverage": min_coverage,
         "min_coverage_basis": "evidence_coverage",
         "independence": independence,
+        "passage_validation": passage_result,
         "evidence_binding": binding,
         "bound_evidence_records": evidence,
     }
@@ -279,6 +357,8 @@ def validate_epistemic_output(
     passed = bool(
         evidence_result["passed"]
         and claim_result["passed"]
+        and passage_result["passed"]
+        and not passage_required_failure
         and threshold_ok
         and not bool(selective.get("abstain"))
     )
@@ -287,6 +367,7 @@ def validate_epistemic_output(
         "passed": passed,
         "selective": selective,
         "selective_abstention": bool(selective.get("abstain")),
+        "passage_required": bool(require_passages),
     }
 
 
