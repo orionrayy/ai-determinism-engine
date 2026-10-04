@@ -220,7 +220,11 @@ class ControlPlaneClient:
         result = self._request(
             "POST",
             self._workflow_path(workflow_id, "/lease/acquire"),
-            {"owner": self.owner, "ttl_seconds": self.lease_ttl_seconds},
+            {
+                "owner": self.owner,
+                "workflow_id": str(workflow_id),
+                "ttl_seconds": self.lease_ttl_seconds,
+            },
         )
         if result.get("status") not in {"acquired", "renewed"}:
             raise ControlPlaneRejected(
