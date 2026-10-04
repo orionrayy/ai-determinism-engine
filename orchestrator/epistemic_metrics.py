@@ -68,16 +68,14 @@ def _summarize_epistemic(verdict: Mapping[str, Any]) -> dict[str, Any]:
     calibration_inputs = verdict.get("calibration_samples")
     if not isinstance(calibration_inputs, list):
         calibration_outcome = None
-        for key in (
-            "correct",
-            "outcome_correct",
-            "ground_truth_correct",
-        ):
-            if key in verdict:
-                calibration_outcome = verdict.get(key)
-                break
+        if "ground_truth_correct" in verdict:
+            calibration_outcome = verdict.get("ground_truth_correct")
         calibration_inputs = (
-            [{"confidence": verdict.get("confidence"), "correct": calibration_outcome}]
+            [{
+                "confidence": verdict.get("confidence"),
+                "correct": calibration_outcome,
+                "label_source": "ground_truth",
+            }]
             if calibration_outcome is not None and "confidence" in verdict
             else []
         )
