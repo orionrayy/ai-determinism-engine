@@ -2755,5 +2755,170 @@ class OrchestratorTests(unittest.TestCase):
             for check in result["checks"]
         ))
 
+
+    def test_live_workflow_uses_distributed_control_plane_authority(self):
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_LLM_PLANNER": "false",
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+            },
+            clear=False,
+        ), patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow(
+                "authority test",
+                live=True,
+                workflow_id="wf-authority-cp",
+            )
+        self.assertEqual(
+            workflow["authority_mode"],
+            o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        )
+
+    def test_workflow_without_control_plane_uses_git_authority(self):
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_LLM_PLANNER": "false",
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "",
+            },
+            clear=False,
+        ), patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow(
+                "authority test",
+                live=True,
+                workflow_id="wf-authority-git",
+            )
+        self.assertEqual(workflow["authority_mode"], o.AUTHORITY_GIT_DURABLE)
+
+    def test_legacy_control_plane_state_migrates_to_distributed_authority(self):
+        migrated = o.migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf-legacy-cp": {
+                    "id": "wf-legacy-cp",
+                    "live": True,
+                    "control_plane": {"enabled": True},
+                    "nodes": [],
+                }
+            },
+        })
+        self.assertEqual(
+            migrated["workflows"]["wf-legacy-cp"]["authority_mode"],
+            o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        )
+
+    def test_distributed_workflow_fails_closed_when_control_plane_is_missing(self):
+        workflow = {
+            "id": "wf-authority-block",
+            "goal": "authority block",
+            "live": True,
+            "authority_mode": o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            "status": "ready",
+            "nodes": [],
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "",
+            },
+            clear=False,
+        ), patch.object(o, "_run_one_step_inner", return_value="inner-ran") as inner:
+            with self.assertRaises(o.ControlPlaneError):
+                o.run_one_step(workflow)
+            inner.assert_not_called()
+
+    def test_distributed_authority_rejects_missing_remote_state(self):
+        workflow = {
+            "id": "wf-authority-missing",
+            "goal": "authority missing",
+            "live": True,
+            "authority_mode": o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            "status": "running",
+            "nodes": [],
+            "control_plane_state_version": 4,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), patch.dict(
+                o.os.environ,
+                {
+                    "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                    "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+                },
+                clear=False,
+            ), patch.object(
+                o.ControlPlaneClient,
+                "from_env",
+            ) as from_env:
+                client = from_env.return_value
+                client.get_workflow_state.return_value = None
+                o._write_workflow_shard(workflow)
+                with self.assertRaises(RuntimeError):
+                    o.load_workflow(workflow["id"])
+
+    def test_git_authority_does_not_switch_to_control_plane_when_config_appears(self):
+        workflow = {
+            "id": "wf-authority-git-load",
+            "goal": "git authority",
+            "live": True,
+            "authority_mode": o.AUTHORITY_GIT_DURABLE,
+            "status": "ready",
+            "nodes": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), patch.dict(
+                o.os.environ,
+                {
+                    "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                    "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+                },
+                clear=False,
+            ), patch.object(
+                o.ControlPlaneClient,
+                "from_env",
+                side_effect=AssertionError("Git-authority workflow must not query control plane"),
+            ):
+                o._write_workflow_shard(workflow)
+                loaded = o.load_workflow(workflow["id"])
+        self.assertEqual(loaded["authority_mode"], o.AUTHORITY_GIT_DURABLE)
+
+    def test_run_one_step_uses_shared_control_plane_session(self):
+        class Session:
+            def __enter__(self):
+                return (None, None)
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        workflow = {
+            "id": "wf-session",
+            "goal": "session",
+            "live": False,
+            "status": "ready",
+            "nodes": [],
+        }
+        with patch.object(o, "control_plane_session", return_value=Session()) as session,              patch.object(o, "_run_one_step_inner", return_value="ok") as inner:
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "ok")
+        session.assert_called_once_with(workflow)
+        inner.assert_called_once()
+
+    def test_create_workflow_persists_idempotency_key(self):
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_LLM_PLANNER": "false"},
+            clear=False,
+        ), patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow(
+                "idempotency test",
+                live=False,
+                idempotency_key="idem-123",
+            )
+        self.assertEqual(workflow["idempotency_key"], "idem-123")
+
+
 if __name__ == "__main__":
     unittest.main()

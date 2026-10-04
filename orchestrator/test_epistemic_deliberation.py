@@ -10,15 +10,23 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "agent_id": "a1",
                 "answer": "A",
                 "confidence": 0.9,
-                "evidence_refs": ["x"],
+                "evidence_refs": ["doi:10.1/x1", "doi:10.1/x2"],
                 "independent_source_count": 2,
+                "evidence_records": [
+                    {"canonical_id": "doi:10.1/x1"},
+                    {"canonical_id": "doi:10.1/x2"},
+                ],
             },
             {
                 "agent_id": "a2",
                 "answer": "A",
                 "confidence": 0.9,
-                "evidence_refs": ["y"],
+                "evidence_refs": ["doi:10.1/y1", "doi:10.1/y2"],
                 "independent_source_count": 2,
+                "evidence_records": [
+                    {"canonical_id": "doi:10.1/y1"},
+                    {"canonical_id": "doi:10.1/y2"},
+                ],
             },
         ]
         result = debate_decision(proposals)
@@ -70,24 +78,82 @@ class EpistemicDeliberationTests(unittest.TestCase):
         self.assertEqual(result["reason"], "material_disagreement")
         self.assertEqual(result["max_rounds"], 2)
 
-    def test_blind_view_removes_consensus_fields(self):
+    def test_blind_view_is_identity_opaque(self):
         view = blind_challenge_view([
             {
                 "agent_id": "a2",
+                "agent_role": "skeptic",
                 "answer": "B",
                 "vote_count": 1,
                 "majority": True,
             },
             {
                 "agent_id": "a1",
+                "agent_role": "analyst",
                 "answer": "A",
                 "vote_count": 2,
                 "majority": False,
             },
         ])
-        self.assertEqual([item["agent_id"] for item in view], ["a1", "a2"])
-        self.assertNotIn("vote_count", view[0])
-        self.assertNotIn("majority", view[0])
+        self.assertEqual(
+            [item["candidate_id"] for item in view],
+            ["candidate_1", "candidate_2"],
+        )
+        for item in view:
+            self.assertNotIn("agent_id", item)
+            self.assertNotIn("agent_role", item)
+            self.assertNotIn("vote_count", item)
+            self.assertNotIn("majority", item)
+
+    def test_self_reported_independent_source_count_cannot_satisfy_evidence(self):
+        proposals = [
+            {
+                "agent_id": "a1",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["x"],
+                "independent_source_count": 999,
+                "evidence_records": [],
+            },
+            {
+                "agent_id": "a2",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["y"],
+                "independent_source_count": 999,
+                "evidence_records": [],
+            },
+        ]
+        result = debate_decision(proposals)
+        self.assertTrue(result["required"])
+        self.assertEqual(result["reason"], "insufficient_evidence")
+
+    def test_valid_evidence_records_satisfy_independence_threshold(self):
+        evidence = [
+            {"canonical_id": "doi:10.1/a"},
+            {"canonical_id": "doi:10.1/b"},
+        ]
+        proposals = [
+            {
+                "agent_id": "a1",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["doi:10.1/a"],
+                "independent_source_count": 0,
+                "evidence_records": evidence,
+            },
+            {
+                "agent_id": "a2",
+                "answer": "A",
+                "confidence": 0.9,
+                "evidence_refs": ["doi:10.1/b"],
+                "independent_source_count": 0,
+                "evidence_records": evidence,
+            },
+        ]
+        result = debate_decision(proposals)
+        self.assertFalse(result["required"])
+        self.assertEqual(result["reason"], "stable_consensus")
 
 
 if __name__ == "__main__":

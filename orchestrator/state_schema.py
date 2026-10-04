@@ -22,6 +22,8 @@ except ImportError:
 
 CURRENT_STATE_VERSION = 4
 CURRENT_WORKFLOW_SCHEMA_VERSION = 7
+AUTHORITY_GIT_DURABLE = "git_durable"
+AUTHORITY_DISTRIBUTED_CONTROL_PLANE = "distributed_control_plane"
 MAX_PARALLEL = 8
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
@@ -36,6 +38,17 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _default_authority_mode(workflow: dict[str, Any]) -> str:
+    control_plane = workflow.get("control_plane")
+    if (
+        bool(workflow.get("live"))
+        and isinstance(control_plane, dict)
+        and bool(control_plane.get("enabled"))
+    ):
+        return AUTHORITY_DISTRIBUTED_CONTROL_PLANE
+    return AUTHORITY_GIT_DURABLE
 
 
 def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -68,6 +81,15 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
                 f"is newer than supported version {CURRENT_WORKFLOW_SCHEMA_VERSION}"
             )
         workflow["schema_version"] = CURRENT_WORKFLOW_SCHEMA_VERSION
+        workflow.setdefault("authority_mode", _default_authority_mode(workflow))
+        workflow["authority_mode"] = str(workflow.get("authority_mode") or "").strip()
+        if workflow["authority_mode"] not in {
+            AUTHORITY_GIT_DURABLE,
+            AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        }:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.authority_mode is unsupported"
+            )
         workflow.setdefault("repair_feedback", {})
         workflow.setdefault("evidence", {})
         workflow.setdefault("reconciliations", {})

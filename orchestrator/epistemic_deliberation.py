@@ -3,6 +3,13 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+import hashlib
+import json
+
+try:
+    from .evidence_independence import count_distinct_evidence_works
+except ImportError:
+    from evidence_independence import count_distinct_evidence_works
 
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.65
@@ -47,10 +54,16 @@ def debate_decision(
         refs = item.get("evidence_refs", [])
         if not isinstance(refs, list) or not refs:
             evidence_missing = True
-        try:
-            independent_sources = int(item.get("independent_source_count") or 0)
-        except (TypeError, ValueError):
-            independent_sources = 0
+
+        records = item.get("evidence_records", [])
+        if not isinstance(records, list):
+            records = []
+        independent_sources = count_distinct_evidence_works(
+            [
+                record for record in records
+                if isinstance(record, Mapping)
+            ]
+        )
         if independent_sources < max(0, int(min_independent_sources)):
             evidence_weak = True
 
@@ -85,14 +98,40 @@ def debate_decision(
 def blind_challenge_view(
     proposals: list[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    result = []
-    for item in sorted(proposals, key=lambda value: str(value.get("agent_id") or "")):
+    redacted: list[tuple[str, dict[str, Any]]] = []
+    identity_fields = {
+        "agent_id",
+        "agent_role",
+        "role",
+        "role_instruction",
+        "candidate_id",
+        "vote_count",
+        "votes",
+        "majority",
+        "consensus_count",
+    }
+    for item in proposals:
         view = {
             str(key): value
             for key, value in item.items()
-            if key not in {"vote_count", "votes", "majority", "consensus_count"}
+            if str(key) not in identity_fields
         }
-        result.append(view)
+        raw = json.dumps(
+            view,
+            ensure_ascii=False,
+            sort_keys=True,
+            default=str,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        redacted.append((hashlib.sha256(raw).hexdigest(), view))
+
+    redacted.sort(key=lambda pair: pair[0])
+    result = []
+    for index, (_, view) in enumerate(redacted, start=1):
+        result.append({
+            "candidate_id": f"candidate_{index}",
+            **view,
+        })
     return result
 
 

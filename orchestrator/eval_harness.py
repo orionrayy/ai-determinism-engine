@@ -259,15 +259,23 @@ def _case_conditional_deliberation() -> dict[str, Any]:
             "agent_id": "a1",
             "answer": "A",
             "confidence": 0.9,
-            "evidence_refs": ["x"],
-            "independent_source_count": 2,
+            "evidence_refs": ["doi:10.1/a1", "doi:10.1/a2"],
+            "independent_source_count": 999,
+            "evidence_records": [
+                {"canonical_id": "doi:10.1/a1"},
+                {"canonical_id": "doi:10.1/a2"},
+            ],
         },
         {
             "agent_id": "a2",
             "answer": "A",
             "confidence": 0.9,
-            "evidence_refs": ["y"],
-            "independent_source_count": 2,
+            "evidence_refs": ["doi:10.1/b1", "doi:10.1/b2"],
+            "independent_source_count": 999,
+            "evidence_records": [
+                {"canonical_id": "doi:10.1/b1"},
+                {"canonical_id": "doi:10.1/b2"},
+            ],
         },
     ])
     weak = debate_decision([
@@ -275,15 +283,21 @@ def _case_conditional_deliberation() -> dict[str, Any]:
             "agent_id": "a1",
             "answer": "A",
             "confidence": 0.9,
-            "evidence_refs": ["x"],
-            "independent_source_count": 1,
+            "evidence_refs": ["doi:10.1/a1"],
+            "independent_source_count": 999,
+            "evidence_records": [
+                {"canonical_id": "doi:10.1/a1"},
+            ],
         },
         {
             "agent_id": "a2",
             "answer": "A",
             "confidence": 0.9,
-            "evidence_refs": ["y"],
-            "independent_source_count": 1,
+            "evidence_refs": ["doi:10.1/b1"],
+            "independent_source_count": 999,
+            "evidence_records": [
+                {"canonical_id": "doi:10.1/b1"},
+            ],
         },
     ])
     return {

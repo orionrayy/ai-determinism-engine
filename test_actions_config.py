@@ -7,10 +7,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+def read_workflow_text():
+    with open(ROOT / '.github' / 'workflows' / 'orchestrator.yml', encoding='utf-8') as handle:
+        return handle.read()
+
+
 class ActionsConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.orchestrator = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
+        cls.orchestrator = read_workflow_text()
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
         cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
@@ -157,11 +162,22 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.yml', self.tests)
 
     def test_scheduled_recovery_compacts_terminal_state(self):
-        start = self.orchestrator.index('schedule-recovery:')
-        recovery = self.orchestrator[start:]
-        self.assertIn('compact_terminal_workflows', recovery)
-        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
-        self.assertIn('git add .orchestrator/workflows', recovery)
+        self.assertIn('schedule-recovery:', self.orchestrator)
+        self.assertIn('compact_terminal_workflows', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', self.orchestrator)
+        self.assertIn('git add .orchestrator/workflows', self.orchestrator)
+    def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
+        workflow = read_workflow_text()
+        self.assertIn('"gh",\n                          "api",', workflow)
+        self.assertIn('"--method",\n                          "POST"', workflow)
+        self.assertIn('check=False', workflow)
+        self.assertNotIn("status == 'waiting_approval'", workflow)
+        self.assertIn('recovery_event_id', workflow)
+
+    def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
+        workflow = read_workflow_text()
+        self.assertIn('if [ -d ".orchestrator/workflows" ]', workflow)
+
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
