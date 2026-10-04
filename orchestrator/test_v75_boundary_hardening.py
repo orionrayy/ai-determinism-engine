@@ -264,14 +264,26 @@ class V75BoundaryHardeningTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["x"],
-                "independence": {"distinct_work_count": 2},
+                "evidence_records": [{
+                    "doi": "10.1/a",
+                    "provider": "openalex",
+                }, {
+                    "doi": "10.2/b",
+                    "provider": "openalex",
+                }],
             },
             {
                 "agent_id": "a2",
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["y"],
-                "independence": {"distinct_work_count": 2},
+                "evidence_records": [{
+                    "doi": "10.1/a",
+                    "provider": "crossref",
+                }, {
+                    "doi": "10.2/b",
+                    "provider": "crossref",
+                }],
             },
         ]
         result = ed.debate_decision(proposals)
