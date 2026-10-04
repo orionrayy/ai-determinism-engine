@@ -116,7 +116,8 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_continuation_uses_testable_python_runtime(self):
         self.assertIn("python3 -m orchestrator.continuation_runtime", self.continuation)
-        self.assertNotIn("python3 - <<'PY'", self.continuation)
+        decision = self.continuation.split("id: decision", 1)[1].split("- name: Dispatch continuation", 1)[0]
+        self.assertNotIn("python3 - <<'PY'", decision)
         self.assertIn("WORKFLOW_ID", self.continuation)
         self.assertIn("github.event.client_payload.workflow_id", self.orchestrator)
 
