@@ -38,6 +38,7 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence, sanitize_for_durable
+    from .evidence_records import deduplicate_sources
     from .epistemic_validation import validate_epistemic_output
     from .epistemic_metrics import record_node_metrics
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
@@ -89,6 +90,7 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence, sanitize_for_durable
+    from evidence_records import deduplicate_sources
     from epistemic_validation import validate_epistemic_output
     from epistemic_metrics import record_node_metrics
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
@@ -2756,9 +2758,17 @@ def compact_json(value: Any, limit: int = MAX_CONTEXT_BYTES) -> str:
 def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
     by_id = {item.id: item for item in nodes}
     dependencies: dict[str, Any] = {}
+    trusted_evidence: list[dict[str, Any]] = []
     for dep_id in node.depends_on:
         dep = by_id[dep_id]
-        evidence = dep.output.get("evidence", {}) if isinstance(dep.output, dict) else {}
+        dep_output = dep.output if isinstance(dep.output, dict) else {}
+        candidate_records = dep_output.get("evidence_records")
+        if not isinstance(candidate_records, list):
+            candidate_records = []
+        for record in candidate_records:
+            if isinstance(record, dict) and str(record.get("canonical_id") or "").strip():
+                trusted_evidence.append(dict(record))
+        evidence = dep_output.get("evidence", {}) if isinstance(dep_output, dict) else {}
         if node.contract.get("deliberation"):
             # Candidate analyses are carried separately below. Avoid duplicating
             # their full raw outputs in the ordinary dependency context.
@@ -2784,6 +2794,18 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
             dependencies=dependencies,
             contract=node.contract,
             repair_feedback=node.input.get("repair_feedback", {}),
+            trusted_evidence_records=[
+                {str(key): value for key, value in record.items()
+                 if str(key) in {
+                    "canonical_id", "provider", "provider_id", "title",
+                    "published", "year", "doi", "arxiv_id", "pmid",
+                    "pmcid", "venue", "url", "full_text_url",
+                    "authority_signals", "authority_class",
+                    "authority_score", "authority_tier",
+                    "independence_key", "independence_confidence",
+                 }}
+                for record in deduplicate_sources(trusted_evidence)
+            ],
         )
         if node.contract.get("deliberation"):
             proposals = []
@@ -3129,10 +3151,24 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
         if node.contract.get("epistemic") and not defer_epistemic:
             if not isinstance(verdict, dict):
                 raise RuntimeError("epistemic validator returned no JSON object")
+            trusted_records = node.input.get("context", {}).get(
+                "trusted_evidence", []
+            ) if isinstance(node.input.get("context"), dict) else []
+            if isinstance(trusted_records, dict) and trusted_records.get("truncated"):
+                trusted_records = []
+            if not isinstance(trusted_records, list):
+                trusted_records = []
             epistemic_result = validate_epistemic_output(
                 verdict,
                 min_coverage=node.contract.get("min_coverage"),
+                trusted_evidence_records=trusted_records,
             )
+            bound_records = epistemic_result.get("bound_evidence_records")
+            if epistemic_result.get("evidence_binding", {}).get("trusted") and isinstance(
+                bound_records, list
+            ):
+                verdict["evidence_records"] = bound_records
+                output["epistemic_verdict"] = verdict
             checks.append({
                 "check": "epistemic_validation",
                 "passed": epistemic_result.get("passed") is True,
