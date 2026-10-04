@@ -159,22 +159,6 @@ def validate_truth_lock(
             continue
 
         draft_status = str(claim.get("status") or "UNKNOWN")
-        source_statements = [
-            source_by_id[item].get("statement")
-            for item in lineage_ids
-        ]
-        statement_check = _validate_statement_preservation(
-            claim.get("statement"),
-            source_statements,
-        )
-        if statement_check.get("passed") is not True:
-            violations.append({
-                "claim_id": claim_id,
-                "reason": "statement_preservation_failed",
-                "statement_check": statement_check,
-            })
-            continue
-
         source_statuses = {
             str(source_by_id[item].get("status") or "UNKNOWN")
             for item in lineage_ids
@@ -206,6 +190,23 @@ def validate_truth_lock(
                     "reason": "status_strength_upgrade",
                     "source_statuses": sorted(source_statuses),
                     "draft_status": draft_status,
+                })
+                continue
+
+        source_statements = [
+            source_by_id[item].get("statement")
+            for item in lineage_ids
+        ]
+        if any(str(value or "").strip() for value in source_statements):
+            statement_check = _validate_statement_preservation(
+                claim.get("statement"),
+                source_statements,
+            )
+            if statement_check.get("passed") is not True:
+                violations.append({
+                    "claim_id": claim_id,
+                    "reason": "statement_preservation_failed",
+                    "statement_check": statement_check,
                 })
                 continue
 
