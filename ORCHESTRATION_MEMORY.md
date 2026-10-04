@@ -14,6 +14,20 @@ Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
 
+### Candidate orchestration hardening v79
+- PR #142 branch: `feat/v79-boundary-evidence-efficiency`.
+- Distributed control-plane v78 remains operational authority for live workflows; Git remains the state/audit replica.
+- Evidence boundary is supervisor-trusted: agent-supplied evidence metadata cannot establish authority before canonical binding.
+- Claim-level deliberation now requires challenge-scoped evidence references and explicit evidence-delta semantics.
+- Truth-lock preserves claim lineage and conservatively rejects material numeric/negation drift when source statements are available.
+- Evidence records normalize Europe PMC full-text routes and cross-provider retraction signals; source authority is represented as an explainable heuristic vector/profile.
+- Hard free mode includes OpenAlex but never sends `OPENALEX_API_KEY`; Crossref optionally uses `CROSSREF_MAILTO`; Unpaywall is DOI-only and opt-in through `UNPAYWALL_EMAIL`.
+- Gemini planning/execution uses bounded `thinkingConfig.thinkingLevel`; free-model policy is registry-pinned and time-aware through `free_until`.
+- Evidence cards are ranked by authority, independence, access, integrity, and recency utility.
+- Minority candidates with materially stronger trusted evidence trigger adjudication escalation instead of majority acceptance.
+- Trace identity is generated before durable payload truncation so correlation survives bounded event storage.
+- v79 adds regression coverage for trust binding, evidence access, retraction safety, deliberation deltas, minority escalation, provider policy, and free-tier expiry.
+
 
 ## Orchestration hardening v42 — free Gemini model gate
 - `orchestrator/tools.json` is now authoritative for Gemini model cost policy: it declares the default model plus an explicit `free_models` allowlist.
