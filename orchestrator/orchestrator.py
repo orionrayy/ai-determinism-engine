@@ -4174,342 +4174,342 @@ def _run_one_step_inner(
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
     with control_plane_session(workflow) as _control_plane_context:
         control_plane, control_plane_lease = _control_plane_context
-            nodes = [Node(**node) for node in workflow["nodes"]]
-            validate_dag(nodes)
-            registry = load_registry()
-            live = bool(workflow.get("live"))
-            enforce_node_policy(nodes, registry, live=live)
-            if not ensure_plan_integrity(workflow, nodes):
+        nodes = [Node(**node) for node in workflow["nodes"]]
+        validate_dag(nodes)
+        registry = load_registry()
+        live = bool(workflow.get("live"))
+        enforce_node_policy(nodes, registry, live=live)
+        if not ensure_plan_integrity(workflow, nodes):
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            return
+        if not verify_completed_checkpoints(workflow, nodes):
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            return
+        workflow["status"] = "running"
+        workflow["execution_mode"] = "live" if live else "dry-run"
+        workflow.setdefault("replan_count", 0)
+        workflow.setdefault("repair_feedback", {})
+        workflow.setdefault("evidence", {})
+        workflow.setdefault("reconciliations", {})
+        workflow.setdefault("epistemic_metrics", {})
+        workflow.setdefault(
+            "retry_jitter_seed",
+            hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
+        )
+        workflow.setdefault("attempts_used", 0)
+        workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+        workflow["max_attempts"] = max(
+            1,
+            min(int(workflow["max_attempts"]), MAX_ATTEMPTS_PER_WORKFLOW),
+        )
+        attempt_budget = AttemptBudget(workflow)
+        workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
+        workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
+
+        for node in nodes:
+            node.input["workflow_id"] = workflow["id"]
+            node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
+            node.input["retry_jitter_seed"] = workflow["retry_jitter_seed"]
+
+        safety = 0
+        while True:
+            safety += 1
+            if safety > 200:
+                raise RuntimeError("orchestration safety limit reached")
+
+            if recover_barrier_failed_side_effects(workflow, nodes, registry):
+                workflow['nodes'] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                return
+            if recover_inflight_safe_nodes(workflow, nodes, registry):
+                workflow['nodes'] = [asdict(node) for node in nodes]
+                attempt_budget.sync()
+                persist_workflow(workflow)
+            recover_inflight_side_effects(workflow, nodes, registry)
+            reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
+            if reconciliation == "failed":
                 workflow["nodes"] = [asdict(node) for node in nodes]
                 persist_workflow(workflow)
                 return
-            if not verify_completed_checkpoints(workflow, nodes):
+            if reconciliation in {"reconciled", "reconciled_ready"}:
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+
+            refresh_approvals(workflow, nodes)
+            if workflow.get("status") == "failed":
                 workflow["nodes"] = [asdict(node) for node in nodes]
                 persist_workflow(workflow)
                 return
-            workflow["status"] = "running"
-            workflow["execution_mode"] = "live" if live else "dry-run"
-            workflow.setdefault("replan_count", 0)
-            workflow.setdefault("repair_feedback", {})
-            workflow.setdefault("evidence", {})
-            workflow.setdefault("reconciliations", {})
-            workflow.setdefault("epistemic_metrics", {})
-            workflow.setdefault(
-                "retry_jitter_seed",
-                hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
-            )
-            workflow.setdefault("attempts_used", 0)
-            workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
-            workflow["max_attempts"] = max(
-                1,
-                min(int(workflow["max_attempts"]), MAX_ATTEMPTS_PER_WORKFLOW),
-            )
-            attempt_budget = AttemptBudget(workflow)
-            workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
-            workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
-            for node in nodes:
-                node.input["workflow_id"] = workflow["id"]
-                node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
-                node.input["retry_jitter_seed"] = workflow["retry_jitter_seed"]
+            ready = ready_nodes(nodes)
+            for node in ready:
+                if node.status == "pending":
+                    transition(node, "ready")
 
-            safety = 0
-            while True:
-                safety += 1
-                if safety > 200:
-                    raise RuntimeError("orchestration safety limit reached")
-
-                if recover_barrier_failed_side_effects(workflow, nodes, registry):
-                    workflow['nodes'] = [asdict(node) for node in nodes]
-                    persist_workflow(workflow)
-                    return
-                if recover_inflight_safe_nodes(workflow, nodes, registry):
-                    workflow['nodes'] = [asdict(node) for node in nodes]
-                    attempt_budget.sync()
-                    persist_workflow(workflow)
-                recover_inflight_side_effects(workflow, nodes, registry)
-                reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
-                if reconciliation == "failed":
+            if not ready:
+                if all(node.status == "completed" for node in nodes):
+                    workflow["status"] = "completed"
                     workflow["nodes"] = [asdict(node) for node in nodes]
                     persist_workflow(workflow)
-                    return
-                if reconciliation in {"reconciled", "reconciled_ready"}:
-                    workflow["nodes"] = [asdict(node) for node in nodes]
-                    persist_workflow(workflow)
-
-                refresh_approvals(workflow, nodes)
-                if workflow.get("status") == "failed":
-                    workflow["nodes"] = [asdict(node) for node in nodes]
-                    persist_workflow(workflow)
+                    append_event("workflow.completed", {"workflow_id": workflow["id"]})
+                    notify_issue(workflow, "Orchestrator: workflow " + workflow["id"] + " completed.")
                     return
 
-                ready = ready_nodes(nodes)
-                for node in ready:
-                    if node.status == "pending":
-                        transition(node, "ready")
-
-                if not ready:
-                    if all(node.status == "completed" for node in nodes):
-                        workflow["status"] = "completed"
-                        workflow["nodes"] = [asdict(node) for node in nodes]
-                        persist_workflow(workflow)
-                        append_event("workflow.completed", {"workflow_id": workflow["id"]})
-                        notify_issue(workflow, "Orchestrator: workflow " + workflow["id"] + " completed.")
-                        return
-
-                    waiting = [node for node in nodes if node.status in {"waiting_approval", "retrying", "pending"}]
-                    workflow["status"] = (
-                        "waiting_approval"
-                        if waiting and all(node.status == "waiting_approval" for node in waiting)
-                        else "failed"
-                    )
-                    workflow["nodes"] = [asdict(node) for node in nodes]
-                    persist_workflow(workflow)
-                    return
-
-                # Side effects remain serialized; independent read/compute nodes may run in parallel.
-                safe_ready = [
-                    node for node in ready
-                    if (
-                        not side_effecting(node, registry)
-                        and not quota_sensitive(node)
-                        and node.risk not in {"high", "critical"}
-                    )
-                ]
-                unsafe_ready = [node for node in ready if node not in safe_ready]
-                batch = (
-                    [sorted(unsafe_ready, key=lambda item: item.id)[0]]
-                    if unsafe_ready
-                    else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
+                waiting = [node for node in nodes if node.status in {"waiting_approval", "retrying", "pending"}]
+                workflow["status"] = (
+                    "waiting_approval"
+                    if waiting and all(node.status == "waiting_approval" for node in waiting)
+                    else "failed"
                 )
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                return
 
-                executable = []
-                for node in batch:
-                    if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
-                        transition(node, "waiting_approval")
-                        workflow["status"] = "waiting_approval"
-                        try:
-                            if not node.input.get("approval_issue"):
-                                node.input["approval_issue"] = create_approval_issue(workflow, node)
-                        except Exception as approval_exc:
-                            node.error = {
-                                "type": type(approval_exc).__name__,
-                                "message": str(approval_exc),
-                            }
-                            transition(node, "failed")
-                            workflow["status"] = "failed"
-                            workflow["failed_node"] = node.id
-                            workflow["nodes"] = [asdict(item) for item in nodes]
-                            persist_workflow(workflow)
-                            return
-                        append_event("approval.required", {
-                            "workflow_id": workflow["id"],
-                            "node_id": node.id,
-                            "risk": node.risk,
-                            "issue": node.input.get("approval_issue"),
-                        })
-                        continue
+            # Side effects remain serialized; independent read/compute nodes may run in parallel.
+            safe_ready = [
+                node for node in ready
+                if (
+                    not side_effecting(node, registry)
+                    and not quota_sensitive(node)
+                    and node.risk not in {"high", "critical"}
+                )
+            ]
+            unsafe_ready = [node for node in ready if node not in safe_ready]
+            batch = (
+                [sorted(unsafe_ready, key=lambda item: item.id)[0]]
+                if unsafe_ready
+                else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
+            )
 
-                    node.input["context"] = build_node_context(nodes, node)
-                    if not attempt_budget.acquire(node.id):
+            executable = []
+            for node in batch:
+                if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
+                    transition(node, "waiting_approval")
+                    workflow["status"] = "waiting_approval"
+                    try:
+                        if not node.input.get("approval_issue"):
+                            node.input["approval_issue"] = create_approval_issue(workflow, node)
+                    except Exception as approval_exc:
                         node.error = {
-                            "type": "attempt_budget_exhausted",
-                            "message": (
-                                f"workflow attempt budget exhausted at "
-                                f"{attempt_budget.used}/{attempt_budget.max_attempts}"
-                            ),
-                            "failure_class": "permanent",
-                            "retry_allowed": False,
+                            "type": type(approval_exc).__name__,
+                            "message": str(approval_exc),
                         }
                         transition(node, "failed")
                         workflow["status"] = "failed"
                         workflow["failed_node"] = node.id
                         workflow["nodes"] = [asdict(item) for item in nodes]
-                        attempt_budget.sync()
                         persist_workflow(workflow)
                         return
-                    if not reserve_llm_call(workflow, node, live=live):
+                    append_event("approval.required", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "risk": node.risk,
+                        "issue": node.input.get("approval_issue"),
+                    })
+                    continue
+
+                node.input["context"] = build_node_context(nodes, node)
+                if not attempt_budget.acquire(node.id):
+                    node.error = {
+                        "type": "attempt_budget_exhausted",
+                        "message": (
+                            f"workflow attempt budget exhausted at "
+                            f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                        ),
+                        "failure_class": "permanent",
+                        "retry_allowed": False,
+                    }
+                    transition(node, "failed")
+                    workflow["status"] = "failed"
+                    workflow["failed_node"] = node.id
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    attempt_budget.sync()
+                    persist_workflow(workflow)
+                    return
+                if not reserve_llm_call(workflow, node, live=live):
+                    transition(node, "failed")
+                    workflow["status"] = "failed"
+                    workflow["failed_node"] = node.id
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    return
+                workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
+                persist_workflow(workflow)
+                transition(node, "running")
+
+                execution_id = execution_key(workflow, node)
+                if side_effecting(node, registry):
+                    record = workflow.setdefault("executions", {}).get(execution_id)
+                    if record and record.get("status") == "started":
+                        node.error = {
+                            "type": "execution_uncertain",
+                            "message": "A prior run may have completed an external side effect before state persistence.",
+                            "execution_id": execution_id,
+                        }
                         transition(node, "failed")
                         workflow["status"] = "failed"
                         workflow["failed_node"] = node.id
+                        append_event("node.execution_uncertain", {
+                            "workflow_id": workflow["id"],
+                            "node_id": node.id,
+                            "execution_id": execution_id,
+                        })
                         workflow["nodes"] = [asdict(item) for item in nodes]
                         persist_workflow(workflow)
                         return
-                    workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
-                    persist_workflow(workflow)
-                    transition(node, "running")
 
-                    execution_id = execution_key(workflow, node)
-                    if side_effecting(node, registry):
-                        record = workflow.setdefault("executions", {}).get(execution_id)
-                        if record and record.get("status") == "started":
+                    mark_execution_prepared(workflow, node)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    mark_execution_started(workflow, node, execution_id)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    if live and side_effecting(node, registry):
+                        try:
+                            commit_side_effect_start(
+                                ROOT,
+                                execution_id=execution_id,
+                            )
+                        except DurabilityBarrierError as barrier_exc:
+                            record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
+                            record["status"] = "barrier_failed"
+                            record["barrier_error"] = str(barrier_exc)
                             node.error = {
-                                "type": "execution_uncertain",
-                                "message": "A prior run may have completed an external side effect before state persistence.",
+                                "type": type(barrier_exc).__name__,
+                                "message": str(barrier_exc),
+                                "failure_class": "dependency",
+                                "durability_barrier_failed": True,
                                 "execution_id": execution_id,
                             }
                             transition(node, "failed")
                             workflow["status"] = "failed"
                             workflow["failed_node"] = node.id
-                            append_event("node.execution_uncertain", {
+                            workflow["nodes"] = [asdict(item) for item in nodes]
+                            persist_workflow(workflow)
+                            append_event("node.durability_barrier_failed", {
                                 "workflow_id": workflow["id"],
                                 "node_id": node.id,
                                 "execution_id": execution_id,
+                                "error": str(barrier_exc),
                             })
-                            workflow["nodes"] = [asdict(item) for item in nodes]
-                            persist_workflow(workflow)
                             return
 
-                        mark_execution_prepared(workflow, node)
-                        workflow["nodes"] = [asdict(item) for item in nodes]
-                        persist_workflow(workflow)
-                        mark_execution_started(workflow, node, execution_id)
-                        workflow["nodes"] = [asdict(item) for item in nodes]
-                        persist_workflow(workflow)
-                        if live and side_effecting(node, registry):
-                            try:
-                                commit_side_effect_start(
-                                    ROOT,
-                                    execution_id=execution_id,
-                                )
-                            except DurabilityBarrierError as barrier_exc:
-                                record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
-                                record["status"] = "barrier_failed"
-                                record["barrier_error"] = str(barrier_exc)
-                                node.error = {
-                                    "type": type(barrier_exc).__name__,
-                                    "message": str(barrier_exc),
-                                    "failure_class": "dependency",
-                                    "durability_barrier_failed": True,
-                                    "execution_id": execution_id,
-                                }
-                                transition(node, "failed")
-                                workflow["status"] = "failed"
-                                workflow["failed_node"] = node.id
-                                workflow["nodes"] = [asdict(item) for item in nodes]
-                                persist_workflow(workflow)
-                                append_event("node.durability_barrier_failed", {
-                                    "workflow_id": workflow["id"],
-                                    "node_id": node.id,
-                                    "execution_id": execution_id,
-                                    "error": str(barrier_exc),
-                                })
-                                return
+                append_event("node.started", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "tool": node.tool,
+                })
+                append_event("agent.started", {
+                    "workflow_id": workflow["id"],
+                    "node_id": node.id,
+                    "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
+                    "role": node.agent_role,
+                })
+                executable.append((node, execution_id))
 
-                    append_event("node.started", {
+            if not executable:
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                continue
+
+            dry_run = not live
+            results = []
+
+            # Persist safe running nodes before their execution begins. If the worker
+            # is interrupted, recovery can rearm them while preserving the charged
+            # attempt budget.
+            if executable and all(not side_effecting(node, registry) for node, _ in executable):
+                attempt_budget.sync()
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+
+            if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
+                for node, execution_id in executable:
+                    results.append((
+                        node,
+                        execution_id,
+                        *execute_with_retries(
+                            node,
+                            workflow["goal"],
+                            dry_run,
+                            attempt_budget=attempt_budget,
+                            initial_attempt_reserved=True,
+                            llm_budget_workflow=workflow,
+                            before_retry=(
+                                lambda node=node: (
+                                    attempt_budget.sync(),
+                                    workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
+                                    persist_workflow(workflow),
+                                )
+                                if side_effecting(node, registry)
+                                else None
+                            ),
+                        ),
+                    ))
+            else:
+                with ThreadPoolExecutor(
+                    max_workers=min(workflow["max_parallel"], len(executable)),
+                    thread_name_prefix="orchestrator-node",
+                ) as pool:
+                    futures = {
+                        pool.submit(
+                            execute_with_retries,
+                            node,
+                            workflow["goal"],
+                            dry_run,
+                            attempt_budget=attempt_budget,
+                            initial_attempt_reserved=True,
+                        ): (node, execution_id)
+                        for node, execution_id in executable
+                    }
+                    completed_futures = {}
+                    for future in as_completed(futures):
+                        node, execution_id = futures[future]
+                        completed_futures[node.id] = (node, execution_id, *future.result())
+                    results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
+
+            replan_needed = False
+            for node, execution_id, success, error in results:
+                if success:
+                    if side_effecting(node, registry):
+                        mark_execution_completed(workflow, execution_id, node.output)
+                    update_tool_health(node, True, registry)
+                    node_success_checkpoint(workflow, node)
+                    append_event("node.completed", {
                         "workflow_id": workflow["id"],
                         "node_id": node.id,
                         "tool": node.tool,
                     })
-                    append_event("agent.started", {
+                    append_event("agent.completed", {
                         "workflow_id": workflow["id"],
                         "node_id": node.id,
                         "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
                         "role": node.agent_role,
+                        "status": "completed",
                     })
-                    executable.append((node, execution_id))
-
-                if not executable:
-                    workflow["nodes"] = [asdict(node) for node in nodes]
-                    persist_workflow(workflow)
-                    continue
-
-                dry_run = not live
-                results = []
-
-                # Persist safe running nodes before their execution begins. If the worker
-                # is interrupted, recovery can rearm them while preserving the charged
-                # attempt budget.
-                if executable and all(not side_effecting(node, registry) for node, _ in executable):
-                    attempt_budget.sync()
-                    workflow["nodes"] = [asdict(item) for item in nodes]
-                    persist_workflow(workflow)
-
-                if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
-                    for node, execution_id in executable:
-                        results.append((
-                            node,
-                            execution_id,
-                            *execute_with_retries(
-                                node,
-                                workflow["goal"],
-                                dry_run,
-                                attempt_budget=attempt_budget,
-                                initial_attempt_reserved=True,
-                                llm_budget_workflow=workflow,
-                                before_retry=(
-                                    lambda node=node: (
-                                        attempt_budget.sync(),
-                                        workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
-                                        persist_workflow(workflow),
-                                    )
-                                    if side_effecting(node, registry)
-                                    else None
-                                ),
-                            ),
-                        ))
+                    notify_issue(
+                        workflow,
+                        "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
+                    )
                 else:
-                    with ThreadPoolExecutor(
-                        max_workers=min(workflow["max_parallel"], len(executable)),
-                        thread_name_prefix="orchestrator-node",
-                    ) as pool:
-                        futures = {
-                            pool.submit(
-                                execute_with_retries,
-                                node,
-                                workflow["goal"],
-                                dry_run,
-                                attempt_budget=attempt_budget,
-                                initial_attempt_reserved=True,
-                            ): (node, execution_id)
-                            for node, execution_id in executable
-                        }
-                        completed_futures = {}
-                        for future in as_completed(futures):
-                            node, execution_id = futures[future]
-                            completed_futures[node.id] = (node, execution_id, *future.result())
-                        results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
-
-                replan_needed = False
-                for node, execution_id, success, error in results:
-                    if success:
-                        if side_effecting(node, registry):
-                            mark_execution_completed(workflow, execution_id, node.output)
-                        update_tool_health(node, True, registry)
-                        node_success_checkpoint(workflow, node)
-                        append_event("node.completed", {
-                            "workflow_id": workflow["id"],
-                            "node_id": node.id,
-                            "tool": node.tool,
-                        })
-                        append_event("agent.completed", {
-                            "workflow_id": workflow["id"],
-                            "node_id": node.id,
-                            "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
-                            "role": node.agent_role,
-                            "status": "completed",
-                        })
-                        notify_issue(
-                            workflow,
-                            "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
-                        )
+                    update_tool_health(node, False, registry)
+                    if not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
+                        replan_needed = True
                     else:
-                        update_tool_health(node, False, registry)
-                        if not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
-                            replan_needed = True
-                        else:
-                            workflow["status"] = "failed"
-                            workflow["failed_node"] = node.id
-                            workflow["nodes"] = [asdict(item) for item in nodes]
-                            persist_workflow(workflow)
-                            return
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
 
-                attempt_budget.sync()
-                workflow["nodes"] = [asdict(node) for node in nodes]
-                persist_workflow(workflow)
+            attempt_budget.sync()
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
 
-                if replan_needed:
-                    continue
+            if replan_needed:
+                continue
 
 def notify_issue(workflow: dict[str, Any], message: str) -> None:
     try:
