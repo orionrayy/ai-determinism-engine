@@ -1,6 +1,7 @@
 import unittest
 
 from epistemic_deliberation import blind_challenge_view, debate_decision
+from epistemic_deliberation_runtime import build_claim_challenges, deliberation_context, validate_deliberation_responses
 
 
 class EpistemicDeliberationTests(unittest.TestCase):
@@ -100,6 +101,128 @@ class EpistemicDeliberationTests(unittest.TestCase):
         self.assertEqual([item["agent_id"] for item in view], ["a1", "a2"])
         self.assertNotIn("vote_count", view[0])
         self.assertNotIn("majority", view[0])
+
+
+    def test_claim_challenge_targets_material_disagreement(self):
+        proposals = [
+            {
+                "agent_id": "a1",
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "A is effective.",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["e1"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "e1",
+                    "authority_score": 0.9,
+                }],
+            },
+            {
+                "agent_id": "a2",
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "A is ineffective.",
+                    "material": True,
+                    "status": "CONTESTED",
+                    "evidence_refs": ["e2"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "e2",
+                    "authority_score": 0.85,
+                }],
+            },
+        ]
+        challenges = build_claim_challenges(proposals)
+        self.assertEqual(len(challenges), 1)
+        self.assertEqual(challenges[0]["claim_id"], "c1")
+        self.assertEqual(challenges[0]["challenge_type"], "claim_disagreement")
+        self.assertTrue(challenges[0]["requires_rebuttal"])
+
+    def test_deliberation_context_has_adaptive_rounds(self):
+        proposals = [
+            {
+                "agent_id": "a1",
+                "answer": "A",
+                "confidence": 0.7,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "A",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["e1"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "e1",
+                    "authority_score": 0.9,
+                }],
+            },
+            {
+                "agent_id": "a2",
+                "answer": "B",
+                "confidence": 0.7,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "B",
+                    "material": True,
+                    "status": "CONTESTED",
+                    "evidence_refs": ["e2"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "e2",
+                    "authority_score": 0.8,
+                }],
+            },
+        ]
+        context = deliberation_context(proposals)
+        self.assertEqual(context["policy_version"], 2)
+        self.assertTrue(context["challenges"])
+        self.assertEqual(context["adaptive_rounds"][0]["round"], 1)
+        self.assertEqual(context["adaptive_rounds"][1]["round"], 2)
+
+    def test_deliberation_responses_require_each_claim_challenge(self):
+        deliberation = {
+            "challenges": [{
+                "claim_id": "c1",
+                "challenge_type": "claim_disagreement",
+            }]
+        }
+        verdict = {
+            "evidence_records": [{
+                "canonical_id": "e1",
+            }],
+            "deliberation_responses": [{
+                "claim_id": "c1",
+                "status": "resolved",
+                "evidence_refs": ["e1"],
+                "justification": "Direct evidence resolves the conflict.",
+            }],
+        }
+        result = validate_deliberation_responses(verdict, deliberation)
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["response_count"], 1)
+
+    def test_deliberation_responses_reject_unknown_evidence(self):
+        deliberation = {
+            "challenges": [{
+                "claim_id": "c1",
+                "challenge_type": "evidence_gap",
+            }]
+        }
+        verdict = {
+            "evidence_records": [{
+                "canonical_id": "trusted",
+            }],
+            "deliberation_responses": [{
+                "claim_id": "c1",
+                "status": "resolved",
+                "evidence_refs": ["forged"],
+            }],
+        }
+        result = validate_deliberation_responses(verdict, deliberation)
+        self.assertFalse(result["passed"])
+        self.assertIn("c1", result["invalid"])
 
 
 if __name__ == "__main__":
