@@ -1820,6 +1820,8 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     control_plane = ACTIVE_CONTROL_PLANE.get()
     lease = ACTIVE_CONTROL_PLANE_LEASE.get()
     if control_plane is not None and lease is not None and bool(workflow.get("live")):
+        workflow["state_authority"] = AUTHORITY_DISTRIBUTED_CONTROL_PLANE
+        workflow["state_replica"] = "git"
         digest = hot_state_digest(workflow)
         previous_digest = ACTIVE_HOT_STATE_DIGEST.get()
         if previous_digest == digest:
@@ -1833,8 +1835,6 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             expected_state_version=expected,
             state=remote_state,
         )
-        workflow["state_authority"] = AUTHORITY_DISTRIBUTED_CONTROL_PLANE
-        workflow["state_replica"] = "git"
         try:
             _write_workflow_shard(workflow)
         except Exception as mirror_exc:
@@ -1850,7 +1850,20 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             from .scheduled_recovery import recovery_event_id
         except ImportError:
             from scheduled_recovery import recovery_event_id
-        if workflow.get("status") in {"running", "waiting_agents"}:
+        if workflow.get("status") in {"completed", "cancelled"}:
+            try:
+                control_plane.clear_recovery(
+                    workflow_id,
+                    owner=control_plane.owner,
+                    fence_epoch=lease.fence_epoch,
+                )
+            except ControlPlaneError as clear_exc:
+                workflow["recovery_alarm_error"] = {
+                    "type": type(clear_exc).__name__,
+                    "message": str(clear_exc),
+                    "at": utc_now(),
+                }
+        elif workflow.get("status") in {"running", "waiting_agents"}:
             try:
                 stale_seconds = max(
                     1,
