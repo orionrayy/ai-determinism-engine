@@ -2831,6 +2831,34 @@ class OrchestratorTests(unittest.TestCase):
                 o.run_one_step(workflow)
             inner.assert_not_called()
 
+    def test_distributed_authority_rejects_missing_remote_state(self):
+        workflow = {
+            "id": "wf-authority-missing",
+            "goal": "authority missing",
+            "live": True,
+            "authority_mode": o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            "status": "running",
+            "nodes": [],
+            "control_plane_state_version": 4,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), patch.dict(
+                o.os.environ,
+                {
+                    "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                    "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+                },
+                clear=False,
+            ), patch.object(
+                o.ControlPlaneClient,
+                "from_env",
+            ) as from_env:
+                client = from_env.return_value
+                client.get_workflow_state.return_value = None
+                o._write_workflow_shard(workflow)
+                with self.assertRaises(RuntimeError):
+                    o.load_workflow(workflow["id"])
+
     def test_git_authority_does_not_switch_to_control_plane_when_config_appears(self):
         workflow = {
             "id": "wf-authority-git-load",
