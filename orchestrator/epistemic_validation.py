@@ -20,6 +20,10 @@ VALID_STATUSES = {
     "UNKNOWN",
 }
 
+MAX_EVIDENCE_RECORDS = 64
+MAX_CLAIMS = 48
+MAX_EVIDENCE_REFS_PER_CLAIM = 32
+
 
 def validate_evidence_records(
     evidence_records: list[Mapping[str, Any]],
@@ -113,6 +117,7 @@ def claim_coverage(claims: list[Mapping[str, Any]]) -> dict[str, Any]:
         "evidence_linked_material_claims": len(evidence_linked),
         # Retained as the semantic "supported claim coverage" metric.
         "coverage": (len(supported) / total) if total else 1.0,
+        "supported_coverage": (len(supported) / total) if total else 1.0,
         # Used for minimum coverage because contested/unknown claims can be
         # honest while still being explicitly evidence-linked.
         "evidence_coverage": (len(evidence_linked) / total) if total else 1.0,
