@@ -122,6 +122,42 @@ class ScheduledRecoveryTests(unittest.TestCase):
         }
         self.assertFalse(is_recovery_candidate(workflow, self.now))
 
+    def test_recovery_event_id_changes_when_plan_or_effect_intent_changes(self):
+        base = {
+            "id": "wf-effect",
+            "status": "failed",
+            "plan_fingerprint": "plan-a",
+            "nodes": [{
+                "id": "n1",
+                "status": "failed",
+                "tool": "connector_bridge",
+                "error": {"execution_uncertain": True},
+            }],
+            "executions": {
+                "effect-1": {
+                    "status": "inflight",
+                    "effect_id": "effect-1",
+                    "effect_semantic_digest": "digest-a",
+                },
+            },
+        }
+        changed_plan = {
+            **base,
+            "plan_fingerprint": "plan-b",
+        }
+        changed_effect = {
+            **base,
+            "executions": {
+                "effect-1": {
+                    "status": "inflight",
+                    "effect_id": "effect-1",
+                    "effect_semantic_digest": "digest-b",
+                },
+            },
+        }
+        self.assertNotEqual(recovery_event_id(base), recovery_event_id(changed_plan))
+        self.assertNotEqual(recovery_event_id(base), recovery_event_id(changed_effect))
+
     def test_recovery_event_id_changes_when_recovery_state_changes(self):
         first = {
             "id": "wf-change",
