@@ -10,15 +10,23 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "agent_id": "a1",
                 "answer": "A",
                 "confidence": 0.9,
-                "evidence_refs": ["x"],
+                "evidence_refs": ["doi:10.1/x1", "doi:10.1/x2"],
                 "independent_source_count": 2,
+                "evidence_records": [
+                    {"canonical_id": "doi:10.1/x1"},
+                    {"canonical_id": "doi:10.1/x2"},
+                ],
             },
             {
                 "agent_id": "a2",
                 "answer": "A",
                 "confidence": 0.9,
-                "evidence_refs": ["y"],
+                "evidence_refs": ["doi:10.1/y1", "doi:10.1/y2"],
                 "independent_source_count": 2,
+                "evidence_records": [
+                    {"canonical_id": "doi:10.1/y1"},
+                    {"canonical_id": "doi:10.1/y2"},
+                ],
             },
         ]
         result = debate_decision(proposals)
