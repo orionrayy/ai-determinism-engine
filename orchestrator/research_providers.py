@@ -11,6 +11,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Mapping
 
@@ -32,6 +33,18 @@ DEFAULT_MAX_RESULTS = 8
 DEFAULT_CACHE_TTL_SECONDS = 24 * 60 * 60
 MAX_CACHE_ENTRY_BYTES = 768 * 1024
 MAX_CACHE_FILES = 128
+
+PROVIDER_CONCURRENCY = {
+    "crossref": 1,
+    "semantic_scholar": 2,
+    "europe_pmc": 2,
+    "openalex": 2,
+    "core": 2,
+}
+_PROVIDER_SEMAPHORES = {
+    provider: threading.BoundedSemaphore(limit)
+    for provider, limit in PROVIDER_CONCURRENCY.items()
+}
 
 PROVIDER_ORDER = (
     "openalex",
@@ -360,7 +373,12 @@ def _provider_search(provider: str, query: str, max_results: int) -> dict[str, A
     fn = functions.get(provider)
     if fn is None:
         raise ResearchProviderError(f"unsupported research provider: {provider}")
-    payload = fn(query, max_results=max_results)
+    semaphore = _PROVIDER_SEMAPHORES.get(provider)
+    if semaphore is None:
+        payload = fn(query, max_results=max_results)
+    else:
+        with semaphore:
+            payload = fn(query, max_results=max_results)
     if isinstance(payload, dict):
         _cache_store(provider, query, max_results, payload)
     return payload
@@ -454,6 +472,7 @@ __all__ = [
     "normalize_provider_payload",
     "research_records",
     "default_provider_order",
+    "PROVIDER_CONCURRENCY",
     "_cache_load",
     "_cache_store",
 ]
