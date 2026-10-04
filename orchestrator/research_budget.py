@@ -40,6 +40,7 @@ _GENERAL_ORDER = (
 FREE_PROVIDER_ORDER = (
     "semantic_scholar",
     "europe_pmc",
+    "crossref",
 )
 
 
