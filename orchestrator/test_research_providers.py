@@ -201,7 +201,7 @@ class ResearchProviderTests(unittest.TestCase):
         ), patch(
             "research_providers._distributed_rate_client"
         ) as client_factory, patch(
-            "research_providers._provider_search",
+            "research_providers.search_crossref",
             return_value={"message": {"items": []}},
         ):
             fake = client_factory.return_value
@@ -209,6 +209,10 @@ class ResearchProviderTests(unittest.TestCase):
                 "status": "granted",
                 "retry_after": 0,
             }
+            # Reset the memoized gate only inside this regression test.
+            import research_providers as rp
+            rp._DISTRIBUTED_RATE_CLIENT_INITIALIZED = False
+            rp._DISTRIBUTED_RATE_CLIENT = None
             result = research_records(
                 "topic",
                 providers=("crossref",),
