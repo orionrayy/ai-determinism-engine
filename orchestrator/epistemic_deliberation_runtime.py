@@ -141,6 +141,12 @@ def build_claim_challenges(
                 "statuses": statuses[:5],
                 "evidence_refs": refs[:16],
                 "requires_rebuttal": True,
+                "baseline_evidence_refs": refs[:16],
+                "required_response_fields": [
+                    "status",
+                    "evidence_refs",
+                    "evidence_delta",
+                ],
             })
 
     # A claim occurring in only one independent proposal is an additional coverage
@@ -227,10 +233,59 @@ def validate_deliberation_responses(
         if status not in {"resolved", "contested", "unknown"}:
             invalid.append(claim_id)
             continue
+        challenge = next(
+            (
+                item for item in challenges
+                if isinstance(item, Mapping)
+                and str(item.get("claim_id") or "").strip() == claim_id
+            ),
+            None,
+        )
+        challenge_refs = {
+            str(ref).strip()
+            for ref in (challenge.get("evidence_refs") or [])
+            if str(ref).strip()
+        } if isinstance(challenge, Mapping) else set()
         if any(ref not in allowed_refs for ref in refs):
             invalid.append(claim_id)
             continue
+        if challenge_refs and any(ref not in challenge_refs for ref in refs):
+            invalid.append(claim_id)
+            continue
         if status in {"resolved", "contested"} and not refs:
+            invalid.append(claim_id)
+
+        delta = response.get("evidence_delta")
+        if not isinstance(delta, Mapping):
+            invalid.append(claim_id)
+            continue
+        mode = str(delta.get("mode") or "").strip().lower()
+        attached_refs = {
+            str(ref).strip()
+            for ref in (delta.get("attached_refs") or [])
+            if str(ref).strip()
+        }
+        detached_refs = {
+            str(ref).strip()
+            for ref in (delta.get("detached_refs") or [])
+            if str(ref).strip()
+        }
+        if mode not in {"added", "reassessed", "preserved_uncertainty"}:
+            invalid.append(claim_id)
+            continue
+        if any(ref not in allowed_refs for ref in attached_refs | detached_refs):
+            invalid.append(claim_id)
+            continue
+        if challenge_refs and any(ref not in challenge_refs for ref in attached_refs):
+            invalid.append(claim_id)
+            continue
+        if mode == "added" and not attached_refs:
+            invalid.append(claim_id)
+            continue
+        if mode == "reassessed" and (attached_refs or detached_refs):
+            invalid.append(claim_id)
+            continue
+        if mode == "preserved_uncertainty" and status not in {"contested", "unknown"}:
             invalid.append(claim_id)
 
     missing = sorted(expected - seen)
