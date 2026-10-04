@@ -230,7 +230,12 @@ def pack_node_context(
                     str(item.get("canonical_id") or item.get("title") or ""),
                 ),
             )[:32]
-            if str(item.get("canonical_id") or "").strip() and item.get("abstract")
+            if str(item.get("canonical_id") or "").strip()
+            and (
+                item.get("abstract")
+                or item.get("full_text")
+                or item.get("text")
+            )
         }
         evidence = []
         for raw in bounded_records:
