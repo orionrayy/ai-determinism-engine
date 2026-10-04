@@ -98,9 +98,22 @@ def execution_eligible(
         return False
     if tool == "gemini" and os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true":
         selected_model = (model or configured_model(tool, registry) or "").strip()
-        allowed = registry.get("gemini", {}).get("free_models")
+        spec = registry.get("gemini", {})
+        allowed = spec.get("free_models")
         if not isinstance(allowed, list) or selected_model not in {str(item).strip() for item in allowed}:
             return False
+        deadlines = spec.get("free_until")
+        deadline = deadlines.get(selected_model) if isinstance(deadlines, dict) else deadlines
+        if deadline:
+            from datetime import datetime, timezone
+            try:
+                cutoff = datetime.fromisoformat(str(deadline).replace("Z", "+00:00"))
+                if cutoff.tzinfo is None:
+                    cutoff = cutoff.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > cutoff:
+                    return False
+            except ValueError:
+                return False
     return True
 
 
