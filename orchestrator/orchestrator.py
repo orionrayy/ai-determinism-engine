@@ -42,7 +42,7 @@ try:
     from .epistemic_validation import validate_epistemic_output
     from .epistemic_metrics import record_node_metrics
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
-    from .plan_integrity import fingerprint_nodes
+    from .plan_integrity import fingerprint_nodes, fingerprint_intent, fingerprint_provider_resolution
     from .state_schema import (
         CURRENT_STATE_VERSION,
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
@@ -94,7 +94,7 @@ except ImportError:
     from epistemic_validation import validate_epistemic_output
     from epistemic_metrics import record_node_metrics
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
-    from plan_integrity import fingerprint_nodes
+    from plan_integrity import fingerprint_nodes, fingerprint_intent, fingerprint_provider_resolution
     from state_schema import (
         CURRENT_STATE_VERSION,
         DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW,
@@ -1547,6 +1547,9 @@ def compact_terminal_workflow(
         "origin_github_run_id": workflow.get("origin_github_run_id"),
         "origin_github_run_attempt": workflow.get("origin_github_run_attempt"),
         "plan_fingerprint": workflow.get("plan_fingerprint"),
+        "plan_intent_fingerprint": workflow.get("plan_intent_fingerprint"),
+        "provider_resolution_fingerprint": workflow.get("provider_resolution_fingerprint"),
+        "provider_resolution_change": workflow.get("provider_resolution_change"),
         "plan_integrity": workflow.get("plan_integrity"),
         "checkpoint_integrity": workflow.get("checkpoint_integrity"),
         "replan_count": workflow.get("replan_count", 0),
@@ -3311,28 +3314,95 @@ def verify_completed_checkpoints(
 
 
 def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
-    fingerprint = fingerprint_nodes(nodes)
-    previous = str(workflow.get("plan_fingerprint") or "").strip()
-    if not previous:
-        workflow["plan_fingerprint"] = fingerprint
-        workflow["plan_integrity"] = "initialized"
+    intent_digest = fingerprint_intent(nodes)
+    provider_digest = fingerprint_provider_resolution(nodes)
+    legacy_fingerprint = str(workflow.get("plan_fingerprint") or "").strip()
+    stored_intent = str(workflow.get("plan_intent_fingerprint") or "").strip()
+    stored_provider = str(workflow.get("provider_resolution_fingerprint") or "").strip()
+
+    # Migrate legacy strict plan fingerprints conservatively. A pre-v76 workflow
+    # must still prove that its exact old node plan is intact before the split
+    # fingerprints are initialized.
+    if not stored_intent:
+        if legacy_fingerprint and legacy_fingerprint != fingerprint_nodes(nodes):
+            workflow["plan_integrity"] = "drift_detected"
+            workflow["plan_drift"] = {
+                "expected": legacy_fingerprint,
+                "actual": fingerprint_nodes(nodes),
+                "detected_at": utc_now(),
+                "basis": "legacy_plan_fingerprint",
+            }
+            workflow["status"] = "failed"
+            append_event("workflow.plan_drift", {
+                "workflow_id": workflow["id"],
+                "expected": legacy_fingerprint,
+                "actual": fingerprint_nodes(nodes),
+                "basis": "legacy_plan_fingerprint",
+            })
+            return False
+        workflow["plan_intent_fingerprint"] = intent_digest
+        workflow["provider_resolution_fingerprint"] = provider_digest
+        if not legacy_fingerprint:
+            workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
+        workflow["plan_integrity"] = "initialized_split"
         return True
-    if previous == fingerprint:
-        workflow["plan_integrity"] = "verified"
+
+    if stored_intent != intent_digest:
+        workflow["plan_integrity"] = "intent_drift_detected"
+        workflow["plan_drift"] = {
+            "expected": stored_intent,
+            "actual": intent_digest,
+            "detected_at": utc_now(),
+            "basis": "plan_intent_fingerprint",
+        }
+        workflow["status"] = "failed"
+        append_event("workflow.plan_intent_drift", {
+            "workflow_id": workflow["id"],
+            "expected": stored_intent,
+            "actual": intent_digest,
+        })
+        return False
+
+    if not stored_provider:
+        workflow["provider_resolution_fingerprint"] = provider_digest
+        workflow["plan_integrity"] = "provider_binding_initialized"
         return True
-    workflow["plan_integrity"] = "drift_detected"
-    workflow["plan_drift"] = {
-        "expected": previous,
-        "actual": fingerprint,
-        "detected_at": utc_now(),
-    }
-    workflow["status"] = "failed"
-    append_event("workflow.plan_drift", {
-        "workflow_id": workflow["id"],
-        "expected": previous,
-        "actual": fingerprint,
-    })
-    return False
+
+    if stored_provider != provider_digest:
+        change = workflow.get("provider_resolution_change")
+        allowed = isinstance(change, dict)
+        if allowed:
+            workflow["provider_resolution_fingerprint"] = provider_digest
+            workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
+            workflow.pop("provider_resolution_change", None)
+            workflow["plan_integrity"] = "provider_reselected"
+            append_event("workflow.provider_resolution_changed", {
+                "workflow_id": workflow["id"],
+                "node_id": str(change.get("node_id") or ""),
+                "from_tool": str(change.get("from_tool") or ""),
+                "to_tool": str(change.get("to_tool") or ""),
+                "reason": str(change.get("reason") or "controlled_provider_reselection"),
+            })
+            return True
+
+        workflow["plan_integrity"] = "provider_drift_detected"
+        workflow["plan_drift"] = {
+            "expected": stored_provider,
+            "actual": provider_digest,
+            "detected_at": utc_now(),
+            "basis": "provider_resolution_fingerprint",
+        }
+        workflow["status"] = "failed"
+        append_event("workflow.provider_resolution_drift", {
+            "workflow_id": workflow["id"],
+            "expected": stored_provider,
+            "actual": provider_digest,
+        })
+        return False
+
+    workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
+    workflow["plan_integrity"] = "verified"
+    return True
 
 
 def execution_failure_policy(
@@ -3767,8 +3837,16 @@ def replan_after_failure(
         "node_id": failed_node.id,
         "previous_tool": old_tool,
     })
+    workflow["provider_resolution_change"] = {
+        "node_id": failed_node.id,
+        "from_tool": old_tool,
+        "to_tool": candidate,
+        "reason": "failure_replan",
+        "changed_at": utc_now(),
+    }
+    workflow["provider_resolution_fingerprint"] = fingerprint_provider_resolution(nodes)
     workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
-    workflow["plan_integrity"] = "replanned"
+    workflow["plan_integrity"] = "replanned_provider"
     transition(failed_node, "ready")
     workflow["status"] = "running"
     return True
@@ -5446,6 +5524,9 @@ def create_workflow(
         "agent_team": team_manifest(workflow_id, nodes),
         "federation": {},
         "plan_fingerprint": None,
+        "plan_intent_fingerprint": None,
+        "provider_resolution_fingerprint": None,
+        "provider_resolution_change": None,
         "checkpoint_integrity": "pending",
         "plan_integrity": "pending",
         "max_parallel": max(1, min(int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)), 8)),
