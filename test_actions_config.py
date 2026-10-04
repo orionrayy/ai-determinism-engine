@@ -14,6 +14,7 @@ class ActionsConfigTests(unittest.TestCase):
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
         cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
+        cls.recovery_worker = (ROOT / 'orchestrator' / 'recovery_worker.py').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
         cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
