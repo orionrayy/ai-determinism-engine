@@ -214,7 +214,7 @@ export class WorkflowControlPlane {
         this.ctx.storage.sql.exec(
           "INSERT INTO provider_rate(singleton,provider,tokens,updated_at) VALUES(1,?,?,?) " +
           "ON CONFLICT(singleton) DO UPDATE SET tokens=excluded.tokens,updated_at=excluded.updated_at",
-          requested, tokens, Math.floor(at)
+          requested, tokens, at
         );
         return {granted:false,retry_after:Math.max(0.05, retryAfter)};
       }
@@ -222,7 +222,7 @@ export class WorkflowControlPlane {
       this.ctx.storage.sql.exec(
         "INSERT INTO provider_rate(singleton,provider,tokens,updated_at) VALUES(1,?,?,?) " +
         "ON CONFLICT(singleton) DO UPDATE SET tokens=excluded.tokens,updated_at=excluded.updated_at",
-        requested, tokens, Math.floor(at)
+        requested, tokens, at
       );
       return {granted:true,retry_after:0};
     });
