@@ -137,6 +137,29 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
 
+    def test_free_only_rejects_expired_gemini_free_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+                "free_until": {
+                    "gemini-3.8-flash": "2020-01-01T00:00:00Z",
+                },
+            }
+        }
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true"},
+            clear=False,
+        ):
+            self.assertFalse(
+                o.gemini_model_allowed(
+                    registry,
+                    model="gemini-3.8-flash",
+                )
+            )
+
     def test_free_only_rejects_unlisted_gemini_model(self):
         registry = {
             "gemini": {
