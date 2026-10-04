@@ -105,7 +105,7 @@ def is_recovery_candidate(
             stale_seconds=stale_seconds,
         ):
             return False
-        if active_run_status in ACTIVE_RUN_STATUSES:
+        if active_run_status in ACTIVE_RUN_STATUSES and recovery_due is not True:
             return False
         return True
     if status == "waiting_agents":
