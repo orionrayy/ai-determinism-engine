@@ -135,5 +135,63 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
             o.ACTIVE_CONTROL_PLANE_LEASE.reset(token2)
 
 
+    def test_effect_contracts_are_action_aware(self):
+        registry = {
+            "github": {
+                "effect_contracts": {
+                    "create_issue": {
+                        "identity": "engine",
+                        "retry": "reconcile",
+                        "reconciliation": "deterministic",
+                        "fencing": "engine",
+                    },
+                    "dispatch_workflow": {
+                        "identity": "engine",
+                        "retry": "blocked",
+                        "reconciliation": "none",
+                        "fencing": "engine",
+                    },
+                },
+            }
+        }
+        issue = o.Node(
+            "n1",
+            "publish",
+            "github",
+            [],
+            input={"action": "create_issue"},
+        )
+        dispatch = o.Node(
+            "n2",
+            "publish",
+            "github",
+            [],
+            input={"action": "dispatch_workflow"},
+        )
+        issue_contract = o.resolve_effect_contract(issue, registry)
+        dispatch_contract = o.resolve_effect_contract(dispatch, registry)
+        self.assertEqual(issue_contract.retry, "reconcile")
+        self.assertEqual(dispatch_contract.retry, "blocked")
+        self.assertTrue(issue_contract.can_reconcile)
+        self.assertFalse(dispatch_contract.can_reconcile)
+
+    def test_missing_live_effect_contract_fails_closed(self):
+        n = o.Node(
+            "n1",
+            "publish",
+            "github",
+            [],
+            input={"action": "unreviewed_new_action"},
+        )
+        registry = {
+            "github": {
+                "side_effects": ["repo_write"],
+                "free_tier": True,
+            },
+        }
+        with self.assertRaises(RuntimeError):
+            o.require_live_effect_contract(n, registry, dry_run=False)
+
+
 if __name__ == "__main__":
     unittest.main()
