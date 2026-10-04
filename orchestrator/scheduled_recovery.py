@@ -75,7 +75,7 @@ def _execution_uncertain(workflow: Mapping[str, Any]) -> bool:
             node.get("status") == "failed"
             and isinstance(error, Mapping)
             and bool(error.get("execution_uncertain"))
-            and node.get("tool") == "connector_bridge"
+            and node.get("tool") in {"connector_bridge", "github"}
         ):
             return True
     return False
