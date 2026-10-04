@@ -52,6 +52,7 @@ export class WorkflowControlPlane {
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS workflow_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), state_version INTEGER NOT NULL, state_json TEXT NOT NULL, updated_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS outbox_created_idx ON outbox(created_at)");
+      ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS recovery (singleton INTEGER PRIMARY KEY CHECK(singleton=1), due_at INTEGER NOT NULL, due INTEGER NOT NULL DEFAULT 0, event_id TEXT NOT NULL, fired_at INTEGER)");
     });
   }
 
@@ -267,6 +268,107 @@ export class WorkflowControlPlane {
     return json({status:result});
   }
 
+  armRecovery(body) {
+    const owner = String(body.owner || "").trim();
+    const workflowId = String(body.workflow_id || "").trim();
+    const epoch = Number(body.fence_epoch);
+    const dueAt = Number(body.due_at);
+    const eventId = String(body.event_id || "").trim();
+    if (
+      !owner ||
+      !workflowId ||
+      !Number.isInteger(epoch) ||
+      !Number.isInteger(dueAt) ||
+      !eventId ||
+      eventId.length > 256
+    ) {
+      throw new Error("recovery_schedule_invalid");
+    }
+    const at = now();
+    const scheduledAt = Math.max(at, dueAt);
+    this.ctx.storage.transactionSync(() => {
+      this.requireLease(owner, epoch, at);
+      this.ctx.storage.sql.exec(
+        "INSERT INTO recovery(singleton,due_at,due,event_id,fired_at) VALUES(1,?,0,?,NULL) " +
+        "ON CONFLICT(singleton) DO UPDATE SET due_at=excluded.due_at,due=0,event_id=excluded.event_id,fired_at=NULL",
+        scheduledAt,
+        eventId
+      );
+    });
+    this.ctx.storage.setAlarm(scheduledAt * 1000);
+    return json({
+      status:"armed",
+      workflow_id:workflowId,
+      due_at:scheduledAt,
+      event_id:eventId
+    });
+  }
+
+  ackRecovery(body) {
+    const workflowId = String(body.workflow_id || "").trim();
+    const eventId = String(body.event_id || "").trim();
+    if (!workflowId || !eventId) throw new Error("recovery_ack_invalid");
+    const result = this.ctx.storage.transactionSync(() => {
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT due,event_id FROM recovery WHERE singleton=1"
+      ).toArray();
+      if (!rows.length) return "already_clear";
+      const row = rows[0];
+      if (String(row.event_id) !== eventId) return "stale_event";
+      this.ctx.storage.sql.exec("DELETE FROM recovery WHERE singleton=1");
+      return "acknowledged";
+    });
+    return json({status:result,workflow_id:workflowId,event_id:eventId});
+  }
+
+  readRecovery() {
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT due_at,due,event_id,fired_at FROM recovery WHERE singleton=1"
+    ).toArray();
+    return json(rows.length ? {
+      status:"stored",
+      due_at:Number(rows[0].due_at),
+      due:Boolean(rows[0].due),
+      event_id:String(rows[0].event_id),
+      fired_at:rows[0].fired_at == null ? null : Number(rows[0].fired_at)
+    } : {status:"absent"});
+  }
+
+  async alarm(alarmInfo) {
+    const at = now();
+    const result = this.ctx.storage.transactionSync(() => {
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT due_at,due,event_id FROM recovery WHERE singleton=1"
+      ).toArray();
+      if (!rows.length) return {status:"noop"};
+      const row = rows[0];
+      if (Number(row.due) === 1) {
+        return {status:"already_due"};
+      }
+      if (Number(row.due_at) > at) {
+        return {status:"not_due",due_at:Number(row.due_at)};
+      }
+      this.ctx.storage.sql.exec(
+        "UPDATE recovery SET due=1,fired_at=? WHERE singleton=1",
+        at
+      );
+      this.ctx.storage.sql.exec(
+        "INSERT INTO outbox(event_type,payload_json,created_at) VALUES(?,?,?)",
+        "workflow.recovery_due",
+        JSON.stringify({
+          event_id:String(row.event_id),
+          fired_at:at,
+          retry_count:Number(alarmInfo?.retryCount || 0)
+        }),
+        at
+      );
+      return {status:"due"};
+    });
+    if (result.status === "not_due") {
+      await this.ctx.storage.setAlarm(Number(result.due_at) * 1000);
+    }
+  }
+
   readWorkflowState() {
     const rows = this.ctx.storage.sql.exec(
       "SELECT state_version,state_json,updated_at FROM workflow_state WHERE singleton=1"
@@ -424,6 +526,9 @@ export class WorkflowControlPlane {
         return json({error:"not_found"},404);
       }
       if (request.method === "GET" && url.pathname.endsWith("/state")) return this.readWorkflowState();
+      if (request.method === "GET" && url.pathname.endsWith("/recovery")) return this.readRecovery();
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return this.armRecovery(body);
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return this.ackRecovery(body);
       if (request.method === "PUT" && url.pathname.endsWith("/state")) return this.writeWorkflowState(body);
       if (request.method === "POST" && url.pathname.endsWith("/outbox")) return this.appendOutbox(body);
       if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return this.acquire(body);
