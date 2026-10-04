@@ -65,6 +65,9 @@ def _identifier(record: Mapping[str, Any]) -> tuple[str, str]:
     ):
         return canonical, "strong"
 
+    if canonical:
+        return canonical, "canonical_identifier"
+
     return "", ""
 
 
