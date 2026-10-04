@@ -154,15 +154,16 @@ def route_capability(
         if not free_ok or status == QUARANTINED:
             continue
         risk = _risk(spec)
-        # Higher-priority dimensions come first. Lexical order is the final
-        # deterministic tie-breaker, so identical health/config always routes
-        # the same way.
+        # Explicit preference is meaningful, but availability/free policy still
+        # gates the candidate. Health, credential burden, risk, and lexical order
+        # provide deterministic tie-breakers after the preference.
         score = (
+            1 if tool == preferred else 0,
             1 if env_ok else 0,
             1 if free_ok else 0,
-            1 if not _requires_env(tool, registry) else 0,
-            -HEALTH_RANK[status],
-            -RISK_RANK[risk],
+            1 if not _requires_env(tool) else 0,
+            HEALTH_RANK[status],
+            RISK_RANK[risk],
             tool,
         )
         scored.append((score, tool))
@@ -170,7 +171,7 @@ def route_capability(
     if not scored:
         raise ValueError(f"no candidate tools remain for capability {capability}")
 
-    available = [item for item in scored if item[0][0] == 1 and item[0][1] == 1]
+    available = [item for item in scored if item[0][1] == 1 and item[0][2] == 1]
     if live and not available:
         raise ValueError(
             f"no available tool for capability {capability} under current policy"
@@ -181,8 +182,9 @@ def route_capability(
             -item[0][0],
             -item[0][1],
             -item[0][2],
-            item[0][3] * -1,
-            item[0][4] * -1,
+            -item[0][3],
+            item[0][4],
+            item[0][5],
             item[1],
         ),
     )[1]
