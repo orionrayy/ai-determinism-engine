@@ -21,7 +21,7 @@ Current execution-fabric branch: `main`
 - Trusted evidence context is explicitly bounded; canonical IDs remain available while abstract excerpts are included only in a bounded lane for exact passage validation.
 - Exact normalized evidence-passage validation is available through `evidence_passages`; strict mode can require passages for direct-supported claims.
 - OpenAlex remains a free-allowance provider in hard-free mode, and Unpaywall is DOI-only and opt-in.
-- Latest verified CI head before this checkpoint: 5ac812e9012831bfd037a8efee96515ee540f46c2 had Unit Tests, Actionlint, and Control-plane evaluation success. Latest subsequent commits are staged in the same PR branch and must be checked again if merged.
+- CI note: run `37206981912` on the PR merge commit compiled the runtime, passed worker syntax, import smoke, and Actionlint, then failed only because the new `test_v79_boundary_quality` module used a package-qualified import incompatible with the repository's `unittest discover -s orchestrator` layout. Commit `84d7c3a72c312211e0044833ea80bc3984d9bf20` fixes that import; a fresh CI run is required before claiming the branch fully green.
 
 ### Candidate v79.2 boundary/rate hardening
 - Strict research epistemic contracts now require `evidence_passages` for every material `SUPPORTED_DIRECT` claim.
