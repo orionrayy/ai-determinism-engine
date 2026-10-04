@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -25,7 +26,7 @@ ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
 _DISCOVERY_CACHE_TTL = 60
 _DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
-_DISCOVERY_CACHE_LOCK = __import__('threading').Lock()
+_DISCOVERY_CACHE_LOCK = threading.Lock()
 
 
 class ConnectorBridgeError(RuntimeError):
