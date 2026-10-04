@@ -372,6 +372,25 @@ class ControlPlaneClient:
             },
         )
 
+    def claim_recovery(
+        self,
+        workflow_id: str,
+        event_id: str,
+        *,
+        owner: str,
+        ttl_seconds: int = 300,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/claim"),
+            {
+                "workflow_id": str(workflow_id),
+                "event_id": str(event_id),
+                "owner": str(owner),
+                "ttl_seconds": max(30, min(int(ttl_seconds), 600)),
+            },
+        )
+
     def ack_recovery(
         self,
         workflow_id: str,
