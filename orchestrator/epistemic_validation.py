@@ -198,6 +198,29 @@ def validate_epistemic_output(
         return {"passed": False, "reason": "claims must be an array"}
     if not isinstance(evidence, list):
         return {"passed": False, "reason": "evidence_records must be an array"}
+    if len(evidence) > MAX_EVIDENCE_RECORDS:
+        return {
+            "passed": False,
+            "reason": f"evidence_records exceeds limit {MAX_EVIDENCE_RECORDS}",
+        }
+    if len(claims) > MAX_CLAIMS:
+        return {
+            "passed": False,
+            "reason": f"claims exceeds limit {MAX_CLAIMS}",
+        }
+    for claim in claims:
+        if (
+            isinstance(claim, Mapping)
+            and isinstance(claim.get("evidence_refs"), list)
+            and len(claim.get("evidence_refs") or []) > MAX_EVIDENCE_REFS_PER_CLAIM
+        ):
+            return {
+                "passed": False,
+                "reason": (
+                    "claim evidence_refs exceeds limit "
+                    f"{MAX_EVIDENCE_REFS_PER_CLAIM}"
+                ),
+            }
 
     bound_evidence, binding = _bind_evidence_to_trusted_records(
         output,
