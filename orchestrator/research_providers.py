@@ -37,6 +37,7 @@ PROVIDER_ORDER = (
     "openalex",
     "semantic_scholar",
     "europe_pmc",
+    "crossref",
     "core",
 )
 FREE_PROVIDER_ORDER = (
@@ -256,7 +257,7 @@ def search_semantic_scholar(query: str, max_results: int = DEFAULT_MAX_RESULTS) 
     params = urllib.parse.urlencode({
         "query": query[:400],
         "limit": max(1, min(int(max_results), 100)),
-        "fields": "paperId,title,year,authors,citationCount,openAccessPdf,url,journal",
+        "fields": "paperId,title,year,authors,citationCount,openAccessPdf,url,journal,abstract",
     })
     headers = {}
     key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "").strip()
