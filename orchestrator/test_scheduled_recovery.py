@@ -23,6 +23,22 @@ class ScheduledRecoveryTests(unittest.TestCase):
         }
         self.assertFalse(is_recovery_candidate(workflow, self.now))
 
+    def test_recovery_due_false_does_not_override_fresh_running_workflow(self):
+        workflow = {
+            "id": "wf-2",
+            "status": "running",
+            "updated_at": self.now.isoformat(),
+        }
+        self.assertFalse(
+            is_recovery_candidate(
+                workflow,
+                self.now,
+                active_run_status="missing",
+                stale_seconds=3600,
+                recovery_due=False,
+            )
+        )
+
     def test_control_plane_alarm_can_mark_running_workflow_due_before_timestamp_threshold(self):
         workflow = {
             "id": "wf-1",
