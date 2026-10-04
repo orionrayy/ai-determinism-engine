@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from claim_integrity import validate_truth_lock
+from epistemic_deliberation import _evidence_strength
 from epistemic_deliberation_runtime import (
     build_claim_challenges,
     validate_deliberation_responses,
@@ -194,6 +195,59 @@ class V79BoundaryQualityTests(unittest.TestCase):
         result = validate_epistemic_output(verdict, require_passages=True)
         self.assertFalse(result["passed"])
 
+    def test_declared_access_does_not_score_as_verified_access(self):
+        declared = _evidence_strength({
+            "evidence_records": [{
+                "canonical_id": "doi:x",
+                "authority_score": 1.0,
+                "independence_confidence": 1.0,
+                "access_verification": "declared_only",
+                "publication_status": "normal",
+            }],
+        })
+        verified = _evidence_strength({
+            "evidence_records": [{
+                "canonical_id": "doi:x",
+                "authority_score": 1.0,
+                "independence_confidence": 1.0,
+                "access_verification": "verified",
+                "publication_status": "normal",
+            }],
+        })
+        self.assertLess(declared, verified)
+
+    def test_high_utility_evidence_gets_abstract_window(self):
+        records = [{
+            "canonical_id": f"doi:{index:02d}",
+            "authority_score": 0.2,
+            "independence_confidence": 0.2,
+            "access_verification": "identifier_only",
+            "publication_status": "normal",
+            "year": 2016,
+            "abstract": "",
+        } for index in range(32)]
+        records.append({
+            "canonical_id": "doi:zz",
+            "authority_score": 1.0,
+            "independence_confidence": 1.0,
+            "access_verification": "verified",
+            "publication_status": "normal",
+            "year": 2026,
+            "abstract": "High utility evidence passage.",
+        })
+        packed = pack_node_context(
+            goal="research",
+            dependencies={},
+            contract={"epistemic": True},
+            repair_feedback={},
+            trusted_evidence_records=records,
+        )
+        high = next(
+            item for item in packed["trusted_evidence"]
+            if item["canonical_id"] == "doi:zz"
+        )
+        self.assertEqual(high["abstract"], "High utility evidence passage.")
+
     def test_strict_passage_requires_verifiable_corpus(self):
         verdict = {
             "claims": [{
@@ -231,6 +285,28 @@ class V79BoundaryQualityTests(unittest.TestCase):
         record = packed["trusted_evidence"][0]
         self.assertEqual(record["access_verification"], "metadata_only")
         self.assertEqual(record["access_level"], "L1")
+
+    def test_strict_passage_length_is_bounded(self):
+        long_text = "x" * 701
+        verdict = {
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "Treatment A improved survival.",
+                "status": "SUPPORTED_DIRECT",
+                "material": True,
+                "evidence_refs": ["doi:x"],
+                "evidence_passages": [{
+                    "evidence_ref": "doi:x",
+                    "text": long_text,
+                }],
+            }],
+            "evidence_records": [{
+                "canonical_id": "doi:x",
+                "abstract": long_text,
+            }],
+        }
+        result = validate_epistemic_output(verdict, require_passages=True)
+        self.assertFalse(result["passed"])
 
     def test_research_epistemic_nodes_require_passages(self):
         nodes = deterministic_plan("research on treatment outcomes", {}, live=False)
