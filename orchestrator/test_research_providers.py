@@ -39,6 +39,29 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertTrue(0.0 <= record["authority_score"] <= 1.0)
         self.assertTrue(record["authority_heuristic"])
 
+    def test_access_and_retraction_signals_are_explicit(self):
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/retracted",
+                        "title": ["Retracted"],
+                        "type": "journal-article",
+                        "URL": "https://publisher.example/article",
+                        "update-to": [{
+                            "type": "retraction",
+                            "source": "retraction-watch",
+                        }],
+                    }]
+                }
+            },
+        )
+        record = records[0]
+        self.assertEqual(record["publication_status"], "retracted")
+        self.assertTrue(record["retraction_signal"])
+        self.assertEqual(record["access_verification"], "metadata_only")
+
     def test_publisher_url_without_full_text_is_only_metadata_access(self):
         records = normalize_provider_payload(
             "crossref",
