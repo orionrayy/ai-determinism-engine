@@ -755,3 +755,12 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Epistemic outputs request an explicit confidence value. Final validation remains separate from adjudication.
 - The critic role is explicitly allowed to perform analyze + validate so the adjudicator keeps critic semantics without introducing a second role taxonomy.
 - Multi-agent debate quality remains task/protocol dependent; current design therefore prefers conditional bounded deliberation over always-on debate.
+
+
+## v73 evidence independence and calibration (2026-10-04)
+- "independent_source_count" remains as a compatibility field but is computed as a distinct evidence-work count rather than trusted from an LLM self-report.
+- Evidence work identity prefers DOI/arXiv/PMID/PMCID, collapses arXiv versions to one work, then falls back to canonical identifiers, bibliographic fingerprints, or weak provider identity. Each work carries an identity basis and proxy confidence.
+- The independence layer explicitly marks itself as a proxy. It does not claim proof of independent authorship, datasets, citations, or study populations.
+- Calibration metrics (Brier, ECE, MCE, reliability bins, selective risk) are label-dependent. Samples are accepted only with label_source in ground_truth, benchmark, or human_eval.
+- Confidence alone is never treated as calibrated accuracy. Production/runtime metrics remain "unavailable" until explicit outcome labels exist.
+- The evaluation harness contains a deterministic calibration/independence case so the epistemic quality layer is CI-gated without consuming live provider calls.
