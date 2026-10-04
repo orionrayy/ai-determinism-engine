@@ -97,6 +97,31 @@ def selective_evidence_gate(
         selective["reason"] = "confidence_below_selective_threshold"
         return selective
 
+    evidence_by_id = {
+        str(record.get("canonical_id") or "").strip(): record
+        for record in (verdict.get("evidence_records") or [])
+        if isinstance(record, Mapping) and str(record.get("canonical_id") or "").strip()
+    }
+    low_authority_material_claims = []
+    for claim in material:
+        refs = claim.get("evidence_refs")
+        if not isinstance(refs, list) or not refs:
+            low_authority_material_claims.append(str(claim.get("claim_id") or ""))
+            continue
+        authority_scores = []
+        for ref in refs:
+            record = evidence_by_id.get(str(ref).strip())
+            try:
+                authority_scores.append(float(record.get("authority_score")))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        if not authority_scores or max(authority_scores) < 0.65:
+            low_authority_material_claims.append(str(claim.get("claim_id") or ""))
+
+    selective["low_authority_material_claims"] = sorted(
+        item for item in low_authority_material_claims if item
+    )
+
     failures = []
     if (
         evidence_coverage is None
@@ -115,6 +140,8 @@ def selective_evidence_gate(
         and indep_conf < float(min_independence_proxy_confidence)
     ):
         failures.append("independence_proxy_confidence")
+    if low_authority_material_claims:
+        failures.append("source_authority")
 
     if failures:
         selective["abstain"] = True
