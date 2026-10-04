@@ -1391,7 +1391,16 @@ def load_workflow(workflow_id: str) -> dict[str, Any] | None:
             f"distributed workflow state unavailable: {exc}"
         ) from exc
     if remote is None:
-        return local
+        if (
+            local is not None
+            and authority == AUTHORITY_DISTRIBUTED_CONTROL_PLANE
+            and int(local.get("control_plane_state_version") or 0) == 0
+            and local.get("status") in {"planning", "ready"}
+        ):
+            return local
+        raise RuntimeError(
+            "distributed workflow state is absent from the control plane"
+        )
 
     value = remote.state
     stored_id = str(value.get("id") or "").strip()
