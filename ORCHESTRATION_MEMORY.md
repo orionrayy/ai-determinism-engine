@@ -30,6 +30,12 @@ Current execution-fabric branch: `main`
 - Crossref local fallback rate now matches the selected pool: public 1 req/s without `CROSSREF_MAILTO`, polite 3 req/s with it. This remains a fallback only; distributed gating is preferred when configured.
 - The 600 KiB distributed control-plane workflow-state ceiling remains intentionally unsolved by lossy remote projection: remote authority is not allowed to discard dependency outputs required for deterministic resume. Future segmentation must preserve a verifiable Git replica binding before implementation.
 - Regression coverage was extended for strict passages, corpus verification, trusted access metadata, research passage contracts, and Crossref fallback rates.
+### Candidate v79.3 evidence scoring/packing hardening
+- Evidence utility ranking now gives full access weight only to explicitly `verified` access; `declared_only` and `metadata_only` remain non-verified.
+- Bounded trusted context retains the highest-utility corpus-bearing evidence records for passage excerpts instead of relying only on canonical-ID order.
+- When a high-utility record has no abstract, a bounded 700-character `text` excerpt may be taken from available full-text/text content for strict passage validation.
+- Evidence passage validation is bounded to 8 passages per claim and 700 characters per passage.
+- Latest code commits include `3759a953f06e29ba1115f2bb77dbf55f93c1928` for the corpus-lane correction and subsequent test/consistency hardening; fresh CI must validate the current branch tip before any merge decision.
 ### Candidate orchestration hardening v79
 - PR #142 branch: `feat/v79-boundary-evidence-efficiency`.
 - Distributed control-plane v78 remains operational authority for live workflows; Git remains the state/audit replica.
