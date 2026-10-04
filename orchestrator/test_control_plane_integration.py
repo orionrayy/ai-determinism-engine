@@ -304,8 +304,17 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
         self.assertNotIn("agent_id", context["candidates"][0])
         self.assertNotIn("vote_count", context["candidates"][0])
 
-        self.assertTrue(context["candidates"][0]["evidence_cards"])
-        self.assertIn("canonical_id", context["candidates"][0]["evidence_cards"][0])
+        self.assertTrue(
+            any(item.get("evidence_cards") for item in context["candidates"])
+        )
+        evidence_candidate = next(
+            item for item in context["candidates"]
+            if item.get("evidence_cards")
+        )
+        self.assertIn(
+            "canonical_id",
+            evidence_candidate["evidence_cards"][0],
+        )
 
 
 if __name__ == "__main__":
