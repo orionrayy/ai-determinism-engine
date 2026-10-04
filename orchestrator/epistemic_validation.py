@@ -4,6 +4,13 @@
 from __future__ import annotations
 
 from typing import Any, Mapping
+try:
+    from .evidence_independence import independence_summary
+    from .selective_evidence_gate import selective_evidence_gate
+except ImportError:
+    from evidence_independence import independence_summary
+    from selective_evidence_gate import selective_evidence_gate
+
 
 VALID_STATUSES = {
     "SUPPORTED_DIRECT",
@@ -147,17 +154,34 @@ def validate_epistemic_output(
         min_coverage is None
         or coverage["evidence_coverage"] >= float(min_coverage)
     )
-    return {
-        "passed": bool(
-            evidence_result["passed"]
-            and claim_result["passed"]
-            and threshold_ok
-        ),
+    independence = independence_summary(
+        [
+            item for item in evidence
+            if isinstance(item, Mapping)
+        ]
+    )
+    base_result = {
         "evidence": evidence_result,
         "claims": claim_result,
         "coverage": coverage,
         "min_coverage": min_coverage,
         "min_coverage_basis": "evidence_coverage",
+        "independence": independence,
+    }
+    selective = selective_evidence_gate(
+        output,
+        base_result,
+    )
+    passed = bool(
+        evidence_result["passed"]
+        and claim_result["passed"]
+        and threshold_ok
+    )
+    return {
+        **base_result,
+        "passed": passed,
+        "selective": selective,
+        "selective_abstention": bool(selective.get("abstain")),
     }
 
 
