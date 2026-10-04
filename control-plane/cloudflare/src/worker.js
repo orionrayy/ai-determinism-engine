@@ -547,17 +547,41 @@ export class WorkflowControlPlane {
     });
   }
 
-  writeWorkflowState(body) {
+  async writeWorkflowState(body) {
     const owner = String(body.owner || "").trim();
     const epoch = Number(body.fence_epoch);
     const expected = Number(body.expected_state_version);
     const state = body.state;
+    const recovery = body.recovery;
     if (!owner || !Number.isInteger(epoch) || !Number.isInteger(expected)) {
       throw new Error("workflow_state_identity_invalid");
     }
     if (!state || typeof state !== "object" || Array.isArray(state)) {
       throw new Error("workflow_state_must_be_object");
     }
+    if (recovery !== undefined && (
+      !recovery ||
+      typeof recovery !== "object" ||
+      Array.isArray(recovery)
+    )) {
+      throw new Error("workflow_recovery_mutation_invalid");
+    }
+    const recoveryAction = recovery
+      ? String(recovery.action || "none").trim().toLowerCase()
+      : "none";
+    if (!["none","arm","clear"].includes(recoveryAction)) {
+      throw new Error("workflow_recovery_action_invalid");
+    }
+    let recoveryDueAt = null;
+    let recoveryEventId = "";
+    if (recoveryAction === "arm") {
+      recoveryDueAt = Number(recovery.due_at);
+      recoveryEventId = String(recovery.event_id || "").trim();
+      if (!Number.isInteger(recoveryDueAt) || !recoveryEventId || recoveryEventId.length > 256) {
+        throw new Error("workflow_recovery_schedule_invalid");
+      }
+    }
+
     const stateJson = JSON.stringify(state);
     if (stateJson.length > 600 * 1024) {
       throw new Error("workflow_state_too_large");
@@ -585,8 +609,64 @@ export class WorkflowControlPlane {
         "state_version=excluded.state_version,state_json=excluded.state_json,updated_at=excluded.updated_at",
         next, stateJson, at
       );
-      return {status:"stored",state_version:next,updated_at:at};
+
+      let recoveryResult = {action:"none",status:"unchanged"};
+      if (recoveryAction === "clear") {
+        this.ctx.storage.sql.exec("DELETE FROM recovery WHERE singleton=1");
+        recoveryResult = {action:"clear",status:"cleared"};
+      } else if (recoveryAction === "arm") {
+        const scheduledAt = Math.max(at, recoveryDueAt);
+        const currentRecovery = this.ctx.storage.sql.exec(
+          "SELECT due_at,due,event_id FROM recovery WHERE singleton=1"
+        ).toArray();
+        if (
+          currentRecovery.length &&
+          String(currentRecovery[0].event_id) === recoveryEventId &&
+          Number(currentRecovery[0].due) === 0 &&
+          Number(currentRecovery[0].due_at) >= scheduledAt
+        ) {
+          recoveryResult = {
+            action:"arm",
+            status:"already_armed",
+            due_at:Number(currentRecovery[0].due_at),
+            event_id:recoveryEventId,
+          };
+        } else {
+          this.ctx.storage.sql.exec(
+            "INSERT INTO recovery(singleton,due_at,due,event_id,fired_at,claimed,claim_owner,claim_expires_at) VALUES(1,?,0,?,NULL,0,NULL,NULL) " +
+            "ON CONFLICT(singleton) DO UPDATE SET due_at=excluded.due_at,due=0,event_id=excluded.event_id,fired_at=NULL,claimed=0,claim_owner=NULL,claim_expires_at=NULL",
+            scheduledAt,
+            recoveryEventId
+          );
+          recoveryResult = {
+            action:"arm",
+            status:"armed",
+            due_at:scheduledAt,
+            event_id:recoveryEventId,
+          };
+        }
+      }
+      return {
+        status:"stored",
+        state_version:next,
+        updated_at:at,
+        recovery:recoveryResult,
+      };
     });
+
+    if (
+      result.recovery &&
+      result.recovery.action === "arm" &&
+      result.recovery.status === "armed"
+    ) {
+      await this.ctx.storage.setAlarm(Number(result.recovery.due_at) * 1000);
+    } else if (
+      result.recovery &&
+      result.recovery.action === "clear" &&
+      result.recovery.status === "cleared"
+    ) {
+      await this.ctx.storage.deleteAlarm();
+    }
     return json(result);
   }
 
