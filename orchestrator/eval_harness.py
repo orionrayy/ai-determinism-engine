@@ -89,10 +89,10 @@ def _case_epistemic_integrity() -> dict[str, Any]:
     ]
     independence = independence_summary(evidence)
     calibration = calibration_summary([
-        {"confidence": 0.9, "correct": True},
-        {"confidence": 0.2, "correct": False},
-        {"confidence": 0.8, "correct": True},
-        {"confidence": 0.1, "correct": False},
+        {"confidence": 0.9, "correct": True, "label_source": "benchmark"},
+        {"confidence": 0.2, "correct": False, "label_source": "benchmark"},
+        {"confidence": 0.8, "correct": True, "label_source": "benchmark"},
+        {"confidence": 0.1, "correct": False, "label_source": "benchmark"},
     ], bins=2)
     passed = (
         independence["distinct_work_count"] == 2
