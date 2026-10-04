@@ -268,7 +268,7 @@ export class WorkflowControlPlane {
     return json({status:result});
   }
 
-  armRecovery(body) {
+  async armRecovery(body) {
     const owner = String(body.owner || "").trim();
     const workflowId = String(body.workflow_id || "").trim();
     const epoch = Number(body.fence_epoch);
@@ -295,7 +295,7 @@ export class WorkflowControlPlane {
         eventId
       );
     });
-    this.ctx.storage.setAlarm(scheduledAt * 1000);
+    await this.ctx.storage.setAlarm(scheduledAt * 1000);
     return json({
       status:"armed",
       workflow_id:workflowId,
