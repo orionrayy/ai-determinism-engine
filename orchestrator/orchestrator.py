@@ -2078,6 +2078,8 @@ def gemini_thinking_level(node: Node) -> str:
         return "high"
     if role in {"skeptic", "analyst", "architect"}:
         return "medium"
+    if capability in {"analyze", "spec", "draft"}:
+        return "medium"
     return "low"
 
 
