@@ -4,10 +4,33 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+try:
+    from .evidence_independence import independence_summary
+except ImportError:
+    from evidence_independence import independence_summary
+
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.65
 DEFAULT_STABLE_CONFIDENCE = 0.80
 DEFAULT_MIN_INDEPENDENT_SOURCES = 2
+
+
+def _computed_independent_source_count(item: Mapping[str, Any]) -> int:
+    evidence = item.get("evidence_records")
+    if isinstance(evidence, list):
+        return int(
+            independence_summary(
+                [record for record in evidence if isinstance(record, Mapping)]
+            ).get("distinct_work_count")
+            or 0
+        )
+    independence = item.get("independence")
+    if isinstance(independence, Mapping):
+        try:
+            return max(0, int(independence.get("distinct_work_count") or 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
 
 
 def debate_decision(
@@ -47,10 +70,7 @@ def debate_decision(
         refs = item.get("evidence_refs", [])
         if not isinstance(refs, list) or not refs:
             evidence_missing = True
-        try:
-            independent_sources = int(item.get("independent_source_count") or 0)
-        except (TypeError, ValueError):
-            independent_sources = 0
+        independent_sources = _computed_independent_source_count(item)
         if independent_sources < max(0, int(min_independent_sources)):
             evidence_weak = True
 
