@@ -50,6 +50,108 @@ class EffectAdmissionTests(unittest.TestCase):
             120,
         )
 
+    def test_full_workflow_path_uses_latest_lease_for_effect_completion(self):
+        node = Node(
+            id="n1",
+            capability="execute",
+            tool="github",
+            depends_on=[],
+            risk="medium",
+            input={"action": "create_issue", "title": "x", "body": "y"},
+        )
+        workflow = {
+            "id": "wf-batch-effect",
+            "goal": "effect",
+            "status": "planning",
+            "live": True,
+            "nodes": [o.asdict(node)],
+            "max_attempts": 10,
+        }
+
+        class FakeCP:
+            owner = "worker"
+
+            def __init__(self):
+                self.acquire_calls = 0
+                self.renew_calls = 0
+                self.claim_epochs = []
+                self.complete_epochs = []
+                self._lease = Lease(
+                    "wf-batch-effect",
+                    self.owner,
+                    8,
+                    int(time.time()) + 900,
+                )
+
+            def acquire_lease(self, workflow_id):
+                self.acquire_calls += 1
+                raise AssertionError("run_workflow must reuse its session lease")
+
+            def renew_lease(self, workflow_id, fence_epoch):
+                self.renew_calls += 1
+                self._lease = Lease(
+                    workflow_id,
+                    self.owner,
+                    fence_epoch,
+                    int(time.time()) + 900,
+                )
+                return self._lease
+
+            def claim_effect(self, workflow_id, effect_id, semantic_digest, fence_epoch):
+                self.claim_epochs.append(fence_epoch)
+                return SimpleNamespace(
+                    status="claimed",
+                    effect_id=effect_id,
+                    semantic_digest=semantic_digest,
+                )
+
+            def complete_effect(
+                self,
+                workflow_id,
+                effect_id,
+                semantic_digest,
+                fence_epoch,
+                output_sha256="",
+            ):
+                self.complete_epochs.append(fence_epoch)
+
+        cp = FakeCP()
+
+        class Session:
+            def __enter__(self):
+                return cp, cp._lease
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_execute(node_obj, goal, dry_run, **kw):
+            kw["before_attempt"]()
+            node_obj.output = {"ok": True}
+            kw["on_success"](node_obj)
+            node_obj.status = "completed"
+            return True, None
+
+        registry = {
+            "github": {
+                "side_effects": ["repository_write"],
+                "free_tier": True,
+                "effect_contracts": {
+                    "create_issue": {
+                        "retry": "reconcile",
+                        "reconciliation": "deterministic",
+                    }
+                },
+            }
+        }
+
+        with patch.object(o, "control_plane_session", return_value=Session()),              patch.object(o, "load_registry", return_value=registry),              patch.object(o, "validate_dag"),              patch.object(o, "enforce_node_policy"),              patch.object(o, "ensure_plan_integrity", return_value=True),              patch.object(o, "verify_completed_checkpoints", return_value=True),              patch.object(o, "acquire_node_resource_locks", return_value=[]),              patch.object(o, "release_node_resource_locks"),              patch.object(o, "persist_workflow"),              patch.object(o, "append_event"),              patch.object(o, "notify_issue"),              patch.object(o, "notify_execution_callback"),              patch.object(o, "node_success_checkpoint"),              patch.object(o, "update_tool_health"),              patch.object(o, "execute_with_retries", side_effect=fake_execute):
+            o.run_workflow(workflow)
+
+        self.assertEqual(cp.acquire_calls, 0)
+        self.assertGreaterEqual(cp.renew_calls, 2)
+        self.assertEqual(cp.claim_epochs[-1], 8)
+        self.assertEqual(cp.complete_epochs[-1], 8)
+
     def test_side_effect_path_renews_and_does_not_reacquire_workflow_lease(self):
         node = Node(
             id="n1",
