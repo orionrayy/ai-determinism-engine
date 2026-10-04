@@ -230,7 +230,7 @@ export class WorkflowControlPlane {
       status: result.granted ? "granted" : "throttled",
       provider: requested,
       retry_after: Number(result.retry_after || 0),
-    }, result.granted ? 200 : 429);
+    });
   }
 
   resourceAcquire(body) {
