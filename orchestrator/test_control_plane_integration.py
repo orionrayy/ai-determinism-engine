@@ -235,5 +235,61 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
         )
 
 
+    def test_research_plan_contains_independent_deliberation_lanes(self):
+        registry = {}
+        nodes = o.deterministic_plan("compare two orchestration architectures", registry, live=False)
+        ids = [node.id for node in nodes]
+        self.assertEqual(
+            ids,
+            [
+                "n01-research",
+                "n02-skeptic",
+                "n03-analyze-primary",
+                "n04-analyze-contrarian",
+                "n05-adjudicate",
+                "n06-draft",
+                "n07-validate",
+                "n08-notify",
+            ],
+        )
+        by_id = {node.id: node for node in nodes}
+        self.assertEqual(by_id["n03-analyze-primary"].depends_on, ["n01-research"])
+        self.assertEqual(by_id["n04-analyze-contrarian"].depends_on, ["n02-skeptic"])
+        self.assertEqual(
+            by_id["n05-adjudicate"].depends_on,
+            ["n03-analyze-primary", "n04-analyze-contrarian"],
+        )
+        self.assertTrue(by_id["n05-adjudicate"].contract["deliberation"]["blind"])
+
+    def test_deliberation_context_anonymizes_candidates(self):
+        from epistemic_deliberation_runtime import deliberation_context
+
+        context = deliberation_context([
+            {
+                "agent_id": "agent-a",
+                "answer": "A",
+                "confidence": 0.7,
+                "evidence_refs": ["x"],
+                "independent_source_count": 2,
+                "vote_count": 9,
+            },
+            {
+                "agent_id": "agent-b",
+                "answer": "B",
+                "confidence": 0.8,
+                "evidence_refs": ["y"],
+                "independent_source_count": 2,
+                "vote_count": 1,
+            },
+        ])
+        self.assertEqual(context["decision"]["reason"], "material_disagreement")
+        self.assertEqual(
+            [item["candidate_id"] for item in context["candidates"]],
+            ["candidate_1", "candidate_2"],
+        )
+        self.assertNotIn("agent_id", context["candidates"][0])
+        self.assertNotIn("vote_count", context["candidates"][0])
+
+
 if __name__ == "__main__":
     unittest.main()
