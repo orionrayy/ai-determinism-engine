@@ -494,16 +494,20 @@ class ControlPlaneClient:
         fence_epoch: int,
         expected_state_version: int,
         state: dict[str, Any],
+        recovery: dict[str, Any] | None = None,
     ) -> int:
+        payload = {
+            "owner": str(owner),
+            "fence_epoch": int(fence_epoch),
+            "expected_state_version": int(expected_state_version),
+            "state": state,
+        }
+        if recovery is not None:
+            payload["recovery"] = recovery
         result = self._request(
             "PUT",
             self._workflow_path(workflow_id, "/state"),
-            {
-                "owner": str(owner),
-                "fence_epoch": int(fence_epoch),
-                "expected_state_version": int(expected_state_version),
-                "state": state,
-            },
+            payload,
         )
         if result.get("status") != "stored":
             raise ControlPlaneRejected(
