@@ -9,7 +9,7 @@ from epistemic_deliberation_runtime import (
 )
 from epistemic_validation import validate_epistemic_output
 from context_budget import pack_node_context
-from orchestrator.orchestrator import deterministic_plan
+from orchestrator import deterministic_plan
 from evidence_records import normalize_source
 from research_budget import default_available_providers
 from research_providers import search_crossref, search_openalex, _provider_local_rate
