@@ -4375,7 +4375,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                     mark_execution_started(workflow, node, execution_id)
                     workflow["nodes"] = [asdict(item) for item in nodes]
                     persist_workflow(workflow)
-                                if live and side_effecting(node, registry) and control_plane is None:
+                    if live and side_effecting(node, registry) and control_plane is None:
                         try:
                             commit_side_effect_start(
                                 ROOT,
