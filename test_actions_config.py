@@ -162,15 +162,17 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', self.orchestrator)
         self.assertIn('git add .orchestrator/workflows', self.orchestrator)
     def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
-        self.assertIn('gh api', self.orchestrator)
-        self.assertIn('--method', self.orchestrator)
-        self.assertIn('"POST"', self.orchestrator)
-        self.assertIn('check=False', self.orchestrator)
-        self.assertNotIn("status == 'waiting_approval'", self.orchestrator)
-        self.assertIn('recovery_event_id', self.orchestrator)
+        workflow = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
+        self.assertIn('gh api', workflow)
+        self.assertIn('--method', workflow)
+        self.assertIn('"POST"', workflow)
+        self.assertIn('check=False', workflow)
+        self.assertNotIn("status == 'waiting_approval'", workflow)
+        self.assertIn('recovery_event_id', workflow)
 
     def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
-        self.assertIn('if [ -d ".orchestrator/workflows" ]', self.orchestrator)
+        workflow = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
+        self.assertIn('if [ -d ".orchestrator/workflows" ]', workflow)
 
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
