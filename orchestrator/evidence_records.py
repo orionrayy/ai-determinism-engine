@@ -273,6 +273,12 @@ def deduplicate_sources(records: list[Mapping[str, Any]]) -> list[dict[str, Any]
             if not current.get(key) and record.get(key):
                 current[key] = record[key]
         current["authors"] = current.get("authors") or record.get("authors") or []
+        if float(record.get("authority_score") or 0) > float(
+            current.get("authority_score") or 0
+        ):
+            current["authority_score"] = record.get("authority_score")
+            current["authority_class"] = record.get("authority_class")
+            current["authority_tier"] = record.get("authority_tier")
         current["citation_count"] = max(
             int(current.get("citation_count") or 0),
             int(record.get("citation_count") or 0),
