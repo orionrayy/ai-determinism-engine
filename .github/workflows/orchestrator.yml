@@ -246,10 +246,16 @@ jobs:
         if: always()
         shell: bash
         run: |
+          goal_sha256="$(python3 - <<'PY'
+import hashlib
+from pathlib import Path
+print(hashlib.sha256(Path('/tmp/orchestrator_goal.txt').read_bytes()).hexdigest())
+PY
+)"
           printf '%s\n' \
             "## AI Orchestrator" \
             "" \
-            "- Goal: $(cat /tmp/orchestrator_goal.txt)" \
+            "- Goal: [redacted; digest=$goal_sha256]" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           from orchestrator.orchestrator import load_state
