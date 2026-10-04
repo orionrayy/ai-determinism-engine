@@ -4835,6 +4835,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                                         ),
                                     ),
                                 ))
+                    release_node_resource_locks(
+                        workflow,
+                        resource_leases_by_node.get(node.id, []),
+                        control_plane,
+                    )
+                    resource_leases_by_node.pop(node.id, None)
                                 if control_plane is not None and control_plane_lease is not None
                                 else None
                             ),
