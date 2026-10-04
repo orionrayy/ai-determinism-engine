@@ -28,9 +28,7 @@ def _bounded_score(value: Any) -> float:
 def _trusted_evidence_utility(record: Mapping[str, Any]) -> float:
     authority = _bounded_score(record.get("authority_score"))
     independence = _bounded_score(record.get("independence_confidence"))
-    access = 1.0 if str(record.get("access_verification") or "") not in {
-        "", "identifier_only", "metadata_only"
-    } else 0.0
+    access = 1.0 if str(record.get("access_verification") or "") == "verified" else 0.0
     integrity = 0.0 if str(record.get("publication_status") or "normal") != "normal" else 1.0
     try:
         year = int(record.get("year"))
