@@ -164,6 +164,32 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertEqual(result["providers"], ["openalex", "semantic_scholar"])
         self.assertEqual(search.call_count, 2)
 
+    def test_unpaywall_resolver_requires_email_and_returns_oa_payload(self):
+        from research_providers import resolve_unpaywall
+
+        with self.assertRaisesRegex(RuntimeError, "UNPAYWALL_EMAIL"):
+            resolve_unpaywall("10.1000/test")
+
+        with patch(
+            "research_providers._request_json",
+            return_value={
+                "best_oa_location": {
+                    "url_for_pdf": "https://repository.example/paper.pdf",
+                }
+            },
+        ) as request:
+            result = resolve_unpaywall(
+                "10.1000/test",
+                email="research@example.org",
+            )
+        self.assertEqual(
+            result["best_oa_location"]["url_for_pdf"],
+            "https://repository.example/paper.pdf",
+        )
+        request.assert_called_once()
+        self.assertIn("unpaywall.org/v2/10.1000%2Ftest", request.call_args.args[0])
+        self.assertIn("email=research@example.org", request.call_args.args[0])
+
     def test_provider_cache_avoids_repeated_network_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(
