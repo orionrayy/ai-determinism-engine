@@ -10,7 +10,10 @@ import argparse
 import os
 from typing import Any
 
-from .orchestrator import load_state
+try:
+    from .orchestrator import load_state
+except ImportError:
+    from orchestrator import load_state
 
 
 def find_workflow_for_run(
