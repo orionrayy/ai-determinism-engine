@@ -37,6 +37,7 @@ class EffectAdmissionTests(unittest.TestCase):
                 lease,
                 expected_seconds=120,
                 safety_seconds=30,
+                now=1000,
             )
         )
 
