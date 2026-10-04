@@ -262,7 +262,11 @@ class ControlPlaneClient:
         result = self._request(
             "POST",
             self._workflow_path(workflow_id, "/lease/release"),
-            {"owner": self.owner, "fence_epoch": int(fence_epoch)},
+            {
+                "owner": self.owner,
+                "workflow_id": str(workflow_id),
+                "fence_epoch": int(fence_epoch),
+            },
         )
         if result.get("status") not in {"released", "already_released"}:
             raise ControlPlaneRejected(
