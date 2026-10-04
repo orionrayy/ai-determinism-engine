@@ -383,11 +383,26 @@ export class WorkflowControlPlane {
     if (!state || typeof state !== "object" || Array.isArray(state)) {
       throw new Error("workflow_state_corrupt");
     }
+    const recoveryRows = this.ctx.storage.sql.exec(
+      "SELECT due_at,due,event_id,fired_at FROM recovery WHERE singleton=1"
+    ).toArray();
+    const recovery = recoveryRows.length ? {
+      due_at:Number(recoveryRows[0].due_at),
+      due:Boolean(recoveryRows[0].due),
+      event_id:String(recoveryRows[0].event_id),
+      fired_at:recoveryRows[0].fired_at == null ? null : Number(recoveryRows[0].fired_at)
+    } : {
+      due_at:null,
+      due:false,
+      event_id:"",
+      fired_at:null
+    };
     return json({
       status:"stored",
       state_version:Number(rows[0].state_version),
       updated_at:Number(rows[0].updated_at),
-      state
+      state,
+      recovery
     });
   }
 
