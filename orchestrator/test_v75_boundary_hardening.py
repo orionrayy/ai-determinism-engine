@@ -5,7 +5,9 @@ from unittest.mock import patch
 import capability_graph as cg
 import epistemic_deliberation as ed
 import epistemic_validation as ev
+import evidence_records as er
 import orchestrator as o
+import source_authority as sa
 
 
 class V75BoundaryHardeningTests(unittest.TestCase):
@@ -81,6 +83,14 @@ class V75BoundaryHardeningTests(unittest.TestCase):
                 "free_keyed",
             )
 
+    def test_provider_reliability_is_recorded_and_used(self):
+        health = {}
+        cg.record_tool_result(health, "free", success=True, now=10)
+        cg.record_tool_result(health, "free", success=False, now=20)
+        self.assertEqual(health["free"]["success_count"], 1)
+        self.assertEqual(health["free"]["failure_count"], 1)
+        self.assertEqual(health["free"]["reliability_score"], 0.5)
+
     def test_selective_gate_uses_canonical_coverage_and_blocks_high_confidence_mismatch(self):
         output = {
             "confidence": 0.95,
@@ -135,6 +145,40 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertTrue(result["selective_abstention"])
 
+    def test_source_authority_is_explainable_and_dedupe_keeps_strongest_profile(self):
+        peer = er.normalize_source(
+            "semantic_scholar",
+            {
+                "title": "Paper",
+                "year": 2026,
+                "provider": "semantic_scholar",
+                "source_type": "journal-article",
+                "peer_reviewed": True,
+                "paperId": "p1",
+            },
+        )
+        preprint = er.normalize_source(
+            "arxiv",
+            {
+                "title": "Paper",
+                "year": 2026,
+                "provider": "arxiv",
+                "arxiv_id": "2601.12345",
+            },
+        )
+        self.assertEqual(peer["authority_class"], "peer_reviewed")
+        self.assertGreater(peer["authority_score"], preprint["authority_score"])
+        merged = er.deduplicate_sources([
+            dict(peer, canonical_id="doi:10.1/x"),
+            dict(preprint, canonical_id="doi:10.1/x"),
+        ])
+        self.assertEqual(len(merged), 1)
+        self.assertEqual(merged[0]["authority_score"], peer["authority_score"])
+        self.assertEqual(
+            sa.source_authority("semantic_scholar", {"peer_reviewed": True})["authority_tier"],
+            "tier1",
+        )
+
     def test_debate_ignores_self_reported_independence_count(self):
         proposals = [
             {
@@ -176,6 +220,43 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         result = ed.debate_decision(proposals)
         self.assertFalse(result["required"])
         self.assertEqual(result["reason"], "stable_consensus")
+
+    def test_planner_has_no_deprecated_generation_parameters(self):
+        import llm_planner as lp
+
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+            },
+            "capability:analyze": {
+                "default_tool": "gemini",
+                "fallback_tools": [],
+            },
+        }
+        response = {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": '{"nodes":[{"id":"n1","capability":"analyze","tool":"gemini","depends_on":[],"risk":"low","instruction":"analyze","contract":{},"artifacts":[]}]}'
+                    }]
+                }
+            }]
+        }
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "GEMINI_API_KEY": "x"},
+            clear=True,
+        ), patch.object(lp, "_post", return_value=response) as post:
+            lp.plan_goal("analyze", registry, o.Node, o.validate_dag)
+        generation = post.call_args.args[1]["generationConfig"]
+        self.assertNotIn("temperature", generation)
+        self.assertNotIn("candidateCount", generation)
+        self.assertEqual(
+            generation["thinkingConfig"]["thinkingLevel"],
+            "medium",
+        )
 
     def test_gemini_uses_thinking_config_and_authoritative_packed_context(self):
         context = {
