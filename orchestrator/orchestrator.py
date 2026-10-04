@@ -974,24 +974,29 @@ def parse_positive_seconds(
 
 
 def configured_effect_lease_horizon() -> tuple[int, int]:
-    expected = parse_positive_seconds(
-        os.environ.get(
+    try:
+        expected = parse_positive_seconds(
+            os.environ.get(
+                "ORCHESTRATOR_EFFECT_ATTEMPT_SECONDS",
+                str(DEFAULT_EFFECT_ATTEMPT_SECONDS),
+            ),
             "ORCHESTRATOR_EFFECT_ATTEMPT_SECONDS",
-            str(DEFAULT_EFFECT_ATTEMPT_SECONDS),
-        ),
-        "ORCHESTRATOR_EFFECT_ATTEMPT_SECONDS",
-        minimum=MIN_EFFECT_LEASE_HORIZON_SECONDS,
-        maximum=MAX_EFFECT_LEASE_HORIZON_SECONDS,
-    )
-    safety = parse_positive_seconds(
-        os.environ.get(
+            minimum=MIN_EFFECT_LEASE_HORIZON_SECONDS,
+            maximum=MAX_EFFECT_LEASE_HORIZON_SECONDS,
+        )
+        safety = parse_positive_seconds(
+            os.environ.get(
+                "ORCHESTRATOR_EFFECT_LEASE_SAFETY_SECONDS",
+                str(DEFAULT_EFFECT_LEASE_SAFETY_SECONDS),
+            ),
             "ORCHESTRATOR_EFFECT_LEASE_SAFETY_SECONDS",
-            str(DEFAULT_EFFECT_LEASE_SAFETY_SECONDS),
-        ),
-        "ORCHESTRATOR_EFFECT_LEASE_SAFETY_SECONDS",
-        minimum=MIN_EFFECT_LEASE_HORIZON_SECONDS,
-        maximum=MAX_EFFECT_LEASE_HORIZON_SECONDS,
-    )
+            minimum=MIN_EFFECT_LEASE_HORIZON_SECONDS,
+            maximum=MAX_EFFECT_LEASE_HORIZON_SECONDS,
+        )
+    except ValueError as exc:
+        raise EffectLeaseAdmissionError(
+            f"invalid effect lease horizon configuration: {exc}"
+        ) from exc
     return expected, safety
 
 
@@ -1015,6 +1020,27 @@ def ensure_effect_lease_horizon(
         raise EffectLeaseAdmissionError(
             f"effect lease horizon too short: remaining={remaining}s required={required}s"
         )
+
+
+def renew_effect_lease(
+    control_plane: ControlPlaneClient,
+    workflow_id: str,
+    lease: Any,
+) -> Any:
+    if lease is None:
+        raise ControlPlaneError("control-plane lease is missing")
+    renewed = control_plane.renew_lease(
+        workflow_id,
+        lease.fence_epoch,
+    )
+    ACTIVE_CONTROL_PLANE_LEASE.set(renewed)
+    expected_seconds, safety_seconds = configured_effect_lease_horizon()
+    ensure_effect_lease_horizon(
+        renewed,
+        expected_seconds=expected_seconds,
+        safety_seconds=safety_seconds,
+    )
+    return renewed
 
 
 def effect_semantic_digest(node: Node) -> str:
@@ -4512,16 +4538,10 @@ def _run_one_step_inner(
             if control_plane_lease is None:
                 raise ControlPlaneError("control-plane lease is missing")
             try:
-                expected_seconds, safety_seconds = configured_effect_lease_horizon()
-                control_plane_lease = control_plane.renew_lease(
+                control_plane_lease = renew_effect_lease(
+                    control_plane,
                     workflow["id"],
-                    control_plane_lease.fence_epoch,
-                )
-                ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
-                ensure_effect_lease_horizon(
                     control_plane_lease,
-                    expected_seconds=expected_seconds,
-                    safety_seconds=safety_seconds,
                 )
                 fence_epoch = int(control_plane_lease.fence_epoch)
                 semantic_digest = effect_semantic_digest(node)
@@ -4592,18 +4612,18 @@ def _run_one_step_inner(
         if control_plane is not None and control_plane_lease is not None and (
             side_effecting(node, registry) or resource_leases
         ):
-            control_plane_lease = control_plane.renew_lease(
-                workflow["id"],
-                control_plane_lease.fence_epoch,
-            )
-            ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
             if side_effecting(node, registry):
-                expected_seconds, safety_seconds = configured_effect_lease_horizon()
-                ensure_effect_lease_horizon(
+                control_plane_lease = renew_effect_lease(
+                    control_plane,
+                    workflow["id"],
                     control_plane_lease,
-                    expected_seconds=expected_seconds,
-                    safety_seconds=safety_seconds,
                 )
+            else:
+                control_plane_lease = control_plane.renew_lease(
+                    workflow["id"],
+                    control_plane_lease.fence_epoch,
+                )
+                ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
             if resource_leases:
                 resource_leases = renew_node_resource_locks(
                     workflow,
@@ -4999,10 +5019,18 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 if control_plane is not None:
                     if control_plane_lease is None:
                         raise ControlPlaneError("control-plane lease is missing")
-                    control_plane_lease = control_plane.renew_lease(
-                        workflow["id"],
-                        control_plane_lease.fence_epoch,
-                    )
+                    if side_effecting(node, registry):
+                        control_plane_lease = renew_effect_lease(
+                            control_plane,
+                            workflow["id"],
+                            control_plane_lease,
+                        )
+                    else:
+                        control_plane_lease = control_plane.renew_lease(
+                            workflow["id"],
+                            control_plane_lease.fence_epoch,
+                        )
+                        ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
                     fence_epoch = int(control_plane_lease.fence_epoch)
                     semantic_digest = effect_semantic_digest(node)
                     try:
@@ -5099,6 +5127,30 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
             ):
                 for node, execution_id in executable:
                     try:
+                        def renew_execution_context_for_node() -> None:
+                            nonlocal control_plane_lease
+                            if control_plane is None or control_plane_lease is None:
+                                return
+                            if side_effecting(node, registry):
+                                control_plane_lease = renew_effect_lease(
+                                    control_plane,
+                                    workflow["id"],
+                                    control_plane_lease,
+                                )
+                            else:
+                                control_plane_lease = control_plane.renew_lease(
+                                    workflow["id"],
+                                    control_plane_lease.fence_epoch,
+                                )
+                                ACTIVE_CONTROL_PLANE_LEASE.set(control_plane_lease)
+                            current_resources = resource_leases_by_node.get(node.id, [])
+                            if current_resources:
+                                resource_leases_by_node[node.id] = renew_node_resource_locks(
+                                    workflow,
+                                    current_resources,
+                                    control_plane,
+                                )
+
                         success, error = execute_with_retries(
                             node,
                             workflow["goal"],
@@ -5119,20 +5171,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                                 else None
                             ),
                             before_attempt=(
-                                (lambda: (
-                                    control_plane.renew_lease(
-                                        workflow["id"],
-                                        control_plane_lease.fence_epoch,
-                                    ),
-                                    resource_leases_by_node.__setitem__(
-                                        node.id,
-                                        renew_node_resource_locks(
-                                            workflow,
-                                            resource_leases_by_node.get(node.id, []),
-                                            control_plane,
-                                        ),
-                                    ),
-                                ))
+                                renew_execution_context_for_node
                                 if control_plane is not None
                                 and control_plane_lease is not None
                                 else None
