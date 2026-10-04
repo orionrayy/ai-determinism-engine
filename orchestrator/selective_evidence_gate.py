@@ -44,7 +44,7 @@ def selective_evidence_gate(
         else None
     )
     supported_coverage = _bounded_probability(
-        coverage.get("supported_coverage")
+        coverage.get("coverage")
         if isinstance(coverage, Mapping)
         else None
     )
