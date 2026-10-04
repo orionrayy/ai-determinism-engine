@@ -36,5 +36,47 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
         self.assertEqual(wf["executions"][effect_id]["fence_epoch"],9)
         self.assertEqual(wf["executions"][effect_id]["effect_semantic_digest"],digest)
 
+    def test_resource_keys_are_sorted_and_deduped(self):
+        n = o.Node(
+            "n1",
+            "publish",
+            "github",
+            [],
+            input={"resource_keys": ["b", "a", "b"]},
+            resources=["c", "a"],
+        )
+        self.assertEqual(o.node_resource_keys(n), ["a", "b", "c"])
+
+    def test_hot_state_persist_uses_control_plane_cas(self):
+        n = o.Node("n1", "research", "noop", [], input={})
+        workflow = {
+            "id": "wf-hot",
+            "live": True,
+            "status": "running",
+            "nodes": [o.asdict(n)],
+            "control_plane_state_version": 2,
+        }
+
+        class Stub:
+            owner = "worker"
+
+            def put_workflow_state(self, *args, **kwargs):
+                self.kwargs = kwargs
+                return 3
+
+        stub = Stub()
+        lease = type("Lease", (), {"fence_epoch": 8})()
+        token1 = o.ACTIVE_CONTROL_PLANE.set(stub)
+        token2 = o.ACTIVE_CONTROL_PLANE_LEASE.set(lease)
+        try:
+            o.persist_workflow(workflow)
+        finally:
+            o.ACTIVE_CONTROL_PLANE.reset(token1)
+            o.ACTIVE_CONTROL_PLANE_LEASE.reset(token2)
+
+        self.assertEqual(workflow["control_plane_state_version"], 3)
+        self.assertEqual(stub.kwargs["expected_state_version"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()
