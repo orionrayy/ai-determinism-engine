@@ -3409,12 +3409,13 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
                 raise RuntimeError("epistemic validator returned no JSON object")
             context_value = node.input.get("context")
             trusted_records = (
-                context_value.get("trusted_evidence", [])
+                context_value.get("trusted_evidence")
                 if isinstance(context_value, dict)
-                else []
+                and "trusted_evidence" in context_value
+                else None
             )
             if trusted_records is not None and not isinstance(trusted_records, list):
-                trusted_records = []
+                trusted_records = None
             epistemic_result = validate_epistemic_output(
                 verdict,
                 min_coverage=node.contract.get("min_coverage"),
