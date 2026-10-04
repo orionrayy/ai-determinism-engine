@@ -65,7 +65,7 @@ try:
         require_live_effect_contract,
         resolve_effect_contract,
     )
-    from .epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
+    from .epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict, validate_deliberation_responses
     from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -117,7 +117,7 @@ except ImportError:
         require_live_effect_contract,
         resolve_effect_contract,
     )
-    from epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
+    from epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict, validate_deliberation_responses
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -2113,9 +2113,13 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
             instruction += (
                 " You are the adjudicator. Compare the independent candidate analyses "
                 "without using candidate identity or majority signals. Explicitly preserve "
-                "material disagreement and unknowns. Return a decision summary, confidence, "
-                "and claim-level evidence references. Do not resolve a disagreement merely "
-                "because one candidate sounds more certain."
+                "material disagreement and unknowns. Use CONTEXT.deliberation.challenges "
+                "as the claim-level challenge queue. For every listed challenge, produce exactly "
+                "one deliberation_responses entry containing claim_id, status (resolved, contested, "
+                "or unknown), evidence_refs, and a concise rebuttal/justification. A resolved or "
+                "contested challenge must cite valid evidence. Do not resolve a disagreement merely "
+                "because one candidate sounds more certain. Stop only when every material challenge "
+                "is resolved or explicitly preserved as contested/unknown."
             )
         if node.capability == "validate":
             instruction += (
