@@ -2384,6 +2384,10 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(execute.call_count, 0)
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "attempt_budget_exhausted")
 
+    def test_research_bundle_is_not_globally_quota_serialized(self):
+        node = o.Node("n01-research", "research", "research_bundle", [])
+        self.assertFalse(o.quota_sensitive(node))
+
     def test_quota_sensitive_nodes_are_serialized(self):
         nodes = [
             o.Node("n01-llm-a", "analyze", "gemini", []),
