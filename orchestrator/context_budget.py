@@ -208,10 +208,16 @@ def pack_node_context(
                 "pmcid": str(raw.get("pmcid") or "")[:100],
                 "venue": str(raw.get("venue") or "")[:300],
                 "full_text_url": str(raw.get("full_text_url") or "")[:500],
+                "access_level": str(raw.get("access_level") or "L0"),
+                "access_route": str(raw.get("access_route") or "identifier"),
+                "access_verification": str(
+                    raw.get("access_verification") or "identifier_only"
+                ),
                 "authority_class": str(raw.get("authority_class") or "unknown"),
                 "authority_score": float(raw.get("authority_score") or 0.0),
                 "authority_tier": str(raw.get("authority_tier") or ""),
                 "publication_status": str(raw.get("publication_status") or "normal"),
+                "retraction_signal": bool(raw.get("retraction_signal")),
                 "independence_key": str(raw.get("independence_key") or ""),
                 "independence_confidence": float(raw.get("independence_confidence") or 0.0),
             }
