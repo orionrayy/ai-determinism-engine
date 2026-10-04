@@ -138,6 +138,11 @@ def recovery_generation(workflow: Mapping[str, Any]) -> str:
                 executions.append({
                     "id": str(key),
                     "status": status,
+                    "effect_id": str(record.get("effect_id") or ""),
+                    "effect_semantic_digest": str(
+                        record.get("effect_semantic_digest") or ""
+                    ),
+                    "fence_epoch": int(record.get("fence_epoch") or 0),
                 })
     executions.sort(key=lambda item: (item["id"], item["status"]))
     federation = workflow.get("federation")
@@ -151,6 +156,8 @@ def recovery_generation(workflow: Mapping[str, Any]) -> str:
         "workflow_id": str(workflow.get("id") or ""),
         "status": str(workflow.get("status") or ""),
         "failed_node": str(workflow.get("failed_node") or ""),
+        "plan_fingerprint": str(workflow.get("plan_fingerprint") or ""),
+        "execution_id": str(workflow.get("execution_id") or ""),
         "nodes": nodes,
         "executions": executions,
         "federation": federation_state,
