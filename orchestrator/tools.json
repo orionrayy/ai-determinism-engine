@@ -125,6 +125,13 @@
     "free_tier": false,
     "risk": "low"
   },
+  "openalex": {
+    "required_env": "OPENALEX_API_KEY",
+    "side_effects": [],
+    "free_tier": false,
+    "cost_class": "metered_free_allowance",
+    "risk": "low"
+  },
   "webhook": {
     "required_env": "ORCHESTRATOR_WEBHOOK_URL",
     "side_effects": [
