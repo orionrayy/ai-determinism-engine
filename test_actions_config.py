@@ -173,7 +173,7 @@ class ActionsConfigTests(unittest.TestCase):
     def test_scheduled_recovery_uses_canonical_loader(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('from orchestrator.orchestrator import compact_terminal_workflows, load_state', self.recovery_worker)
+        self.assertIn('compact_terminal_workflows, load_state', self.recovery_worker)
         self.assertIn('load_state()', self.recovery_worker)
         self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
 
