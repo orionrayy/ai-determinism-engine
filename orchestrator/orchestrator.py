@@ -3881,7 +3881,10 @@ def replan_after_failure(
         "reason": "failure_replan",
         "changed_at": utc_now(),
     }
-    workflow["provider_resolution_fingerprint"] = fingerprint_provider_resolution(nodes)
+    # Keep the previously accepted provider fingerprint until the next
+    # integrity check consumes the explicit re-selection marker. This makes the
+    # provider switch an auditable, controlled transition instead of a self-
+    # authorized fingerprint rewrite.
     workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
     workflow["plan_integrity"] = "replanned_provider"
     transition(failed_node, "ready")
