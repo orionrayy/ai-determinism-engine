@@ -133,10 +133,10 @@ def _case_context_budget() -> dict[str, Any]:
     ).encode("utf-8")
     return {
         "name": "context_budget",
-        "passed": (
+        "passed": bool(
             len(raw) <= 48 * 1024
-            and packed["context_digest"]
-            and (
+            and bool(packed["context_digest"])
+            and bool(
                 packed["context_budget"]["omitted_dependencies"]
                 or any(
                     isinstance(item, dict)
