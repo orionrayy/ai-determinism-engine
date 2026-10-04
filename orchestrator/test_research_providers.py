@@ -23,6 +23,10 @@ class ResearchProviderTests(unittest.TestCase):
                     "type": "journal-article",
                     "abstract": "<jats:p>Structured abstract.</jats:p>",
                     "URL": "https://publisher.example/article",
+                    "link": [{
+                        "URL": "https://publisher.example/article.pdf",
+                        "content-type": "application/pdf",
+                    }],
                 }]
             }
         }
@@ -200,7 +204,7 @@ class ResearchProviderTests(unittest.TestCase):
              ):
             self.assertEqual(
                 research_records("topic")["providers"],
-                ["openalex", "semantic_scholar", "europe_pmc", "core"],
+                ["openalex", "semantic_scholar", "europe_pmc", "crossref", "core"],
             )
 
     def test_provider_requests_run_in_parallel_with_deterministic_output_order(self):
