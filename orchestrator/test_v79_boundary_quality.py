@@ -7,6 +7,9 @@ from epistemic_deliberation_runtime import (
     build_claim_challenges,
     validate_deliberation_responses,
 )
+from epistemic_validation import validate_epistemic_output
+from context_budget import pack_node_context
+from orchestrator import deterministic_plan
 from evidence_records import normalize_source
 from research_budget import default_available_providers
 from research_providers import search_crossref, search_openalex
@@ -157,6 +160,82 @@ class V79BoundaryQualityTests(unittest.TestCase):
             {"challenges": challenges},
         )
         self.assertFalse(result["passed"])
+
+    def test_strict_passage_must_belong_to_claim_evidence_refs(self):
+        verdict = {
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "Treatment A improved survival.",
+                "status": "SUPPORTED_DIRECT",
+                "material": True,
+                "evidence_refs": ["doi:x"],
+                "evidence_passages": [{
+                    "evidence_ref": "doi:y",
+                    "text": "Treatment A improved survival.",
+                }],
+            }],
+            "evidence_records": [
+                {
+                    "canonical_id": "doi:x",
+                    "abstract": "Treatment A improved survival.",
+                },
+                {
+                    "canonical_id": "doi:y",
+                    "abstract": "Treatment A improved survival.",
+                },
+            ],
+        }
+        result = validate_epistemic_output(verdict, require_passages=True)
+        self.assertFalse(result["passed"])
+
+    def test_strict_passage_requires_verifiable_corpus(self):
+        verdict = {
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "Treatment A improved survival.",
+                "status": "SUPPORTED_DIRECT",
+                "material": True,
+                "evidence_refs": ["doi:x"],
+                "evidence_passages": [{
+                    "evidence_ref": "doi:x",
+                    "text": "Treatment A improved survival.",
+                }],
+            }],
+            "evidence_records": [{
+                "canonical_id": "doi:x",
+            }],
+        }
+        result = validate_epistemic_output(verdict, require_passages=True)
+        self.assertFalse(result["passed"])
+        self.assertGreater(result["passage_validation"]["missing_corpus"], 0)
+
+    def test_trusted_context_preserves_access_verification(self):
+        packed = pack_node_context(
+            goal="research",
+            dependencies={},
+            contract={"epistemic": True},
+            repair_feedback={},
+            trusted_evidence_records=[{
+                "canonical_id": "doi:x",
+                "access_level": "L1",
+                "access_route": "publisher_url",
+                "access_verification": "metadata_only",
+            }],
+        )
+        record = packed["trusted_evidence"][0]
+        self.assertEqual(record["access_verification"], "metadata_only")
+        self.assertEqual(record["access_level"], "L1")
+
+    def test_research_epistemic_nodes_require_passages(self):
+        nodes = deterministic_plan("research on treatment outcomes", {}, live=False)
+        epistemic_nodes = [
+            node for node in nodes
+            if node.contract.get("epistemic")
+        ]
+        self.assertTrue(epistemic_nodes)
+        self.assertTrue(
+            all(node.contract.get("require_passages") is True for node in epistemic_nodes)
+        )
 
     def test_claim_challenge_is_deterministic(self):
         proposals = [
