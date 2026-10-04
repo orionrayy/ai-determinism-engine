@@ -185,11 +185,15 @@ def independence_summary(
     strong = sum(
         item["basis"] == "strong" for item in normalized_groups
     )
+    canonical = sum(
+        item["basis"] == "canonical_identifier"
+        for item in normalized_groups
+    )
     heuristic = sum(
         item["basis"] == "heuristic_bibliographic"
         for item in normalized_groups
     )
-    weak = len(normalized_groups) - strong - heuristic
+    weak = len(normalized_groups) - strong - canonical - heuristic
 
     avg_confidence = (
         sum(item["confidence"] for item in normalized_groups)
@@ -201,6 +205,7 @@ def independence_summary(
     return {
         "distinct_work_count": len(normalized_groups),
         "strong_work_count": strong,
+        "canonical_identifier_work_count": canonical,
         "heuristic_work_count": heuristic,
         "weak_work_count": weak,
         "independence_proxy_confidence": round(avg_confidence, 3),
