@@ -42,15 +42,34 @@ FREE_PROVIDER_ORDER = (
     "semantic_scholar",
     "europe_pmc",
     "crossref",
+    "openalex",
 )
+# Kept as a compatibility alias: OpenAlex is free-to-use, but usage is budgeted.
 METERED_FREE_PROVIDER_ORDER = (
     "openalex",
 )
+
+PROVIDER_BILLING_CLASS = {
+    "semantic_scholar": "free_public",
+    "europe_pmc": "free_public",
+    "crossref": "free_public",
+    "openalex": "free_allowance",
+    "core": "credentialed_optional",
+    "wikipedia": "free_public",
+    "arxiv": "free_public",
+}
 
 
 def default_available_providers() -> tuple[str, ...]:
     free_only = os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").strip().lower() == "true"
     return FREE_PROVIDER_ORDER if free_only else _GENERAL_ORDER
+
+
+def provider_billing_class(provider: str) -> str:
+    return PROVIDER_BILLING_CLASS.get(
+        str(provider).strip().lower(),
+        "unknown",
+    )
 
 _TOPIC_HINTS = {
     "europe_pmc": (
@@ -148,7 +167,10 @@ __all__ = [
     "ResearchBudget",
     "DEFAULT_BUDGET",
     "FREE_PROVIDER_ORDER",
+    "METERED_FREE_PROVIDER_ORDER",
+    "PROVIDER_BILLING_CLASS",
     "default_available_providers",
+    "provider_billing_class",
     "normalize_budget",
     "budget_for_goal",
     "choose_extended_providers",
