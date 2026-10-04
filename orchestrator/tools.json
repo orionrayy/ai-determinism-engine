@@ -179,6 +179,12 @@
       "gemini-3.6-flash",
       "gemini-3.5-flash"
     ],
+    "free_until": {
+      "gemini-3.8-flash": "2026-12-31T23:59:59Z",
+      "gemini-3.7-flash": "2026-12-31T23:59:59Z",
+      "gemini-3.6-flash": "2026-12-31T23:59:59Z",
+      "gemini-3.5-flash": "2026-12-31T23:59:59Z"
+    },
     "risk": "low"
   },
   "research_bundle": {
