@@ -78,5 +78,35 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
         self.assertEqual(stub.kwargs["expected_state_version"], 2)
 
 
+    def test_resource_lock_release_order_is_reverse_sorted(self):
+        released = []
+
+        class Stub:
+            def release_resource(self, resource_key, *, workflow_id, fence_epoch):
+                released.append((resource_key, workflow_id, fence_epoch))
+
+        leases = [
+            type("Lease", (), {"resource_key": "a", "fence_epoch": 1})(),
+            type("Lease", (), {"resource_key": "c", "fence_epoch": 3})(),
+        ]
+        lock_map = {"node-b": leases}
+        o.release_node_resource_lock_map(
+            {"id": "wf"},
+            lock_map,
+            Stub(),
+        )
+        self.assertEqual(released, [
+            ("c", "wf", 3),
+            ("a", "wf", 1),
+        ])
+        self.assertEqual(lock_map, {})
+
+    def test_remote_event_path_is_opt_in(self):
+        self.assertIn(
+            "ORCHESTRATOR_CONTROL_PLANE_REMOTE_EVENTS",
+            o.append_event.__code__.co_names,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
