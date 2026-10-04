@@ -44,6 +44,21 @@ class ClaimIntegrityTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["violations"][0]["reason"], "uncertainty_upgrade")
 
+    def test_truth_lock_runtime_shape_can_be_extracted_before_validation(self):
+        from orchestrator import extract_first_llm_json
+
+        wrapper = {
+            "candidates": [{
+                "content": {
+                    "parts": [{
+                        "text": '{"claims":[{"claim_id":"c1","status":"SUPPORTED_DIRECT","evidence_refs":["e1"]}]}'
+                    }]
+                }
+            }]
+        }
+        verdict = extract_first_llm_json(wrapper)
+        self.assertEqual(verdict["claims"][0]["claim_id"], "c1")
+
     def test_truth_lock_rejects_new_material_claim_without_lineage(self):
         source = {
             "claims": [{
