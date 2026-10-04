@@ -18,6 +18,7 @@ import tempfile
 import zipfile
 import threading
 from contextlib import contextmanager
+from contextvars import ContextVar
 import time
 import traceback
 import urllib.error
@@ -221,6 +222,7 @@ class Node:
     error: dict[str, Any] = field(default_factory=dict)
     contract: dict[str, Any] = field(default_factory=dict)
     agent_role: str = ""
+    resources: list[str] = field(default_factory=list)
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -316,9 +318,46 @@ def _trace_envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
+    payload = sanitize_for_durable(payload)
+    control_plane = ACTIVE_CONTROL_PLANE.get()
+    lease = ACTIVE_CONTROL_PLANE_LEASE.get()
+    workflow_id = str(payload.get("workflow_id") or "").strip()
+    control_events = {
+        "workflow.created",
+        "workflow.completed",
+        "workflow.failed",
+        "node.started",
+        "node.completed",
+        "node.failed",
+        "node.execution_uncertain",
+        "node.control_plane_claimed",
+        "node.durability_barrier_failed",
+        "approval.required",
+        "federation.dispatched",
+        "federation.completed",
+        "federation.failed",
+        "control_plane.blocked",
+    }
+    if (
+        control_plane is not None
+        and lease is not None
+        and workflow_id
+        and event_type in control_events
+    ):
+        try:
+            control_plane.append_outbox_event(
+                workflow_id,
+                owner=control_plane.owner,
+                fence_epoch=lease.fence_epoch,
+                event_type=event_type,
+                payload=payload,
+            )
+            return
+        except ControlPlaneError:
+            pass
+
     event_file = _event_file(payload)
     event_file.parent.mkdir(parents=True, exist_ok=True)
-    payload = sanitize_for_durable(payload)
     raw_payload = json.dumps(
         payload,
         ensure_ascii=False,
@@ -340,12 +379,15 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
         "payload": payload,
     }
     encoded = (
-        json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "\n"
+        json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "
+"
     ).encode("utf-8")
     with event_file.open("ab") as handle:
         handle.write(encoded)
         handle.flush()
         os.fsync(handle.fileno())
+
+
 
 def execution_key(workflow: dict[str, Any], node: Node) -> str:
     raw = f"{workflow['id']}:{node.id}"
@@ -931,6 +973,16 @@ def control_plane_configured() -> bool:
     )
 
 
+ACTIVE_CONTROL_PLANE: ContextVar[ControlPlaneClient | None] = ContextVar(
+    "active_control_plane",
+    default=None,
+)
+ACTIVE_CONTROL_PLANE_LEASE: ContextVar[Any | None] = ContextVar(
+    "active_control_plane_lease",
+    default=None,
+)
+
+
 @contextmanager
 def control_plane_session(workflow: dict[str, Any]):
     """Hold a workflow-scoped distributed lease for one supervisor turn."""
@@ -940,6 +992,8 @@ def control_plane_session(workflow: dict[str, Any]):
         try:
             control_plane = ControlPlaneClient.from_env()
             lease = control_plane.acquire_lease(workflow["id"])
+            control_token = ACTIVE_CONTROL_PLANE.set(control_plane)
+            lease_token = ACTIVE_CONTROL_PLANE_LEASE.set(lease)
             workflow["control_plane"] = {
                 "enabled": True,
                 "owner": control_plane.owner,
@@ -971,6 +1025,31 @@ def control_plane_session(workflow: dict[str, Any]):
                 )
             except ControlPlaneError:
                 pass
+        if control_plane is not None:
+            try:
+                ACTIVE_CONTROL_PLANE.reset(control_token)
+                ACTIVE_CONTROL_PLANE_LEASE.reset(lease_token)
+            except (UnboundLocalError, ValueError):
+                pass
+
+
+def node_resource_keys(node: Node) -> list[str]:
+    values: list[Any] = []
+    if isinstance(node.resources, list):
+        values.extend(node.resources)
+    extra = node.input.get("resource_keys")
+    if isinstance(extra, list):
+        values.extend(extra)
+    result = sorted({
+        str(value).strip()
+        for value in values
+        if str(value).strip()
+    })
+    if len(result) > 8:
+        raise RuntimeError(f"node {node.id} declares too many resource locks")
+    if any(len(value) > 200 for value in result):
+        raise RuntimeError(f"node {node.id} resource key is too long")
+    return result
 
 
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
@@ -1184,6 +1263,28 @@ def load_state() -> dict[str, Any]:
 
 
 def load_workflow(workflow_id: str) -> dict[str, Any] | None:
+    if control_plane_configured():
+        try:
+            remote = ControlPlaneClient.from_env().get_workflow_state(workflow_id)
+        except ControlPlaneError as exc:
+            raise RuntimeError(
+                f"distributed workflow state unavailable: {exc}"
+            ) from exc
+        if remote is not None:
+            value = remote.state
+            stored_id = str(value.get("id") or "").strip()
+            if stored_id != workflow_id:
+                raise RuntimeError("control-plane workflow identity mismatch")
+            value["control_plane_state_version"] = int(remote.state_version)
+            try:
+                migrated = migrate_state({
+                    "version": CURRENT_STATE_VERSION,
+                    "workflows": {workflow_id: value},
+                })
+            except StateSchemaError as exc:
+                raise RuntimeError(f"invalid control-plane workflow state: {exc}") from exc
+            return migrated["workflows"][workflow_id]
+
     """Load one workflow without hydrating unrelated workflow shards."""
     workflow_id = str(workflow_id or "").strip()
     if not workflow_id:
@@ -1494,6 +1595,21 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     workflow_id = str(workflow.get("id") or "").strip()
     if not workflow_id:
         raise RuntimeError("cannot persist workflow without an id")
+
+    control_plane = ACTIVE_CONTROL_PLANE.get()
+    lease = ACTIVE_CONTROL_PLANE_LEASE.get()
+    if control_plane is not None and lease is not None and bool(workflow.get("live")):
+        remote_state = sanitize_for_durable(workflow)
+        expected = max(0, int(workflow.get("control_plane_state_version", 0)))
+        workflow["control_plane_state_version"] = control_plane.put_workflow_state(
+            workflow_id,
+            owner=control_plane.owner,
+            fence_epoch=lease.fence_epoch,
+            expected_state_version=expected,
+            state=remote_state,
+        )
+        return
+
     _write_workflow_shard(workflow)
 
 def new_id(prefix: str) -> str:
@@ -3000,6 +3116,39 @@ def execution_failure_policy(
         bool(decision["retry_allowed"]),
         bool(decision["uncertain"]),
     )
+
+
+def execute_with_resource_locks(
+    workflow: dict[str, Any],
+    node: Node,
+    registry: dict[str, dict[str, Any]],
+    execute: Any,
+    *,
+    control_plane: ControlPlaneClient | None,
+    control_plane_lease: Any | None,
+):
+    if control_plane is None or not node_resource_keys(node):
+        return execute()
+
+    locks = []
+    try:
+        for resource_key in node_resource_keys(node):
+            lock = control_plane.acquire_resource(
+                resource_key,
+                workflow_id=workflow["id"],
+            )
+            locks.append(lock)
+        return execute(locks)
+    finally:
+        for lock in reversed(locks):
+            try:
+                control_plane.release_resource(
+                    lock.resource_key,
+                    workflow_id=workflow["id"],
+                    fence_epoch=lock.fence_epoch,
+                )
+            except ControlPlaneError:
+                pass
 
 
 def execute_with_retries(
