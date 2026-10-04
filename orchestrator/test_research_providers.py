@@ -35,9 +35,41 @@ class ResearchProviderTests(unittest.TestCase):
         record = records[0]
         self.assertEqual(record["canonical_id"], "doi:10.1000/crossref")
         self.assertEqual(record["access_level"], "L3")
-        self.assertEqual(record["access_route"], "publisher_url")
+        self.assertEqual(record["access_route"], "full_text_url")
         self.assertTrue(0.0 <= record["authority_score"] <= 1.0)
         self.assertTrue(record["authority_heuristic"])
+
+    def test_publisher_url_without_full_text_is_only_metadata_access(self):
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/locator-only",
+                        "title": ["Locator Only"],
+                        "URL": "https://publisher.example/article",
+                    }]
+                }
+            },
+        )
+        self.assertEqual(records[0]["access_level"], "L1")
+        self.assertEqual(records[0]["access_route"], "publisher_url")
+
+    def test_abstract_without_full_text_is_l2(self):
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/abstract-only",
+                        "title": ["Abstract Only"],
+                        "abstract": "<p>Abstract text.</p>",
+                    }]
+                }
+            },
+        )
+        self.assertEqual(records[0]["access_level"], "L2")
+        self.assertEqual(records[0]["access_route"], "abstract")
 
     def test_crossref_is_available_in_free_only_mode(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False),              patch("research_providers._provider_search", return_value={"message": {"items": []}}) as search:
