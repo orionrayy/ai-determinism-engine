@@ -185,16 +185,18 @@ def pack_node_context(
             "preview": repair_json,
         },
     }
+    trusted_evidence_truncated = False
     if trusted_evidence_records is not None:
-        evidence = []
-        for raw in sorted(
+        raw_records = sorted(
             (
                 item for item in trusted_evidence_records
                 if isinstance(item, Mapping)
             ),
             key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
-        ):
-            evidence.append({
+        )
+        evidence = []
+        for index, raw in enumerate(raw_records[:64]):
+            record = {
                 "canonical_id": str(raw.get("canonical_id") or ""),
                 "provider": str(raw.get("provider") or ""),
                 "provider_id": str(raw.get("provider_id") or ""),
@@ -212,7 +214,14 @@ def pack_node_context(
                 "publication_status": str(raw.get("publication_status") or "normal"),
                 "independence_key": str(raw.get("independence_key") or ""),
                 "independence_confidence": float(raw.get("independence_confidence") or 0.0),
-            })
+            }
+            # Passage validation gets an abstract window only for the first
+            # bounded evidence lane; all canonical IDs remain available.
+            if index < 32 and raw.get("abstract"):
+                record["abstract"] = str(raw.get("abstract") or "")[:700]
+            evidence.append(record)
+        if len(raw_records) > 64:
+            trusted_evidence_truncated = True
         packed["trusted_evidence"] = evidence
 
     omitted: list[str] = []
@@ -255,6 +264,7 @@ def pack_node_context(
         'omitted_dependencies': sorted(omitted),
         'truncated_contract': contract_truncated,
         'truncated_repair_feedback': repair_truncated,
+        'truncated_trusted_evidence': trusted_evidence_truncated,
     }
 
     def projected_final_size(value: Mapping[str, Any]) -> int:
