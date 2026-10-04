@@ -135,11 +135,19 @@ class ControlPlaneClient:
     def acquire_provider_rate_slot(
         self,
         provider: str,
+        *,
+        pool: str = "public",
     ) -> dict[str, Any]:
+        normalized_pool = str(pool or "public").strip().lower()
+        if normalized_pool not in {"public", "polite"}:
+            raise ValueError("provider rate pool must be public or polite")
         return self._request(
             "POST",
             self._provider_rate_path(provider),
-            {"provider": str(provider).strip().lower()},
+            {
+                "provider": str(provider).strip().lower(),
+                "pool": normalized_pool,
+            },
         )
 
     @staticmethod
