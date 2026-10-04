@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -25,6 +26,7 @@ ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
 _DISCOVERY_CACHE_TTL = 60
 _DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_DISCOVERY_CACHE_LOCK = threading.Lock()
 
 
 class ConnectorBridgeError(RuntimeError):
@@ -69,13 +71,10 @@ class ReconciliationRequest:
 RECONCILIATION_STATES = {"applied", "not_applied", "unknown"}
 
 
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+try:
+    from .deterministic_codec import canonical_json
+except ImportError:
+    from deterministic_codec import canonical_json
 
 
 def execution_id(workflow_id: str, node_id: str) -> str:
@@ -163,7 +162,8 @@ def discover_capabilities(
     timeout: int = 20,
 ) -> dict[str, dict[str, Any]]:
     now = time.time()
-    cached = _DISCOVERY_CACHE.get(bridge_url)
+    with _DISCOVERY_CACHE_LOCK:
+        cached = _DISCOVERY_CACHE.get(bridge_url)
     if cached and not force_refresh and cached[0] > now:
         return cached[1]
 
@@ -226,7 +226,8 @@ def discover_capabilities(
             "configured": bool(spec.get("configured", False)),
             "reconciliation": bool(spec.get("reconciliation", False)),
         }
-    _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
+    with _DISCOVERY_CACHE_LOCK:
+        _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
     return normalized
 
 

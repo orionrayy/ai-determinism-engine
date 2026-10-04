@@ -33,13 +33,10 @@ class PrivateInputError(RuntimeError):
     pass
 
 
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+try:
+    from .deterministic_codec import canonical_json
+except ImportError:
+    from deterministic_codec import canonical_json
 
 
 def input_digest(payload: dict[str, Any]) -> str:

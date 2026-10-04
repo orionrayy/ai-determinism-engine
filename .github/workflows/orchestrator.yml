@@ -91,6 +91,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_UPDATED_AT: ${{ github.event.issue.updated_at }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
@@ -125,10 +126,20 @@ jobs:
             esac
           fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
+          event_id=""
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            event_id="issue:${GITHUB_REPOSITORY}:${ISSUE_NUMBER}:${ISSUE_ACTION}:${ISSUE_UPDATED_AT}"
+          else
+            event_id="${{ github.event.client_payload.event_id }}"
+          fi
+          delimiter="ORCHESTRATOR_GOAL_$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
           {
-            echo "goal=$goal"
+            echo "goal<<$delimiter"
+            printf '%s\n' "$goal"
+            echo "$delimiter"
             echo "issue_number=$trigger_issue"
             echo "workflow_id=$workflow_id"
+            echo "event_id=$event_id"
             echo "execution_id=$EVENT_EXECUTION_ID"
             echo "domain=$EVENT_DOMAIN"
             echo "operation=$EVENT_OPERATION"
@@ -156,7 +167,6 @@ jobs:
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
-          ORCHESTRATOR_EVENT_ID: ${{ github.event.client_payload.event_id }}
           ORCHESTRATOR_EXECUTION_ID: ${{ github.event.client_payload.execution_id }}
           ORCHESTRATOR_EXTERNAL_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EXTERNAL_DOMAIN: ${{ github.event.client_payload.domain }}
@@ -173,6 +183,7 @@ jobs:
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
+          ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           ORCHESTRATOR_FREE_ONLY: "true"
@@ -280,108 +291,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          import subprocess
-          from datetime import datetime, timezone
-          from orchestrator.orchestrator import (
-              DEFAULT_TERMINAL_COMPACTION_DAYS,
-              compact_terminal_workflows,
-              load_state,
-          )
-
-          state = load_state()
-          now = datetime.now(timezone.utc)
-
-          def stale_running(workflow):
-              raw = str(workflow.get("updated_at") or "")
-              if not raw:
-                  return True
-              try:
-                  updated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-              except ValueError:
-                  return True
-              if updated.tzinfo is None:
-                  updated = updated.replace(tzinfo=timezone.utc)
-              return (now - updated).total_seconds() >= 300
-
-          def barrier_failed(workflow):
-              executions = workflow.get("executions")
-              if not isinstance(executions, dict):
-                  return False
-              for node in workflow.get("nodes", []):
-                  if not isinstance(node, dict) or node.get("status") != "failed":
-                      continue
-                  if not isinstance(node.get("id"), str):
-                      continue
-                  key = hashlib.sha256(
-                      f"{workflow.get('id')}:{node['id']}".encode("utf-8")
-                  ).hexdigest()
-                  record = executions.get(key)
-                  if isinstance(record, dict) and record.get("status") == "barrier_failed":
-                      return True
-              return False
-
-          dispatched = 0
-          for workflow in state.get("workflows", {}).values():
-              if not isinstance(workflow, dict):
-                  continue
-              workflow_id = str(workflow.get("id") or "").strip()
-              if not workflow_id:
-                  continue
-              status = workflow.get("status")
-              federation = workflow.get("federation") or {}
-              uncertain = any(
-                  isinstance(node, dict)
-                  and node.get("status") == "failed"
-                  and isinstance(node.get("error"), dict)
-                  and node["error"].get("execution_uncertain")
-                  and node.get("tool") == "connector_bridge"
-                  for node in workflow.get("nodes", [])
-              )
-              candidate = (
-                  status == 'waiting_approval'
-                  or (status == 'running' and stale_running(workflow))
-                  or (status == 'waiting_agents' and federation.get('status') in {'prepared', 'dispatched'})
-                  or (status == 'failed' and (uncertain or barrier_failed(workflow)))
-              )
-              if not candidate:
-                  continue
-              event_id = "scheduled-recovery:" + workflow_id + ":" + str(workflow.get("updated_at") or "")
-              payload = {
-                  "event_type": "orchestrator.continue",
-                  "client_payload": {
-                      "workflow_id": workflow_id,
-                      "event_id": event_id,
-                      "scheduled_recovery": True,
-                      "schedule_run_id": os.environ["SCHEDULE_RUN_ID"],
-                  },
-              }
-              subprocess.run(
-                  ["gh", "api", f"repos/{os.environ['REPOSITORY']}/dispatches", "--input", "-"],
-                  input=json.dumps(payload),
-                  text=True,
-                  check=True,
-              )
-              dispatched += 1
-          retention_raw = os.environ.get(
-              "ORCHESTRATOR_TERMINAL_COMPACTION_DAYS",
-              str(DEFAULT_TERMINAL_COMPACTION_DAYS),
-          )
-          try:
-              retention_days = int(retention_raw)
-          except ValueError:
-              retention_days = DEFAULT_TERMINAL_COMPACTION_DAYS
-          compacted = compact_terminal_workflows(
-              state,
-              now=now,
-              retention_days=retention_days,
-          )
-          print(f"dispatched={dispatched}")
-          print(f"compacted={len(compacted)}")
-          PY
+          python3 -m orchestrator.scheduled_recovery
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

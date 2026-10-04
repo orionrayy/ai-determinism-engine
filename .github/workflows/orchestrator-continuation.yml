@@ -30,27 +30,7 @@ jobs:
           WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
         run: |
           set -euo pipefail
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import os
-          from orchestrator.orchestrator import load_state
-          state=load_state()
-          run_id=str(os.environ['WORKFLOW_RUN_ID'])
-          run_attempt=str(os.environ['WORKFLOW_RUN_ATTEMPT'])
-          wf=next((
-              (
-                  item for item in state.get('workflows',{}).values()
-                  if str(item.get('github_run_id')) == run_id
-                  and str(item.get('github_run_attempt')) == run_attempt
-              ),
-              None,
-          )
-          status=wf.get('status') if wf else 'missing'
-          wid=wf.get('id') if wf else ''
-          print(f'workflow_id={wid}')
-          print('continue=' + ('true' if status == 'running' else 'false'))
-          print(f'trigger_issue={wf.get("trigger_issue","") if wf else ""}')
-          print(f'status={status}')
-          PY
+          python3 -m orchestrator.continuation_runtime
 
       - name: Dispatch continuation
         if: steps.decision.outputs.continue == 'true'
