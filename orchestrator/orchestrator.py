@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if __package__ in (None, "") and str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import ipaddress
@@ -26,7 +32,6 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 try:
@@ -1732,6 +1737,8 @@ def compact_terminal_workflows(
     for workflow_id, workflow in list((state.get("workflows") or {}).items()):
         if not isinstance(workflow, dict):
             continue
+        if workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
+            continue
         if compact_terminal_workflow(
             workflow,
             now=current,
@@ -1824,6 +1831,49 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             expected_state_version=expected,
             state=remote_state,
         )
+        workflow["state_authority"] = AUTHORITY_DISTRIBUTED_CONTROL_PLANE
+        workflow["state_replica"] = "git"
+        try:
+            _write_workflow_shard(workflow)
+        except Exception as mirror_exc:
+            workflow["state_replica_error"] = {
+                "type": type(mirror_exc).__name__,
+                "message": str(mirror_exc),
+                "at": utc_now(),
+            }
+        else:
+            workflow.pop("state_replica_error", None)
+
+        try:
+            from .scheduled_recovery import recovery_event_id
+        except ImportError:
+            from scheduled_recovery import recovery_event_id
+        if workflow.get("status") in {"running", "waiting_agents"}:
+            try:
+                stale_seconds = max(
+                    1,
+                    int(os.environ.get(
+                        "ORCHESTRATOR_RECOVERY_STALE_SECONDS",
+                        "1500",
+                    ) or "1500"),
+                )
+            except ValueError:
+                stale_seconds = 1500
+            due_at = int(time.time()) + stale_seconds
+            try:
+                control_plane.arm_recovery(
+                    workflow_id,
+                    owner=control_plane.owner,
+                    fence_epoch=lease.fence_epoch,
+                    due_at=due_at,
+                    event_id=recovery_event_id(workflow),
+                )
+            except ControlPlaneError as alarm_exc:
+                workflow["recovery_alarm_error"] = {
+                    "type": type(alarm_exc).__name__,
+                    "message": str(alarm_exc),
+                    "at": utc_now(),
+                }
         ACTIVE_HOT_STATE_DIGEST.set(digest)
         return
 
