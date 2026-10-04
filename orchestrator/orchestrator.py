@@ -5317,6 +5317,23 @@ def resume_pending_workflows(state: dict[str, Any], approve_high_risk: bool = Fa
     )
 
     for workflow in candidates:
+        if control_plane_configured():
+            try:
+                remote_workflow = load_workflow(str(workflow.get("id") or ""))
+            except Exception as exc:
+                append_event("control_plane.recovery_load_failed", {
+                    "workflow_id": workflow.get("id"),
+                    "error": str(exc),
+                })
+                continue
+            if isinstance(remote_workflow, dict):
+                workflow = remote_workflow
+                if workflow.get("status") in {"completed", "cancelled"}:
+                    state["workflows"][workflow["id"]] = workflow
+                    state["last_workflow_id"] = workflow["id"]
+                    continue
+                state["workflows"][workflow["id"]] = workflow
+
         if workflow.get("status") == "waiting_agents":
             federation = workflow.get("federation") or {}
             artifact_id = None
