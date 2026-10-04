@@ -192,6 +192,16 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
             ).hexdigest()[:32],
         )
         workflow.setdefault("execution_mode", "live" if workflow.get("live") else "dry-run")
+        try:
+            from .authority import infer_legacy_authority, VALID_AUTHORITY_MODES
+        except ImportError:
+            from authority import infer_legacy_authority, VALID_AUTHORITY_MODES
+        workflow.setdefault("authority_mode", infer_legacy_authority(workflow))
+        authority_mode = str(workflow.get("authority_mode") or "").strip()
+        if authority_mode not in VALID_AUTHORITY_MODES:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.authority_mode is invalid"
+            )
         workflow.setdefault("plan_fingerprint", None)
         if "plan_integrity" not in workflow:
             workflow["plan_integrity"] = (
