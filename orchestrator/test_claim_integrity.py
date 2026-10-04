@@ -8,6 +8,7 @@ class ClaimIntegrityTests(unittest.TestCase):
         source = {
             "claims": [{
                 "claim_id": "c1",
+                "statement": "Supported claim.",
                 "status": "SUPPORTED_DIRECT",
                 "evidence_refs": ["e1"],
             }]
@@ -15,6 +16,7 @@ class ClaimIntegrityTests(unittest.TestCase):
         draft = {
             "claims": [{
                 "claim_id": "d1",
+                "statement": "Supported claim.",
                 "status": "SUPPORTED_INDIRECT",
                 "material": True,
                 "derives_from_claims": ["c1"],
