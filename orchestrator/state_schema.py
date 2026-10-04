@@ -23,6 +23,7 @@ except ImportError:
 CURRENT_STATE_VERSION = 4
 CURRENT_WORKFLOW_SCHEMA_VERSION = 7
 MAX_PARALLEL = 8
+MAX_NODES = 24
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
 
@@ -204,6 +205,10 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         nodes = workflow.get("nodes", [])
         if not isinstance(nodes, list):
             raise StateSchemaError(f"workflow {workflow_id!r}.nodes must be an array")
+        if len(nodes) == 0 or len(nodes) > MAX_NODES:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.nodes must contain 1..{MAX_NODES} items"
+            )
         for node in nodes:
             if not isinstance(node, dict):
                 raise StateSchemaError(f"workflow {workflow_id!r} contains a non-object node")
