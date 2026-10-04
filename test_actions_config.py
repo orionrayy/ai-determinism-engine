@@ -166,7 +166,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('"orchestrator.continue"', self.orchestrator)
 
     def test_scheduled_recovery_runtime_is_importable(self):
-        self.assertIn('orchestrator.scheduled_recovery', self.tests)
+        self.assertIn('orchestrator.scheduled_recovery', self.orchestrator)
         self.assertNotIn('state_path = Path(".orchestrator/state.json")', self.orchestrator)
 
     def test_checkout_action_sha_is_consistent_across_all_workflows(self):
