@@ -143,6 +143,7 @@ def pack_node_context(
     repair_feedback: Mapping[str, Any] | None,
     max_bytes: int = MAX_CONTEXT_BYTES,
     dependency_bytes: int = DEFAULT_DEPENDENCY_BYTES,
+    trusted_evidence_records: list[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if max_bytes < 8 * 1024:
         raise ContextBudgetError("context budget is too small")
@@ -184,6 +185,35 @@ def pack_node_context(
             "preview": repair_json,
         },
     }
+    if trusted_evidence_records is not None:
+        evidence = []
+        for raw in sorted(
+            (
+                item for item in trusted_evidence_records
+                if isinstance(item, Mapping)
+            ),
+            key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
+        ):
+            evidence.append({
+                "canonical_id": str(raw.get("canonical_id") or ""),
+                "provider": str(raw.get("provider") or ""),
+                "provider_id": str(raw.get("provider_id") or ""),
+                "title": str(raw.get("title") or "")[:500],
+                "year": raw.get("year"),
+                "doi": str(raw.get("doi") or "")[:200],
+                "arxiv_id": str(raw.get("arxiv_id") or "")[:200],
+                "pmid": str(raw.get("pmid") or "")[:100],
+                "pmcid": str(raw.get("pmcid") or "")[:100],
+                "venue": str(raw.get("venue") or "")[:300],
+                "full_text_url": str(raw.get("full_text_url") or "")[:500],
+                "authority_class": str(raw.get("authority_class") or "unknown"),
+                "authority_score": float(raw.get("authority_score") or 0.0),
+                "authority_tier": str(raw.get("authority_tier") or ""),
+                "publication_status": str(raw.get("publication_status") or "normal"),
+                "independence_key": str(raw.get("independence_key") or ""),
+                "independence_confidence": float(raw.get("independence_confidence") or 0.0),
+            })
+        packed["trusted_evidence"] = evidence
 
     omitted: list[str] = []
     dep_items = {str(key): value for key, value in deps.items()}
