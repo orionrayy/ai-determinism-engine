@@ -53,6 +53,13 @@ try:
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from .control_plane import ControlPlaneClient, ControlPlaneError
+    from .authority import (
+        DISTRIBUTED_CONTROL_PLANE,
+        GIT_DURABLE,
+        authority_mode_for_workflow,
+        infer_legacy_authority,
+        require_runtime_authority,
+    )
     from .effect_contract import (
         require_live_effect_contract,
         resolve_effect_contract,
@@ -97,6 +104,13 @@ except ImportError:
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
     from control_plane import ControlPlaneClient, ControlPlaneError
+    from authority import (
+        DISTRIBUTED_CONTROL_PLANE,
+        GIT_DURABLE,
+        authority_mode_for_workflow,
+        infer_legacy_authority,
+        require_runtime_authority,
+    )
     from effect_contract import (
         require_live_effect_contract,
         resolve_effect_contract,
@@ -981,9 +995,10 @@ def record_effect_claim(
 
 
 def control_plane_configured() -> bool:
+    # Configuration is atomic: a distributed authority requires both endpoint and secret.
     return bool(
         os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
-        or os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
+        and os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
     )
 
 
@@ -1005,11 +1020,20 @@ ACTIVE_HOT_STATE_DIGEST: ContextVar[str | None] = ContextVar(
 
 @contextmanager
 def control_plane_session(workflow: dict[str, Any]):
-    """Hold a workflow-scoped distributed lease for one supervisor turn."""
+    """Hold the workflow-scoped distributed lease only for its immutable authority."""
     control_plane: ControlPlaneClient | None = None
     lease: Any | None = None
-    if bool(workflow.get("live")) and control_plane_configured():
+    authority = infer_legacy_authority(workflow)
+    configured = control_plane_configured()
+    workflow["authority_mode"] = authority
+
+    if bool(workflow.get("live")) and authority == DISTRIBUTED_CONTROL_PLANE:
         try:
+            require_runtime_authority(
+                workflow,
+                control_plane_configured=configured,
+                control_plane_active=False,
+            )
             control_plane = ControlPlaneClient.from_env()
             lease = control_plane.acquire_lease(workflow["id"])
             control_token = ACTIVE_CONTROL_PLANE.set(control_plane)
@@ -1021,7 +1045,7 @@ def control_plane_session(workflow: dict[str, Any]):
             }
             workflow.pop("control_plane_blocked", None)
             persist_workflow(workflow)
-        except ControlPlaneError as exc:
+        except (ControlPlaneError, RuntimeError) as exc:
             workflow["status"] = "running"
             workflow["control_plane_blocked"] = {
                 "type": type(exc).__name__,
@@ -1031,9 +1055,16 @@ def control_plane_session(workflow: dict[str, Any]):
             persist_workflow(workflow)
             append_event("control_plane.blocked", {
                 "workflow_id": workflow["id"],
+                "authority_mode": authority,
                 "error": str(exc),
             })
             raise
+    elif authority == GIT_DURABLE:
+        # Never opportunistically switch a Git-authoritative workflow to a remote
+        # coordination service merely because one happens to be configured.
+        workflow.pop("control_plane_blocked", None)
+
+
     try:
         yield control_plane, lease
     finally:
@@ -1286,30 +1317,7 @@ def load_state() -> dict[str, Any]:
 
 
 
-def load_workflow(workflow_id: str) -> dict[str, Any] | None:
-    if control_plane_configured():
-        try:
-            remote = ControlPlaneClient.from_env().get_workflow_state(workflow_id)
-        except ControlPlaneError as exc:
-            raise RuntimeError(
-                f"distributed workflow state unavailable: {exc}"
-            ) from exc
-        if remote is not None:
-            value = remote.state
-            stored_id = str(value.get("id") or "").strip()
-            if stored_id != workflow_id:
-                raise RuntimeError("control-plane workflow identity mismatch")
-            value["control_plane_state_version"] = int(remote.state_version)
-            try:
-                migrated = migrate_state({
-                    "version": CURRENT_STATE_VERSION,
-                    "workflows": {workflow_id: value},
-                })
-            except StateSchemaError as exc:
-                raise RuntimeError(f"invalid control-plane workflow state: {exc}") from exc
-            return migrated["workflows"][workflow_id]
-
-    """Load one workflow without hydrating unrelated workflow shards."""
+def _load_local_workflow(workflow_id: str) -> dict[str, Any] | None:
     workflow_id = str(workflow_id or "").strip()
     if not workflow_id:
         return None
@@ -1348,6 +1356,45 @@ def load_workflow(workflow_id: str) -> dict[str, Any] | None:
         raise RuntimeError(f"invalid orchestrator state: {exc}") from exc
     workflow = state.get("workflows", {}).get(workflow_id)
     return workflow if isinstance(workflow, dict) else None
+
+
+def load_workflow(workflow_id: str) -> dict[str, Any] | None:
+    local = _load_local_workflow(workflow_id)
+    authority = infer_legacy_authority(local) if isinstance(local, dict) else None
+
+    if authority == DISTRIBUTED_CONTROL_PLANE:
+        if not control_plane_configured():
+            raise RuntimeError(
+                "distributed control-plane authority is required for this workflow, "
+                "but its control-plane configuration is unavailable"
+            )
+        try:
+            remote = ControlPlaneClient.from_env().get_workflow_state(workflow_id)
+        except ControlPlaneError as exc:
+            raise RuntimeError(
+                f"distributed workflow state unavailable: {exc}"
+            ) from exc
+        if remote is None:
+            raise RuntimeError(
+                "distributed workflow state is missing from the authoritative control plane"
+            )
+        value = remote.state
+        stored_id = str(value.get("id") or "").strip()
+        if stored_id != str(workflow_id):
+            raise RuntimeError("control-plane workflow identity mismatch")
+        value["control_plane_state_version"] = int(remote.state_version)
+        try:
+            migrated = migrate_state({
+                "version": CURRENT_STATE_VERSION,
+                "workflows": {workflow_id: value},
+            })
+        except StateSchemaError as exc:
+            raise RuntimeError(f"invalid control-plane workflow state: {exc}") from exc
+        return migrated["workflows"][workflow_id]
+
+    # Git-authoritative workflows are loaded exclusively from the repository snapshot.
+    # A configured control plane must never steal authority from them.
+    return local
 
 
 def save_state(state: dict[str, Any]) -> None:
@@ -4092,50 +4139,14 @@ def run_one_step(
     workflow: dict[str, Any],
     approve_high_risk: bool = False,
 ) -> str:
-    control_plane: ControlPlaneClient | None = None
-    control_plane_lease: Any | None = None
-
-    if bool(workflow.get("live")) and control_plane_configured():
-        try:
-            control_plane = ControlPlaneClient.from_env()
-            control_plane_lease = control_plane.acquire_lease(workflow["id"])
-            workflow["control_plane"] = {
-                "enabled": True,
-                "owner": control_plane.owner,
-                "fence_epoch": int(control_plane_lease.fence_epoch),
-            }
-            workflow.pop("control_plane_blocked", None)
-            persist_workflow(workflow)
-        except ControlPlaneError as exc:
-            workflow["status"] = "running"
-            workflow["control_plane_blocked"] = {
-                "type": type(exc).__name__,
-                "message": str(exc),
-                "blocked_at": utc_now(),
-            }
-            persist_workflow(workflow)
-            append_event("control_plane.blocked", {
-                "workflow_id": workflow["id"],
-                "error": str(exc),
-            })
-            raise
-
-    try:
+    with control_plane_session(workflow) as control_plane_context:
+        control_plane, control_plane_lease = control_plane_context
         return _run_one_step_inner(
             workflow,
             approve_high_risk=approve_high_risk,
             control_plane=control_plane,
             control_plane_lease=control_plane_lease,
         )
-    finally:
-        if control_plane is not None and control_plane_lease is not None:
-            try:
-                control_plane.release_lease(
-                    workflow["id"],
-                    control_plane_lease.fence_epoch,
-                )
-            except ControlPlaneError:
-                pass
 
 
 def _run_one_step_inner(
@@ -5327,6 +5338,10 @@ def create_workflow(
     workflow_id = str(workflow_id or new_id("wf")).strip()
     if not workflow_id:
         raise RuntimeError("workflow id cannot be empty")
+    authority_mode = authority_mode_for_workflow(
+        bool(live),
+        control_plane_configured(),
+    )
     return {
         "id": workflow_id,
         "created_at": utc_now(),
@@ -5334,6 +5349,7 @@ def create_workflow(
         "status": "planning",
         "live": live,
         "execution_mode": "dry-run",
+        "authority_mode": authority_mode,
         "replan_count": 0,
         "attempts_used": 0,
         "max_attempts": max(
