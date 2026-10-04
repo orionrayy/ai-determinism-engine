@@ -348,6 +348,50 @@ class ControlPlaneClient:
                 f"resource release rejected: {resource_key}"
             )
 
+    def arm_recovery(
+        self,
+        workflow_id: str,
+        *,
+        owner: str,
+        fence_epoch: int,
+        due_at: int,
+        event_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/arm"),
+            {
+                "owner": str(owner),
+                "workflow_id": str(workflow_id),
+                "fence_epoch": int(fence_epoch),
+                "due_at": int(due_at),
+                "event_id": str(event_id),
+            },
+        )
+
+    def ack_recovery(
+        self,
+        workflow_id: str,
+        event_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/ack"),
+            {
+                "workflow_id": str(workflow_id),
+                "event_id": str(event_id),
+            },
+        )
+
+    def get_recovery(
+        self,
+        workflow_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            self._workflow_path(workflow_id, "/recovery"),
+        )
+
     def get_workflow_state(self, workflow_id: str) -> WorkflowState | None:
         result = self._request(
             "GET",
