@@ -104,7 +104,13 @@ def research_bundle(
         except ImportError:
             from research_budget import normalize_budget
         selected_budget_for_legacy = normalize_budget(budget)
-        legacy_names = selected_budget_for_legacy.legacy_providers
+        # Extended scholarly search owns Crossref. Keeping it out of this
+        # compatibility bootstrap prevents duplicate Crossref requests.
+        legacy_names = tuple(
+            name
+            for name in selected_budget_for_legacy.legacy_providers
+            if name != "crossref"
+        )
     else:
         legacy_names = tuple(all_providers)
     providers = tuple(

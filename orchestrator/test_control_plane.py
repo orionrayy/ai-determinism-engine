@@ -49,6 +49,82 @@ class ControlPlaneClientTests(unittest.TestCase):
             request.call_args.args[1],
         )
 
+    def test_clear_recovery_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "cleared", "workflow_id": "wf"},
+        ) as request:
+            result = client.clear_recovery(
+                "wf",
+                owner="w",
+                fence_epoch=7,
+            )
+        self.assertEqual(result["status"], "cleared")
+        self.assertEqual(request.call_args.args[1], "/v1/workflows/wf/recovery/clear")
+
+    def test_recovery_alarm_paths(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            side_effect=[
+                {"status": "armed", "due_at": 200, "event_id": "recovery:1"},
+                {"status": "acknowledged", "workflow_id": "wf", "event_id": "recovery:1"},
+            ],
+        ) as request:
+            armed = client.arm_recovery(
+                "wf",
+                owner="w",
+                fence_epoch=7,
+                due_at=200,
+                event_id="recovery:1",
+            )
+            ack = client.ack_recovery("wf", "recovery:1")
+        self.assertEqual(armed["status"], "armed")
+        self.assertEqual(ack["status"], "acknowledged")
+        self.assertEqual(request.call_args_list[0].args[1], "/v1/workflows/wf/recovery/arm")
+        self.assertEqual(request.call_args_list[1].args[1], "/v1/workflows/wf/recovery/ack")
+
+    def test_recovery_claim_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "claimed", "claim_expires_at": 300},
+        ) as request:
+            result = client.claim_recovery(
+                "wf",
+                "recovery:1",
+                owner="scheduled-recovery:123",
+                ttl_seconds=300,
+            )
+        self.assertEqual(result["status"], "claimed")
+        self.assertEqual(request.call_args.args[1], "/v1/workflows/wf/recovery/claim")
+
+    def test_workflow_state_parses_recovery_envelope(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={
+                "status": "stored",
+                "state_version": 8,
+                "updated_at": 100,
+                "state": {"id": "wf", "status": "running"},
+                "recovery": {
+                    "due": True,
+                    "event_id": "recovery:1",
+                    "due_at": 200,
+                },
+            },
+        ):
+            state = client.get_workflow_state("wf")
+        self.assertTrue(state.recovery_due)
+        self.assertEqual(state.recovery_event_id, "recovery:1")
+        self.assertEqual(state.recovery_due_at, 200)
+
     def test_hot_state_cas_and_outbox_paths(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
         with patch.object(

@@ -39,6 +39,45 @@ class ResearchProviderTests(unittest.TestCase):
         self.assertTrue(0.0 <= record["authority_score"] <= 1.0)
         self.assertTrue(record["authority_heuristic"])
 
+    def test_access_and_retraction_signals_are_explicit(self):
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/retracted",
+                        "title": ["Retracted"],
+                        "type": "journal-article",
+                        "URL": "https://publisher.example/article",
+                        "update-to": [{
+                            "type": "retraction",
+                            "source": "retraction-watch",
+                        }],
+                    }]
+                }
+            },
+        )
+        record = records[0]
+        self.assertEqual(record["publication_status"], "retracted")
+        self.assertTrue(record["retraction_signal"])
+        self.assertEqual(record["access_verification"], "metadata_only")
+
+    def test_retracted_work_is_not_counted_as_independent_evidence(self):
+        from evidence_records import count_independent_sources
+        records = normalize_provider_payload(
+            "crossref",
+            {
+                "message": {
+                    "items": [{
+                        "DOI": "10.1000/retracted-only",
+                        "title": ["Retracted Only"],
+                        "update-to": [{"type": "retraction", "source": "retraction-watch"}],
+                    }]
+                }
+            },
+        )
+        self.assertEqual(count_independent_sources(records), 0)
+
     def test_publisher_url_without_full_text_is_only_metadata_access(self):
         records = normalize_provider_payload(
             "crossref",
@@ -107,11 +146,11 @@ class ResearchProviderTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "no requested research providers"):
                 research_records(
                     "topic",
-                    providers=("openalex", "core"),
+                    providers=("core",),
                     max_results=2,
                 )
 
-    def test_explicit_metered_provider_is_blocked_in_free_only_mode(self):
+    def test_openalex_is_allowed_in_free_only_mode(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
              patch(
                  "research_providers._provider_search",
@@ -123,7 +162,6 @@ class ResearchProviderTests(unittest.TestCase):
                 max_results=2,
             )
         self.assertEqual(result["providers"], ["semantic_scholar"])
-        self.assertNotIn("openalex", result["providers"])
         self.assertEqual(search.call_count, 1)
 
     def test_provider_cache_avoids_repeated_network_calls(self):

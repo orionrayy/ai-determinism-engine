@@ -12,6 +12,10 @@ except ImportError:
     from selective_evidence_gate import selective_evidence_gate
 
 
+MAX_EVIDENCE_RECORDS = 64
+MAX_CLAIMS = 48
+MAX_EVIDENCE_REFS_PER_CLAIM = 32
+
 VALID_STATUSES = {
     "SUPPORTED_DIRECT",
     "SUPPORTED_INDIRECT",
@@ -141,6 +145,32 @@ def validate_epistemic_output(
     if not isinstance(evidence, list):
         return {"passed": False, "reason": "evidence_records must be an array"}
 
+    if len(evidence) > MAX_EVIDENCE_RECORDS:
+        return {
+            "passed": False,
+            "reason": f"evidence_records exceeds limit {MAX_EVIDENCE_RECORDS}",
+            "limits": {"max_evidence_records": MAX_EVIDENCE_RECORDS},
+        }
+    if len(claims) > MAX_CLAIMS:
+        return {
+            "passed": False,
+            "reason": f"claims exceeds limit {MAX_CLAIMS}",
+            "limits": {"max_claims": MAX_CLAIMS},
+        }
+    for claim in claims:
+        if isinstance(claim, Mapping) and isinstance(claim.get("evidence_refs"), list):
+            if len(claim["evidence_refs"]) > MAX_EVIDENCE_REFS_PER_CLAIM:
+                return {
+                    "passed": False,
+                    "reason": (
+                        "claim evidence_refs exceeds limit "
+                        f"{MAX_EVIDENCE_REFS_PER_CLAIM}"
+                    ),
+                    "limits": {
+                        "max_evidence_refs_per_claim": MAX_EVIDENCE_REFS_PER_CLAIM
+                    },
+                }
+
     evidence_result = validate_evidence_records(evidence)
     if not evidence_result["passed"]:
         return {
@@ -189,6 +219,9 @@ def validate_epistemic_output(
 
 __all__ = [
     "VALID_STATUSES",
+    "MAX_EVIDENCE_RECORDS",
+    "MAX_CLAIMS",
+    "MAX_EVIDENCE_REFS_PER_CLAIM",
     "validate_evidence_records",
     "validate_claims",
     "claim_coverage",

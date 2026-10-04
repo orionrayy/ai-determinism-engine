@@ -2,6 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
+import sys
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if __package__ in (None, "") and str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import ipaddress
@@ -26,7 +32,6 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 try:
@@ -60,7 +65,8 @@ try:
         resolve_effect_contract,
     )
     from .epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
-    from .private_input import PrivateInputError, fetch_private_input
+    from .claim_integrity import validate_truth_lock
+    from private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .context_budget import ContextBudgetError, pack_node_context
@@ -106,6 +112,7 @@ except ImportError:
         resolve_effect_contract,
     )
     from epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
+    from claim_integrity import validate_truth_lock
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -1732,6 +1739,8 @@ def compact_terminal_workflows(
     for workflow_id, workflow in list((state.get("workflows") or {}).items()):
         if not isinstance(workflow, dict):
             continue
+        if workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
+            continue
         if compact_terminal_workflow(
             workflow,
             now=current,
@@ -1811,6 +1820,8 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
     control_plane = ACTIVE_CONTROL_PLANE.get()
     lease = ACTIVE_CONTROL_PLANE_LEASE.get()
     if control_plane is not None and lease is not None and bool(workflow.get("live")):
+        workflow["state_authority"] = AUTHORITY_DISTRIBUTED_CONTROL_PLANE
+        workflow["state_replica"] = "git"
         digest = hot_state_digest(workflow)
         previous_digest = ACTIVE_HOT_STATE_DIGEST.get()
         if previous_digest == digest:
@@ -1824,6 +1835,60 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             expected_state_version=expected,
             state=remote_state,
         )
+        try:
+            _write_workflow_shard(workflow)
+        except Exception as mirror_exc:
+            workflow["state_replica_error"] = {
+                "type": type(mirror_exc).__name__,
+                "message": str(mirror_exc),
+                "at": utc_now(),
+            }
+        else:
+            workflow.pop("state_replica_error", None)
+
+        try:
+            from .scheduled_recovery import recovery_event_id
+        except ImportError:
+            from scheduled_recovery import recovery_event_id
+        if workflow.get("status") in {"completed", "cancelled"}:
+            try:
+                control_plane.clear_recovery(
+                    workflow_id,
+                    owner=control_plane.owner,
+                    fence_epoch=lease.fence_epoch,
+                )
+            except ControlPlaneError as clear_exc:
+                workflow["recovery_alarm_error"] = {
+                    "type": type(clear_exc).__name__,
+                    "message": str(clear_exc),
+                    "at": utc_now(),
+                }
+        elif workflow.get("status") in {"running", "waiting_agents"}:
+            try:
+                stale_seconds = max(
+                    1,
+                    int(os.environ.get(
+                        "ORCHESTRATOR_RECOVERY_STALE_SECONDS",
+                        "1500",
+                    ) or "1500"),
+                )
+            except ValueError:
+                stale_seconds = 1500
+            due_at = int(time.time()) + stale_seconds
+            try:
+                control_plane.arm_recovery(
+                    workflow_id,
+                    owner=control_plane.owner,
+                    fence_epoch=lease.fence_epoch,
+                    due_at=due_at,
+                    event_id=recovery_event_id(workflow),
+                )
+            except ControlPlaneError as alarm_exc:
+                workflow["recovery_alarm_error"] = {
+                    "type": type(alarm_exc).__name__,
+                    "message": str(alarm_exc),
+                    "at": utc_now(),
+                }
         ACTIVE_HOT_STATE_DIGEST.set(digest)
         return
 
@@ -2124,6 +2189,9 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                 "epistemic": True,
                 "min_coverage": 0.8,
             }
+            if node_id == "n06-draft":
+                node.contract["truth_lock"] = True
+                node.contract["truth_lock_source_node"] = "n05-adjudicate"
             if capability == "analyze" and node_id == "n05-adjudicate":
                 node.contract["deliberation"] = {
                     "required": True,
@@ -2235,6 +2303,14 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
                 "material disagreement and unknowns. Return a decision summary, confidence, "
                 "and claim-level evidence references. Do not resolve a disagreement merely "
                 "because one candidate sounds more certain."
+            )
+        if node.contract.get("truth_lock"):
+            instruction += (
+                " This is a truth-locked drafting step. For every material claim, "
+                "include derives_from_claims with one or more claim_id values from the adjudicated "
+                "source claims. Reuse only evidence_refs present in that adjudicated evidence set. "
+                "Never upgrade UNKNOWN, UNSUPPORTED, or CONTESTED claims, and never invent a new "
+                "material claim without adjudicator lineage."
             )
         if node.capability == "validate":
             instruction += (
@@ -3227,6 +3303,27 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
             "checked_at": utc_now(),
             "contract_deferred": True,
         }
+
+    if node.contract.get("truth_lock") and not defer_epistemic:
+        context = node.input.get("context")
+        dependencies = context.get("dependencies", {}) if isinstance(context, dict) else {}
+        source_id = str(node.contract.get("truth_lock_source_node") or "").strip()
+        source_output = dependencies.get(source_id, {}).get("output") if isinstance(dependencies.get(source_id), dict) else None
+        source_verdict = extract_first_llm_json(source_output) if isinstance(source_output, dict) else None
+        draft_verdict = extract_first_llm_json(output)
+        if not isinstance(source_verdict, dict) or not isinstance(draft_verdict, dict):
+            raise RuntimeError("truth-lock validation requires structured source and draft verdicts")
+        truth_lock = validate_truth_lock(draft_verdict, source_verdict)
+        checks.append({
+            "check": "truth_lock",
+            "passed": truth_lock.get("passed") is True,
+            "checked_material_claims": truth_lock.get("checked_material_claims", 0),
+        })
+        if truth_lock.get("passed") is not True:
+            raise RuntimeError(
+                "truth-lock validation failed: "
+                + json.dumps(truth_lock.get("violations") or [], sort_keys=True)
+            )
 
     if node.tool in {"gemini", "openai"}:
         has_payload = bool(

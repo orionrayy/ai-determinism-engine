@@ -93,6 +93,18 @@ class EpistemicValidationTests(unittest.TestCase):
         ])
         self.assertEqual(result["supported_coverage"], 1.0)
 
+    def test_epistemic_output_limits_are_enforced(self):
+        evidence = [
+            {"canonical_id": f"doi:10.1/{index}"}
+            for index in range(65)
+        ]
+        result = validate_epistemic_output({
+            "claims": [],
+            "evidence_records": evidence,
+        })
+        self.assertFalse(result["passed"])
+        self.assertIn("exceeds limit", result["reason"])
+
     def test_high_confidence_sufficient_evidence_does_not_abstain(self):
         result = validate_epistemic_output({
             "confidence": 0.95,

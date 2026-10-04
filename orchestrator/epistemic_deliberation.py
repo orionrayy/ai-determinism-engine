@@ -67,7 +67,10 @@ def debate_decision(
         if independent_sources < max(0, int(min_independent_sources)):
             evidence_weak = True
 
-    if len(answers) > 1:
+    if len(proposals) < 2:
+        reason = "insufficient_independent_proposals"
+        required = True
+    elif len(answers) > 1:
         reason = "material_disagreement"
         required = True
     elif any(value < confidence_threshold for value in confidences):
@@ -92,6 +95,7 @@ def debate_decision(
         "min_independent_sources": max(0, int(min_independent_sources)),
         "challenge_mode": "blind" if required else "none",
         "max_rounds": 2 if required else 0,
+        "minimum_proposals_for_consensus": 2,
     }
 
 

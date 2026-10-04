@@ -43,6 +43,9 @@ FREE_PROVIDER_ORDER = (
     "europe_pmc",
     "crossref",
 )
+METERED_FREE_PROVIDER_ORDER = (
+    "openalex",
+)
 
 
 def default_available_providers() -> tuple[str, ...]:

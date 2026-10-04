@@ -87,23 +87,30 @@ def is_recovery_candidate(
     *,
     active_run_status: str | None = None,
     stale_seconds: int = DEFAULT_STALE_SECONDS,
+    recovery_due: bool | None = None,
 ) -> bool:
     status = str(workflow.get("status") or "")
     if not str(workflow.get("id") or "").strip():
         return False
     if active_run_status == "unknown":
         return False
-    if active_run_status in ACTIVE_RUN_STATUSES:
+    if active_run_status in ACTIVE_RUN_STATUSES and recovery_due is not True:
         return False
     if status == "waiting_approval":
         return False
     if status == "running":
-        if not is_stale_running(workflow, now, stale_seconds=stale_seconds):
+        if recovery_due is not True and not is_stale_running(
+            workflow,
+            now,
+            stale_seconds=stale_seconds,
+        ):
             return False
-        if active_run_status in ACTIVE_RUN_STATUSES:
+        if active_run_status in ACTIVE_RUN_STATUSES and recovery_due is not True:
             return False
         return True
     if status == "waiting_agents":
+        if recovery_due is False:
+            return False
         federation = workflow.get("federation")
         federation_status = federation.get("status") if isinstance(federation, Mapping) else None
         return federation_status in {"prepared", "dispatched"}

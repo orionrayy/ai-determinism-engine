@@ -53,6 +53,9 @@ class EffectClaim:
 class WorkflowState:
     state: dict[str, Any]
     state_version: int
+    recovery_due: bool = False
+    recovery_event_id: str = ""
+    recovery_due_at: int | None = None
 
 def canonical_json(value: Any) -> bytes:
     return json.dumps(
@@ -348,6 +351,86 @@ class ControlPlaneClient:
                 f"resource release rejected: {resource_key}"
             )
 
+    def arm_recovery(
+        self,
+        workflow_id: str,
+        *,
+        owner: str,
+        fence_epoch: int,
+        due_at: int,
+        event_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/arm"),
+            {
+                "owner": str(owner),
+                "workflow_id": str(workflow_id),
+                "fence_epoch": int(fence_epoch),
+                "due_at": int(due_at),
+                "event_id": str(event_id),
+            },
+        )
+
+    def clear_recovery(
+        self,
+        workflow_id: str,
+        *,
+        owner: str,
+        fence_epoch: int,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/clear"),
+            {
+                "workflow_id": str(workflow_id),
+                "owner": str(owner),
+                "fence_epoch": int(fence_epoch),
+            },
+        )
+
+    def claim_recovery(
+        self,
+        workflow_id: str,
+        event_id: str,
+        *,
+        owner: str,
+        ttl_seconds: int = 300,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/claim"),
+            {
+                "workflow_id": str(workflow_id),
+                "event_id": str(event_id),
+                "owner": str(owner),
+                "ttl_seconds": max(30, min(int(ttl_seconds), 600)),
+            },
+        )
+
+    def ack_recovery(
+        self,
+        workflow_id: str,
+        event_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._workflow_path(workflow_id, "/recovery/ack"),
+            {
+                "workflow_id": str(workflow_id),
+                "event_id": str(event_id),
+            },
+        )
+
+    def get_recovery(
+        self,
+        workflow_id: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "GET",
+            self._workflow_path(workflow_id, "/recovery"),
+        )
+
     def get_workflow_state(self, workflow_id: str) -> WorkflowState | None:
         result = self._request(
             "GET",
@@ -360,9 +443,18 @@ class ControlPlaneClient:
             raise ControlPlaneUnavailable(
                 "control-plane workflow state is not an object"
             )
+        recovery = result.get("recovery")
+        recovery = recovery if isinstance(recovery, dict) else {}
         return WorkflowState(
             state=state,
             state_version=int(result.get("state_version", 0)),
+            recovery_due=bool(recovery.get("due")),
+            recovery_event_id=str(recovery.get("event_id") or ""),
+            recovery_due_at=(
+                int(recovery["due_at"])
+                if recovery.get("due_at") is not None
+                else None
+            ),
         )
 
     def put_workflow_state(
