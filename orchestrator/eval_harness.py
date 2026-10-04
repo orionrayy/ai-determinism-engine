@@ -260,14 +260,14 @@ def _case_conditional_deliberation() -> dict[str, Any]:
             "answer": "A",
             "confidence": 0.9,
             "evidence_refs": ["x"],
-            "independent_source_count": 2,
+            "independence": {"distinct_work_count": 2},
         },
         {
             "agent_id": "a2",
             "answer": "A",
             "confidence": 0.9,
             "evidence_refs": ["y"],
-            "independent_source_count": 2,
+            "independence": {"distinct_work_count": 2},
         },
     ])
     weak = debate_decision([
@@ -276,7 +276,7 @@ def _case_conditional_deliberation() -> dict[str, Any]:
             "answer": "A",
             "confidence": 0.9,
             "evidence_refs": ["x"],
-            "independent_source_count": 1,
+            "independence": {"distinct_work_count": 1},
         },
         {
             "agent_id": "a2",
