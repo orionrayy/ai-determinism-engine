@@ -122,6 +122,24 @@ class ControlPlaneClient:
         return cls(url, secret)
 
     @staticmethod
+    @staticmethod
+    def _provider_rate_path(provider: str) -> str:
+        return (
+            "/v1/resources/provider:"
+            + urllib.parse.quote(str(provider).strip().lower(), safe="")
+            + "/rate/acquire"
+        )
+
+    def acquire_provider_rate_slot(
+        self,
+        provider: str,
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            self._provider_rate_path(provider),
+            {"provider": str(provider).strip().lower()},
+        )
+
     def _workflow_path(workflow_id: str, suffix: str) -> str:
         return (
             "/v1/workflows/"
