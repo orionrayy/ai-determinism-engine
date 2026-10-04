@@ -12,7 +12,7 @@ from context_budget import pack_node_context
 from orchestrator.orchestrator import deterministic_plan
 from evidence_records import normalize_source
 from research_budget import default_available_providers
-from research_providers import search_crossref, search_openalex
+from research_providers import search_crossref, search_openalex, _provider_local_rate
 
 
 class V79BoundaryQualityTests(unittest.TestCase):
@@ -34,6 +34,12 @@ class V79BoundaryQualityTests(unittest.TestCase):
                 search_openalex("test query", max_results=2)
         url = request.call_args.args[0]
         self.assertNotIn("api_key=", url)
+
+    def test_crossref_local_fallback_matches_pool_rate(self):
+        with patch.dict(os.environ, {"CROSSREF_MAILTO": ""}, clear=False):
+            self.assertEqual(_provider_local_rate("crossref"), 1.0)
+        with patch.dict(os.environ, {"CROSSREF_MAILTO": "research@example.org"}, clear=False):
+            self.assertEqual(_provider_local_rate("crossref"), 3.0)
 
     def test_crossref_can_use_polite_mailto_identity(self):
         with patch.dict(
