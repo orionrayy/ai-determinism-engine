@@ -416,7 +416,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         "citation_count": citation_count,
         "open_access": open_access,
         "full_text_url": full_text_url,
-        "authority_components": authority_components,
+        **authority_profile,
         "primaryity": primaryity,
         "authority_signals": sorted(set(authority)),
         "independence_key": str(work_identity["work_key"]),
