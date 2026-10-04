@@ -141,6 +141,7 @@ def pack_node_context(
     dependencies: Mapping[str, Any] | None,
     contract: Mapping[str, Any] | None,
     repair_feedback: Mapping[str, Any] | None,
+    trusted_evidence_records: list[Mapping[str, Any]] | None = None,
     max_bytes: int = MAX_CONTEXT_BYTES,
     dependency_bytes: int = DEFAULT_DEPENDENCY_BYTES,
 ) -> dict[str, Any]:
@@ -170,9 +171,27 @@ def pack_node_context(
     if effective_max_bytes < 8 * 1024:
         raise ContextBudgetError('context budget leaves insufficient metadata reserve')
 
+    trusted_records = [
+        item for item in (trusted_evidence_records or [])
+        if isinstance(item, Mapping)
+    ][:24]
+    trusted_json, trusted_truncated = bounded_json(
+        trusted_records,
+        min(12 * 1024, max_bytes // 4),
+    )
+
     packed: dict[str, Any] = {
         "goal": str(goal or ""),
         "dependencies": {},
+        "trusted_evidence": (
+            json.loads(trusted_json)
+            if not trusted_truncated
+            else {
+                "truncated": True,
+                "sha256": digest(trusted_records),
+                "preview": trusted_json,
+            }
+        ),
         "contract": json.loads(contract_json) if not contract_truncated else {
             "truncated": True,
             "sha256": digest(contract or {}),
@@ -222,6 +241,8 @@ def pack_node_context(
         'max_bytes': max_bytes,
         'used_bytes': len(canonical_json(packed)),
         'dependency_bytes': dependency_bytes,
+        'trusted_evidence_count': len(trusted_records),
+        'trusted_evidence_truncated': trusted_truncated,
         'omitted_dependencies': sorted(omitted),
         'truncated_contract': contract_truncated,
         'truncated_repair_feedback': repair_truncated,
