@@ -54,10 +54,11 @@ def _barrier_failed(workflow: Mapping[str, Any]) -> bool:
     for node in workflow.get("nodes", []):
         if not isinstance(node, Mapping) or node.get("status") != "failed":
             continue
-        if not isinstance(node.get("id"), str):
+        node_id = str(node.get("id") or "")
+        if not node_id:
             continue
         key = hashlib.sha256(
-            f"{workflow.get('id')}:{node['id']}".encode("utf-8")
+            f"{workflow.get('id')}:{node_id}".encode("utf-8")
         ).hexdigest()
         record = executions.get(key)
         if isinstance(record, Mapping) and record.get("status") == "barrier_failed":
@@ -74,7 +75,7 @@ def _execution_uncertain(workflow: Mapping[str, Any]) -> bool:
             node.get("status") == "failed"
             and isinstance(error, Mapping)
             and bool(error.get("execution_uncertain"))
-            and node.get("tool") in {"connector_bridge", "github"}
+            and node.get("tool") == "connector_bridge"
         ):
             return True
     return False
