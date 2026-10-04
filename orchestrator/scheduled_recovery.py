@@ -14,11 +14,18 @@ import subprocess
 from datetime import datetime, timezone
 from typing import Any
 
-from .orchestrator import (
-    DEFAULT_TERMINAL_COMPACTION_DAYS,
-    compact_terminal_workflows,
-    load_state,
-)
+try:
+    from .orchestrator import (
+        DEFAULT_TERMINAL_COMPACTION_DAYS,
+        compact_terminal_workflows,
+        load_state,
+    )
+except ImportError:
+    from orchestrator import (
+        DEFAULT_TERMINAL_COMPACTION_DAYS,
+        compact_terminal_workflows,
+        load_state,
+    )
 
 
 def parse_timestamp(value: Any) -> datetime | None:
