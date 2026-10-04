@@ -53,6 +53,7 @@ def artifact() -> ArtifactRef:
         schema_version="1",
         workflow_id="wf-a",
         producer_task_id="task-a",
+        tenant_id="tenant-a",
         location="r2://example/artifact-a",
         media_type="application/json",
     )
@@ -91,6 +92,7 @@ class PortableContractTests(unittest.TestCase):
             schema_version=first.schema_version,
             workflow_id=first.workflow_id,
             producer_task_id=first.producer_task_id,
+            tenant_id=first.tenant_id,
             location=first.location,
         )
         self.assertNotEqual(first.digest, second.digest)
@@ -177,6 +179,38 @@ class PortableContractTests(unittest.TestCase):
                 output_schema="out",
                 runtime="python",
                 entrypoint="x",
+            )
+
+    def test_ownership_is_bound_to_tenant_and_workflow(self):
+        bad_input = ArtifactRef(
+            artifact_id="artifact-b",
+            sha256=digest("e"),
+            schema_version="1",
+            workflow_id="wf-other",
+            producer_task_id="task-a",
+            tenant_id="tenant-b",
+            location="r2://example/artifact-b",
+        )
+        with self.assertRaises(ContractError):
+            TaskEnvelope(
+                workflow_id="wf-a",
+                task_id="task-a",
+                tenant_id="tenant-a",
+                attempt=1,
+                capability="research",
+                skill=skill(),
+                input_ref=bad_input,
+                policy=policy(),
+                idempotency_key="wf-a:task-a",
+            )
+
+    def test_policy_boolean_is_strict(self):
+        with self.assertRaises(ContractError):
+            PolicySnapshot(
+                version="1",
+                digest=digest("a"),
+                free_only="false",
+                tenant_id="tenant-a",
             )
 
     def test_schema_version_is_fail_closed(self):
