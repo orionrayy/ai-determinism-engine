@@ -152,6 +152,8 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('compact_terminal_workflows', recovery)
         self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
         self.assertIn('git add .orchestrator/workflows', recovery)
+        self.assertIn('if [ -d .orchestrator/workflows ]; then', recovery)
+        self.assertIn('scheduled recovery is a no-op', recovery)
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
