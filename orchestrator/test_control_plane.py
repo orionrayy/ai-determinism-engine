@@ -30,5 +30,54 @@ class ControlPlaneClientTests(unittest.TestCase):
         with self.assertRaises(ControlPlaneConfigurationError):
             ControlPlaneClient("http://control.example", "s")
 
+    def test_resource_lock_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={
+                "status": "acquired",
+                "fence_epoch": 4,
+                "expires_at": 12345,
+            },
+        ) as request:
+            lease = client.acquire_resource("repo:file", workflow_id="wf")
+        self.assertEqual(lease.resource_key, "repo:file")
+        self.assertEqual(lease.fence_epoch, 4)
+        self.assertIn(
+            "/v1/resources/repo%3Afile/lease/acquire",
+            request.call_args.args[1],
+        )
+
+    def test_hot_state_cas_and_outbox_paths(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            side_effect=[
+                {"status": "stored", "state_version": 3},
+                {"status": "appended", "sequence": 9},
+            ],
+        ) as request:
+            version = client.put_workflow_state(
+                "wf",
+                owner="w",
+                fence_epoch=2,
+                expected_state_version=2,
+                state={"id": "wf", "status": "running"},
+            )
+            sequence = client.append_outbox_event(
+                "wf",
+                owner="w",
+                fence_epoch=2,
+                event_type="node.completed",
+                payload={"node_id": "n1"},
+            )
+        self.assertEqual(version, 3)
+        self.assertEqual(sequence, 9)
+        self.assertEqual(request.call_args_list[0].args[0], "PUT")
+        self.assertEqual(request.call_args_list[1].args[0], "POST")
+
+
 if __name__ == "__main__":
     unittest.main()
