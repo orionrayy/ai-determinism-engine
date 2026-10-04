@@ -92,6 +92,7 @@ class ArtifactRef:
     sha256: str
     schema_version: str
     workflow_id: str
+    tenant_id: str
     producer_task_id: str
     location: str
     media_type: str = "application/octet-stream"
@@ -102,6 +103,7 @@ class ArtifactRef:
         object.__setattr__(self, "sha256", _digest(self.sha256, "sha256"))
         object.__setattr__(self, "schema_version", _text(self.schema_version, "schema_version", max_length=64))
         object.__setattr__(self, "workflow_id", _text(self.workflow_id, "workflow_id", max_length=256))
+        object.__setattr__(self, "tenant_id", _text(self.tenant_id, "tenant_id", max_length=256))
         object.__setattr__(self, "producer_task_id", _text(self.producer_task_id, "producer_task_id", max_length=256))
         object.__setattr__(self, "location", _text(self.location, "location", max_length=2048))
         object.__setattr__(self, "media_type", _text(self.media_type, "media_type", max_length=256))
@@ -114,6 +116,7 @@ class ArtifactRef:
             "sha256": self.sha256,
             "schema_version": self.schema_version,
             "workflow_id": self.workflow_id,
+            "tenant_id": self.tenant_id,
             "producer_task_id": self.producer_task_id,
             "location": self.location,
             "media_type": self.media_type,
@@ -241,7 +244,9 @@ class PolicySnapshot:
     def __post_init__(self) -> None:
         object.__setattr__(self, "version", _text(self.version, "version", max_length=64))
         object.__setattr__(self, "digest", _digest(self.digest, "digest"))
-        object.__setattr__(self, "free_only", bool(self.free_only))
+        if not isinstance(self.free_only, bool):
+            raise ContractError("free_only must be a boolean")
+        object.__setattr__(self, "free_only", self.free_only)
         object.__setattr__(self, "tenant_id", _text(self.tenant_id, "tenant_id", max_length=256))
         object.__setattr__(self, "limits", _mapping(self.limits, "limits"))
 
@@ -280,6 +285,8 @@ class WorkflowCommand:
         object.__setattr__(self, "schema_version", _nonnegative_int(self.schema_version, "schema_version"))
         if not isinstance(self.policy, PolicySnapshot):
             raise ContractError("policy must be a PolicySnapshot")
+        if self.policy.tenant_id != self.tenant_id:
+            raise ContractError("policy tenant_id must match workflow tenant_id")
         if self.schema_version != CONTRACT_SCHEMA_VERSION:
             raise ContractError(f"unsupported contract schema version: {self.schema_version}")
 
@@ -327,8 +334,15 @@ class TaskEnvelope:
             raise ContractError("skill must be a SkillManifest")
         if self.input_ref is not None and not isinstance(self.input_ref, ArtifactRef):
             raise ContractError("input_ref must be an ArtifactRef or null")
+        if self.input_ref is not None and (
+            self.input_ref.workflow_id != self.workflow_id
+            or self.input_ref.tenant_id != self.tenant_id
+        ):
+            raise ContractError("input_ref ownership must match task workflow and tenant")
         if not isinstance(self.policy, PolicySnapshot):
             raise ContractError("policy must be a PolicySnapshot")
+        if self.policy.tenant_id != self.tenant_id:
+            raise ContractError("policy tenant_id must match task tenant_id")
         object.__setattr__(self, "idempotency_key", _text(self.idempotency_key, "idempotency_key", max_length=256))
         object.__setattr__(self, "fence_epoch", _nonnegative_int(self.fence_epoch, "fence_epoch"))
         if self.deadline_epoch is not None:
@@ -395,6 +409,11 @@ class TaskResultEnvelope:
         object.__setattr__(self, "retry_class", retry_class)
         if self.output_ref is not None and not isinstance(self.output_ref, ArtifactRef):
             raise ContractError("output_ref must be an ArtifactRef or null")
+        if self.output_ref is not None and (
+            self.output_ref.workflow_id != self.workflow_id
+            or self.output_ref.tenant_id != self.tenant_id
+        ):
+            raise ContractError("output_ref ownership must match result workflow and tenant")
         refs = tuple(self.evidence_refs or ())
         if len(refs) > 128:
             raise ContractError("evidence_refs exceeds 128 items")
