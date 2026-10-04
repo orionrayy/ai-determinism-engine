@@ -47,6 +47,17 @@ def _post(url: str, payload: dict, api_key: str) -> dict:
         return json.loads(raw.decode('utf-8'))
 
 
+def _planner_thinking_level() -> str:
+    value = str(
+        os.environ.get("GEMINI_PLANNER_THINKING_LEVEL") or "medium"
+    ).strip().lower()
+    if value not in {"low", "medium", "high"}:
+        raise RuntimeError(
+            "GEMINI_PLANNER_THINKING_LEVEL must be low, medium, or high"
+        )
+    return value
+
+
 def _object_from_text(text: str) -> dict:
     cleaned = text.strip()
     if cleaned.startswith('```'):
@@ -154,7 +165,9 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
             },
             'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {
-                'temperature': 0.1,
+                'thinkingConfig': {
+                    'thinkingLevel': _planner_thinking_level(),
+                },
                 'maxOutputTokens': 4096,
                 'responseMimeType': 'application/json',
             },
