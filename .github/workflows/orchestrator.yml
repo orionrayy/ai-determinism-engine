@@ -247,11 +247,11 @@ jobs:
         shell: bash
         run: |
           goal_sha256="$(python3 - <<'PY'
-import hashlib
-from pathlib import Path
-print(hashlib.sha256(Path('/tmp/orchestrator_goal.txt').read_bytes()).hexdigest())
-PY
-)"
+          import hashlib
+          from pathlib import Path
+          print(hashlib.sha256(Path('/tmp/orchestrator_goal.txt').read_bytes()).hexdigest())
+          PY
+          )"
           printf '%s\n' \
             "## AI Orchestrator" \
             "" \
