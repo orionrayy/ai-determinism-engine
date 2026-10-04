@@ -23,6 +23,13 @@ Current execution-fabric branch: `main`
 - OpenAlex remains a free-allowance provider in hard-free mode, and Unpaywall is DOI-only and opt-in.
 - Latest verified CI head before this checkpoint: 5ac812e9012831bfd037a8efee96515ee540f46c2 had Unit Tests, Actionlint, and Control-plane evaluation success. Latest subsequent commits are staged in the same PR branch and must be checked again if merged.
 
+### Candidate v79.2 boundary/rate hardening
+- Strict research epistemic contracts now require `evidence_passages` for every material `SUPPORTED_DIRECT` claim.
+- Passage references must belong to the claim's own `evidence_refs`; strict mode fails closed when the referenced trusted record has no verifiable abstract/full-text corpus.
+- Trusted evidence context now preserves `access_level`, `access_route`, `access_verification`, and `retraction_signal`, preventing adjudication from treating omitted access metadata as verified access.
+- Crossref local fallback rate now matches the selected pool: public 1 req/s without `CROSSREF_MAILTO`, polite 3 req/s with it. This remains a fallback only; distributed gating is preferred when configured.
+- The 600 KiB distributed control-plane workflow-state ceiling remains intentionally unsolved by lossy remote projection: remote authority is not allowed to discard dependency outputs required for deterministic resume. Future segmentation must preserve a verifiable Git replica binding before implementation.
+- Regression coverage was extended for strict passages, corpus verification, trusted access metadata, research passage contracts, and Crossref fallback rates.
 ### Candidate orchestration hardening v79
 - PR #142 branch: `feat/v79-boundary-evidence-efficiency`.
 - Distributed control-plane v78 remains operational authority for live workflows; Git remains the state/audit replica.
