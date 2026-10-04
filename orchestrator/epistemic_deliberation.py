@@ -17,6 +17,38 @@ DEFAULT_STABLE_CONFIDENCE = 0.80
 DEFAULT_MIN_INDEPENDENT_SOURCES = 2
 
 
+def _evidence_strength(proposal: Mapping[str, Any]) -> float:
+    records = proposal.get("evidence_records")
+    if not isinstance(records, list):
+        return 0.0
+    scores = []
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        authority = max(0.0, min(1.0, float(record.get("authority_score") or 0.0)))
+        independence = max(
+            0.0,
+            min(1.0, float(record.get("independence_confidence") or 0.0)),
+        )
+        access = 1.0 if str(record.get("access_verification") or "") != "identifier_only" else 0.0
+        integrity = 1.0 if str(record.get("publication_status") or "normal") == "normal" else 0.0
+        scores.append(
+            0.45 * authority
+            + 0.25 * independence
+            + 0.15 * access
+            + 0.15 * integrity
+        )
+    return max(scores, default=0.0)
+
+
+def _answer_key(proposal: Mapping[str, Any]) -> str:
+    return str(
+        proposal.get("answer")
+        or proposal.get("result")
+        or ""
+    ).strip()
+
+
 def debate_decision(
     proposals: list[Mapping[str, Any]],
     *,
@@ -37,7 +69,7 @@ def debate_decision(
         }
 
     answers = {
-        str(item.get("answer") or item.get("result") or "").strip()
+        _answer_key(item)
         for item in proposals
     }
     confidences = []
@@ -67,11 +99,45 @@ def debate_decision(
         if independent_sources < max(0, int(min_independent_sources)):
             evidence_weak = True
 
+    answer_groups: dict[str, list[Mapping[str, Any]]] = {}
+    for item in proposals:
+        answer_groups.setdefault(_answer_key(item), []).append(item)
+    strengths = {
+        _answer_key(item): max(_evidence_strength(candidate) for candidate in group)
+        for item in proposals
+        for group in [answer_groups[_answer_key(item)]]
+    }
+    minority_escalation = False
+    minority_answers: list[str] = []
+    if len(answers) > 1:
+        counts = {
+            answer: len(group)
+            for answer, group in answer_groups.items()
+        }
+        majority_count = max(counts.values())
+        majority_answers = {
+            answer for answer, count in counts.items() if count == majority_count
+        }
+        majority_strength = max(
+            (strengths.get(answer, 0.0) for answer in majority_answers),
+            default=0.0,
+        )
+        for answer, count in counts.items():
+            if count >= majority_count:
+                continue
+            if strengths.get(answer, 0.0) >= max(0.85, majority_strength + 0.15):
+                minority_escalation = True
+                minority_answers.append(answer)
+
     if len(proposals) < 2:
         reason = "insufficient_independent_proposals"
         required = True
     elif len(answers) > 1:
-        reason = "material_disagreement"
+        reason = (
+            "minority_evidence_escalation"
+            if minority_escalation
+            else "material_disagreement"
+        )
         required = True
     elif any(value < confidence_threshold for value in confidences):
         reason = "low_confidence"
@@ -96,6 +162,12 @@ def debate_decision(
         "challenge_mode": "blind" if required else "none",
         "max_rounds": 2 if required else 0,
         "minimum_proposals_for_consensus": 2,
+        "minority_escalation": minority_escalation,
+        "minority_answers": sorted(set(minority_answers)),
+        "answer_evidence_strength": {
+            answer: round(score, 4)
+            for answer, score in sorted(strengths.items())
+        },
     }
 
 
