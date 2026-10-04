@@ -1876,7 +1876,7 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
             ("n02-skeptic", "research", "Independently seek counterevidence, contradictions, and limitations.", [], "skeptic"),
             ("n03-analyze-primary", "analyze", "Form an evidence-grounded analysis from the primary evidence lane only.", ["n01-research"], "analyst"),
             ("n04-analyze-contrarian", "analyze", "Independently challenge the evidence from the counterevidence lane only. Surface contradictions, missing evidence, and alternative explanations.", ["n02-skeptic"], "skeptic"),
-            ("n05-adjudicate", "analyze", "Blindly adjudicate the independent analyses. Resolve only where the evidence supports resolution; preserve contested and unknown claims.", ["n03-analyze-primary", "n04-analyze-contrarian"], "critic"),
+            ("n05-adjudicate", "analyze", "Blindly adjudicate the independent analyses. Resolve only where the evidence supports resolution; preserve contested and unknown claims.", ["n03-analyze-primary", "n04-analyze-contrarian"], "analyst"),
             ("n06-draft", "draft", "Produce the requested research output from the adjudicated evidence and uncertainty.", ["n05-adjudicate"], "analyst"),
             ("n07-validate", "validate", "Critique the draft for factuality, claim-level evidence coverage, consistency, and unsupported claims.", ["n05-adjudicate", "n06-draft"], "critic"),
             ("n08-notify", "notify", "Report the final result and evidence state.", ["n07-validate"], "communicator"),
