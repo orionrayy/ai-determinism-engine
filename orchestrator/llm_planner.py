@@ -80,6 +80,13 @@ def configured_model(registry: dict) -> str:
     return model
 
 
+def _planner_thinking_level() -> str:
+    level = str(os.environ.get("GEMINI_PLANNER_THINKING_LEVEL") or "medium").strip().lower()
+    if level not in {"low", "medium", "high"}:
+        raise ValueError("GEMINI_PLANNER_THINKING_LEVEL must be low, medium, or high")
+    return level
+
+
 def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False) -> list:
     goal = str(goal or "")
     if len(goal.encode("utf-8")) > MAX_PLANNER_GOAL_BYTES:
@@ -154,7 +161,9 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
             },
             'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {
-                'temperature': 0.1,
+                'thinkingConfig': {
+                    'thinkingLevel': _planner_thinking_level(),
+                },
                 'maxOutputTokens': 4096,
                 'responseMimeType': 'application/json',
             },
