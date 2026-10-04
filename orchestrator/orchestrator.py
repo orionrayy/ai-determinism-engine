@@ -2839,11 +2839,9 @@ def execute_blueprint_compiler(node: Node, goal: str) -> dict[str, Any]:
 
 
 def _independent_source_count(value: Any) -> int:
+    """Count evidence works from structured records; never trust LLM self-report."""
     if not isinstance(value, dict):
         return 0
-    explicit = value.get("independent_source_count")
-    if isinstance(explicit, int) and explicit >= 0:
-        return explicit
     records = value.get("evidence_records")
     if isinstance(records, list):
         try:
@@ -2851,8 +2849,16 @@ def _independent_source_count(value: Any) -> int:
         except ImportError:
             from evidence_records import count_independent_sources
         return count_independent_sources(records)
+
     sources = value.get("sources")
-    return len(sources) if isinstance(sources, dict) else 0
+    if isinstance(sources, dict):
+        return len({
+            str(key)
+            for key in sources
+            if str(key).strip()
+        })
+
+    return 0
 
 
 def execute_local_validator(node: Node, goal: str) -> dict[str, Any]:
