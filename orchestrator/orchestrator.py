@@ -2945,9 +2945,18 @@ def compact_json(value: Any, limit: int = MAX_CONTEXT_BYTES) -> str:
 def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
     by_id = {item.id: item for item in nodes}
     dependencies: dict[str, Any] = {}
+    trusted_evidence: list[dict[str, Any]] = []
     for dep_id in node.depends_on:
         dep = by_id[dep_id]
         evidence = dep.output.get("evidence", {}) if isinstance(dep.output, dict) else {}
+        dep_output = dep.output if isinstance(dep.output, dict) else {}
+        candidate_records = dep_output.get("evidence_records")
+        if isinstance(dep_output.get("epistemic_verdict"), dict):
+            candidate_records = dep_output["epistemic_verdict"].get("evidence_records")
+        if isinstance(candidate_records, list):
+            for record in candidate_records:
+                if isinstance(record, dict) and str(record.get("canonical_id") or "").strip():
+                    trusted_evidence.append(dict(record))
         if node.contract.get("deliberation"):
             # Candidate analyses are carried separately below. Avoid duplicating
             # their full raw outputs in the ordinary dependency context.
@@ -2973,6 +2982,10 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
             dependencies=dependencies,
             contract=node.contract,
             repair_feedback=node.input.get("repair_feedback", {}),
+            trusted_evidence_records=[
+                dict(record)
+                for record in deduplicate_sources(trusted_evidence)
+            ],
         )
         if node.contract.get("deliberation"):
             proposals = []
@@ -2984,6 +2997,36 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
                 verdict = extract_first_llm_json(dep.output)
                 if not isinstance(verdict, dict):
                     continue
+                trusted_by_id = {
+                    str(record.get("canonical_id") or "").strip(): record
+                    for record in trusted_evidence
+                    if str(record.get("canonical_id") or "").strip()
+                }
+                refs = set()
+                claims = verdict.get("claims")
+                if isinstance(claims, list):
+                    for claim in claims:
+                        if not isinstance(claim, dict):
+                            continue
+                        claim_refs = claim.get("evidence_refs")
+                        if isinstance(claim_refs, list):
+                            refs.update(
+                                str(ref).strip()
+                                for ref in claim_refs
+                                if str(ref).strip()
+                            )
+                direct_refs = verdict.get("evidence_refs")
+                if isinstance(direct_refs, list):
+                    refs.update(
+                        str(ref).strip()
+                        for ref in direct_refs
+                        if str(ref).strip()
+                    )
+                trusted_records = [
+                    trusted_by_id[ref]
+                    for ref in sorted(refs)
+                    if ref in trusted_by_id
+                ]
                 proposals.append(
                     proposal_from_verdict(
                         verdict,
@@ -2992,14 +3035,7 @@ def build_node_context(nodes: list[Node], node: Node) -> dict[str, Any]:
                             dep.id,
                             dep.agent_role,
                         ),
-                        evidence_records=(
-                            verdict.get("evidence_records")
-                            if isinstance(
-                                verdict.get("evidence_records"),
-                                list,
-                            )
-                            else []
-                        ),
+                        evidence_records=trusted_records,
                     )
                 )
             packed["deliberation"] = deliberation_context(
