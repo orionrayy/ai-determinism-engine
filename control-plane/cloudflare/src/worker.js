@@ -52,6 +52,9 @@ export class WorkflowControlPlane {
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS workflow_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), state_version INTEGER NOT NULL, state_json TEXT NOT NULL, updated_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS outbox_created_idx ON outbox(created_at)");
+      ctx.storage.sql.exec(
+        "CREATE TABLE IF NOT EXISTS provider_rate (singleton INTEGER PRIMARY KEY CHECK(singleton=1), provider TEXT NOT NULL, tokens REAL NOT NULL, updated_at INTEGER NOT NULL)"
+      );
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS recovery (singleton INTEGER PRIMARY KEY CHECK(singleton=1), due_at INTEGER NOT NULL, due INTEGER NOT NULL DEFAULT 0, event_id TEXT NOT NULL, fired_at INTEGER, claimed INTEGER NOT NULL DEFAULT 0, claim_owner TEXT, claim_expires_at INTEGER)");
       try { ctx.storage.sql.exec("ALTER TABLE recovery ADD COLUMN claimed INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
       try { ctx.storage.sql.exec("ALTER TABLE recovery ADD COLUMN claim_owner TEXT"); } catch (_) {}
@@ -172,6 +175,62 @@ export class WorkflowControlPlane {
       return {status:"completed"};
     });
     return json(result);
+  }
+
+  providerRateAcquire(body) {
+    const requested = String(body.provider || "").trim().toLowerCase();
+    const LIMITS = {
+      // Crossref list/search calls: polite pool is 3 req/s; we enforce a
+      // deliberately conservative 2 req/s global gate to protect free access.
+      crossref: {rate: 2, burst: 2},
+      semantic_scholar: {rate: 5, burst: 5},
+      europe_pmc: {rate: 5, burst: 5},
+      openalex: {rate: 10, burst: 10},
+    };
+    const config = LIMITS[requested];
+    if (!config) throw new Error("provider_rate_unsupported");
+    const at = Date.now() / 1000;
+    const result = this.ctx.storage.transactionSync(() => {
+      const rows = this.ctx.storage.sql.exec(
+        "SELECT provider,tokens,updated_at FROM provider_rate WHERE singleton=1"
+      ).toArray();
+      let tokens = config.burst;
+      let last = at;
+      let provider = requested;
+      if (rows.length) {
+        provider = String(rows[0].provider || requested);
+        if (provider !== requested) {
+          throw conflict("provider_rate_identity_conflict");
+        }
+        tokens = Number(rows[0].tokens);
+        last = Number(rows[0].updated_at);
+      }
+      tokens = Math.min(
+        config.burst,
+        Math.max(0, tokens + Math.max(0, at - last) * config.rate)
+      );
+      if (tokens < 1) {
+        const retryAfter = (1 - tokens) / config.rate;
+        this.ctx.storage.sql.exec(
+          "INSERT INTO provider_rate(singleton,provider,tokens,updated_at) VALUES(1,?,?,?) " +
+          "ON CONFLICT(singleton) DO UPDATE SET tokens=excluded.tokens,updated_at=excluded.updated_at",
+          requested, tokens, Math.floor(at)
+        );
+        return {granted:false,retry_after:Math.max(0.05, retryAfter)};
+      }
+      tokens -= 1;
+      this.ctx.storage.sql.exec(
+        "INSERT INTO provider_rate(singleton,provider,tokens,updated_at) VALUES(1,?,?,?) " +
+        "ON CONFLICT(singleton) DO UPDATE SET tokens=excluded.tokens,updated_at=excluded.updated_at",
+        requested, tokens, Math.floor(at)
+      );
+      return {granted:true,retry_after:0};
+    });
+    return json({
+      status: result.granted ? "granted" : "throttled",
+      provider: requested,
+      retry_after: Number(result.retry_after || 0),
+    }, result.granted ? 200 : 429);
   }
 
   resourceAcquire(body) {
@@ -611,6 +670,7 @@ export class WorkflowControlPlane {
     } catch (e) { return json({error:String(e.message || "invalid_json")},400); }
     try {
       if (url.pathname.startsWith("/v1/resources/")) {
+        if (request.method === "POST" && url.pathname.endsWith("/rate/acquire")) return this.providerRateAcquire(body);
         if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return this.resourceAcquire(body);
         if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return this.resourceRenew(body);
         if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return this.resourceRelease(body);
