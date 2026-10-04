@@ -4798,12 +4798,12 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 workflow["nodes"] = [asdict(item) for item in nodes]
                 persist_workflow(workflow)
 
-            if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
+            if len(executable) == 1 or any(
+                side_effecting(node, registry) for node, _ in executable
+            ):
                 for node, execution_id in executable:
-                    results.append((
-                        node,
-                        execution_id,
-                        *execute_with_retries(
+                    try:
+                        success, error = execute_with_retries(
                             node,
                             workflow["goal"],
                             dry_run,
@@ -4813,57 +4813,67 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                             before_retry=(
                                 lambda node=node: (
                                     attempt_budget.sync(),
-                                    workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
+                                    workflow.__setitem__(
+                                        "nodes",
+                                        [asdict(item) for item in nodes],
+                                    ),
                                     persist_workflow(workflow),
                                 )
                                 if side_effecting(node, registry)
                                 else None
                             ),
                             before_attempt=(
-                                (lambda cp_node=node: (
+                                (lambda: (
                                     control_plane.renew_lease(
                                         workflow["id"],
                                         control_plane_lease.fence_epoch,
                                     ),
                                     resource_leases_by_node.__setitem__(
-                                        cp_node.id,
+                                        node.id,
                                         renew_node_resource_locks(
                                             workflow,
-                                            resource_leases_by_node.get(cp_node.id, []),
+                                            resource_leases_by_node.get(node.id, []),
                                             control_plane,
                                         ),
                                     ),
                                 ))
-                    release_node_resource_locks(
-                        workflow,
-                        resource_leases_by_node.get(node.id, []),
-                        control_plane,
-                    )
-                    resource_leases_by_node.pop(node.id, None)
-                                if control_plane is not None and control_plane_lease is not None
+                                if control_plane is not None
+                                and control_plane_lease is not None
                                 else None
                             ),
                             on_success=(
-                                (lambda completed_node, cp_execution_id=execution_id: control_plane.complete_effect(
-                                    workflow["id"],
-                                    cp_execution_id,
-                                    effect_semantic_digest(completed_node),
-                                    control_plane_lease.fence_epoch,
-                                    output_sha256=hashlib.sha256(
-                                        json.dumps(
-                                            completed_node.output,
-                                            ensure_ascii=False,
-                                            sort_keys=True,
-                                            default=str,
-                                            separators=(",", ":"),
-                                        ).encode("utf-8")
-                                    ).hexdigest(),
-                                ))
-                                if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+                                (
+                                    lambda completed_node: control_plane.complete_effect(
+                                        workflow["id"],
+                                        execution_id,
+                                        effect_semantic_digest(completed_node),
+                                        control_plane_lease.fence_epoch,
+                                        output_sha256=hashlib.sha256(
+                                            json.dumps(
+                                                completed_node.output,
+                                                ensure_ascii=False,
+                                                sort_keys=True,
+                                                default=str,
+                                                separators=(",", ":"),
+                                            ).encode("utf-8")
+                                        ).hexdigest(),
+                                    )
+                                )
+                                if control_plane is not None
+                                and control_plane_lease is not None
+                                and side_effecting(node, registry)
                                 else None
                             ),
-                        ),
-                    ))
+                        )
+                        results.append((node, execution_id, success, error))
+                    finally:
+                        release_node_resource_locks(
+                            workflow,
+                            resource_leases_by_node.get(node.id, []),
+                            control_plane,
+                        )
+                        resource_leases_by_node.pop(node.id, None)
+
             else:
                 with ThreadPoolExecutor(
                     max_workers=min(workflow["max_parallel"], len(executable)),
