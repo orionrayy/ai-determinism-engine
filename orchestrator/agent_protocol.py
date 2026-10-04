@@ -7,7 +7,6 @@ Only low/medium-risk, parallel-safe tasks may cross this boundary.
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 import json
 import re
 from typing import Any
@@ -34,18 +33,10 @@ class FederationProtocolError(ValueError):
     pass
 
 
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    ).encode("utf-8")
-
-
-def digest(value: Any) -> str:
-    return hashlib.sha256(canonical_json(value)).hexdigest()
+try:
+    from .deterministic_codec import canonical_json, digest
+except ImportError:
+    from deterministic_codec import canonical_json, digest
 
 
 def _bounded_dict(value: Any, max_bytes: int, label: str) -> dict[str, Any]:
