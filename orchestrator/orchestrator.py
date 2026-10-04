@@ -338,8 +338,13 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
         "federation.failed",
         "control_plane.blocked",
     }
+    remote_events = os.environ.get(
+        "ORCHESTRATOR_CONTROL_PLANE_REMOTE_EVENTS",
+        "false",
+    ).lower() == "true"
     if (
-        control_plane is not None
+        remote_events
+        and control_plane is not None
         and lease is not None
         and workflow_id
         and event_type in control_events
