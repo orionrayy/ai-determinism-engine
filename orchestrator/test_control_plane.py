@@ -49,6 +49,21 @@ class ControlPlaneClientTests(unittest.TestCase):
             request.call_args.args[1],
         )
 
+    def test_clear_recovery_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "cleared", "workflow_id": "wf"},
+        ) as request:
+            result = client.clear_recovery(
+                "wf",
+                owner="w",
+                fence_epoch=7,
+            )
+        self.assertEqual(result["status"], "cleared")
+        self.assertEqual(request.call_args.args[1], "/v1/workflows/wf/recovery/clear")
+
     def test_recovery_alarm_paths(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
         with patch.object(
