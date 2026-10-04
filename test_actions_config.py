@@ -162,6 +162,19 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('compact_terminal_workflows', recovery)
         self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', recovery)
         self.assertIn('git add .orchestrator/workflows', recovery)
+    def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('gh api --method POST', recovery)
+        self.assertIn('check=False', recovery)
+        self.assertNotIn("status == 'waiting_approval'", recovery)
+        self.assertIn('recovery_event_id', recovery)
+
+    def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('if [ -d ".orchestrator/workflows" ]', recovery)
+
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
