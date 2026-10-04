@@ -99,7 +99,7 @@ class ResearchProviderTests(unittest.TestCase):
             result = research_records("topic")
         self.assertEqual(
             result["providers"],
-            ["semantic_scholar", "europe_pmc", "crossref"],
+            ["semantic_scholar", "openalex", "europe_pmc", "crossref"],
         )
         self.assertEqual(search.call_count, 3)
 
@@ -130,11 +130,11 @@ class ResearchProviderTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "no requested research providers"):
                 research_records(
                     "topic",
-                    providers=("openalex", "core"),
+                    providers=("core",),
                     max_results=2,
                 )
 
-    def test_explicit_metered_provider_is_blocked_in_free_only_mode(self):
+    def test_openalex_is_allowed_in_free_only_mode(self):
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), \
              patch(
                  "research_providers._provider_search",
@@ -145,9 +145,8 @@ class ResearchProviderTests(unittest.TestCase):
                 providers=("openalex", "semantic_scholar"),
                 max_results=2,
             )
-        self.assertEqual(result["providers"], ["semantic_scholar"])
-        self.assertNotIn("openalex", result["providers"])
-        self.assertEqual(search.call_count, 1)
+        self.assertEqual(result["providers"], ["openalex", "semantic_scholar"])
+        self.assertEqual(search.call_count, 2)
 
     def test_provider_cache_avoids_repeated_network_calls(self):
         with tempfile.TemporaryDirectory() as tmp:
