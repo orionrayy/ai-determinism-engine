@@ -15,6 +15,10 @@ _VOLATILE_INPUT_KEYS = {
     "approval_actor",
     "approval_approved_at",
     "retry_jitter_seed",
+    "previous_tool",
+    "provider_resolution_change",
+    "provider_resolution_fingerprint",
+    "plan_intent_fingerprint",
 }
 
 
@@ -65,5 +69,54 @@ def fingerprint_nodes(nodes: list[Any]) -> str:
     definitions = [
         node_definition(node)
         for node in sorted(nodes, key=lambda item: str(item.id if hasattr(item, "id") else item.get("id")))
+    ]
+    return hashlib.sha256(canonical_json(definitions)).hexdigest()
+
+
+def intent_definition(node: Any) -> dict[str, Any]:
+    """Return semantic plan intent without binding it to a concrete provider."""
+    definition = node_definition(node)
+    definition.pop("tool", None)
+    return definition
+
+
+def provider_resolution_definition(node: Any) -> dict[str, Any]:
+    """Return the concrete provider binding separately from semantic intent."""
+    if hasattr(node, "input"):
+        return {
+            "id": str(node.id),
+            "capability": str(node.capability),
+            "tool": str(node.tool),
+            "provider_binding": dict(
+                node.input.get("provider_binding") or {}
+            ) if isinstance(node.input.get("provider_binding"), dict) else {},
+        }
+    binding = node.get("provider_binding") or {}
+    return {
+        "id": str(node.get("id") or ""),
+        "capability": str(node.get("capability") or ""),
+        "tool": str(node.get("tool") or ""),
+        "provider_binding": dict(binding) if isinstance(binding, dict) else {},
+    }
+
+
+def fingerprint_intent(nodes: list[Any]) -> str:
+    definitions = [
+        intent_definition(node)
+        for node in sorted(
+            nodes,
+            key=lambda item: str(item.id if hasattr(item, "id") else item.get("id")),
+        )
+    ]
+    return hashlib.sha256(canonical_json(definitions)).hexdigest()
+
+
+def fingerprint_provider_resolution(nodes: list[Any]) -> str:
+    definitions = [
+        provider_resolution_definition(node)
+        for node in sorted(
+            nodes,
+            key=lambda item: str(item.id if hasattr(item, "id") else item.get("id")),
+        )
     ]
     return hashlib.sha256(canonical_json(definitions)).hexdigest()
