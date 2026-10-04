@@ -8,6 +8,7 @@ import epistemic_validation as ev
 import evidence_records as er
 import orchestrator as o
 import source_authority as sa
+import plan_integrity as pi
 
 
 class V75BoundaryHardeningTests(unittest.TestCase):
@@ -463,6 +464,197 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         self.assertIn('"text":', context_text)
         self.assertGreater(len(context_text.encode("utf-8")), 24 * 1024)
         self.assertIn('"d5"', context_text)
+
+
+    def test_intent_fingerprint_is_separate_from_provider_resolution(self):
+        gemini = o.Node(
+            "n1", "analyze", "gemini", [],
+            input={"goal": "g", "instruction": "analyze"},
+        )
+        alternate = o.Node(
+            "n1", "analyze", "wikipedia", [],
+            input={"goal": "g", "instruction": "analyze"},
+        )
+        self.assertEqual(
+            pi.fingerprint_intent([gemini]),
+            pi.fingerprint_intent([alternate]),
+        )
+        self.assertNotEqual(
+            pi.fingerprint_provider_resolution([gemini]),
+            pi.fingerprint_provider_resolution([alternate]),
+        )
+
+    def test_controlled_provider_reselection_does_not_look_like_intent_drift(self):
+        node = o.Node(
+            "n1", "analyze", "gemini", [],
+            input={"goal": "g", "instruction": "analyze"},
+        )
+        workflow = {
+            "id": "wf-provider-switch",
+            "status": "running",
+            "plan_fingerprint": pi.fingerprint_nodes([node]),
+            "plan_intent_fingerprint": pi.fingerprint_intent([node]),
+            "provider_resolution_fingerprint": pi.fingerprint_provider_resolution([node]),
+        }
+        node.tool = "wikipedia"
+        workflow["provider_resolution_change"] = {
+            "node_id": "n1",
+            "from_tool": "gemini",
+            "to_tool": "wikipedia",
+            "reason": "failure_replan",
+        }
+        self.assertTrue(o.ensure_plan_integrity(workflow, [node]))
+        self.assertEqual(workflow["plan_integrity"], "provider_reselected")
+        self.assertEqual(
+            workflow["provider_resolution_fingerprint"],
+            pi.fingerprint_provider_resolution([node]),
+        )
+        self.assertEqual(
+            workflow["plan_intent_fingerprint"],
+            pi.fingerprint_intent([node]),
+        )
+
+    def test_unapproved_provider_drift_fails_closed(self):
+        node = o.Node(
+            "n1", "analyze", "gemini", [],
+            input={"goal": "g", "instruction": "analyze"},
+        )
+        workflow = {
+            "id": "wf-provider-drift",
+            "status": "running",
+            "plan_fingerprint": pi.fingerprint_nodes([node]),
+            "plan_intent_fingerprint": pi.fingerprint_intent([node]),
+            "provider_resolution_fingerprint": pi.fingerprint_provider_resolution([node]),
+        }
+        node.tool = "wikipedia"
+        self.assertFalse(o.ensure_plan_integrity(workflow, [node]))
+        self.assertEqual(workflow["plan_integrity"], "provider_drift_detected")
+
+    def test_intent_drift_still_fails_closed_during_provider_reselection(self):
+        node = o.Node(
+            "n1", "analyze", "gemini", [],
+            input={"goal": "g", "instruction": "analyze"},
+        )
+        workflow = {
+            "id": "wf-intent-drift",
+            "status": "running",
+            "plan_fingerprint": pi.fingerprint_nodes([node]),
+            "plan_intent_fingerprint": pi.fingerprint_intent([node]),
+            "provider_resolution_fingerprint": pi.fingerprint_provider_resolution([node]),
+            "provider_resolution_change": {
+                "node_id": "n1",
+                "from_tool": "gemini",
+                "to_tool": "wikipedia",
+                "reason": "failure_replan",
+            },
+        }
+        node.tool = "wikipedia"
+        node.input["instruction"] = "tampered"
+        self.assertFalse(o.ensure_plan_integrity(workflow, [node]))
+        self.assertEqual(workflow["plan_integrity"], "intent_drift_detected")
+
+    def test_deliberation_validation_is_wired_into_node_output_gate(self):
+        node = o.Node(
+            "n1",
+            "analyze",
+            "gemini",
+            [],
+            input={
+                "goal": "g",
+                "context": {
+                    "deliberation": {
+                        "challenges": [{
+                            "claim_id": "c1",
+                            "challenge_type": "claim_disagreement",
+                        }]
+                    },
+                    "trusted_evidence": [{
+                        "canonical_id": "e1",
+                        "authority_score": 0.9,
+                    }],
+                },
+            },
+            contract={
+                "epistemic": True,
+                "deliberation": {"required": True},
+            },
+        )
+        output = {
+            "output": "raw",
+            "epistemic_verdict": {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "resolved",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["e1"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "e1",
+                    "authority_score": 0.9,
+                }],
+                "deliberation_responses": [{
+                    "claim_id": "c1",
+                    "status": "resolved",
+                    "evidence_refs": ["e1"],
+                    "justification": "supported by trusted evidence",
+                }],
+            },
+        }
+        result = o.validate_node_output(node, output)
+        self.assertTrue(result["passed"])
+        self.assertTrue(any(
+            item.get("check") == "claim_level_deliberation"
+            and item.get("passed") is True
+            for item in result["checks"]
+        ))
+
+    def test_missing_deliberation_response_fails_node_output_gate(self):
+        node = o.Node(
+            "n1",
+            "analyze",
+            "gemini",
+            [],
+            input={
+                "goal": "g",
+                "context": {
+                    "deliberation": {
+                        "challenges": [{
+                            "claim_id": "c1",
+                            "challenge_type": "claim_disagreement",
+                        }]
+                    },
+                    "trusted_evidence": [{
+                        "canonical_id": "e1",
+                        "authority_score": 0.9,
+                    }],
+                },
+            },
+            contract={
+                "epistemic": True,
+                "deliberation": {"required": True},
+            },
+        )
+        output = {
+            "output": "raw",
+            "epistemic_verdict": {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "unresolved",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["e1"],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "e1",
+                    "authority_score": 0.9,
+                }],
+            },
+        }
+        with self.assertRaisesRegex(RuntimeError, "epistemic validation failed"):
+            o.validate_node_output(node, output)
 
 
 if __name__ == "__main__":
