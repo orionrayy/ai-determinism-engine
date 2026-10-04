@@ -43,6 +43,7 @@ try:
         reconcile_connector_execution,
     )
     from .evidence import build_evidence, sanitize_for_durable
+    from .evidence_records import deduplicate_sources
     from .epistemic_validation import validate_epistemic_output
     from .epistemic_metrics import record_node_metrics
     from .failure_policy import classify_failure, decide_retry, deterministic_retry_delay
@@ -94,6 +95,7 @@ except ImportError:
         reconcile_connector_execution,
     )
     from evidence import build_evidence, sanitize_for_durable
+    from evidence_records import deduplicate_sources
     from epistemic_validation import validate_epistemic_output
     from epistemic_metrics import record_node_metrics
     from failure_policy import classify_failure, decide_retry, deterministic_retry_delay
