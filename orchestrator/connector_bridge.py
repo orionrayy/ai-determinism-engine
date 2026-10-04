@@ -69,13 +69,10 @@ class ReconciliationRequest:
 RECONCILIATION_STATES = {"applied", "not_applied", "unknown"}
 
 
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
+try:
+    from .deterministic_codec import canonical_json
+except ImportError:
+    from deterministic_codec import canonical_json
 
 
 def execution_id(workflow_id: str, node_id: str) -> str:
