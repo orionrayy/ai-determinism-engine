@@ -150,6 +150,28 @@ class EpistemicValidationTests(unittest.TestCase):
             "exact_normalized_substring",
         )
 
+    def test_strict_passage_mode_rejects_missing_passage(self):
+        result = validate_epistemic_output(
+            {
+                "confidence": 0.9,
+                "claims": [{
+                    "claim_id": "c1",
+                    "statement": "supported",
+                    "material": True,
+                    "status": "SUPPORTED_DIRECT",
+                    "evidence_refs": ["doi:trusted"],
+                    "evidence_passages": [],
+                }],
+                "evidence_records": [{
+                    "canonical_id": "doi:trusted",
+                    "abstract": "supported",
+                }],
+            },
+            require_passages=True,
+        )
+        self.assertFalse(result["passed"])
+        self.assertTrue(result["passage_required"])
+
     def test_trusted_evidence_boundary_rejects_untrusted_claim_reference(self):
         result = validate_epistemic_output(
             {
