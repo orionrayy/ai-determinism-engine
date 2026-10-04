@@ -398,6 +398,36 @@ class BridgeRuntimeTests(unittest.TestCase):
         self.assertFalse(a.get("idempotent_replay", False))
         self.assertTrue(b["idempotent_replay"])
 
+    def test_durable_idempotency_survives_in_process_cache_reset(self):
+        payload = self.payload(
+            request_id=hashlib.sha256(b"wf:durable-replay").hexdigest()
+        )
+        routes = {"notion": {
+            "actions": ["create_page"],
+            "url": "https://upstream.example.test/invoke",
+        }}
+        with self.subTest("sqlite-backed replay"):
+            import tempfile
+            with tempfile.TemporaryDirectory() as tmp:
+                db_path = os.path.join(tmp, "idempotency.sqlite3")
+                with patch.dict(
+                    os.environ,
+                    {"ORCHESTRATOR_BRIDGE_IDEMPOTENCY_DB": db_path},
+                    clear=False,
+                ), patch.object(
+                    br, "load_routes", return_value=routes
+                ), patch.object(
+                    br, "dispatch_upstream",
+                    return_value={"status_code": 200, "data": {"id": "p1"}},
+                ) as dispatch:
+                    first = br.handle_request(payload, "secret")
+                    br._COMPLETED.clear()
+                    br._INFLIGHT.clear()
+                    second = br.handle_request(payload, "secret")
+        self.assertFalse(first.get("idempotent_replay", False))
+        self.assertTrue(second.get("idempotent_replay", False))
+        self.assertEqual(dispatch.call_count, 1)
+
     def test_free_only_blocks_uncertified_invocation(self):
         routes = {
             "notion": {

@@ -2275,12 +2275,34 @@ def execute_github(node: Node) -> dict[str, Any]:
                 pass
         return result
     if action == "create_issue":
+        marker = github_effect_marker(node)
+        if not marker:
+            raise RuntimeError("workflow identity is required for GitHub issue side effects")
+        query = urllib.parse.quote(
+            f'repo:{repository} "{marker}" in:body',
+            safe="",
+        )
+        existing = http_json(
+            f"https://api.github.com/search/issues?q={query}&per_page=10",
+            headers=headers,
+        )
+        items = (existing.get("data") or {}).get("items", [])
+        if isinstance(items, list) and items:
+            return {
+                "data": {
+                    "issue": items[0] if isinstance(items[0], dict) else {},
+                },
+                "idempotent_replay": True,
+            }
+        issue_body = str(node.input.get("body", ""))
+        if marker not in issue_body:
+            issue_body = issue_body.rstrip() + ("\n\n" if issue_body.strip() else "") + marker
         return http_json(
             f"https://api.github.com/repos/{repository}/issues",
             method="POST",
             body={
                 "title": node.input.get("title", "Orchestrator task"),
-                "body": node.input.get("body", ""),
+                "body": issue_body,
             },
             headers=headers,
         )
@@ -2299,9 +2321,23 @@ def execute_github(node: Node) -> dict[str, Any]:
                 f"?ref={urllib.parse.quote(branch, safe='')}",
                 headers=headers,
             )
-            existing_sha = existing.get("data", {}).get("sha")
+            existing_data = existing.get("data", {})
+            existing_sha = existing_data.get("sha")
             if existing_sha:
                 body["sha"] = existing_sha
+            existing_content = existing_data.get("content")
+            if isinstance(existing_content, str):
+                try:
+                    decoded_existing = __import__("base64").b64decode(
+                        existing_content.replace("\n", "")
+                    ).decode("utf-8")
+                except (ValueError, UnicodeDecodeError):
+                    decoded_existing = None
+                if decoded_existing == content:
+                    return {
+                        "data": existing_data,
+                        "idempotent_replay": True,
+                    }
         except urllib.error.HTTPError as exc:
             if exc.code != 404:
                 raise
@@ -2315,11 +2351,19 @@ def execute_github(node: Node) -> dict[str, Any]:
         path = _github_path(node.input.get("path"))
         branch = str(node.input.get("branch") or "main")
         message = str(node.input.get("message") or f"orchestrator: delete {path}")
-        current = http_json(
-            f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}"
-            f"?ref={urllib.parse.quote(branch, safe='')}",
-            headers=headers,
-        )
+        try:
+            current = http_json(
+                f"https://api.github.com/repos/{repository}/contents/{urllib.parse.quote(path, safe='/')}"
+                f"?ref={urllib.parse.quote(branch, safe='')}",
+                headers=headers,
+            )
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return {
+                    "data": {"deleted": True, "path": path},
+                    "idempotent_replay": True,
+                }
+            raise
         sha = current.get("data", {}).get("sha")
         if not sha:
             raise RuntimeError("GitHub did not return file sha")
@@ -3220,6 +3264,167 @@ def recover_inflight_side_effects(
             "execution_id": execution_id,
         })
 
+def github_effect_marker(node: Node) -> str:
+    workflow_id = str(node.input.get("workflow_id") or "").strip()
+    if not workflow_id:
+        return ""
+    return f"<!-- ai-orchestrator-execution:{execution_key({'id': workflow_id}, node)} -->"
+
+
+def reconcile_github_execution(
+    node: Node,
+    workflow: dict[str, Any],
+    execution_id: str,
+) -> dict[str, Any]:
+    """Reconcile GitHub side effects without inventing idempotency guarantees.
+
+    create_issue can be proven applied through its deterministic body marker.
+    create_or_update_file can be proven applied only when current content exactly
+    equals the requested content. delete_file is provably applied by a 404.
+    dispatch_workflow remains intentionally unknown because GitHub's dispatch API
+    does not expose a durable caller idempotency key or a returned run identifier.
+    """
+    repository = github_repository()
+    headers = github_headers()
+    action = str(node.input.get("action") or "metadata").strip()
+    checked_at = utc_now()
+
+    try:
+        if action == "create_issue":
+            marker = github_effect_marker(node)
+            if not marker:
+                return {
+                    "state": "unknown",
+                    "action": action,
+                    "request_id": execution_id,
+                    "checked_at": checked_at,
+                    "reason": "missing_workflow_identity",
+                }
+            query = urllib.parse.quote(
+                f'repo:{repository} "{marker}" in:body',
+                safe="",
+            )
+            result = http_json(
+                f"https://api.github.com/search/issues?q={query}&per_page=10",
+                headers=headers,
+            )
+            items = (result.get("data") or {}).get("items", [])
+            if isinstance(items, list) and items:
+                return {
+                    "state": "applied",
+                    "action": action,
+                    "request_id": execution_id,
+                    "issue": items[0] if isinstance(items[0], dict) else {},
+                    "checked_at": checked_at,
+                }
+            return {
+                "state": "unknown",
+                "action": action,
+                "request_id": execution_id,
+                "checked_at": checked_at,
+                "reason": "marker_not_found",
+            }
+
+        if action == "create_or_update_file":
+            path = _github_path(node.input.get("path"))
+            branch = str(node.input.get("branch") or "main")
+            current = http_json(
+                f"https://api.github.com/repos/{repository}/contents/"
+                f"{urllib.parse.quote(path, safe='/')}"
+                f"?ref={urllib.parse.quote(branch, safe='')}",
+                headers=headers,
+            )
+            data = current.get("data") or {}
+            encoded = data.get("content")
+            if not isinstance(encoded, str):
+                return {
+                    "state": "unknown",
+                    "action": action,
+                    "request_id": execution_id,
+                    "checked_at": checked_at,
+                    "reason": "current_file_content_unavailable",
+                }
+            import base64
+            try:
+                actual = base64.b64decode(encoded.replace("\n", "")).decode("utf-8")
+            except (ValueError, UnicodeDecodeError):
+                return {
+                    "state": "unknown",
+                    "action": action,
+                    "request_id": execution_id,
+                    "checked_at": checked_at,
+                    "reason": "current_file_decode_failed",
+                }
+            desired = str(node.input.get("content", ""))
+            if actual == desired:
+                return {
+                    "state": "applied",
+                    "action": action,
+                    "request_id": execution_id,
+                    "file": data,
+                    "checked_at": checked_at,
+                }
+            return {
+                "state": "unknown",
+                "action": action,
+                "request_id": execution_id,
+                "checked_at": checked_at,
+                "reason": "current_content_differs",
+            }
+
+        if action == "delete_file":
+            path = _github_path(node.input.get("path"))
+            branch = str(node.input.get("branch") or "main")
+            try:
+                http_json(
+                    f"https://api.github.com/repos/{repository}/contents/"
+                    f"{urllib.parse.quote(path, safe='/')}"
+                    f"?ref={urllib.parse.quote(branch, safe='')}",
+                    headers=headers,
+                )
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    return {
+                        "state": "applied",
+                        "action": action,
+                        "request_id": execution_id,
+                        "deleted": True,
+                        "checked_at": checked_at,
+                    }
+                raise
+            return {
+                "state": "unknown",
+                "action": action,
+                "request_id": execution_id,
+                "checked_at": checked_at,
+                "reason": "target_still_exists",
+            }
+
+        if action == "dispatch_workflow":
+            return {
+                "state": "unknown",
+                "action": action,
+                "request_id": execution_id,
+                "checked_at": checked_at,
+                "reason": "github_dispatch_has_no_durable_reconciliation_identity",
+            }
+
+        return {
+            "state": "unknown",
+            "action": action,
+            "request_id": execution_id,
+            "checked_at": checked_at,
+            "reason": "action_not_reconcilable",
+        }
+    except Exception as exc:
+        return {
+            "state": "unknown",
+            "action": action,
+            "request_id": execution_id,
+            "checked_at": checked_at,
+            "reason": f"{type(exc).__name__}: {exc}",
+        }
+
 def reconcile_first_uncertain(
     workflow: dict[str, Any],
     nodes: list[Node],
@@ -3231,7 +3436,7 @@ def reconcile_first_uncertain(
         node for node in nodes
         if node.status == "failed"
         and node.error.get("execution_uncertain")
-        and node.tool == "connector_bridge"
+        and node.tool in {"connector_bridge", "github"}
     ]
     if not candidates:
         return None
@@ -3239,11 +3444,18 @@ def reconcile_first_uncertain(
     transition(node, "reconciling")
     execution_id = execution_key(workflow, node)
     try:
-        result = reconcile_connector_execution(
-            node,
-            workflow["goal"],
-            dry_run=False,
-        )
+        if node.tool == "connector_bridge":
+            result = reconcile_connector_execution(
+                node,
+                workflow["goal"],
+                dry_run=False,
+            )
+        else:
+            result = reconcile_github_execution(
+                node,
+                workflow,
+                execution_id,
+            )
     except ConnectorReconciliationError as exc:
         node.error = {
             **node.error,
