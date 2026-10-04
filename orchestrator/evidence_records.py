@@ -6,6 +6,11 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Any, Mapping
+try:
+    from .evidence_independence import source_work_identity
+except ImportError:
+    from evidence_independence import source_work_identity
+
 
 _DOI_RE = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:)\s*", re.IGNORECASE)
 _ARXIV_RE = re.compile(r"(?:https?://arxiv\.org/(?:abs|pdf)/)?([0-9]{4}\.[0-9]{4,5}(?:v[0-9]+)?)$", re.IGNORECASE)
@@ -222,6 +227,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         authority.append("open_access_index")
     if record.get("peer_reviewed") is True:
         authority.append("peer_reviewed")
+    work_identity = source_work_identity({**record, "provider": provider})
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
@@ -238,7 +244,10 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         "full_text_url": _full_text_url(record),
         "primaryity": primaryity,
         "authority_signals": sorted(set(authority)),
-        "independence_key": canonical_source_id({**record, "provider": provider}),
+        "independence_key": str(work_identity["work_key"]),
+        "independence_basis": str(work_identity["basis"]),
+        "independence_confidence": float(work_identity["confidence"]),
+        "independence_proxy": True,
     }
 
 
@@ -278,6 +287,11 @@ def deduplicate_sources(records: list[Mapping[str, Any]]) -> list[dict[str, Any]
 
 
 def count_independent_sources(records: list[Mapping[str, Any]]) -> int:
+    """Compatibility alias for distinct evidence-work count.
+
+    It is an independence proxy, not proof that studies share no authors,
+    datasets, citations, or other dependency relationships.
+    """
     return len({
         str(record.get("independence_key") or record.get("canonical_id") or "")
         for record in records
