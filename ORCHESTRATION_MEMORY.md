@@ -12,7 +12,19 @@ Current main baseline: orchestration hardening v66 deterministic trace contract 
 Execution model: GitHub Actions + stdlib Python
 Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
 Current execution-fabric branch: `main`
-Feature validation line: feat/v75-validation (pending merge; exact validated head tracked by PR #140)
+Feature validation line: feat/v75-validation (pending merge; integrated review remains PR #141)
+
+## Orchestration hardening v76 — split plan intent/provider binding and claim-level deliberation
+- Plan integrity now separates semantic workflow intent from concrete provider resolution. The semantic intent fingerprint deliberately excludes the selected tool, while provider-resolution fingerprinting records the concrete tool binding separately.
+- Legacy workflows are migrated conservatively: an existing v75 strict plan fingerprint is checked before split fingerprints are initialized. Intent drift remains fail-closed even during provider reselection.
+- Provider changes are accepted only through the orchestrator's explicit failure-replan transition. The previous provider fingerprint remains authoritative until the next integrity pass consumes the re-selection marker, making an adapter switch auditable rather than self-authorized.
+- Workflow schema version 8 persists plan_intent_fingerprint, provider_resolution_fingerprint, and the controlled provider_resolution_change marker without removing the legacy plan_fingerprint.
+- Deliberation now builds a deterministic claim-level challenge queue for material disagreement, status conflict, missing evidence, weak authority, and one-sided candidate claims. Challenges are anonymized and bounded before reaching the adjudicator.
+- A deliberation response gate requires one response per challenge with an explicit resolved/contested/unknown status; resolved or contested responses must cite evidence from the candidate verdict's evidence set, which is subsequently rebound to trusted dependency evidence at the epistemic boundary.
+- Adaptive round metadata now distinguishes blind claim challenge from rebuttal/evidence recheck while preserving the existing two-round maximum and deterministic stop conditions.
+- Regression coverage was extended for split fingerprints, unauthorized provider drift, intent drift during provider switching, claim-level challenge generation, adaptive deliberation context, and node-output deliberation gating.
+- Exact v76 validation head: 6ef1523cbc2677fd7e1dd3714b4ce77d773e20d3. CI run #1956 passed compile checks, Control-plane Worker syntax, actionlint, 387 unit tests, and the control-plane evaluation harness. Private Input Worker Tests also passed.
+- No paid runtime, new database, broker, queue, or external orchestration dependency was added. The existing optional SQLite bridge ledger and Cloudflare Durable Object control-plane remain unchanged.
 
 ## Orchestration hardening v75 — boundary, authority, epistemic quality, and free-first reliability
 - Gateway authentication is HMAC-only for structured event delivery; static bearer-secret authentication is no longer accepted. Requests bind timestamp, method, path, idempotency key, and raw body.
