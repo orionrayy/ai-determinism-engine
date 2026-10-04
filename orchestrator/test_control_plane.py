@@ -72,6 +72,22 @@ class ControlPlaneClientTests(unittest.TestCase):
         self.assertEqual(request.call_args_list[0].args[1], "/v1/workflows/wf/recovery/arm")
         self.assertEqual(request.call_args_list[1].args[1], "/v1/workflows/wf/recovery/ack")
 
+    def test_recovery_claim_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "claimed", "claim_expires_at": 300},
+        ) as request:
+            result = client.claim_recovery(
+                "wf",
+                "recovery:1",
+                owner="scheduled-recovery:123",
+                ttl_seconds=300,
+            )
+        self.assertEqual(result["status"], "claimed")
+        self.assertEqual(request.call_args.args[1], "/v1/workflows/wf/recovery/claim")
+
     def test_workflow_state_parses_recovery_envelope(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
         with patch.object(
