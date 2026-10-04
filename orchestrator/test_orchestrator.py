@@ -1476,6 +1476,10 @@ class OrchestratorTests(unittest.TestCase):
             second["workflows"]["wf_1"]["schema_version"],
             CURRENT_WORKFLOW_SCHEMA_VERSION,
         )
+        self.assertIsNone(second["workflows"]["wf_1"]["plan_intent_fingerprint"])
+        self.assertIsNone(
+            second["workflows"]["wf_1"]["provider_resolution_fingerprint"]
+        )
 
     def test_future_state_version_fails_closed(self):
         with self.assertRaises(o.StateSchemaError):
