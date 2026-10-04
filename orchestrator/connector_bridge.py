@@ -25,6 +25,7 @@ ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
 _DISCOVERY_CACHE_TTL = 60
 _DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_DISCOVERY_CACHE_LOCK = __import__('threading').Lock()
 
 
 class ConnectorBridgeError(RuntimeError):
@@ -160,7 +161,8 @@ def discover_capabilities(
     timeout: int = 20,
 ) -> dict[str, dict[str, Any]]:
     now = time.time()
-    cached = _DISCOVERY_CACHE.get(bridge_url)
+    with _DISCOVERY_CACHE_LOCK:
+        cached = _DISCOVERY_CACHE.get(bridge_url)
     if cached and not force_refresh and cached[0] > now:
         return cached[1]
 
@@ -223,7 +225,8 @@ def discover_capabilities(
             "configured": bool(spec.get("configured", False)),
             "reconciliation": bool(spec.get("reconciliation", False)),
         }
-    _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
+    with _DISCOVERY_CACHE_LOCK:
+        _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
     return normalized
 
 
