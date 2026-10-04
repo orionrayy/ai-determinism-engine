@@ -117,7 +117,7 @@ class ResearchProviderTests(unittest.TestCase):
             result["providers"],
             ["semantic_scholar", "europe_pmc", "crossref"],
         )
-        self.assertEqual(search.call_count, 4)
+        self.assertEqual(search.call_count, 3)
 
     def test_openalex_payload_normalizes_to_evidence_records(self):
         payload = {
@@ -265,7 +265,7 @@ class ResearchProviderTests(unittest.TestCase):
              ):
             self.assertEqual(
                 research_records("topic")["providers"],
-                ["semantic_scholar", "openalex", "europe_pmc", "crossref"],
+                ["semantic_scholar", "europe_pmc", "crossref"],
             )
         with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "false"}, clear=False), \
              patch(
