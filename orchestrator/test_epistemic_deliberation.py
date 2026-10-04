@@ -4,6 +4,20 @@ from epistemic_deliberation import blind_challenge_view, debate_decision
 
 
 class EpistemicDeliberationTests(unittest.TestCase):
+    def test_single_proposal_is_not_consensus(self):
+        decision = debate_decision([{
+            "agent_id": "a1",
+            "answer": "A",
+            "confidence": 0.99,
+            "evidence_refs": ["doi:10.1/x"],
+            "evidence_records": [
+                {"canonical_id": "doi:10.1/x"},
+                {"canonical_id": "doi:10.1/y"},
+            ],
+        }])
+        self.assertTrue(decision["required"])
+        self.assertEqual(decision["reason"], "insufficient_independent_proposals")
+
     def test_debate_stops_when_proposals_agree_with_strong_evidence(self):
         proposals = [
             {
