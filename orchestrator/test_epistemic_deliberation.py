@@ -11,14 +11,20 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["x"],
-                "independence": {"distinct_work_count": 2},
+                "evidence_records": [
+                    {"doi": "10.1/a", "provider": "openalex"},
+                    {"doi": "10.2/b", "provider": "openalex"},
+                ],
             },
             {
                 "agent_id": "a2",
                 "answer": "A",
                 "confidence": 0.9,
                 "evidence_refs": ["y"],
-                "independence": {"distinct_work_count": 2},
+                "evidence_records": [
+                    {"doi": "10.1/a", "provider": "crossref"},
+                    {"doi": "10.2/b", "provider": "crossref"},
+                ],
             },
         ]
         result = debate_decision(proposals)
@@ -55,14 +61,20 @@ class EpistemicDeliberationTests(unittest.TestCase):
                 "answer": "A",
                 "confidence": 0.7,
                 "evidence_refs": ["x"],
-                "independent_source_count": 2,
+                "evidence_records": [
+                    {"doi": "10.1/a", "provider": "openalex"},
+                    {"doi": "10.2/b", "provider": "openalex"},
+                ],
             },
             {
                 "agent_id": "a2",
                 "answer": "B",
                 "confidence": 0.9,
                 "evidence_refs": ["y"],
-                "independent_source_count": 2,
+                "evidence_records": [
+                    {"doi": "10.3/c", "provider": "crossref"},
+                    {"doi": "10.4/d", "provider": "crossref"},
+                ],
             },
         ]
         result = debate_decision(proposals)
