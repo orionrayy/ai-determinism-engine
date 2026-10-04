@@ -3381,7 +3381,7 @@ def ensure_plan_integrity(workflow: dict[str, Any], nodes: list[Node]) -> bool:
         workflow["provider_resolution_fingerprint"] = provider_digest
         if not legacy_fingerprint:
             workflow["plan_fingerprint"] = fingerprint_nodes(nodes)
-        workflow["plan_integrity"] = "initialized_split"
+        workflow["plan_integrity"] = "initialized"
         return True
 
     if stored_intent != intent_digest:
