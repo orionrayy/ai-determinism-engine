@@ -3185,6 +3185,22 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
                 min_coverage=node.contract.get("min_coverage"),
                 trusted_evidence_records=trusted_records,
             )
+            deliberation_result = (
+                validate_deliberation_responses(
+                    verdict,
+                    context_value.get("deliberation")
+                    if isinstance(context_value, dict)
+                    else None,
+                )
+                if node.contract.get("deliberation")
+                else {"passed": True, "required": False}
+            )
+            epistemic_result["deliberation"] = deliberation_result
+            if deliberation_result.get("passed") is not True:
+                epistemic_result["passed"] = False
+                epistemic_result["reason"] = (
+                    "claim-level deliberation challenge was not fully answered"
+                )
             bound_records = epistemic_result.get("bound_evidence_records")
             if epistemic_result.get("evidence_binding", {}).get("trusted") and isinstance(
                 bound_records, list
@@ -3196,6 +3212,23 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
                 "passed": epistemic_result.get("passed") is True,
                 "coverage": epistemic_result.get("coverage"),
             })
+            if node.contract.get("deliberation"):
+                checks.append({
+                    "check": "claim_level_deliberation",
+                    "passed": epistemic_result.get("deliberation", {}).get("passed") is True,
+                    "expected": int(
+                        len(
+                            context_value.get("deliberation", {}).get("challenges", [])
+                        )
+                        if isinstance(context_value, dict)
+                        and isinstance(context_value.get("deliberation"), dict)
+                        else 0
+                    ),
+                    "responded": int(
+                        epistemic_result.get("deliberation", {}).get("response_count", 0)
+                        or 0
+                    ),
+                })
             if epistemic_result.get("passed") is not True:
                 raise RuntimeError("epistemic validation failed")
         if node.capability == "validate" and node.tool == "gemini":
