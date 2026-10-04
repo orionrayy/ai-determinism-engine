@@ -6,14 +6,13 @@ on:
       - main
     paths:
       - "orchestrator/**"
+      - "control-plane/**"
       - "render.yaml"
       - "bridge_server.py"
       - "vercel.json"
       - "test_bridge_runtime.py"
       - "api/bridge.py"
       - "bridge_runtime.py"
-      - "test_bridge_runtime.py"
-      - "test_bridge_runtime.py"
       - "ORCHESTRATION_MEMORY.md"
       - "gateway.py"
       - "bridge_server.py"
@@ -38,6 +37,7 @@ on:
       - ".github/workflows/orchestrator-approval.yml"
       - ".github/actionlint.yaml"
       - "orchestrator/**"
+      - "control-plane/**"
       - ".github/workflows/bridge-deploy.yml"
       - "gateway.py"
       - "bridge_runtime.py"
@@ -68,6 +68,9 @@ jobs:
           python-version: "3.12"
       - name: Compile orchestrator/aggregate_agent_results.py orchestrator/agent_worker.py
         run: python -m compileall -q orchestrator && python -m py_compile bridge_runtime.py bridge_server.py api/bridge.py test_bridge_runtime.py gateway.py test_gateway.py test_actions_config.py
+      - name: Control-plane Worker syntax
+        run: node --check control-plane/cloudflare/src/worker.js
+
       - name: Actionlint
         shell: bash
         run: |

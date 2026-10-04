@@ -179,6 +179,9 @@ jobs:
           ORCHESTRATOR_REQUESTED_MODE: ${{ github.event.client_payload.requested_mode || 'dry-run' }}
           ORCHESTRATOR_CALLBACK_URL: ${{ secrets.ORCHESTRATOR_CALLBACK_URL }}
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
+          ORCHESTRATOR_CONTROL_PLANE_URL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_URL }}
+          ORCHESTRATOR_CONTROL_PLANE_SECRET: ${{ secrets.ORCHESTRATOR_CONTROL_PLANE_SECRET }}
+          ORCHESTRATOR_CONTROL_PLANE_LEASE_TTL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_LEASE_TTL || '1200' }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}

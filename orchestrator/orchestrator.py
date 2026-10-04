@@ -17,6 +17,7 @@ import uuid
 import tempfile
 import zipfile
 import threading
+from contextlib import contextmanager
 import time
 import traceback
 import urllib.error
@@ -50,6 +51,7 @@ try:
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from .control_plane import ControlPlaneClient, ControlPlaneError
     from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -88,6 +90,7 @@ except ImportError:
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
+    from control_plane import ControlPlaneClient, ControlPlaneError
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -867,6 +870,107 @@ def rearm_stale_federation(
 def quota_sensitive(node: Node) -> bool:
     """Keep external quota-bound adapters serialized to avoid free-tier bursts."""
     return node.tool in {"gemini", "openai", "research_bundle"}
+
+
+EFFECT_RUNTIME_INPUT_KEYS = {
+    "context",
+    "repair_feedback",
+    "retry_jitter_seed",
+    "approval_granted",
+    "approval_issue",
+    "previous_tool",
+    "private_input_ref",
+    "private_input_execution_id",
+    "attempt",
+}
+
+
+def effect_semantic_digest(node: Node) -> str:
+    """Digest stable external intent while excluding mutable runtime metadata."""
+    semantic_input = {
+        str(key): value
+        for key, value in sorted(node.input.items(), key=lambda item: str(item[0]))
+        if str(key) not in EFFECT_RUNTIME_INPUT_KEYS
+        and str(key) != "payload"
+    }
+    raw = json.dumps(
+        {
+            "schema_version": 1,
+            "tool": node.tool,
+            "capability": node.capability,
+            "risk": node.risk,
+            "input": semantic_input,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def record_effect_claim(
+    workflow: dict[str, Any],
+    effect_id: str,
+    semantic_digest: str,
+    fence_epoch: int,
+) -> None:
+    record = workflow.setdefault("executions", {}).setdefault(effect_id, {})
+    record.update({
+        "effect_id": effect_id,
+        "effect_semantic_digest": semantic_digest,
+        "fence_epoch": int(fence_epoch),
+        "control_plane_claimed_at": utc_now(),
+    })
+
+
+def control_plane_configured() -> bool:
+    return bool(
+        os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
+        or os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
+    )
+
+
+@contextmanager
+def control_plane_session(workflow: dict[str, Any]):
+    """Hold a workflow-scoped distributed lease for one supervisor turn."""
+    control_plane: ControlPlaneClient | None = None
+    lease: Any | None = None
+    if bool(workflow.get("live")) and control_plane_configured():
+        try:
+            control_plane = ControlPlaneClient.from_env()
+            lease = control_plane.acquire_lease(workflow["id"])
+            workflow["control_plane"] = {
+                "enabled": True,
+                "owner": control_plane.owner,
+                "fence_epoch": int(lease.fence_epoch),
+            }
+            workflow.pop("control_plane_blocked", None)
+            persist_workflow(workflow)
+        except ControlPlaneError as exc:
+            workflow["status"] = "running"
+            workflow["control_plane_blocked"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "blocked_at": utc_now(),
+            }
+            persist_workflow(workflow)
+            append_event("control_plane.blocked", {
+                "workflow_id": workflow["id"],
+                "error": str(exc),
+            })
+            raise
+    try:
+        yield control_plane, lease
+    finally:
+        if control_plane is not None and lease is not None:
+            try:
+                control_plane.release_lease(
+                    workflow["id"],
+                    lease.fence_epoch,
+                )
+            except ControlPlaneError:
+                pass
 
 
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
@@ -2906,6 +3010,8 @@ def execute_with_retries(
     attempt_budget: AttemptBudget | None = None,
     initial_attempt_reserved: bool = False,
     before_retry: Any | None = None,
+    before_attempt: Any | None = None,
+    on_success: Any | None = None,
     llm_budget_workflow: dict[str, Any] | None = None,
 ) -> tuple[bool, dict[str, Any] | None]:
     registry = load_registry()
@@ -2944,12 +3050,29 @@ def execute_with_retries(
         first_attempt = False
 
         try:
+            if before_attempt is not None:
+                before_attempt()
             output = execute_node(node, goal, dry_run=dry_run)
             node.output = output
             output["validation"] = validate_node_output(node, output)
+            if on_success is not None:
+                on_success(node)
             transition(node, "validating")
             transition(node, "completed")
             return True, None
+        except ControlPlaneError as exc:
+            node.error = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "failure_class": "uncertain",
+                "retry_allowed": False,
+                "execution_uncertain": True,
+                "reconciliation_required": True,
+                "control_plane_error": True,
+            }
+            if node.status == "running":
+                transition(node, "failed")
+            return False, node.error
         except Exception as exc:
             node.error = {
                 "type": type(exc).__name__,
@@ -3099,6 +3222,15 @@ def replan_after_failure(
     if int(workflow.get("attempts_used", 0)) >= int(
         workflow.get("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
     ):
+        return False
+
+    # An uncertain execution has an externally observable outcome that has not
+    # been proven. Replanning would change the effect identity and can duplicate
+    # the original side effect. Keep this invariant centralized rather than
+    # relying on every caller to check it first.
+    if failed_node.error.get("execution_uncertain"):
+        return False
+    if failed_node.error.get("replan_blocked_after_side_effect_start"):
         return False
 
     # A different adapter can have different side-effect semantics even when it
@@ -3429,6 +3561,8 @@ def reconcile_first_uncertain(
     workflow: dict[str, Any],
     nodes: list[Node],
     registry: dict[str, dict[str, Any]],
+    control_plane: ControlPlaneClient | None = None,
+    control_plane_lease: Any | None = None,
 ) -> str | None:
     if not workflow.get("live"):
         return None
@@ -3482,6 +3616,48 @@ def reconcile_first_uncertain(
 
     state = str(result.get("state") or "unknown").lower()
     workflow.setdefault("reconciliations", {})[node.id] = result
+
+    if control_plane is not None and control_plane_lease is not None:
+        try:
+            digest = effect_semantic_digest(node)
+            if state == "applied":
+                control_plane.resolve_effect(
+                    workflow["id"],
+                    execution_id,
+                    digest,
+                    control_plane_lease.fence_epoch,
+                    outcome="completed",
+                )
+            elif state == "not_applied":
+                control_plane.resolve_effect(
+                    workflow["id"],
+                    execution_id,
+                    digest,
+                    control_plane_lease.fence_epoch,
+                    outcome="not_applied",
+                )
+        except ControlPlaneError as exc:
+            node.error = {
+                **node.error,
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "reconciliation_state": state,
+                "reconciliation_required": True,
+                "execution_uncertain": True,
+                "control_plane_error": True,
+            }
+            transition(node, "failed")
+            workflow["status"] = "failed"
+            workflow["failed_node"] = node.id
+            append_event("node.control_plane_resolution_failed", {
+                "workflow_id": workflow["id"],
+                "node_id": node.id,
+                "execution_id": execution_id,
+                "state": state,
+                "error": str(exc),
+            })
+            return "failed"
+
     if state == "applied":
         node.output = {
             "reconciled": True,
@@ -3557,7 +3733,63 @@ def reconcile_first_uncertain(
     return "failed"
 
 
-def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> str:
+def run_one_step(
+    workflow: dict[str, Any],
+    approve_high_risk: bool = False,
+) -> str:
+    control_plane: ControlPlaneClient | None = None
+    control_plane_lease: Any | None = None
+
+    if bool(workflow.get("live")) and control_plane_configured():
+        try:
+            control_plane = ControlPlaneClient.from_env()
+            control_plane_lease = control_plane.acquire_lease(workflow["id"])
+            workflow["control_plane"] = {
+                "enabled": True,
+                "owner": control_plane.owner,
+                "fence_epoch": int(control_plane_lease.fence_epoch),
+            }
+            workflow.pop("control_plane_blocked", None)
+            persist_workflow(workflow)
+        except ControlPlaneError as exc:
+            workflow["status"] = "running"
+            workflow["control_plane_blocked"] = {
+                "type": type(exc).__name__,
+                "message": str(exc),
+                "blocked_at": utc_now(),
+            }
+            persist_workflow(workflow)
+            append_event("control_plane.blocked", {
+                "workflow_id": workflow["id"],
+                "error": str(exc),
+            })
+            raise
+
+    try:
+        return _run_one_step_inner(
+            workflow,
+            approve_high_risk=approve_high_risk,
+            control_plane=control_plane,
+            control_plane_lease=control_plane_lease,
+        )
+    finally:
+        if control_plane is not None and control_plane_lease is not None:
+            try:
+                control_plane.release_lease(
+                    workflow["id"],
+                    control_plane_lease.fence_epoch,
+                )
+            except ControlPlaneError:
+                pass
+
+
+def _run_one_step_inner(
+    workflow: dict[str, Any],
+    approve_high_risk: bool = False,
+    *,
+    control_plane: ControlPlaneClient | None = None,
+    control_plane_lease: Any | None = None,
+) -> str:
     active_federation = workflow.get("federation") or {}
     if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
         return "waiting_agents"
@@ -3606,7 +3838,13 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         attempt_budget.sync()
         persist_workflow(workflow)
     recover_inflight_side_effects(workflow, nodes, registry)
-    reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
+    reconciliation = reconcile_first_uncertain(
+        workflow,
+        nodes,
+        registry,
+        control_plane=control_plane,
+        control_plane_lease=control_plane_lease,
+    )
     if reconciliation is not None:
         workflow['nodes'] = [asdict(node) for node in nodes]
         persist_workflow(workflow)
@@ -3726,7 +3964,7 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
         mark_execution_started(workflow, node, execution_id)
         workflow['nodes'] = [asdict(item) for item in nodes]
         persist_workflow(workflow)
-        if live and side_effecting(node, registry):
+        if live and side_effecting(node, registry) and control_plane is None:
             try:
                 commit_side_effect_start(
                     ROOT,
@@ -3755,6 +3993,69 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
                     'error': str(barrier_exc),
                 })
                 return 'failed'
+
+        if control_plane is not None:
+            if control_plane_lease is None:
+                raise ControlPlaneError("control-plane lease is missing")
+            try:
+                control_plane_lease = control_plane.acquire_lease(workflow["id"])
+                fence_epoch = int(control_plane_lease.fence_epoch)
+                semantic_digest = effect_semantic_digest(node)
+                claim = control_plane.claim_effect(
+                    workflow["id"],
+                    execution_id,
+                    semantic_digest,
+                    fence_epoch,
+                )
+            except ControlPlaneError as cp_exc:
+                node.error = {
+                    "type": type(cp_exc).__name__,
+                    "message": str(cp_exc),
+                    "failure_class": "uncertain",
+                    "retry_allowed": False,
+                    "execution_uncertain": True,
+                    "reconciliation_required": True,
+                    "control_plane_error": True,
+                    "execution_id": execution_id,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return "failed"
+
+            if claim.status != "claimed":
+                node.error = {
+                    "type": "execution_uncertain",
+                    "message": (
+                        "The distributed control plane already owns or completed "
+                        "this effect; external execution will not be replayed."
+                    ),
+                    "failure_class": "uncertain",
+                    "retry_allowed": False,
+                    "execution_uncertain": True,
+                    "reconciliation_required": True,
+                    "control_plane_status": claim.status,
+                    "execution_id": execution_id,
+                }
+                transition(node, "failed")
+                workflow["status"] = "failed"
+                workflow["failed_node"] = node.id
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+                return "failed"
+
+            record_effect_claim(
+                workflow,
+                execution_id,
+                semantic_digest,
+                fence_epoch,
+            )
+            workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                "durability_authority"
+            ] = "control_plane"
+
     append_event('node.started', {'workflow_id': workflow['id'], 'node_id': node.id, 'tool': node.tool})
     append_event('agent.started', {
         'workflow_id': workflow['id'],
@@ -3778,12 +4079,43 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
             if side_effecting(node, registry)
             else None
         ),
+        before_attempt=(
+            (lambda: control_plane.renew_lease(
+                workflow["id"],
+                control_plane_lease.fence_epoch,
+            ))
+            if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+            else None
+        ),
+        on_success=(
+            (lambda completed_node: control_plane.complete_effect(
+                workflow["id"],
+                execution_id,
+                effect_semantic_digest(completed_node),
+                control_plane_lease.fence_epoch,
+                output_sha256=hashlib.sha256(
+                    json.dumps(
+                        completed_node.output,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        default=str,
+                        separators=(",", ":"),
+                    ).encode("utf-8")
+                ).hexdigest(),
+            ))
+            if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+            else None
+        ),
     )
     attempt_budget.sync()
 
     if success:
         if side_effecting(node, registry):
             mark_execution_completed(workflow, execution_id, node.output)
+            if control_plane is not None:
+                workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                    "control_plane_completed_at"
+                ] = utc_now()
         update_tool_health(node, True, registry)
         node_success_checkpoint(workflow, node)
         append_event('node.completed', {
@@ -3843,213 +4175,261 @@ def run_one_step(workflow: dict[str, Any], approve_high_risk: bool = False) -> s
 
 
 def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> None:
-    nodes = [Node(**node) for node in workflow["nodes"]]
-    validate_dag(nodes)
-    registry = load_registry()
-    live = bool(workflow.get("live"))
-    enforce_node_policy(nodes, registry, live=live)
-    if not ensure_plan_integrity(workflow, nodes):
-        workflow["nodes"] = [asdict(node) for node in nodes]
-        persist_workflow(workflow)
-        return
-    if not verify_completed_checkpoints(workflow, nodes):
-        workflow["nodes"] = [asdict(node) for node in nodes]
-        persist_workflow(workflow)
-        return
-    workflow["status"] = "running"
-    workflow["execution_mode"] = "live" if live else "dry-run"
-    workflow.setdefault("replan_count", 0)
-    workflow.setdefault("repair_feedback", {})
-    workflow.setdefault("evidence", {})
-    workflow.setdefault("reconciliations", {})
-    workflow.setdefault("epistemic_metrics", {})
-    workflow.setdefault(
-        "retry_jitter_seed",
-        hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
-    )
-    workflow.setdefault("attempts_used", 0)
-    workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
-    workflow["max_attempts"] = max(
-        1,
-        min(int(workflow["max_attempts"]), MAX_ATTEMPTS_PER_WORKFLOW),
-    )
-    attempt_budget = AttemptBudget(workflow)
-    workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
-    workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
-
-    for node in nodes:
-        node.input["workflow_id"] = workflow["id"]
-        node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
-        node.input["retry_jitter_seed"] = workflow["retry_jitter_seed"]
-
-    safety = 0
-    while True:
-        safety += 1
-        if safety > 200:
-            raise RuntimeError("orchestration safety limit reached")
-
-        if recover_barrier_failed_side_effects(workflow, nodes, registry):
-            workflow['nodes'] = [asdict(node) for node in nodes]
-            persist_workflow(workflow)
-            return
-        if recover_inflight_safe_nodes(workflow, nodes, registry):
-            workflow['nodes'] = [asdict(node) for node in nodes]
-            attempt_budget.sync()
-            persist_workflow(workflow)
-        recover_inflight_side_effects(workflow, nodes, registry)
-        reconciliation = reconcile_first_uncertain(workflow, nodes, registry)
-        if reconciliation == "failed":
+    with control_plane_session(workflow) as _control_plane_context:
+        control_plane, control_plane_lease = _control_plane_context
+        nodes = [Node(**node) for node in workflow["nodes"]]
+        validate_dag(nodes)
+        registry = load_registry()
+        live = bool(workflow.get("live"))
+        enforce_node_policy(nodes, registry, live=live)
+        if not ensure_plan_integrity(workflow, nodes):
             workflow["nodes"] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
             return
-        if reconciliation in {"reconciled", "reconciled_ready"}:
-            workflow["nodes"] = [asdict(node) for node in nodes]
-            persist_workflow(workflow)
-
-        refresh_approvals(workflow, nodes)
-        if workflow.get("status") == "failed":
+        if not verify_completed_checkpoints(workflow, nodes):
             workflow["nodes"] = [asdict(node) for node in nodes]
             persist_workflow(workflow)
             return
-
-        ready = ready_nodes(nodes)
-        for node in ready:
-            if node.status == "pending":
-                transition(node, "ready")
-
-        if not ready:
-            if all(node.status == "completed" for node in nodes):
-                workflow["status"] = "completed"
-                workflow["nodes"] = [asdict(node) for node in nodes]
-                persist_workflow(workflow)
-                append_event("workflow.completed", {"workflow_id": workflow["id"]})
-                notify_issue(workflow, "Orchestrator: workflow " + workflow["id"] + " completed.")
-                return
-
-            waiting = [node for node in nodes if node.status in {"waiting_approval", "retrying", "pending"}]
-            workflow["status"] = (
-                "waiting_approval"
-                if waiting and all(node.status == "waiting_approval" for node in waiting)
-                else "failed"
-            )
-            workflow["nodes"] = [asdict(node) for node in nodes]
-            persist_workflow(workflow)
-            return
-
-        # Side effects remain serialized; independent read/compute nodes may run in parallel.
-        safe_ready = [
-            node for node in ready
-            if (
-                not side_effecting(node, registry)
-                and not quota_sensitive(node)
-                and node.risk not in {"high", "critical"}
-            )
-        ]
-        unsafe_ready = [node for node in ready if node not in safe_ready]
-        batch = (
-            [sorted(unsafe_ready, key=lambda item: item.id)[0]]
-            if unsafe_ready
-            else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
+        workflow["status"] = "running"
+        workflow["execution_mode"] = "live" if live else "dry-run"
+        workflow.setdefault("replan_count", 0)
+        workflow.setdefault("repair_feedback", {})
+        workflow.setdefault("evidence", {})
+        workflow.setdefault("reconciliations", {})
+        workflow.setdefault("epistemic_metrics", {})
+        workflow.setdefault(
+            "retry_jitter_seed",
+            hashlib.sha256(str(workflow["id"]).encode("utf-8")).hexdigest()[:32],
         )
+        workflow.setdefault("attempts_used", 0)
+        workflow.setdefault("max_attempts", DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW)
+        workflow["max_attempts"] = max(
+            1,
+            min(int(workflow["max_attempts"]), MAX_ATTEMPTS_PER_WORKFLOW),
+        )
+        attempt_budget = AttemptBudget(workflow)
+        workflow.setdefault("max_parallel", int(os.environ.get("ORCHESTRATOR_MAX_PARALLEL", DEFAULT_MAX_PARALLEL)))
+        workflow["max_parallel"] = max(1, min(int(workflow["max_parallel"]), 8))
 
-        executable = []
-        for node in batch:
-            if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
-                transition(node, "waiting_approval")
-                workflow["status"] = "waiting_approval"
-                try:
-                    if not node.input.get("approval_issue"):
-                        node.input["approval_issue"] = create_approval_issue(workflow, node)
-                except Exception as approval_exc:
-                    node.error = {
-                        "type": type(approval_exc).__name__,
-                        "message": str(approval_exc),
-                    }
-                    transition(node, "failed")
-                    workflow["status"] = "failed"
-                    workflow["failed_node"] = node.id
-                    workflow["nodes"] = [asdict(item) for item in nodes]
-                    persist_workflow(workflow)
-                    return
-                append_event("approval.required", {
-                    "workflow_id": workflow["id"],
-                    "node_id": node.id,
-                    "risk": node.risk,
-                    "issue": node.input.get("approval_issue"),
-                })
-                continue
+        for node in nodes:
+            node.input["workflow_id"] = workflow["id"]
+            node.input["repair_feedback"] = workflow.get("repair_feedback", {}).get(node.id, {})
+            node.input["retry_jitter_seed"] = workflow["retry_jitter_seed"]
 
-            node.input["context"] = build_node_context(nodes, node)
-            if not attempt_budget.acquire(node.id):
-                node.error = {
-                    "type": "attempt_budget_exhausted",
-                    "message": (
-                        f"workflow attempt budget exhausted at "
-                        f"{attempt_budget.used}/{attempt_budget.max_attempts}"
-                    ),
-                    "failure_class": "permanent",
-                    "retry_allowed": False,
-                }
-                transition(node, "failed")
-                workflow["status"] = "failed"
-                workflow["failed_node"] = node.id
-                workflow["nodes"] = [asdict(item) for item in nodes]
+        safety = 0
+        while True:
+            safety += 1
+            if safety > 200:
+                raise RuntimeError("orchestration safety limit reached")
+
+            if recover_barrier_failed_side_effects(workflow, nodes, registry):
+                workflow['nodes'] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                return
+            if recover_inflight_safe_nodes(workflow, nodes, registry):
+                workflow['nodes'] = [asdict(node) for node in nodes]
                 attempt_budget.sync()
                 persist_workflow(workflow)
-                return
-            if not reserve_llm_call(workflow, node, live=live):
-                transition(node, "failed")
-                workflow["status"] = "failed"
-                workflow["failed_node"] = node.id
-                workflow["nodes"] = [asdict(item) for item in nodes]
+            recover_inflight_side_effects(workflow, nodes, registry)
+            reconciliation = reconcile_first_uncertain(
+                workflow,
+                nodes,
+                registry,
+                control_plane=control_plane,
+                control_plane_lease=control_plane_lease,
+            )
+            if reconciliation == "failed":
+                workflow["nodes"] = [asdict(node) for node in nodes]
                 persist_workflow(workflow)
                 return
-            workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
-            persist_workflow(workflow)
-            transition(node, "running")
+            if reconciliation in {"reconciled", "reconciled_ready"}:
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
 
-            execution_id = execution_key(workflow, node)
-            if side_effecting(node, registry):
-                record = workflow.setdefault("executions", {}).get(execution_id)
-                if record and record.get("status") == "started":
+            refresh_approvals(workflow, nodes)
+            if workflow.get("status") == "failed":
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                return
+
+            ready = ready_nodes(nodes)
+            for node in ready:
+                if node.status == "pending":
+                    transition(node, "ready")
+
+            if not ready:
+                if all(node.status == "completed" for node in nodes):
+                    workflow["status"] = "completed"
+                    workflow["nodes"] = [asdict(node) for node in nodes]
+                    persist_workflow(workflow)
+                    append_event("workflow.completed", {"workflow_id": workflow["id"]})
+                    notify_issue(workflow, "Orchestrator: workflow " + workflow["id"] + " completed.")
+                    return
+
+                waiting = [node for node in nodes if node.status in {"waiting_approval", "retrying", "pending"}]
+                workflow["status"] = (
+                    "waiting_approval"
+                    if waiting and all(node.status == "waiting_approval" for node in waiting)
+                    else "failed"
+                )
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                return
+
+            # Side effects remain serialized; independent read/compute nodes may run in parallel.
+            safe_ready = [
+                node for node in ready
+                if (
+                    not side_effecting(node, registry)
+                    and not quota_sensitive(node)
+                    and node.risk not in {"high", "critical"}
+                )
+            ]
+            unsafe_ready = [node for node in ready if node not in safe_ready]
+            batch = (
+                [sorted(unsafe_ready, key=lambda item: item.id)[0]]
+                if unsafe_ready
+                else sorted(safe_ready, key=lambda item: item.id)[:workflow["max_parallel"]]
+            )
+
+            executable = []
+            for node in batch:
+                if live and node.risk in {"high", "critical"} and not approve_high_risk and not node.input.get("approval_granted"):
+                    transition(node, "waiting_approval")
+                    workflow["status"] = "waiting_approval"
+                    try:
+                        if not node.input.get("approval_issue"):
+                            node.input["approval_issue"] = create_approval_issue(workflow, node)
+                    except Exception as approval_exc:
+                        node.error = {
+                            "type": type(approval_exc).__name__,
+                            "message": str(approval_exc),
+                        }
+                        transition(node, "failed")
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
+                    append_event("approval.required", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "risk": node.risk,
+                        "issue": node.input.get("approval_issue"),
+                    })
+                    continue
+
+                node.input["context"] = build_node_context(nodes, node)
+                if not attempt_budget.acquire(node.id):
                     node.error = {
-                        "type": "execution_uncertain",
-                        "message": "A prior run may have completed an external side effect before state persistence.",
-                        "execution_id": execution_id,
+                        "type": "attempt_budget_exhausted",
+                        "message": (
+                            f"workflow attempt budget exhausted at "
+                            f"{attempt_budget.used}/{attempt_budget.max_attempts}"
+                        ),
+                        "failure_class": "permanent",
+                        "retry_allowed": False,
                     }
                     transition(node, "failed")
                     workflow["status"] = "failed"
                     workflow["failed_node"] = node.id
-                    append_event("node.execution_uncertain", {
-                        "workflow_id": workflow["id"],
-                        "node_id": node.id,
-                        "execution_id": execution_id,
-                    })
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    attempt_budget.sync()
+                    persist_workflow(workflow)
+                    return
+                if not reserve_llm_call(workflow, node, live=live):
+                    transition(node, "failed")
+                    workflow["status"] = "failed"
+                    workflow["failed_node"] = node.id
                     workflow["nodes"] = [asdict(item) for item in nodes]
                     persist_workflow(workflow)
                     return
+                workflow["llm_call_limit"] = llm_call_budget_limit(workflow)
+                persist_workflow(workflow)
+                transition(node, "running")
 
-                mark_execution_prepared(workflow, node)
-                workflow["nodes"] = [asdict(item) for item in nodes]
-                persist_workflow(workflow)
-                mark_execution_started(workflow, node, execution_id)
-                workflow["nodes"] = [asdict(item) for item in nodes]
-                persist_workflow(workflow)
-                if live and side_effecting(node, registry):
-                    try:
-                        commit_side_effect_start(
-                            ROOT,
-                            execution_id=execution_id,
-                        )
-                    except DurabilityBarrierError as barrier_exc:
-                        record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
-                        record["status"] = "barrier_failed"
-                        record["barrier_error"] = str(barrier_exc)
+                execution_id = execution_key(workflow, node)
+                if side_effecting(node, registry):
+                    record = workflow.setdefault("executions", {}).get(execution_id)
+                    if record and record.get("status") == "started":
                         node.error = {
-                            "type": type(barrier_exc).__name__,
-                            "message": str(barrier_exc),
-                            "failure_class": "dependency",
-                            "durability_barrier_failed": True,
+                            "type": "execution_uncertain",
+                            "message": "A prior run may have completed an external side effect before state persistence.",
+                            "execution_id": execution_id,
+                        }
+                        transition(node, "failed")
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        append_event("node.execution_uncertain", {
+                            "workflow_id": workflow["id"],
+                            "node_id": node.id,
+                            "execution_id": execution_id,
+                        })
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
+
+                    mark_execution_prepared(workflow, node)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    mark_execution_started(workflow, node, execution_id)
+                    workflow["nodes"] = [asdict(item) for item in nodes]
+                    persist_workflow(workflow)
+                    if live and side_effecting(node, registry) and control_plane is None:
+                        try:
+                            commit_side_effect_start(
+                                ROOT,
+                                execution_id=execution_id,
+                            )
+                        except DurabilityBarrierError as barrier_exc:
+                            record = workflow.setdefault("executions", {}).setdefault(execution_id, {})
+                            record["status"] = "barrier_failed"
+                            record["barrier_error"] = str(barrier_exc)
+                            node.error = {
+                                "type": type(barrier_exc).__name__,
+                                "message": str(barrier_exc),
+                                "failure_class": "dependency",
+                                "durability_barrier_failed": True,
+                                "execution_id": execution_id,
+                            }
+                            transition(node, "failed")
+                            workflow["status"] = "failed"
+                            workflow["failed_node"] = node.id
+                            workflow["nodes"] = [asdict(item) for item in nodes]
+                            persist_workflow(workflow)
+                            append_event("node.durability_barrier_failed", {
+                                "workflow_id": workflow["id"],
+                                "node_id": node.id,
+                                "execution_id": execution_id,
+                                "error": str(barrier_exc),
+                            })
+                            return
+                
+                if control_plane is not None:
+                    if control_plane_lease is None:
+                        raise ControlPlaneError("control-plane lease is missing")
+                    control_plane_lease = control_plane.renew_lease(
+                        workflow["id"],
+                        control_plane_lease.fence_epoch,
+                    )
+                    fence_epoch = int(control_plane_lease.fence_epoch)
+                    semantic_digest = effect_semantic_digest(node)
+                    try:
+                        claim = control_plane.claim_effect(
+                            workflow["id"],
+                            execution_id,
+                            semantic_digest,
+                            fence_epoch,
+                        )
+                    except ControlPlaneError as cp_exc:
+                        node.error = {
+                            "type": type(cp_exc).__name__,
+                            "message": str(cp_exc),
+                            "failure_class": "uncertain",
+                            "retry_allowed": False,
+                            "execution_uncertain": True,
+                            "reconciliation_required": True,
+                            "control_plane_error": True,
                             "execution_id": execution_id,
                         }
                         transition(node, "failed")
@@ -4057,128 +4437,192 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                         workflow["failed_node"] = node.id
                         workflow["nodes"] = [asdict(item) for item in nodes]
                         persist_workflow(workflow)
-                        append_event("node.durability_barrier_failed", {
-                            "workflow_id": workflow["id"],
-                            "node_id": node.id,
-                            "execution_id": execution_id,
-                            "error": str(barrier_exc),
-                        })
                         return
 
-            append_event("node.started", {
-                "workflow_id": workflow["id"],
-                "node_id": node.id,
-                "tool": node.tool,
-            })
-            append_event("agent.started", {
-                "workflow_id": workflow["id"],
-                "node_id": node.id,
-                "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
-                "role": node.agent_role,
-            })
-            executable.append((node, execution_id))
+                    if claim.status != "claimed":
+                        node.error = {
+                            "type": "execution_uncertain",
+                            "message": "The distributed control plane already owns or completed this effect; external execution will not be replayed.",
+                            "failure_class": "uncertain",
+                            "retry_allowed": False,
+                            "execution_uncertain": True,
+                            "reconciliation_required": True,
+                            "control_plane_status": claim.status,
+                            "execution_id": execution_id,
+                        }
+                        transition(node, "failed")
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
 
-        if not executable:
-            workflow["nodes"] = [asdict(node) for node in nodes]
-            persist_workflow(workflow)
-            continue
+                    record_effect_claim(
+                        workflow,
+                        execution_id,
+                        semantic_digest,
+                        fence_epoch,
+                    )
+                    workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                        "durability_authority"
+                    ] = "control_plane"
+                    append_event("node.control_plane_claimed", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "execution_id": execution_id,
+                        "fence_epoch": fence_epoch,
+                    })
 
-        dry_run = not live
-        results = []
 
-        # Persist safe running nodes before their execution begins. If the worker
-        # is interrupted, recovery can rearm them while preserving the charged
-        # attempt budget.
-        if executable and all(not side_effecting(node, registry) for node, _ in executable):
-            attempt_budget.sync()
-            workflow["nodes"] = [asdict(item) for item in nodes]
-            persist_workflow(workflow)
-
-        if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
-            for node, execution_id in executable:
-                results.append((
-                    node,
-                    execution_id,
-                    *execute_with_retries(
-                        node,
-                        workflow["goal"],
-                        dry_run,
-                        attempt_budget=attempt_budget,
-                        initial_attempt_reserved=True,
-                        llm_budget_workflow=workflow,
-                        before_retry=(
-                            lambda node=node: (
-                                attempt_budget.sync(),
-                                workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
-                                persist_workflow(workflow),
-                            )
-                            if side_effecting(node, registry)
-                            else None
-                        ),
-                    ),
-                ))
-        else:
-            with ThreadPoolExecutor(
-                max_workers=min(workflow["max_parallel"], len(executable)),
-                thread_name_prefix="orchestrator-node",
-            ) as pool:
-                futures = {
-                    pool.submit(
-                        execute_with_retries,
-                        node,
-                        workflow["goal"],
-                        dry_run,
-                        attempt_budget=attempt_budget,
-                        initial_attempt_reserved=True,
-                    ): (node, execution_id)
-                    for node, execution_id in executable
-                }
-                completed_futures = {}
-                for future in as_completed(futures):
-                    node, execution_id = futures[future]
-                    completed_futures[node.id] = (node, execution_id, *future.result())
-                results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
-
-        replan_needed = False
-        for node, execution_id, success, error in results:
-            if success:
-                if side_effecting(node, registry):
-                    mark_execution_completed(workflow, execution_id, node.output)
-                update_tool_health(node, True, registry)
-                node_success_checkpoint(workflow, node)
-                append_event("node.completed", {
+                append_event("node.started", {
                     "workflow_id": workflow["id"],
                     "node_id": node.id,
                     "tool": node.tool,
                 })
-                append_event("agent.completed", {
+                append_event("agent.started", {
                     "workflow_id": workflow["id"],
                     "node_id": node.id,
                     "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
                     "role": node.agent_role,
-                    "status": "completed",
                 })
-                notify_issue(
-                    workflow,
-                    "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
-                )
+                executable.append((node, execution_id))
+
+            if not executable:
+                workflow["nodes"] = [asdict(node) for node in nodes]
+                persist_workflow(workflow)
+                continue
+
+            dry_run = not live
+            results = []
+
+            # Persist safe running nodes before their execution begins. If the worker
+            # is interrupted, recovery can rearm them while preserving the charged
+            # attempt budget.
+            if executable and all(not side_effecting(node, registry) for node, _ in executable):
+                attempt_budget.sync()
+                workflow["nodes"] = [asdict(item) for item in nodes]
+                persist_workflow(workflow)
+
+            if len(executable) == 1 or any(side_effecting(node, registry) for node, _ in executable):
+                for node, execution_id in executable:
+                    results.append((
+                        node,
+                        execution_id,
+                        *execute_with_retries(
+                            node,
+                            workflow["goal"],
+                            dry_run,
+                            attempt_budget=attempt_budget,
+                            initial_attempt_reserved=True,
+                            llm_budget_workflow=workflow,
+                            before_retry=(
+                                lambda node=node: (
+                                    attempt_budget.sync(),
+                                    workflow.__setitem__("nodes", [asdict(item) for item in nodes]),
+                                    persist_workflow(workflow),
+                                )
+                                if side_effecting(node, registry)
+                                else None
+                            ),
+                            before_attempt=(
+                                (lambda: control_plane.renew_lease(
+                                    workflow["id"],
+                                    control_plane_lease.fence_epoch,
+                                ))
+                                if control_plane is not None and control_plane_lease is not None
+                                else None
+                            ),
+                            on_success=(
+                                (lambda completed_node, cp_execution_id=execution_id: control_plane.complete_effect(
+                                    workflow["id"],
+                                    cp_execution_id,
+                                    effect_semantic_digest(completed_node),
+                                    control_plane_lease.fence_epoch,
+                                    output_sha256=hashlib.sha256(
+                                        json.dumps(
+                                            completed_node.output,
+                                            ensure_ascii=False,
+                                            sort_keys=True,
+                                            default=str,
+                                            separators=(",", ":"),
+                                        ).encode("utf-8")
+                                    ).hexdigest(),
+                                ))
+                                if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+                                else None
+                            ),
+                        ),
+                    ))
             else:
-                update_tool_health(node, False, registry)
-                if not node.error.get("replan_blocked_after_side_effect_start") and replan_after_failure(workflow, nodes, node, registry):
-                    replan_needed = True
+                with ThreadPoolExecutor(
+                    max_workers=min(workflow["max_parallel"], len(executable)),
+                    thread_name_prefix="orchestrator-node",
+                ) as pool:
+                    futures = {
+                        pool.submit(
+                            execute_with_retries,
+                            node,
+                            workflow["goal"],
+                            dry_run,
+                            attempt_budget=attempt_budget,
+                            initial_attempt_reserved=True,
+                        ): (node, execution_id)
+                        for node, execution_id in executable
+                    }
+                    completed_futures = {}
+                    for future in as_completed(futures):
+                        node, execution_id = futures[future]
+                        completed_futures[node.id] = (node, execution_id, *future.result())
+                    results = [completed_futures[node.id] for node, _ in sorted(executable, key=lambda item: item[0].id)]
+
+            replan_needed = False
+            for node, execution_id, success, error in results:
+                if success:
+                    if side_effecting(node, registry):
+                        mark_execution_completed(workflow, execution_id, node.output)
+                        if control_plane is not None:
+                            workflow.setdefault("executions", {}).setdefault(execution_id, {})[
+                                "control_plane_completed_at"
+                            ] = utc_now()
+                    update_tool_health(node, True, registry)
+                    node_success_checkpoint(workflow, node)
+                    append_event("node.completed", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "tool": node.tool,
+                    })
+                    append_event("agent.completed", {
+                        "workflow_id": workflow["id"],
+                        "node_id": node.id,
+                        "agent_id": agent_id(workflow["id"], node.id, node.agent_role),
+                        "role": node.agent_role,
+                        "status": "completed",
+                    })
+                    notify_issue(
+                        workflow,
+                        "Orchestrator: node " + node.id + " completed using " + node.tool + ".",
+                    )
                 else:
-                    workflow["status"] = "failed"
-                    workflow["failed_node"] = node.id
-                    workflow["nodes"] = [asdict(item) for item in nodes]
-                    persist_workflow(workflow)
-                    return
+                    update_tool_health(node, False, registry)
+                    if (
+                        not node.error.get("execution_uncertain")
+                        and not node.error.get("replan_blocked_after_side_effect_start")
+                        and replan_after_failure(workflow, nodes, node, registry)
+                    ):
+                        replan_needed = True
+                    else:
+                        workflow["status"] = "failed"
+                        workflow["failed_node"] = node.id
+                        workflow["nodes"] = [asdict(item) for item in nodes]
+                        persist_workflow(workflow)
+                        return
 
-        attempt_budget.sync()
-        workflow["nodes"] = [asdict(node) for node in nodes]
-        persist_workflow(workflow)
+            attempt_budget.sync()
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
 
-        if replan_needed:
-            continue
+            if replan_needed:
+                continue
 
 def notify_issue(workflow: dict[str, Any], message: str) -> None:
     try:

@@ -713,3 +713,16 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Durable bridge idempotency is deployment-storage dependent: a shared persistent SQLite file improves process/multiprocess safety on one host; it is not a substitute for a distributed database or fencing-aware external provider.
 - Added regression coverage for SQLite-backed replay and GitHub-effect reconciliation boundaries.
 - Kept all runtime dependencies stdlib-only and did not introduce a paid service.
+
+
+## v69 distributed control-plane boundary (2026-10-04)
+- Live one-step execution can use an optional HTTPS control plane configured through GitHub vars/secrets.
+- Workflow leases are per workflow ID and use a monotonically increasing fence_epoch. Side effects use stable effect IDs plus semantic intent digests.
+- Live side-effect order is local prepared/started persistence -> durability barrier -> distributed claim -> external execution -> validation -> distributed completion -> local completion.
+- Existing inflight/completed claims are never auto-replayed; ambiguous outcomes remain fail-closed and require reconciliation.
+- Reconciliation can create a completed control-plane record when a crash happened after the local barrier but before the first distributed claim. A proven not_applied outcome clears the claim before replay.
+- Runtime metadata is excluded from semantic effect identity, while private-input digests/fingerprints remain identity-bearing.
+- Control-plane failures do not silently fall back to Git-only live side effects; they persist as running/control_plane_blocked so stale-running recovery can retry later.
+- Cloudflare Durable Objects are coordination authority only; Git remains source/audit persistence. Cloudflare Queues are intentionally outside the mandatory control path.
+
+- When the distributed control plane is active, its durable effect claim replaces the Git side-effect durability barrier; Git barrier remains used for Git-only live execution.
