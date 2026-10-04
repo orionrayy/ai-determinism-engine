@@ -50,7 +50,6 @@ def _compact_evidence_output(
 
     compact: dict[str, Any] = {
         "query": str(output.get("query") or ""),
-        "independent_source_count": int(output.get("independent_source_count") or 0),
         "evidence_records": [],
     }
     if isinstance(output.get("provider_counts"), dict):
@@ -85,6 +84,11 @@ def _compact_evidence_output(
             "full_text_url": str(raw.get("full_text_url") or ""),
             "primaryity": str(raw.get("primaryity") or "unknown"),
             "authority_signals": sorted(str(v) for v in (raw.get("authority_signals") or []) if str(v)),
+            "authority_class": str(raw.get("authority_class") or "unknown"),
+            "authority_score": float(raw.get("authority_score") or 0.0),
+            "authority_tier": str(raw.get("authority_tier") or "tier4"),
+            "independence_key": str(raw.get("independence_key") or ""),
+            "independence_confidence": float(raw.get("independence_confidence") or 0.0),
         }
         probe = dict(compact)
         probe["evidence_records"] = compact["evidence_records"] + [record]
