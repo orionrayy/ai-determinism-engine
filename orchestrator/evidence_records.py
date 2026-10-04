@@ -229,9 +229,39 @@ def _access_metadata(
     return {
         "access_level": access_level,
         "access_route": access_route,
+        "access_verification": (
+            "declared_only" if access_level == "L3" else
+            "metadata_only" if access_level in {"L1", "L2"} else
+            "identifier_only"
+        ),
         "authority_tier": authority_tier,
         "authority_score": authority_score,
         "authority_heuristic": True,
+    }
+
+
+def _publication_integrity(record: Mapping[str, Any]) -> dict[str, Any]:
+    raw_updates = record.get("update-to")
+    if raw_updates is None:
+        raw_updates = record.get("update_to")
+    updates = raw_updates if isinstance(raw_updates, list) else []
+    types = {
+        str(item.get("type") or "").strip().lower()
+        for item in updates
+        if isinstance(item, Mapping)
+    }
+    if "retraction" in types:
+        status = "retracted"
+    elif "expression-of-concern" in types or "expression of concern" in types:
+        status = "expression_of_concern"
+    elif "correction" in types:
+        status = "corrected"
+    else:
+        status = "normal"
+    return {
+        "publication_status": status,
+        "update_types": sorted(item for item in types if item),
+        "retraction_signal": status == "retracted",
     }
 
 
@@ -330,6 +360,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         abstract,
         _full_text_url(record),
     )
+    integrity = _publication_integrity(record)
     return {
         "canonical_id": canonical_source_id({**record, "provider": provider}),
         "provider": provider,
@@ -343,6 +374,7 @@ def normalize_source(provider: str, record: Mapping[str, Any]) -> dict[str, Any]
         "venue": _venue(record),
         "abstract": abstract,
         **access,
+        **integrity,
         "citation_count": citation_count,
         "open_access": open_access,
         "full_text_url": _full_text_url(record),
@@ -391,15 +423,16 @@ def deduplicate_sources(records: list[Mapping[str, Any]]) -> list[dict[str, Any]
 
 
 def count_independent_sources(records: list[Mapping[str, Any]]) -> int:
-    """Compatibility alias for distinct evidence-work count.
+    """Count distinct non-retracted evidence works.
 
-    It is an independence proxy, not proof that studies share no authors,
+    This remains an independence proxy, not proof that studies share no authors,
     datasets, citations, or other dependency relationships.
     """
     return len({
         str(record.get("independence_key") or record.get("canonical_id") or "")
         for record in records
         if str(record.get("independence_key") or record.get("canonical_id") or "")
+        and str(record.get("publication_status") or "normal") != "retracted"
     })
 
 
