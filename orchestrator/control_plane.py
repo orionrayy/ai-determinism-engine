@@ -122,11 +122,13 @@ class ControlPlaneClient:
         return cls(url, secret)
 
     @staticmethod
-    @staticmethod
     def _provider_rate_path(provider: str) -> str:
         return (
-            "/v1/resources/provider:"
-            + urllib.parse.quote(str(provider).strip().lower(), safe="")
+            "/v1/resources/"
+            + urllib.parse.quote(
+                "provider:" + str(provider).strip().lower(),
+                safe="",
+            )
             + "/rate/acquire"
         )
 
