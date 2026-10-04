@@ -192,7 +192,7 @@
     "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration",
     "risk": "high",
     "effect_contracts": {
-      "invoke": {
+      "*": {
         "identity": "provider",
         "retry": "reconcile",
         "reconciliation": "provider",
