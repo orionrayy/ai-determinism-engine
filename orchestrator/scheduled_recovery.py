@@ -94,7 +94,7 @@ def is_recovery_candidate(
         return False
     if active_run_status == "unknown":
         return False
-    if active_run_status in ACTIVE_RUN_STATUSES:
+    if active_run_status in ACTIVE_RUN_STATUSES and recovery_due is not True:
         return False
     if status == "waiting_approval":
         return False
