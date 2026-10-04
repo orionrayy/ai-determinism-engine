@@ -23,6 +23,8 @@ VALID_STATUSES = {
 MAX_EVIDENCE_RECORDS = 64
 MAX_CLAIMS = 48
 MAX_EVIDENCE_REFS_PER_CLAIM = 32
+MAX_PASSAGES_PER_CLAIM = 8
+MAX_PASSAGE_TEXT_CHARS = 700
 
 
 def validate_evidence_records(
@@ -121,7 +123,10 @@ def validate_claim_passages(
         if not isinstance(passages, list):
             invalid.append(str(claim.get("claim_id") or "unknown"))
             continue
-        for passage in passages[:8]:
+        if len(passages) > MAX_PASSAGES_PER_CLAIM:
+            invalid.append(str(claim.get("claim_id") or "unknown"))
+            continue
+        for passage in passages:
             if not isinstance(passage, Mapping):
                 invalid.append(str(claim.get("claim_id") or "unknown"))
                 continue
@@ -130,7 +135,11 @@ def validate_claim_passages(
                 or passage.get("ref")
                 or ""
             ).strip()
-            text = _normalize_passage(passage.get("text"))
+            raw_text = str(passage.get("text") or "")
+            if len(raw_text) > MAX_PASSAGE_TEXT_CHARS:
+                invalid.append(str(claim.get("claim_id") or "unknown"))
+                continue
+            text = _normalize_passage(raw_text)
             claim_refs = {
                 str(item).strip()
                 for item in (claim.get("evidence_refs") or [])
@@ -393,4 +402,6 @@ __all__ = [
     "validate_claims",
     "claim_coverage",
     "validate_epistemic_output",
+    "MAX_PASSAGES_PER_CLAIM",
+    "MAX_PASSAGE_TEXT_CHARS",
 ]
