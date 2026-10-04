@@ -3,6 +3,11 @@ from __future__ import annotations
 import hashlib
 import json
 from typing import Any, Mapping
+try:
+    from .evidence_independence import independence_summary
+except ImportError:
+    from evidence_independence import independence_summary
+
 
 try:
     from .epistemic_deliberation import (
@@ -44,19 +49,12 @@ def proposal_from_verdict(
     evidence_refs = sorted(set(evidence_refs))
 
     records = evidence_records if isinstance(evidence_records, list) else []
-    try:
-        independent_count = max(
-            0,
-            int(
-                _first_nonempty(
-                    verdict.get("independent_source_count"),
-                    len(records),
-                )
-                or 0
-            ),
-        )
-    except (TypeError, ValueError):
-        independent_count = len(records)
+    independence = independence_summary(
+        [item for item in records if isinstance(item, Mapping)]
+    )
+    independent_count = int(
+        independence.get("distinct_work_count") or 0
+    )
 
     try:
         confidence = float(verdict.get("confidence"))
@@ -104,6 +102,7 @@ def proposal_from_verdict(
         "confidence": max(0.0, min(1.0, confidence)),
         "evidence_refs": evidence_refs[:32],
         "independent_source_count": independent_count,
+        "independence": independence,
         "claims": claims if isinstance(claims, list) else [],
         "evidence_cards": evidence_cards,
     }
