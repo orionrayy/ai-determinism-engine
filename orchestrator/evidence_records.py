@@ -152,9 +152,6 @@ def _full_text_url(record: Mapping[str, Any]) -> str:
                 or "xhtml" in content_type
             ):
                 return str(value)
-    value = record.get("url") or record.get("URL")
-    if value:
-        return str(value)
     return ""
 
 
@@ -176,10 +173,7 @@ def _access_metadata(
     abstract: str,
     full_text_url: str,
 ) -> dict[str, Any]:
-    explicit_full_text = any(
-        str(record.get(key) or "").strip()
-        for key in ("full_text_url", "pdf_url")
-    )
+    explicit_full_text = bool(full_text_url)
     best_oa = record.get("best_oa_location")
     has_oa_pdf = (
         isinstance(record.get("openAccessPdf"), Mapping)
