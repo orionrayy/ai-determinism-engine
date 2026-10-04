@@ -91,6 +91,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_UPDATED_AT: ${{ github.event.issue.updated_at }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
@@ -125,10 +126,20 @@ jobs:
             esac
           fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
+          event_id=""
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            event_id="issue:${GITHUB_REPOSITORY}:${ISSUE_NUMBER}:${ISSUE_ACTION}:${ISSUE_UPDATED_AT}"
+          else
+            event_id="${{ github.event.client_payload.event_id }}"
+          fi
+          delimiter="ORCHESTRATOR_GOAL_$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
           {
-            echo "goal=$goal"
+            echo "goal<<$delimiter"
+            printf '%s\n' "$goal"
+            echo "$delimiter"
             echo "issue_number=$trigger_issue"
             echo "workflow_id=$workflow_id"
+            echo "event_id=$event_id"
             echo "execution_id=$EVENT_EXECUTION_ID"
             echo "domain=$EVENT_DOMAIN"
             echo "operation=$EVENT_OPERATION"
@@ -173,6 +184,7 @@ jobs:
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
+          ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           ORCHESTRATOR_FREE_ONLY: "true"
