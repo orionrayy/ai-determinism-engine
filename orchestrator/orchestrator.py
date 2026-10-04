@@ -344,6 +344,9 @@ def _trace_envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def append_event(event_type: str, payload: dict[str, Any]) -> None:
+    # Build trace identity before bounded payload sanitization. Oversized payloads
+    # may be truncated, but workflow/node/agent correlation must remain intact.
+    trace_payload = dict(payload) if isinstance(payload, dict) else {}
     payload = sanitize_for_durable(payload)
     control_plane = ACTIVE_CONTROL_PLANE.get()
     lease = ACTIVE_CONTROL_PLANE_LEASE.get()
@@ -406,7 +409,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     entry = {
         "ts": utc_now(),
         "event_type": str(event_type),
-        "trace": _trace_envelope(event_type, payload),
+        "trace": _trace_envelope(event_type, trace_payload),
         "payload": payload,
     }
     encoded = (
