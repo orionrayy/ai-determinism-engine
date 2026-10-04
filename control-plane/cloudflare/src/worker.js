@@ -163,7 +163,10 @@ export class WorkflowControlPlane {
       if (
         current &&
         Number(current.expires_at) > at &&
-        String(current.owner) !== owner
+        (
+          String(current.owner) !== owner ||
+          String(current.workflow_id || "") !== workflowId
+        )
       ) {
         return {conflict: true, expires_at: Number(current.expires_at)};
       }
