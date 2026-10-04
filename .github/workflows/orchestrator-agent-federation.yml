@@ -74,7 +74,7 @@ jobs:
           name: federation-manifest-${{ steps.manifest.outputs.federation_id }}
           path: manifest.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   agents:
     needs: prepare
@@ -111,7 +111,7 @@ jobs:
           name: agent-result-${{ matrix.task.task_id }}
           path: result.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   aggregate:
     needs: [prepare, agents]
@@ -154,7 +154,7 @@ jobs:
           name: federation-results-${{ needs.prepare.outputs.federation_id }}
           path: aggregate.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Dispatch completion to supervisor
         env:
           GH_TOKEN: ${{ github.token }}
