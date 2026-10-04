@@ -100,20 +100,30 @@ def _wait_local_provider_rate(provider: str) -> None:
 
 
 def _wait_provider_rate(provider: str) -> None:
-    # Crossref is the critical global bottleneck: if a control plane exists,
-    # coordinate its rate across Actions runners. Local fallback remains safe
-    # but cannot provide cross-runner coordination.
+    # Crossref is the critical global bottleneck: coordinate its public/polite
+    # pool rate across Actions runners when a control plane exists.
     client = _distributed_rate_client() if provider == "crossref" else None
     if client is not None:
+        pool = (
+            "polite"
+            if os.environ.get("CROSSREF_MAILTO", "").strip()
+            else "public"
+        )
         for _ in range(4):
             try:
-                result = client.acquire_provider_rate_slot(provider)
+                result = client.acquire_provider_rate_slot(
+                    provider,
+                    pool=pool,
+                )
             except ControlPlaneError:
                 break
             status = str(result.get("status") or "").strip().lower()
             if status == "granted":
                 return
-            delay = max(0.05, min(float(result.get("retry_after") or 0.5), 8.0))
+            delay = max(
+                0.05,
+                min(float(result.get("retry_after") or 0.5), 8.0),
+            )
             time.sleep(delay)
     _wait_local_provider_rate(provider)
 
