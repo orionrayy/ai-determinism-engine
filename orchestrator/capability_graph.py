@@ -163,6 +163,7 @@ def route_capability(
             1 if free_ok else 0,
             1 if not _requires_env(tool) else 0,
             HEALTH_RANK[status],
+            -int(round(float(_health_record(health, tool).get("reliability_score") or 0.5) * 10000)),
             RISK_RANK[risk],
             tool,
         )
@@ -185,6 +186,7 @@ def route_capability(
             -item[0][3],
             item[0][4],
             item[0][5],
+            item[0][6],
             item[1],
         ),
     )[1]
@@ -202,19 +204,30 @@ def record_tool_result(
     current = dict(_health_record(health, tool))
     streak = int(current.get("failure_streak") or 0)
 
+    successes = max(0, int(current.get("success_count") or 0))
+    failures = max(0, int(current.get("failure_count") or 0))
     if success:
+        successes += 1
+        streak = 0
         updated = {
             "status": HEALTHY,
             "failure_streak": 0,
+            "success_count": successes,
+            "failure_count": failures,
+            "reliability_score": round((successes + 1) / (successes + failures + 2), 4),
             "last_success_at": now,
             "cooldown_until": 0,
         }
     else:
+        failures += 1
         streak += 1
         quarantine = side_effecting or streak >= MAX_FAILURE_STREAK
         updated = {
             "status": QUARANTINED if quarantine else DEGRADED,
             "failure_streak": streak,
+            "success_count": successes,
+            "failure_count": failures,
+            "reliability_score": round((successes + 1) / (successes + failures + 2), 4),
             "last_failure_at": now,
             "cooldown_until": now + (
                 SIDE_EFFECT_COOLDOWN_SECONDS if side_effecting else DEFAULT_COOLDOWN_SECONDS
