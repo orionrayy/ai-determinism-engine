@@ -1071,6 +1071,10 @@ def node_resource_keys(node: Node) -> list[str]:
 
 
 def side_effecting(node: Node, registry: dict[str, dict[str, Any]]) -> bool:
+    # Built-in simulation/control tools never acquire external side-effect semantics
+    # merely because their capability name (e.g. deploy) is normally side-effecting.
+    if node.tool in {"noop", "local_validator", "artifact_verifier", "blueprint_compiler"}:
+        return False
     if node.tool == "github":
         action = str(node.input.get("action") or "metadata")
         return action in {
