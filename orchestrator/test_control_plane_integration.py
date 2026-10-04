@@ -193,5 +193,31 @@ class ControlPlaneIntegrationTests(unittest.TestCase):
             o.require_live_effect_contract(n, registry, dry_run=False)
 
 
+    def test_connector_bridge_contract_is_wildcard(self):
+        registry = {
+            "connector_bridge": {
+                "effect_contracts": {
+                    "*": {
+                        "identity": "provider",
+                        "retry": "reconcile",
+                        "reconciliation": "provider",
+                        "fencing": "engine",
+                    }
+                }
+            }
+        }
+        n = o.Node(
+            "n1",
+            "publish",
+            "connector_bridge",
+            [],
+            input={"action": "notion_create_page"},
+        )
+        contract = o.resolve_effect_contract(n, registry)
+        self.assertEqual(contract.identity, "provider")
+        self.assertEqual(contract.retry, "reconcile")
+        self.assertTrue(contract.can_reconcile)
+
+
 if __name__ == "__main__":
     unittest.main()
