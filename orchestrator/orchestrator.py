@@ -4088,6 +4088,33 @@ def _run_one_step_inner(
         workflow['nodes'] = [asdict(item) for item in nodes]
         persist_workflow(workflow)
     execution_id = execution_key(workflow, node)
+    resource_leases = []
+    try:
+        resource_leases = acquire_node_resource_locks(
+            workflow,
+            node,
+            control_plane,
+        )
+    except ControlPlaneError as resource_exc:
+        attempt_budget.refund(1)
+        node.error = {
+            "type": type(resource_exc).__name__,
+            "message": str(resource_exc),
+            "failure_class": "dependency",
+            "retry_allowed": False,
+            "resource_lock_wait": True,
+        }
+        transition(node, "ready")
+        workflow["status"] = "running"
+        workflow["nodes"] = [asdict(item) for item in nodes]
+        attempt_budget.sync()
+        persist_workflow(workflow)
+        append_event("resource.lock_wait", {
+            "workflow_id": workflow["id"],
+            "node_id": node.id,
+            "resources": node_resource_keys(node),
+        })
+        return "resource_waiting"
     if side_effecting(node, registry):
         record = workflow.setdefault('executions', {}).get(execution_id)
         if record and record.get('status') == 'started':
@@ -4229,11 +4256,23 @@ def _run_one_step_inner(
             else None
         ),
         before_attempt=(
-            (lambda: control_plane.renew_lease(
-                workflow["id"],
-                control_plane_lease.fence_epoch,
+            (lambda: (
+                control_plane.renew_lease(
+                    workflow["id"],
+                    control_plane_lease.fence_epoch,
+                ),
+                resource_leases.__setitem__(
+                    slice(None),
+                    renew_node_resource_locks(
+                        workflow,
+                        resource_leases,
+                        control_plane,
+                    ),
+                ),
             ))
-            if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
+            if control_plane is not None and control_plane_lease is not None and (
+                side_effecting(node, registry) or resource_leases
+            )
             else None
         ),
         on_success=(
@@ -4255,6 +4294,11 @@ def _run_one_step_inner(
             if control_plane is not None and control_plane_lease is not None and side_effecting(node, registry)
             else None
         ),
+    )
+    release_node_resource_locks(
+        workflow,
+        resource_leases,
+        control_plane,
     )
     attempt_budget.sync()
 
@@ -4430,6 +4474,7 @@ def run_workflow(workflow: dict[str, Any], approve_high_risk: bool = False) -> N
                 node for node in ready
                 if (
                     not side_effecting(node, registry)
+                    and not node_resource_keys(node)
                     and not quota_sensitive(node)
                     and node.risk not in {"high", "critical"}
                 )
