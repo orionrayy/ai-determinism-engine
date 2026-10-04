@@ -23,7 +23,7 @@ class ResearchBudgetTests(unittest.TestCase):
     def test_free_only_defaults_to_public_providers(self):
         self.assertEqual(
             default_available_providers(),
-            ("semantic_scholar", "europe_pmc", "crossref"),
+            ("semantic_scholar", "europe_pmc", "crossref", "openalex"),
         )
 
     def test_provider_selection_is_deterministic_and_topic_aware(self):
