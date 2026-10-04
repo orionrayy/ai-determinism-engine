@@ -91,6 +91,63 @@ class V75BoundaryHardeningTests(unittest.TestCase):
         self.assertEqual(health["free"]["failure_count"], 1)
         self.assertEqual(health["free"]["reliability_score"], 0.5)
 
+    def test_llm_evidence_is_bound_to_trusted_records_and_cannot_forge_authority(self):
+        output = {
+            "confidence": 0.95,
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "supported",
+                "material": True,
+                "status": "SUPPORTED_DIRECT",
+                "evidence_refs": ["source:a"],
+            }],
+            "evidence_records": [{
+                "canonical_id": "source:a",
+                "authority_score": 0.99,
+                "authority_class": "official_primary",
+            }],
+        }
+        trusted = [{
+            "canonical_id": "source:a",
+            "authority_score": 0.52,
+            "authority_class": "index",
+        }]
+        result = ev.validate_epistemic_output(
+            output,
+            trusted_evidence_records=trusted,
+        )
+        self.assertTrue(result["passed"] is False)
+        self.assertEqual(
+            result["bound_evidence_records"][0]["authority_score"],
+            0.52,
+        )
+        self.assertIn("source_authority", result["selective"].get("failed_checks", []))
+
+    def test_llm_cannot_cross_evidence_trust_boundary(self):
+        output = {
+            "confidence": 0.9,
+            "claims": [{
+                "claim_id": "c1",
+                "statement": "invented",
+                "material": True,
+                "status": "SUPPORTED_DIRECT",
+                "evidence_refs": ["fake"],
+            }],
+            "evidence_records": [{
+                "canonical_id": "fake",
+                "authority_score": 1.0,
+            }],
+        }
+        result = ev.validate_epistemic_output(
+            output,
+            trusted_evidence_records=[{"canonical_id": "real"}],
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(
+            result["reason"],
+            "LLM attempted to cite evidence outside trusted dependency records",
+        )
+
     def test_selective_gate_uses_canonical_coverage_and_blocks_high_confidence_mismatch(self):
         output = {
             "confidence": 0.95,
