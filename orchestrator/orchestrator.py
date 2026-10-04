@@ -65,6 +65,7 @@ try:
         resolve_effect_contract,
     )
     from .epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
+    from .claim_integrity import validate_truth_lock
     from private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -111,6 +112,7 @@ except ImportError:
         resolve_effect_contract,
     )
     from epistemic_deliberation_runtime import deliberation_context, proposal_from_verdict
+    from claim_integrity import validate_truth_lock
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -2174,6 +2176,9 @@ def deterministic_plan(goal: str, registry: dict[str, dict[str, Any]], live: boo
                 "epistemic": True,
                 "min_coverage": 0.8,
             }
+            if node_id == "n06-draft":
+                node.contract["truth_lock"] = True
+                node.contract["truth_lock_source_node"] = "n05-adjudicate"
             if capability == "analyze" and node_id == "n05-adjudicate":
                 node.contract["deliberation"] = {
                     "required": True,
@@ -2285,6 +2290,14 @@ def execute_gemini(node: Node, goal: str) -> dict[str, Any]:
                 "material disagreement and unknowns. Return a decision summary, confidence, "
                 "and claim-level evidence references. Do not resolve a disagreement merely "
                 "because one candidate sounds more certain."
+            )
+        if node.contract.get("truth_lock"):
+            instruction += (
+                " This is a truth-locked drafting step. For every material claim, "
+                "include derives_from_claims with one or more claim_id values from the adjudicated "
+                "source claims. Reuse only evidence_refs present in that adjudicated evidence set. "
+                "Never upgrade UNKNOWN, UNSUPPORTED, or CONTESTED claims, and never invent a new "
+                "material claim without adjudicator lineage."
             )
         if node.capability == "validate":
             instruction += (
@@ -3277,6 +3290,30 @@ def validate_node_output(node: Node, output: dict[str, Any]) -> dict[str, Any]:
             "checked_at": utc_now(),
             "contract_deferred": True,
         }
+
+    if node.contract.get("truth_lock") and not defer_epistemic:
+        context = node.input.get("context")
+        dependencies = context.get("dependencies", {}) if isinstance(context, dict) else {}
+        source_id = str(node.contract.get("truth_lock_source_node") or "").strip()
+        source_output = dependencies.get(source_id, {}).get("output") if isinstance(dependencies.get(source_id), dict) else None
+        source_verdict = (
+            source_output if isinstance(source_output, dict)
+            else None
+        )
+        draft_verdict = extract_first_llm_json(output)
+        if not isinstance(source_verdict, dict) or not isinstance(draft_verdict, dict):
+            raise RuntimeError("truth-lock validation requires structured source and draft verdicts")
+        truth_lock = validate_truth_lock(draft_verdict, source_verdict)
+        checks.append({
+            "check": "truth_lock",
+            "passed": truth_lock.get("passed") is True,
+            "checked_material_claims": truth_lock.get("checked_material_claims", 0),
+        })
+        if truth_lock.get("passed") is not True:
+            raise RuntimeError(
+                "truth-lock validation failed: "
+                + json.dumps(truth_lock.get("violations") or [], sort_keys=True)
+            )
 
     if node.tool in {"gemini", "openai"}:
         has_payload = bool(
