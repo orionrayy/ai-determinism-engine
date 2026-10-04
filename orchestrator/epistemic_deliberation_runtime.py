@@ -299,6 +299,44 @@ def validate_deliberation_responses(
     }
 
 
+def _evidence_card_score(record: Mapping[str, Any]) -> tuple[float, str]:
+    authority = max(0.0, min(1.0, float(record.get("authority_score") or 0.0)))
+    independence = max(
+        0.0,
+        min(1.0, float(record.get("independence_confidence") or 0.0)),
+    )
+    access = 1.0 if str(record.get("access_verification") or "") != "identifier_only" else 0.0
+    integrity = 1.0 if str(record.get("publication_status") or "normal") == "normal" else 0.0
+    year = record.get("year")
+    try:
+        recency = max(0.0, min(1.0, (int(year) - 2015) / 11.0)) if year else 0.0
+    except (TypeError, ValueError):
+        recency = 0.0
+    score = (
+        0.38 * authority
+        + 0.22 * independence
+        + 0.15 * access
+        + 0.20 * integrity
+        + 0.05 * recency
+    )
+    cid = str(record.get("canonical_id") or "")
+    return score, cid
+
+
+def _rank_evidence_cards(records: list[Mapping[str, Any]], limit: int = 8) -> list[Mapping[str, Any]]:
+    return [
+        record
+        for _, _, record in sorted(
+            (
+                (*_evidence_card_score(record), record)
+                for record in records
+                if isinstance(record, Mapping)
+            ),
+            key=lambda item: (-item[0], item[1]),
+        )[: max(0, int(limit))]
+    ]
+
+
 def proposal_from_verdict(
     verdict: Mapping[str, Any],
     *,
@@ -333,7 +371,7 @@ def proposal_from_verdict(
         confidence = 0.0
 
     evidence_cards = []
-    for record in records[:8]:
+    for record in _rank_evidence_cards(records, limit=8):
         if not isinstance(record, Mapping):
             continue
         card = {
