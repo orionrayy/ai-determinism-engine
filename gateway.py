@@ -213,6 +213,90 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     return goal, metadata, event_id
 
 
+def github_request_json(
+    path: str,
+    *,
+    method: str = "GET",
+    body: dict | None = None,
+) -> dict:
+    token = os.environ.get("GITHUB_GATEWAY_TOKEN")
+    repository = os.environ.get(
+        "GITHUB_REPOSITORY",
+        "orionrayy/ai-determinism-engine",
+    )
+    if not token:
+        raise RuntimeError("GITHUB_GATEWAY_TOKEN is not configured")
+    url = f"https://api.github.com/repos/{repository}/{path.lstrip('/')}"
+    encoded = None
+    if body is not None:
+        encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        url,
+        data=encoded,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+            "User-Agent": "ai-orchestrator-gateway/1.0",
+        },
+        method=method,
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw = response.read()
+        if len(raw) > 128 * 1024:
+            raise RuntimeError("github_response_too_large")
+        if not raw:
+            return {}
+        return json.loads(raw.decode("utf-8"))
+
+
+def github_approve_workflow_node(metadata: dict) -> dict:
+    workflow_id = str(metadata.get("workflow_id") or "").strip()
+    node_id = str(metadata.get("node_id") or "").strip()
+    if not SAFE_ID_RE.fullmatch(workflow_id):
+        raise ValueError("workflow_id_invalid")
+    if not re.fullmatch(r"^[A-Za-z0-9._:-]{1,100}$", node_id):
+        raise ValueError("node_id_invalid")
+
+    repository = os.environ.get(
+        "GITHUB_REPOSITORY",
+        "orionrayy/ai-determinism-engine",
+    )
+    exact_title = f"[ORCHESTRATOR APPROVAL] {workflow_id} / {node_id}"
+    query = urllib.parse.quote_plus(
+        f'repo:{repository} is:open in:title "{exact_title}"'
+    )
+    search = github_request_json(f"search/issues?q={query}&per_page=10")
+    items = search.get("items")
+    if not isinstance(items, list):
+        raise RuntimeError("github_approval_search_invalid")
+    matches = [
+        item for item in items
+        if isinstance(item, dict) and str(item.get("title") or "") == exact_title
+    ]
+    if len(matches) != 1:
+        if not matches:
+            raise RuntimeError("approval_issue_not_found")
+        raise RuntimeError("multiple_open_approval_issues")
+
+    issue_number = matches[0].get("number")
+    if not isinstance(issue_number, int):
+        raise RuntimeError("approval_issue_number_invalid")
+
+    github_request_json(
+        f"issues/{issue_number}/labels",
+        method="POST",
+        body={"labels": ["orchestrator-approved"]},
+    )
+    return {
+        "approved": True,
+        "workflow_id": workflow_id,
+        "node_id": node_id,
+        "approval_issue": issue_number,
+    }
+
+
 def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> dict:
     token = os.environ.get("GITHUB_GATEWAY_TOKEN")
     repository = os.environ.get(
@@ -264,6 +348,11 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
 
 def dispatch_execution(goal: str, metadata: dict, event_id: str | None = None) -> dict:
     try:
+        if (
+            str(metadata.get("domain") or "").strip() == "orchestration"
+            and str(metadata.get("operation") or "").strip().lower() == "approve"
+        ):
+            return github_approve_workflow_node(metadata)
         return github_dispatch(goal, metadata, event_id=event_id)
     except Exception:
         private_ref = str(metadata.get("private_input_ref") or "").strip()
