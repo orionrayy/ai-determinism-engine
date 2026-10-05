@@ -45,12 +45,22 @@ export function summarizeState(payload) {
     const status = String(node?.status || "unknown");
     counts[status] = (counts[status] || 0) + 1;
   }
+  const pending_approvals = nodes
+    .filter((node) => String(node?.status || "") === "waiting_approval")
+    .slice(0, 16)
+    .map((node) => ({
+      node_id: String(node?.id || ""),
+      risk: String(node?.risk || "unknown"),
+      tool: String(node?.tool || ""),
+      approval_issue: node?.input?.approval_issue ? Number(node.input.approval_issue) : null,
+    }));
   return {
     workflow_id: String(state.id || ""),
     status: String(state.status || "unknown"),
     mode: String(state.execution_mode || (state.live ? "live" : "dry-run")),
     updated_at: String(state.updated_at || payload.updated_at || ""),
     node_counts: counts,
+    pending_approvals,
     failed_node: state.failed_node ? String(state.failed_node) : null,
     replan_count: Number(state.replan_count || 0),
     attempts_used: Number(state.attempts_used || 0),
