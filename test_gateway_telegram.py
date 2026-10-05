@@ -49,6 +49,25 @@ class TelegramGatewayContractTests(unittest.TestCase):
         })
         self.assertEqual(first['intent_fingerprint'], second['intent_fingerprint'])
 
+    def test_github_dispatch_returns_workflow_identity_after_204(self):
+        captured = {}
+        class DispatchResponse:
+            status = 204
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                return False
+        def fake_urlopen(request, timeout=30):
+            captured["body"] = request.data.decode("utf-8")
+            return DispatchResponse()
+        metadata = {"workflow_id": "wf:telegram", "execution_id": "e" * 64}
+        with patch.dict("os.environ", {"GITHUB_GATEWAY_TOKEN": "secret", "GITHUB_REPOSITORY": "repo/test"}), patch.object(gateway.urllib.request, "urlopen", side_effect=fake_urlopen):
+            result = gateway.github_dispatch("goal", metadata, event_id="event-1")
+        self.assertEqual(result["github_status"], 204)
+        self.assertEqual(result["workflow_id"], "wf:telegram")
+        self.assertEqual(result["execution_id"], "e" * 64)
+        self.assertIn("wf:telegram", captured["body"])
+
     def test_github_approval_finds_exact_open_issue_and_applies_idempotent_label(self):
         calls = []
         responses = iter([
