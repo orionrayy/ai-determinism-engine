@@ -1,4 +1,4 @@
-import {constantTimeEqual, isAllowedUser, isApprover, isPrivateMessage, isSafeWorkflowId} from "./policy.js";
+import {constantTimeEqual, isAllowedUser, isApprover, isPrivateMessage} from "./policy.js";
 import {callbackAction, normalizeGoal, normalizeWorkflowId, parseCommand, splitFirstArg, telegramEventId} from "./protocol.js";
 import {audit, bindWorkflow, chatKey, claimUpdate, completeUpdate, deleteUserData, failUpdate, getConsent, getSession, hasDatabase, ownsWorkflow, principalKey, revokeConsent, saveSession, setConsent, touchWorkflow} from "./db.js";
 import {buildRunPayload, buildWorkflowPayload, dispatchToGateway} from "./gateway.js";
@@ -32,6 +32,10 @@ By selecting Authorize, you give active, revocable consent for the processing de
 
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {status, headers: JSON_HEADERS});
+}
+
+function typeName(error) {
+  return String(error?.name || "Error");
 }
 
 async function telegramApi(env, method, payload) {
@@ -139,13 +143,16 @@ async function recordCommand(env, userId, chatId, eventId, action, workflowId, d
   });
 }
 
-async function requireWorkflowAccess(env, userId, workflowId) {
+async function requireWorkflowAccess(env, userId, chatId, workflowId) {
   const pKey = await principalKey(env, userId);
   if (await ownsWorkflow(env, workflowId, pKey)) {
     await touchWorkflow(env, workflowId, pKey);
     return;
   }
   if (isApprover(env, userId)) return;
+  const cKey = await chatKey(env, chatId);
+  const session = await getSession(env, cKey);
+  if (session?.last_workflow_id === workflowId) return;
   throw new Error("workflow_access_denied");
 }
 
@@ -154,13 +161,25 @@ async function dispatchAndReply(env, message, eventId, payload, action) {
   const workflowId = String(result?.workflow_id || payload?.workflow_id || "");
   if (workflowId) {
     const pKey = await principalKey(env, message.from.id);
-    await bindWorkflow(env, workflowId, pKey);
-    const cKey = await chatKey(env, message.chat.id);
-    const session = (await getSession(env, cKey)) || {prompt_mode: false, last_workflow_id: null};
-    session.last_workflow_id = workflowId;
-    await saveSession(env, cKey, session);
+    try {
+      await bindWorkflow(env, workflowId, pKey);
+    } catch (error) {
+      console.error("telegram workflow ownership persistence failed", typeName(error));
+    }
+    try {
+      const cKey = await chatKey(env, message.chat.id);
+      const session = (await getSession(env, cKey)) || {prompt_mode: false, last_workflow_id: null};
+      session.last_workflow_id = workflowId;
+      await saveSession(env, cKey, session);
+    } catch (error) {
+      console.error("telegram session persistence failed", typeName(error));
+    }
   }
-  await recordCommand(env, message.from.id, message.chat.id, eventId, action, workflowId || null, null);
+  try {
+    await recordCommand(env, message.from.id, message.chat.id, eventId, action, workflowId || null, null);
+  } catch (error) {
+    console.error("telegram audit persistence failed", typeName(error));
+  }
   return workflowId || "accepted";
 }
 
@@ -299,7 +318,7 @@ async function handleMessage(env, update) {
           await requireConsent(env, userId);
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
-          await requireWorkflowAccess(env, userId, workflowId);
+          await requireWorkflowAccess(env, userId, chatId, workflowId);
           const state = await readWorkflowState(env, workflowId);
           const summary = summarizeState(state);
           await recordCommand(
