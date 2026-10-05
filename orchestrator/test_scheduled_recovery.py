@@ -1,5 +1,9 @@
+import json
+import os
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from scheduled_recovery import (
     DEFAULT_STALE_SECONDS,
@@ -8,6 +12,7 @@ from scheduled_recovery import (
     is_stale_running,
     recovery_event_id,
     recovery_generation,
+    main,
 )
 
 
@@ -220,6 +225,21 @@ class ScheduledRecoveryTests(unittest.TestCase):
         }
         self.assertNotEqual(recovery_event_id(base), recovery_event_id(changed_plan))
         self.assertNotEqual(recovery_event_id(base), recovery_event_id(changed_effect))
+
+
+    def test_main_writes_failure_marker_and_defers_exit_decision(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            marker = os.path.join(tmp, "recovery.json")
+            with patch("scheduled_recovery.run", return_value=(2, 1, ["wf-1: dispatch failed"])) as run_mock, patch(
+                "builtins.open",
+                side_effect=lambda *args, **kwargs: open(marker, *args[1:], **kwargs)
+                if args and args[0] == "/tmp/orchestrator_recovery_failures.json"
+                else __builtins__["open"](*args, **kwargs),
+            ):
+                self.assertEqual(main(), 0)
+                run_mock.assert_called_once()
+            with open(marker, encoding="utf-8") as handle:
+                self.assertEqual(json.load(handle), ["wf-1: dispatch failed"])
 
     def test_recovery_event_id_changes_when_recovery_state_changes(self):
         first = {
