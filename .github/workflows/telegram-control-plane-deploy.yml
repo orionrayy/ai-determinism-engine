@@ -72,17 +72,19 @@ jobs:
           PROVISION_D1: ${{ inputs.provision_d1 }}
         run: |
           set -euo pipefail
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
           db_id="$TELEGRAM_D1_DATABASE_ID"
           if [ -z "$db_id" ]; then
-            existing="$(npx --yes "wrangler@${WRANGLER_VERSION}" d1 list --json 2>/dev/null || true)"
-            db_id="$(python - <<'PY' "$existing"
+            existing="$(npx --yes "$wrangler_package" d1 list --json 2>/dev/null || true)"
+            db_id="$(python - "$existing" <<'PY'
           import json, sys
           raw=sys.argv[1]
           try:
               data=json.loads(raw)
           except Exception:
               data=[]
-          for item in data if isinstance(data, list) else data.get('result', []):
+          items = data if isinstance(data, list) else data.get('result', [])
+          for item in items:
               if isinstance(item, dict) and item.get('name') == 'ai-orchestrator-telegram':
                   print(item.get('uuid') or item.get('id') or '')
                   break
@@ -90,8 +92,8 @@ jobs:
             )"
           fi
           if [ -z "$db_id" ] && [ "$PROVISION_D1" = "true" ]; then
-            created="$(npx --yes wrangler@${WRANGLER_VERSION} d1 create "$TELEGRAM_D1_DATABASE_NAME" --binding DB --use-remote --json 2>/dev/null || true)"
-            db_id="$(python - <<'PY' "$created"
+            created="$(npx --yes "$wrangler_package" d1 create "$TELEGRAM_D1_DATABASE_NAME" --binding DB --use-remote --json 2>/dev/null || true)"
+            db_id="$(python - "$created" <<'PY'
           import json, sys
           raw=sys.argv[1]
           try:
@@ -112,7 +114,6 @@ jobs:
           fi
           test -n "$db_id" || { echo "D1 database not found. Set TELEGRAM_D1_DATABASE_ID or rerun with provision_d1=true."; exit 1; }
           echo "database_id=$db_id" >> "$GITHUB_OUTPUT"
-
       - name: Generate deployment config
         env:
           DATABASE_ID: ${{ steps.d1.outputs.database_id }}
@@ -152,7 +153,11 @@ jobs:
 
       - name: Apply D1 migrations
         working-directory: workers/telegram-control-plane
-        run: npx --yes wrangler@${WRANGLER_VERSION} d1 migrations apply "$TELEGRAM_D1_DATABASE_NAME" --remote --config wrangler.generated.jsonc
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
+          npx --yes "$wrangler_package" d1 migrations apply "$TELEGRAM_D1_DATABASE_NAME" --remote --config wrangler.generated.jsonc
 
       - name: Write Worker secret file
         shell: bash
@@ -175,9 +180,11 @@ jobs:
       - name: Deploy Worker
         id: deploy
         working-directory: workers/telegram-control-plane
+        shell: bash
         run: |
           set -euo pipefail
-          npx --yes wrangler@${WRANGLER_VERSION} deploy --config wrangler.generated.jsonc --secrets-file /tmp/telegram-secrets.env 2>&1 | tee /tmp/telegram-deploy.log
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
+          npx --yes "$wrangler_package" deploy --config wrangler.generated.jsonc --secrets-file /tmp/telegram-secrets.env 2>&1 | tee /tmp/telegram-deploy.log
           worker_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/telegram-deploy.log | tail -1 || true)"
           test -n "$worker_url" || { echo "Unable to determine deployed Worker URL"; exit 1; }
           echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
