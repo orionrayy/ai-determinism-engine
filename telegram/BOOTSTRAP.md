@@ -1,37 +1,13 @@
 # Telegram deployment bootstrap
 
-This is an activation runbook only. No bot token is stored here.
+This repository includes a reproducible activation workflow: `.github/workflows/telegram-control-plane-deploy.yml`.
 
-## 1. Rotate the exposed token
-The token pasted into a chat must be revoked in @BotFather and replaced. Telegram credentials are confidential and must not be public.
+## Security prerequisite
+Rotate/revoke any bot token previously pasted into chat and use only the replacement as the GitHub repository secret `TELEGRAM_BOT_TOKEN`. Never place the token in source, workflow inputs, issue bodies, logs, or this document.
 
-## 2. Provision D1
-From `workers/telegram-control-plane/`:
-
-`npx wrangler d1 create ai-orchestrator-telegram --binding DB --use-remote --update-config`
-
-Copy the generated binding into `wrangler.jsonc` if Wrangler does not update the intended config.
-
-Apply the schema from the repository root:
-
-`npx wrangler d1 execute ai-orchestrator-telegram --remote --file=database/telegram_schema.sql`
-
-Cloudflare documents `wrangler d1 create` for provisioning and `wrangler d1 execute --file` for applying a SQL file.
-
-## 3. Generate secrets
-Use independent random values. The data encryption key must represent 32 random bytes; do not reuse the HMAC key.
-
-`python -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('='))"`
-
-Use the result for `TELEGRAM_DATA_ENCRYPTION_KEY`, and generate a separate 32-byte value for `TELEGRAM_DATA_HMAC_KEY`.
-
-Use a separate random URL-safe value for `TELEGRAM_WEBHOOK_SECRET`.
-
-## 4. Load Worker secrets
-Wrangler supports `wrangler secret put`; required secrets declared in `wrangler.jsonc` can be validated during deployment.
-
-Set these values interactively, never commit them:
-
+## Required GitHub repository secrets
+`CLOUDFLARE_ACCOUNT_ID`
+`CLOUDFLARE_API_TOKEN`
 `TELEGRAM_BOT_TOKEN`
 `TELEGRAM_WEBHOOK_SECRET`
 `TELEGRAM_ALLOWED_USER_IDS`
@@ -43,27 +19,54 @@ Set these values interactively, never commit them:
 `CONTROL_PLANE_URL`
 `CONTROL_PLANE_SECRET`
 
-`TELEGRAM_APPROVER_USER_IDS` should be a subset of the main allowlist.
+`TELEGRAM_D1_DATABASE_ID` is optional. Omit it when the activation workflow should discover the existing D1 database by name. Set `provision_d1=true` when a new D1 database should be created.
 
-## 5. Deploy
-`npx wrangler deploy`
+`TELEGRAM_APPROVER_USER_IDS` must be a subset of `TELEGRAM_ALLOWED_USER_IDS`.
 
-## 6. Configure Telegram webhook
-Telegram's Bot API supports an HTTPS webhook plus a `secret_token`; the resulting request contains `X-Telegram-Bot-Api-Secret-Token`. It also allows limiting update types.
+## Generate cryptographic secrets
+The encryption key must represent 32 random bytes. Keep the encryption key and HMAC key independent.
 
-Use the rotated replacement token configured as the Worker secret; do not paste it into source control or workflow input.
+`python -c "import secrets,base64; print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('='))"`
 
-`curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" -d "url=${TELEGRAM_WORKER_URL}/telegram/webhook" -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" -d 'allowed_updates=["message","callback_query"]' -d 'drop_pending_updates=true'`
+Use independent values for `TELEGRAM_DATA_ENCRYPTION_KEY`, `TELEGRAM_DATA_HMAC_KEY`, and `TELEGRAM_WEBHOOK_SECRET`.
 
-Keep `drop_pending_updates=true` only when intentionally discarding updates accumulated before activation.
+## Run activation
+Open GitHub Actions → `Deploy Telegram Control Plane` and run it manually.
 
-## 7. Configure the command menu
-Telegram supports `setMyCommands`; set the public menu to `/start`, `/help`, `/menu`, `/run`, `/runlive`, `/status`, `/resume`, `/approve`, `/prompt`, `/last`, `/privacy`, `/revoke`, and `/delete_me`. The Bot API also supports a private-chat menu button for commands or a Web App.
+`provision_d1=false` is the safe default. Use `true` only when D1 has not been provisioned and the Cloudflare token has permission to create databases.
 
-Set the privacy-policy URL for the bot in @BotFather to the deployed `/privacy` endpoint.
+`drop_pending_updates=false` is the safe default. Set it to `true` only when deliberately discarding updates accumulated before activation.
 
-## 8. First smoke test
-Use the bot in a private chat only:
-`/start` -> Authorize -> `/run verify Telegram control plane` -> `/status <workflow_id>`.
+The workflow resolves/provisions D1, applies the versioned migration `workers/telegram-control-plane/migrations/0001_telegram_control_plane.sql`, generates an ephemeral Wrangler configuration, injects secrets through a temporary file, deploys the Worker, configures the Telegram webhook and command menu, sets the command menu button, and verifies `/health`.
 
-Do not test `/runlive` until Gateway, control-plane, database, ownership, and approval configuration are confirmed.
+## BotFather configuration
+Recommended v1:
+- Restrict bot usage: ON.
+- Allow Groups: OFF.
+- Group Privacy: ON.
+- Group Admin Rights: 0.
+- Channel Admin Rights: 0.
+- Inline Mode: OFF.
+- Bot Management Mode: OFF.
+- Guest Chat Mode: OFF.
+- Guard Mode: OFF.
+- Secretary Mode: OFF.
+- Bot-to-Bot Communication Mode: OFF.
+- Threaded Mode: OFF.
+- Privacy Policy: deployed Worker `/privacy` URL.
+
+Do not enable Bot-to-Bot or Bot Management Mode until their separate policy, secret-vault, loop-control, and ownership design is implemented.
+
+## First smoke test
+Use a private Telegram chat only:
+
+`/start` → Authorize → `/run verify Telegram control plane` → `/status <workflow_id>`.
+
+Then:
+
+`/approvals <workflow_id>`
+
+Only after Gateway, D1, control plane, ownership, and approval credentials are confirmed should `/runlive` be tested.
+
+## Operational boundary
+Telegram is the frontend/control plane. Workflow truth, queueing, worker execution, effect reconciliation, artifacts, and scheduling remain in the VORENYX orchestration architecture.
