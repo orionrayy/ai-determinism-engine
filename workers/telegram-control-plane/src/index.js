@@ -225,14 +225,20 @@ async function handleMessage(env, update) {
           return;
         case "revoke": {
           const pKey = await principalKey(env, userId);
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           await revokeConsent(env, pKey);
+          await completeMutableUpdate(env, eventId, null);
           await sendText(env, chatId, "Consent revoked. New execution commands are disabled until you authorize again.");
           return;
         }
         case "delete_me": {
           const pKey = await principalKey(env, userId);
           const cKey = await chatKey(env, chatId);
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           await deleteUserData(env, pKey, cKey);
+          await completeMutableUpdate(env, eventId, null);
           await sendText(env, chatId, "Stored bot records associated with this account were deleted.");
           return;
         }
@@ -242,14 +248,17 @@ async function handleMessage(env, update) {
           if (!["on", "off"].includes(mode)) throw new Error("usage_prompt_on_off");
           const cKey = await chatKey(env, chatId);
           const session = (await getSession(env, cKey)) || {prompt_mode: false, last_workflow_id: null};
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           session.prompt_mode = mode === "on";
           await saveSession(env, cKey, session);
+          await completeMutableUpdate(env, eventId, null);
           await sendText(env, chatId, "Direct text prompting: " + mode.toUpperCase());
           return;
         }
         case "run":
         case "runlive": {
-          const pKey = await requireConsent(env, userId);
+          await requireConsent(env, userId);
           const claim = await claimMutableUpdate(env, userId, eventId);
           if (!claim.claimed) return;
           const goal = normalizeGoal(parsed.args);
@@ -269,8 +278,6 @@ async function handleMessage(env, update) {
         }
         case "status": {
           await requireConsent(env, userId);
-          const claim = await claimMutableUpdate(env, userId, eventId);
-          if (!claim.claimed) return;
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           const state = await readWorkflowState(env, workflowId);
@@ -319,6 +326,8 @@ async function handleMessage(env, update) {
             return;
           }
           await requireConsent(env, userId);
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           await dispatchToGateway(
@@ -353,7 +362,7 @@ async function handleMessage(env, update) {
       }
     }
 
-    const pKey = await requireConsent(env, userId);
+    await requireConsent(env, userId);
     const cKey = await chatKey(env, chatId);
     const session = await getSession(env, cKey);
     if (!session?.prompt_mode) {
@@ -372,7 +381,7 @@ async function handleMessage(env, update) {
     );
     await completeMutableUpdate(env, eventId, workflowId);
     await sendText(env, chatId, "Prompt accepted as dry-run. Workflow: " + workflowId);
-    void pKey;
+
   } catch (error) {
     const code = String(error?.message || "request_failed");
     const userMessage = {
