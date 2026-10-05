@@ -340,7 +340,12 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
         method="POST",
     )
     with urllib.request.urlopen(request, timeout=30) as response:
-        return {"github_status": response.status}
+        result = {"github_status": response.status}
+        for field in ("workflow_id", "execution_id"):
+            value = metadata.get(field)
+            if value not in (None, ""):
+                result[field] = value
+        return result
 
 
 def dispatch_execution(goal: str, metadata: dict, event_id: str | None = None) -> dict:
