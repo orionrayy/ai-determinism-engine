@@ -11,9 +11,9 @@ The database is a metadata plane. It does not replace workflow truth, effect fen
 /start shows the privacy notice and authorization controls.
 /run <goal> creates a dry-run orchestration.
 /runlive <goal> requests live execution. It does not bypass the orchestrator's approval policy.
-/status <workflow_id> returns a bounded workflow summary without returning the stored goal or input payload.
+/status <workflow_id> returns a bounded workflow summary without returning the stored goal or input payload. It also lists a bounded set of pending approval node IDs.
 /resume <workflow_id> requests continuation.
-/approve <workflow_id> submits an approval signal and is limited to the configured Telegram approver allowlist.
+/approvals <workflow_id> lists pending approval nodes. `/approve <workflow_id> [node_id]` applies approval to exactly one existing approval issue; when node_id is omitted, there must be exactly one pending approval.
 /prompt on|off enables or disables direct plain-text prompting. With prompting enabled, ordinary text is treated as a dry-run goal.
 /last returns the last workflow recorded for the Telegram chat.
 /privacy, /revoke, /delete_me, /id, and /help provide privacy, consent, deletion, identity, and help controls.
@@ -22,7 +22,7 @@ The database is a metadata plane. It does not replace workflow truth, effect fen
 Only private chats are accepted. The bot does not read groups or channels.
 The bot token is loaded only from TELEGRAM_BOT_TOKEN. Never commit it.
 The webhook uses Telegram's X-Telegram-Bot-Api-Secret-Token mechanism.
-The user allowlist and approver allowlist are environment secrets. Approval authority is not inferred from usernames.
+The user allowlist and approver allowlist are environment secrets. Approval authority is not inferred from usernames. The approval gateway targets the exact open GitHub approval issue for the requested workflow/node and rejects zero or multiple matches.
 Direct prompting requires active consent. The prompt body is not written to the Telegram metadata database.
 Gateway requests are HMAC-authenticated and use Telegram update_id as the webhook replay identity.
 No Telegram data is used by this component as a training corpus or other unrelated machine-learning dataset.
