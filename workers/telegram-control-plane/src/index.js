@@ -299,7 +299,7 @@ async function handleMessage(env, update) {
           mutationClaimToken = claim.claimToken;
           session.prompt_mode = mode === "on";
           await saveSession(env, cKey, session);
-          await completeMutableUpdate(env, eventId, null);
+          await completeMutableUpdate(env, eventId, null, mutationClaimToken);
           await sendText(env, chatId, "Direct text prompting: " + mode.toUpperCase());
           return;
         }
@@ -360,7 +360,7 @@ async function handleMessage(env, update) {
           mutationClaimToken = claim.claimToken;
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
-          await requireWorkflowAccess(env, userId, workflowId);
+          await requireWorkflowAccess(env, userId, chatId, workflowId);
           const result = await dispatchToGateway(
             env,
             buildWorkflowPayload("resume", workflowId, eventId),
@@ -436,6 +436,7 @@ async function handleMessage(env, update) {
     await sendText(env, chatId, "Prompt accepted as dry-run. Workflow: " + workflowId);
 
   } catch (error) {
+    await failMutableUpdate(env, eventId, mutationClaimToken);
     const code = String(error?.message || "request_failed");
     const userMessage = {
       database_not_configured: "Database persistence is not configured.",
