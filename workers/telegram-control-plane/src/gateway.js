@@ -58,8 +58,21 @@ export function buildRunPayload(goal, mode, eventId) {
   };
 }
 
-export function buildWorkflowPayload(operation, workflowId, eventId, approveHighRisk = false) {
-  const payload = {
+export function buildApprovalPayload(workflowId, nodeId, eventId) {
+  return {
+    domain: "orchestration",
+    operation: "approve",
+    input: {workflow_id: workflowId, node_id: nodeId},
+    workflow_id: workflowId,
+    requested_mode: "dry-run",
+    event_id: eventId,
+    idempotency_key: eventId,
+    source: "telegram",
+  };
+}
+
+export function buildWorkflowPayload(operation, workflowId, eventId) {
+  return {
     domain: "orchestration",
     operation,
     input: {workflow_id: workflowId},
@@ -69,6 +82,4 @@ export function buildWorkflowPayload(operation, workflowId, eventId, approveHigh
     idempotency_key: eventId,
     source: "telegram",
   };
-  if (approveHighRisk) payload.approve_high_risk = true;
-  return payload;
 }
