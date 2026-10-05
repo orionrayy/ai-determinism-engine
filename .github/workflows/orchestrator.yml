@@ -176,6 +176,7 @@ jobs:
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}
+          ORCHESTRATOR_EVENT_SOURCE: ${{ github.event.client_payload.source || 'unknown' }}
           ORCHESTRATOR_EXECUTION_ID: ${{ github.event.client_payload.execution_id }}
           ORCHESTRATOR_EXTERNAL_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EXTERNAL_DOMAIN: ${{ github.event.client_payload.domain }}
@@ -260,7 +261,7 @@ jobs:
           printf '%s\n' \
             "## AI Orchestrator" \
             "" \
-            "- Goal: $(cat /tmp/orchestrator_goal.txt)" \
+            "- Goal: $([[ "$ORCHESTRATOR_EVENT_SOURCE" == "telegram" ]] && echo "[redacted: Telegram user input]" || cat /tmp/orchestrator_goal.txt)" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           from orchestrator.orchestrator import load_state
