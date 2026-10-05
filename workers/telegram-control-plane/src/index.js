@@ -165,22 +165,28 @@ async function handleCallback(env, update) {
     await sendText(env, message.chat.id, "Access denied.");
     return;
   }
+  const callbackEventId = "callback:" + telegramEventId(update.update_id);
   try {
     const action = callbackAction(callback.data);
-    const pKey = await principalKey(env, user.id);
-    if (action === "accept") {
-      await setConsent(env, pKey, POLICY_VERSION);
-      await sendText(env, message.chat.id, "Authorization recorded.\n\n" + helpText());
-      return;
-    }
     if (action === "privacy") {
       await sendText(env, message.chat.id, PRIVACY_TEXT);
       return;
     }
+    const pKey = await principalKey(env, user.id);
+    const mutationEventId = callbackEventId + ":" + action;
+    const claimed = await claimUpdate(env, mutationEventId, pKey);
+    if (!claimed.claimed) return;
+    if (action === "accept") {
+      await setConsent(env, pKey, POLICY_VERSION);
+      await completeMutableUpdate(env, mutationEventId, null);
+      await sendText(env, message.chat.id, "Authorization recorded.\n\n" + helpText());
+      return;
+    }
     await revokeConsent(env, pKey);
+    await completeMutableUpdate(env, mutationEventId, null);
     await sendText(env, message.chat.id, "Consent revoked. New execution commands are disabled until you authorize again.");
   } catch (error) {
-    await failMutableUpdate(env, eventId);
+    await failMutableUpdate(env, callbackEventId);
     const code = String(error?.message || "request_failed");
     await sendText(env, message.chat.id, code === "database_not_configured"
       ? "Database persistence is not configured; authorization cannot be recorded yet."
