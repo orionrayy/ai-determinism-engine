@@ -825,3 +825,17 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Green verification: v75, v76, and v77 stacked branches passed compile checks, Worker syntax, actionlint, full unit suite, and the control-plane/free-only evaluation. The latest v77 integration-line run also passed the private-input/bridge test workflow.
 - Integration state: feat/v77-evidence-access-routing is 313 commits ahead of current main because it includes the full existing v67-v74 lineage plus v75-v77. Integration PR #137 is intentionally draft; main remains unchanged.
 - Deferred P1/P2 work: full ExecutionRuntime consolidation, richer claim↔evidence graph/entailment verification, provider-level fencing where external systems support it, contradiction-driven retrieval, risk-coverage calibration, and optional Durable Object Alarm wakeups. These remain separate because adding them before the current invariants are stable would increase failure-domain coupling.
+
+## Candidate Telegram control-plane frontend — 2026-10-05
+- Telegram is an interaction/control frontend, not workflow truth, queue, artifact store, or execution authority.
+- New branch: feat/telegram-control-plane.
+- New Worker: workers/telegram-control-plane. It accepts private-chat webhook updates only, applies an explicit Telegram user allowlist and separate approver allowlist, requires active/revocable consent before orchestration commands, and exposes /privacy as the policy URL endpoint.
+- Supported commands: /run (dry-run), /runlive (live request subject to orchestrator policy), /status, /resume, /approve, /prompt on|off, /last, /privacy, /revoke, /delete_me, /id, /help.
+- Telegram update_id is the inbound replay identity. D1/SQLite metadata includes inbox replay state, consent, encrypted short-lived sessions, and bounded audit records. Raw Telegram user/chat IDs and prompt bodies are not persisted.
+- Session encryption uses AES-256-GCM with a key separate from the HMAC key used for derived identifiers.
+- Gateway calls use the existing HMAC request boundary. approve_high_risk is accepted only for the orchestration.approve operation and is included in the semantic intent fingerprint before repository_dispatch.
+- The main orchestrator workflow now propagates repository_dispatch client_payload.approve_high_risk into ORCHESTRATOR_APPROVE_HIGH_RISK.
+- Database reference schema: database/telegram_schema.sql. First target is Cloudflare D1/SQLite-compatible metadata storage; later mapping to the execution-fabric PostgreSQL adapter remains part of E2.
+- Dedicated CI: .github/workflows/telegram-control-plane-tests.yml covers Python/Node syntax, database schema tests, worker tests, and a tracked-source bot-token-shaped secret guard.
+- Telegram compliance boundary: no group/channel collection, no public-platform scraping, no Telegram-derived training/ML dataset, no credential requests, no rate-limit bypass, and no Bot-to-Bot automation in v1. User-submitted prompts may be forwarded only for the declared orchestration purpose under explicit consent.
+- Bot token is never stored in source control. Any token pasted into chat or another untrusted surface must be rotated before deployment and supplied only as TELEGRAM_BOT_TOKEN secret.
