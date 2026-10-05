@@ -294,7 +294,6 @@ class ControlPlaneClient:
             {
                 "owner": self.owner,
                 "workflow_id": str(workflow_id),
-                "resource_key": str(resource_key),
                 "fence_epoch": int(fence_epoch),
                 "ttl_seconds": self.lease_ttl_seconds,
             },
@@ -317,7 +316,6 @@ class ControlPlaneClient:
             {
                 "owner": self.owner,
                 "workflow_id": str(workflow_id),
-                "resource_key": str(resource_key),
                 "fence_epoch": int(fence_epoch),
             },
         )
@@ -366,6 +364,7 @@ class ControlPlaneClient:
             {
                 "owner": self.owner,
                 "workflow_id": str(workflow_id),
+                "resource_key": str(resource_key),
                 "fence_epoch": int(fence_epoch),
                 "ttl_seconds": self.lease_ttl_seconds,
             },
@@ -394,6 +393,7 @@ class ControlPlaneClient:
             {
                 "owner": self.owner,
                 "workflow_id": str(workflow_id),
+                "resource_key": str(resource_key),
                 "fence_epoch": int(fence_epoch),
             },
         )
@@ -472,6 +472,7 @@ class ControlPlaneClient:
             {
                 "workflow_id": str(workflow_id),
                 "event_id": str(event_id),
+                "owner": str(owner or self.owner),
             },
         )
 
