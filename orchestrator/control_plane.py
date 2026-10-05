@@ -522,6 +522,7 @@ class ControlPlaneClient:
     ) -> int:
         payload = {
             "owner": str(owner),
+            "workflow_id": str(workflow_id),
             "fence_epoch": int(fence_epoch),
             "expected_state_version": int(expected_state_version),
             "state": state,
