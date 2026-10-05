@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import os
@@ -29,7 +30,9 @@ CONNECTOR_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
 ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]{1,127}$")
 _ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
 _DISCOVERY_CACHE_TTL = 60
-_DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}\n_DISCOVERY_CACHE_LOCK = threading.Lock()\n
+_DISCOVERY_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_DISCOVERY_CACHE_LOCK = threading.Lock()
+
 
 class ConnectorBridgeError(RuntimeError):
     pass
