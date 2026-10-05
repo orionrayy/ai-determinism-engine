@@ -1,7 +1,7 @@
 import {constantTimeEqual, isAllowedUser, isApprover, isPrivateMessage} from "./policy.js";
-import {callbackAction, normalizeGoal, normalizeWorkflowId, parseCommand, splitFirstArg, telegramEventId} from "./protocol.js";
+import {callbackAction, normalizeGoal, normalizeNodeId, normalizeWorkflowId, parseCommand, splitFirstArg, telegramEventId} from "./protocol.js";
 import {audit, bindWorkflow, chatKey, claimUpdate, completeUpdate, deleteUserData, failUpdate, getConsent, getSession, hasDatabase, ownsWorkflow, principalKey, revokeConsent, saveSession, setConsent, touchWorkflow} from "./db.js";
-import {buildRunPayload, buildWorkflowPayload, dispatchToGateway} from "./gateway.js";
+import {buildApprovalPayload, buildRunPayload, buildWorkflowPayload, dispatchToGateway} from "./gateway.js";
 import {readWorkflowState, summarizeState} from "./control_plane.js";
 
 const POLICY_VERSION = "2026-10-05";
@@ -84,7 +84,7 @@ function commandMenu() {
 async function claimMutableUpdate(env, userId, eventId) {
   const pKey = await principalKey(env, userId);
   const result = await claimUpdate(env, eventId, pKey);
-  return {pKey, claimed: Boolean(result.claimed), workflowId: result.workflowId || null};
+  return {pKey, claimed: Boolean(result.claimed), workflowId: result.workflowId || null, claimToken: result.claimToken || null};
 }
 
 async function completeMutableUpdate(env, eventId, workflowId, claimToken) {
@@ -109,7 +109,8 @@ function helpText() {
     "/runlive <goal> — request live execution",
     "/status <workflow_id> — bounded status view",
     "/resume <workflow_id> — continue an existing workflow",
-    "/approve <workflow_id> — approve high-risk continuation (authorized approvers only)",
+    "/approvals <workflow_id> — list pending approvals",
+    "/approve <workflow_id> [node_id] — approve a pending high-risk node (authorized approvers only)",
     "/prompt on|off — direct text prompting mode",
     "/last — status of your last workflow",
     "/id — show your Telegram user ID",
