@@ -43,8 +43,10 @@ CREATE TABLE IF NOT EXISTS telegram_audit (
   action TEXT NOT NULL,
   workflow_id TEXT,
   intent_digest TEXT,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS telegram_audit_principal_idx ON telegram_audit(principal_key, created_at);
 CREATE INDEX IF NOT EXISTS telegram_audit_workflow_idx ON telegram_audit(workflow_id, created_at);
+CREATE INDEX IF NOT EXISTS telegram_audit_expiry_idx ON telegram_audit(expires_at);
