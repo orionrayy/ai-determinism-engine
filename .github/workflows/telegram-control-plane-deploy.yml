@@ -74,7 +74,7 @@ jobs:
           set -euo pipefail
           db_id="$TELEGRAM_D1_DATABASE_ID"
           if [ -z "$db_id" ]; then
-            existing="$(npx --yes wrangler@${WRANGLER_VERSION} d1 list --json 2>/dev/null || true)"
+            existing="$(npx --yes "wrangler@${WRANGLER_VERSION}" d1 list --json 2>/dev/null || true)"
             db_id="$(python - <<'PY' "$existing"
           import json, sys
           raw=sys.argv[1]
@@ -159,16 +159,18 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN" > /tmp/telegram-secrets.env
-          printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "$TELEGRAM_WEBHOOK_SECRET" >> /tmp/telegram-secrets.env
-          printf 'TELEGRAM_ALLOWED_USER_IDS=%s\n' "$TELEGRAM_ALLOWED_USER_IDS" >> /tmp/telegram-secrets.env
-          printf 'TELEGRAM_APPROVER_USER_IDS=%s\n' "$TELEGRAM_APPROVER_USER_IDS" >> /tmp/telegram-secrets.env
-          printf 'TELEGRAM_DATA_ENCRYPTION_KEY=%s\n' "$TELEGRAM_DATA_ENCRYPTION_KEY" >> /tmp/telegram-secrets.env
-          printf 'TELEGRAM_DATA_HMAC_KEY=%s\n' "$TELEGRAM_DATA_HMAC_KEY" >> /tmp/telegram-secrets.env
-          printf 'GATEWAY_URL=%s\n' "$GATEWAY_URL" >> /tmp/telegram-secrets.env
-          printf 'GATEWAY_SHARED_SECRET=%s\n' "$GATEWAY_SHARED_SECRET" >> /tmp/telegram-secrets.env
-          printf 'CONTROL_PLANE_URL=%s\n' "$CONTROL_PLANE_URL" >> /tmp/telegram-secrets.env
-          printf 'CONTROL_PLANE_SECRET=%s\n' "$CONTROL_PLANE_SECRET" >> /tmp/telegram-secrets.env
+          {
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
+            printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "$TELEGRAM_WEBHOOK_SECRET"
+            printf 'TELEGRAM_ALLOWED_USER_IDS=%s\n' "$TELEGRAM_ALLOWED_USER_IDS"
+            printf 'TELEGRAM_APPROVER_USER_IDS=%s\n' "$TELEGRAM_APPROVER_USER_IDS"
+            printf 'TELEGRAM_DATA_ENCRYPTION_KEY=%s\n' "$TELEGRAM_DATA_ENCRYPTION_KEY"
+            printf 'TELEGRAM_DATA_HMAC_KEY=%s\n' "$TELEGRAM_DATA_HMAC_KEY"
+            printf 'GATEWAY_URL=%s\n' "$GATEWAY_URL"
+            printf 'GATEWAY_SHARED_SECRET=%s\n' "$GATEWAY_SHARED_SECRET"
+            printf 'CONTROL_PLANE_URL=%s\n' "$CONTROL_PLANE_URL"
+            printf 'CONTROL_PLANE_SECRET=%s\n' "$CONTROL_PLANE_SECRET"
+          } > /tmp/telegram-secrets.env
 
       - name: Deploy Worker
         id: deploy
