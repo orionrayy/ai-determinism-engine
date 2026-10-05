@@ -1,6 +1,8 @@
 const E = new TextEncoder();
 const SKEW = 300;
 const MAX_BODY = 768 * 1024;
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+const REQUEST_ID_RE = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const json = (value, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -52,6 +54,8 @@ export class WorkflowControlPlane {
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS workflow_state (singleton INTEGER PRIMARY KEY CHECK(singleton=1), state_version INTEGER NOT NULL, state_json TEXT NOT NULL, updated_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS outbox (sequence INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS outbox_created_idx ON outbox(created_at)");
+      ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS request_dedupe (request_id TEXT PRIMARY KEY, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)");
+      ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS request_dedupe_expiry_idx ON request_dedupe(expires_at)");
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS provider_rate (singleton INTEGER PRIMARY KEY CHECK(singleton=1), provider TEXT NOT NULL, tokens REAL NOT NULL, updated_at INTEGER NOT NULL)"
       );
@@ -74,6 +78,30 @@ export class WorkflowControlPlane {
     }
   }
 
+  requestAlreadySeen(requestId, at) {
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT request_id FROM request_dedupe WHERE request_id=? AND expires_at>? LIMIT 1",
+      String(requestId),
+      Number(at)
+    ).toArray();
+    return rows.length > 0;
+  }
+
+  rememberRequest(requestId, at) {
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(
+        "DELETE FROM request_dedupe WHERE expires_at <= ?",
+        Number(at)
+      );
+      this.ctx.storage.sql.exec(
+        "INSERT OR REPLACE INTO request_dedupe(request_id,created_at,expires_at) VALUES(?,?,?)",
+        String(requestId),
+        Number(at),
+        Number(at) + 86400
+      );
+    });
+  }
+
   acquire(body) {
     const owner = String(body.owner || "").trim();
     const workflowId = String(body.workflow_id || "").trim();
@@ -81,17 +109,29 @@ export class WorkflowControlPlane {
     const at = now();
     const result = this.ctx.storage.transactionSync(() => {
       const current = this.lease();
-      if (current && Number(current.expires_at) > at && String(current.owner) !== owner) {
+      if (
+        current &&
+        Number(current.expires_at) > at &&
+        (
+          String(current.owner) !== owner ||
+          String(current.workflow_id || "") !== workflowId
+        )
+      ) {
         return {conflict:true, expires_at:Number(current.expires_at)};
       }
-      const epoch = current && Number(current.expires_at) > at ? Number(current.fence_epoch) : (current ? Number(current.fence_epoch) + 1 : 1);
+      const renewing =
+        Boolean(current) &&
+        Number(current.expires_at) > at &&
+        String(current.owner) === owner &&
+        String(current.workflow_id || "") === workflowId;
+      const epoch = renewing ? Number(current.fence_epoch) : (current ? Number(current.fence_epoch) + 1 : 1);
       const expires = at + ttl(body.ttl_seconds);
       this.ctx.storage.sql.exec(
         "INSERT INTO lease(singleton,owner,fence_epoch,expires_at,workflow_id) VALUES(1,?,?,?,?) ON CONFLICT(singleton) DO UPDATE SET owner=excluded.owner,fence_epoch=excluded.fence_epoch,expires_at=excluded.expires_at,workflow_id=excluded.workflow_id",
         owner, epoch, expires, workflowId
       );
       return {
-        status: current && Number(current.expires_at) > at ? "renewed" : "acquired",
+        status: renewing ? "renewed" : "acquired",
         owner,
         workflow_id: workflowId,
         fence_epoch: epoch,
@@ -242,7 +282,8 @@ export class WorkflowControlPlane {
   resourceAcquire(body) {
     const owner = String(body.owner || "").trim();
     const workflowId = String(body.workflow_id || "").trim();
-    if (!owner || !workflowId) throw new Error("resource_lock_identity_invalid");
+    const resourceKey = String(body.resource_key || "").trim();
+    if (!owner || !workflowId || !resourceKey) throw new Error("resource_lock_identity_invalid");
     const at = now();
     const result = this.ctx.storage.transactionSync(() => {
       const current = this.lease();
@@ -287,6 +328,7 @@ export class WorkflowControlPlane {
   resourceRenew(body) {
     const owner = String(body.owner || "").trim();
     const workflowId = String(body.workflow_id || "").trim();
+    const resourceKey = String(body.resource_key || "").trim();
     const epoch = Number(body.fence_epoch);
     const at = now();
     const result = this.ctx.storage.transactionSync(() => {
@@ -319,6 +361,7 @@ export class WorkflowControlPlane {
   resourceRelease(body) {
     const owner = String(body.owner || "").trim();
     const workflowId = String(body.workflow_id || "").trim();
+    const resourceKey = String(body.resource_key || "").trim();
     const epoch = Number(body.fence_epoch);
     const result = this.ctx.storage.transactionSync(() => {
       const row = this.lease();
@@ -445,18 +488,29 @@ export class WorkflowControlPlane {
   ackRecovery(body) {
     const workflowId = String(body.workflow_id || "").trim();
     const eventId = String(body.event_id || "").trim();
-    if (!workflowId || !eventId) throw new Error("recovery_ack_invalid");
+    const owner = String(body.owner || "").trim();
+    if (!workflowId || !eventId || !owner) throw new Error("recovery_ack_invalid");
+    const at = now();
     const result = this.ctx.storage.transactionSync(() => {
       const rows = this.ctx.storage.sql.exec(
-        "SELECT due,event_id FROM recovery WHERE singleton=1"
+        "SELECT due,event_id,claimed,claim_owner,claim_expires_at FROM recovery WHERE singleton=1"
       ).toArray();
       if (!rows.length) return "already_clear";
       const row = rows[0];
       if (String(row.event_id) !== eventId) return "stale_event";
+      if (
+        Number(row.claimed) !== 1 ||
+        String(row.claim_owner || "") !== owner ||
+        Number(row.claim_expires_at || 0) <= at
+      ) {
+        return "claim_invalid";
+      }
       this.ctx.storage.sql.exec("DELETE FROM recovery WHERE singleton=1");
       return "acknowledged";
     });
-    return json({status:result,workflow_id:workflowId,event_id:eventId});
+    return result === "claim_invalid"
+      ? json({error:"recovery_claim_invalid"},409)
+      : json({status:result,workflow_id:workflowId,event_id:eventId});
   }
 
   readRecovery() {
@@ -583,7 +637,7 @@ export class WorkflowControlPlane {
     }
 
     const stateJson = JSON.stringify(state);
-    if (stateJson.length > 600 * 1024) {
+    if (E.encode(stateJson).byteLength > 600 * 1024) {
       throw new Error("workflow_state_too_large");
     }
     const at = now();
@@ -679,7 +733,7 @@ export class WorkflowControlPlane {
       throw new Error("outbox_event_invalid");
     }
     const raw = JSON.stringify(payload);
-    if (raw.length > 16 * 1024) throw new Error("outbox_payload_too_large");
+    if (E.encode(raw).byteLength > 16 * 1024) throw new Error("outbox_payload_too_large");
     const at = now();
     const sequence = this.ctx.storage.transactionSync(() => {
       this.requireLease(owner, epoch, at);
@@ -746,6 +800,13 @@ export class WorkflowControlPlane {
     const url = new URL(request.url);
     const raw = new Uint8Array(await request.arrayBuffer());
     if (raw.byteLength > MAX_BODY) return json({error:"body_too_large"},413);
+    const mutating = MUTATING_METHODS.has(request.method.toUpperCase());
+    const requestId = mutating
+      ? (request.headers.get("X-Control-Plane-Request-ID") || "").trim()
+      : "";
+    if (mutating && !REQUEST_ID_RE.test(requestId)) {
+      return json({error:"request_id_required"},400);
+    }
     let ok = false;
     try { ok = await authenticated(request,this.env,raw,url.pathname); } catch (_) { ok = false; }
     if (!ok) return json({error:"unauthorized"},401);
@@ -754,35 +815,88 @@ export class WorkflowControlPlane {
       if (raw.length) body = JSON.parse(new TextDecoder().decode(raw));
       if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("body_must_be_object");
     } catch (e) { return json({error:String(e.message || "invalid_json")},400); }
+
+    let logicalIdentity = "";
+    if (mutating) {
+      logicalIdentity = body.workflow_id !== undefined
+        ? String(body.workflow_id || "").trim()
+        : "";
+      if (
+        workflowMatchForRequest(url.pathname) && logicalIdentity !== workflowMatchForRequest(url.pathname)
+      ) {
+        return json({error:"workflow_identity_mismatch"},409);
+      }
+      const resourceIdentity = body.resource_key !== undefined
+        ? String(body.resource_key || "").trim()
+        : "";
+      if (
+        resourceMatchForRequest(url.pathname) && resourceIdentity !== resourceMatchForRequest(url.pathname)
+      ) {
+        return json({error:"resource_identity_mismatch"},409);
+      }
+      // Fail closed for all mutating workflow/resource endpoints: the path is
+      // authoritative and the signed body must carry the same identity.
+      if ((url.pathname.startsWith("/v1/workflows/") || url.pathname.startsWith("/v1/resources/")) && !logicalIdentity && !resourceIdentity) {
+        return json({error:"resource_identity_required"},400);
+      }
+      if (this.requestAlreadySeen(requestId, now())) {
+        return json({error:"request_replay"},409);
+      }
+    }
+
+    const finalize = (response) => {
+      if (
+        mutating &&
+        response instanceof Response &&
+        response.status >= 200 &&
+        response.status < 300
+      ) {
+        this.rememberRequest(requestId, now());
+      }
+      return response;
+    };
+
     try {
       if (url.pathname.startsWith("/v1/resources/")) {
-        if (request.method === "POST" && url.pathname.endsWith("/rate/acquire")) return this.providerRateAcquire(body);
-        if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return this.resourceAcquire(body);
-        if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return this.resourceRenew(body);
-        if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return this.resourceRelease(body);
+        if (request.method === "POST" && url.pathname.endsWith("/rate/acquire")) return finalize(this.providerRateAcquire(body););
+        if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return finalize(this.resourceAcquire(body););
+        if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return finalize(this.resourceRenew(body););
+        if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return finalize(this.resourceRelease(body););
         return json({error:"not_found"},404);
       }
       if (request.method === "GET" && url.pathname.endsWith("/state")) return this.readWorkflowState();
       if (request.method === "GET" && url.pathname.endsWith("/recovery")) return this.readRecovery();
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return this.armRecovery(body);
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/claim")) return this.claimRecovery(body);
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/clear")) return this.clearRecovery(body);
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return this.ackRecovery(body);
-      if (request.method === "PUT" && url.pathname.endsWith("/state")) return this.writeWorkflowState(body);
-      if (request.method === "POST" && url.pathname.endsWith("/outbox")) return this.appendOutbox(body);
-      if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return this.acquire(body);
-      if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return this.renew(body);
-      if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return this.release(body);
-      if (request.method === "POST" && url.pathname.endsWith("/effects/claim")) return this.claim(body);
-      if (request.method === "POST" && url.pathname.endsWith("/effects/complete")) return this.complete(body);
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return finalize(this.armRecovery(body););
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/claim")) return finalize(this.claimRecovery(body););
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/clear")) return finalize(this.clearRecovery(body););
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return finalize(this.ackRecovery(body););
+      if (request.method === "PUT" && url.pathname.endsWith("/state")) return finalize(this.writeWorkflowState(body););
+      if (request.method === "POST" && url.pathname.endsWith("/outbox")) return finalize(this.appendOutbox(body););
+      if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return finalize(this.acquire(body););
+      if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return finalize(this.renew(body););
+      if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return finalize(this.release(body););
+      if (request.method === "POST" && url.pathname.endsWith("/effects/claim")) return finalize(this.claim(body););
+      if (request.method === "POST" && url.pathname.endsWith("/effects/complete")) return finalize(this.complete(body););
       if (request.method === "GET" && url.pathname.endsWith("/effects/inspect")) return this.inspect(url);
-      if (request.method === "POST" && url.pathname.endsWith("/effects/resolve")) return this.resolve(body);
+      if (request.method === "POST" && url.pathname.endsWith("/effects/resolve")) return finalize(this.resolve(body););
       return json({error:"not_found"},404);
     } catch (e) {
       if (e instanceof Response) return e;
       return json({error:String(e.message || "request_failed")},400);
     }
   }
+}
+
+function workflowMatchForRequest(pathname) {
+  const match = pathname.match(/^\/v1\/workflows\/([^/]+)(?:\/.*)?$/);
+  if (!match) return "";
+  try { return decodeURIComponent(match[1]); } catch (_) { return ""; }
+}
+
+function resourceMatchForRequest(pathname) {
+  const match = pathname.match(/^\/v1\/resources\/([^/]+)(?:\/.*)?$/);
+  if (!match) return "";
+  try { return decodeURIComponent(match[1]); } catch (_) { return ""; }
 }
 
 export default {
