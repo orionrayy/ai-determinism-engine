@@ -28,6 +28,7 @@ export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
     env.DB.prepare("DELETE FROM telegram_inbox WHERE expires_at <= ?").bind(now),
     env.DB.prepare("DELETE FROM telegram_sessions WHERE expires_at <= ?").bind(now),
     env.DB.prepare("DELETE FROM telegram_audit WHERE expires_at <= ?").bind(now),
+    env.DB.prepare("DELETE FROM telegram_workflows WHERE expires_at <= ?").bind(now),
   ]);
   const inserted = await env.DB
     .prepare(
@@ -75,6 +76,34 @@ export async function failUpdate(env, eventId) {
     .prepare("UPDATE telegram_inbox SET status='failed',updated_at=? WHERE event_id=?")
     .bind(now, eventId)
     .run();
+}
+
+export async function bindWorkflow(env, workflowId, pKey, ttlSeconds = 90 * 24 * 60 * 60) {
+  requireDatabase(env);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO telegram_workflows(workflow_id,principal_key,created_at,last_seen_at,expires_at) VALUES(?,?,?,?,?)"
+  ).bind(workflowId, pKey, now, now, now + ttlSeconds).run();
+  const row = await env.DB.prepare(
+    "SELECT principal_key FROM telegram_workflows WHERE workflow_id=?"
+  ).bind(workflowId).first();
+  if (!row || String(row.principal_key) !== pKey) throw new Error("workflow_owner_conflict");
+}
+
+export async function touchWorkflow(env, workflowId, pKey) {
+  requireDatabase(env);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(
+    "UPDATE telegram_workflows SET last_seen_at=?,expires_at=? WHERE workflow_id=? AND principal_key=?"
+  ).bind(now, now, workflowId, pKey).run();
+}
+
+export async function ownsWorkflow(env, workflowId, pKey) {
+  requireDatabase(env);
+  const row = await env.DB.prepare(
+    "SELECT workflow_id FROM telegram_workflows WHERE workflow_id=? AND principal_key=? AND expires_at>?"
+  ).bind(workflowId, pKey, Math.floor(Date.now() / 1000)).first();
+  return Boolean(row);
 }
 
 export async function getConsent(env, pKey) {
@@ -151,6 +180,7 @@ export async function deleteUserData(env, pKey, cKey) {
     env.DB.prepare("DELETE FROM telegram_inbox WHERE principal_key=?").bind(pKey),
     env.DB.prepare("DELETE FROM telegram_audit WHERE principal_key=?").bind(pKey),
     env.DB.prepare("DELETE FROM telegram_consents WHERE principal_key=?").bind(pKey),
+    env.DB.prepare("DELETE FROM telegram_workflows WHERE principal_key=?").bind(pKey),
     env.DB.prepare("DELETE FROM telegram_sessions WHERE chat_key=?").bind(cKey),
   ]);
 }
