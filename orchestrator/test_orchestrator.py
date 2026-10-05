@@ -414,6 +414,56 @@ class OrchestratorTests(unittest.TestCase):
             )
             self.assertFalse(list(Path(tmp).glob(".state.json.*.tmp")))
 
+    def test_one_step_fails_closed_for_stale_side_effecting_federation(self):
+        node = o.Node(
+            id="n01-dangerous",
+            capability="execute",
+            tool="github",
+            input={"instruction": "must never replay remotely"},
+        )
+        node.status = "delegated"
+        workflow = {
+            "id": "wf-stale-side-effect",
+            "goal": "blocked recovery",
+            "live": True,
+            "status": "waiting_agents",
+            "nodes": [o.asdict(node)],
+            "federation": {
+                "id": "fed-dangerous",
+                "status": "dispatched",
+                "task_count": 1,
+                "created_at": (
+                    datetime.now(timezone.utc) - timedelta(
+                        seconds=o.FEDERATION_STALE_SECONDS + 1
+                    )
+                ).isoformat(),
+                "tasks": [{"task_id": "n01-dangerous"}],
+                "artifact_id": None,
+                "artifact_digest": None,
+            },
+        }
+
+        with patch.object(
+            o,
+            "load_registry",
+            return_value={"github": {"side_effects": ["issue_write"]}},
+        ), patch.object(
+            o,
+            "persist_workflow",
+        ), patch.object(
+            o,
+            "append_event",
+        ):
+            result = o._run_one_step_inner(workflow)
+
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(
+            workflow["error"]["type"],
+            "federation_recovery_safety_error",
+        )
+        self.assertEqual(workflow["nodes"][0]["status"], "delegated")
+
     def test_one_step_rearms_stale_safe_federation_in_direct_step_path(self):
         node = o.Node(
             id="n01-federated",
