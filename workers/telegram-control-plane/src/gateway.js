@@ -46,6 +46,45 @@ export async function dispatchToGateway(env, payload, eventId) {
   }
 }
 
+export async function readGitWorkflowSummary(env, workflowId) {
+  requireGateway(env);
+  const id = String(workflowId || "").trim();
+  if (!/^[A-Za-z0-9_.:-]{1,128}$/.test(id)) throw new Error("workflow_id_invalid");
+  const path = "/workflow/" + encodeURIComponent(id);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const signatureInput = timestamp + "\nGET\n" + path + "\n\n";
+  const signature = "sha256=" + (await hmacHex(env.GATEWAY_SHARED_SECRET, signatureInput));
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(new URL(path, env.GATEWAY_URL), {
+      method: "GET",
+      headers: {
+        "accept": "application/json",
+        "user-agent": "Vorenyx-Telegram-Control/1.0",
+        "X-Orchestrator-Timestamp": timestamp,
+        "X-Orchestrator-Signature": signature,
+        "Idempotency-Key": "",
+        "X-Orchestrator-Protocol": PROTOCOL,
+      },
+      signal: controller.signal,
+    });
+    const raw = new Uint8Array(await response.arrayBuffer());
+    if (raw.byteLength > MAX_RESPONSE_BYTES) throw new Error("gateway_response_too_large");
+    let result = {};
+    if (raw.byteLength) result = JSON.parse(new TextDecoder().decode(raw));
+    if (!response.ok) {
+      const error = String(result?.error || "gateway_status_failed");
+      const wrapped = new Error(error);
+      wrapped.status = response.status;
+      throw wrapped;
+    }
+    return result?.summary || {};
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function buildRunPayload(goal, mode, eventId) {
   return {
     domain: "telegram",
