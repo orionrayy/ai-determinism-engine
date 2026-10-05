@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS telegram_inbox (
   event_id TEXT PRIMARY KEY,
   principal_key TEXT NOT NULL,
   status TEXT NOT NULL CHECK (status IN ('processing','completed','failed')),
+  claim_token TEXT NOT NULL,
   workflow_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
