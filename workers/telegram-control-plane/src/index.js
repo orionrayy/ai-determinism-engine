@@ -333,6 +333,21 @@ async function handleMessage(env, update) {
           await requireWorkflowAccess(env, userId, chatId, workflowId);
           const state = await readWorkflowState(env, workflowId);
           const summary = summarizeState(state);
+          await sendText(env, chatId, [
+            "Workflow status",
+            "ID: " + summary.workflow_id,
+            "State: " + summary.status,
+            "Mode: " + summary.mode,
+            "Updated: " + summary.updated_at,
+            "Nodes: " + JSON.stringify(summary.node_counts),
+            "Pending approvals: " + String(summary.pending_approvals.length),
+            "Failed node: " + String(summary.failed_node || "none"),
+            "Replans: " + String(summary.replan_count),
+            "Attempts: " + String(summary.attempts_used),
+            ...summary.pending_approvals.slice(0, 4).map((item) =>
+              "Approval: " + item.node_id + " | " + item.risk + " | issue " + String(item.approval_issue || "n/a")
+            ),
+          ].join("\n"));
           await recordCommand(
             env,
             userId,
@@ -353,6 +368,32 @@ async function handleMessage(env, update) {
             "Replans: " + String(summary.replan_count),
             "Attempts: " + String(summary.attempts_used),
           ].join("\n"));
+          return;
+        }
+        case "approvals": {
+          await requireConsent(env, userId);
+          const [workflowIdArg] = splitFirstArg(parsed.args);
+          const workflowId = normalizeWorkflowId(workflowIdArg);
+          await requireWorkflowAccess(env, userId, chatId, workflowId);
+          const state = await readWorkflowState(env, workflowId);
+          const summary = summarizeState(state);
+          if (!summary.pending_approvals.length) {
+            await sendText(env, chatId, "No pending approvals for " + workflowId + ".");
+            return;
+          }
+          await sendText(
+            env,
+            chatId,
+            [
+              "Pending approvals",
+              "Workflow: " + workflowId,
+              ...summary.pending_approvals.map((item) =>
+                item.node_id + " | risk=" + item.risk + " | tool=" + item.tool + " | issue=" + String(item.approval_issue || "n/a")
+              ),
+              "",
+              "Approve with: /approve <workflow_id> <node_id>",
+            ].join("\n"),
+          );
           return;
         }
         case "resume": {
@@ -382,16 +423,39 @@ async function handleMessage(env, update) {
           const claim = await claimMutableUpdate(env, userId, eventId);
           if (!claim.claimed) return;
           mutationClaimToken = claim.claimToken;
-          const [workflowIdArg] = splitFirstArg(parsed.args);
+          const [workflowIdArg, nodeArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
-          await dispatchToGateway(
+          await requireWorkflowAccess(env, userId, chatId, workflowId);
+          const state = await readWorkflowState(env, workflowId);
+          const summary = summarizeState(state);
+          let nodeId = String(nodeArg || "").trim();
+          if (!nodeId) {
+            if (summary.pending_approvals.length !== 1) {
+              await sendText(
+                env,
+                chatId,
+                "Specify a node_id. Use /approvals " + workflowId + " to list pending approvals.",
+              );
+              return;
+            }
+            nodeId = summary.pending_approvals[0].node_id;
+          }
+          nodeId = normalizeNodeId(nodeId);
+          if (!summary.pending_approvals.some((item) => item.node_id === nodeId)) {
+            throw new Error("approval_not_pending");
+          }
+          const result = await dispatchToGateway(
             env,
-            buildWorkflowPayload("approve", workflowId, eventId, true),
+            buildApprovalPayload(workflowId, nodeId, eventId),
             eventId,
           );
           await completeMutableUpdate(env, eventId, workflowId, mutationClaimToken);
-          await recordCommand(env, userId, chatId, eventId, "approve", workflowId, null);
-          await sendText(env, chatId, "Approval signal submitted for workflow " + workflowId + ". The orchestrator will still enforce its own validation and policy.");
+          await recordCommand(env, userId, chatId, eventId, "approve:" + nodeId, workflowId, null);
+          await sendText(
+            env,
+            chatId,
+            "Approval submitted for " + workflowId + " / " + nodeId + ". Issue: " + String(result?.approval_issue || "n/a"),
+          );
           return;
         }
         case "last": {
@@ -451,6 +515,7 @@ async function handleMessage(env, update) {
       control_plane_not_configured: "Control-plane status access is not configured.",
       gateway_not_configured: "Gateway dispatch is not configured.",
       workflow_access_denied: "You are not authorized to manage this workflow.",
+      approval_not_pending: "That workflow node is not currently waiting for approval.",
     }[code] || "Request could not be completed.";
     await sendText(env, chatId, userMessage);
   }
