@@ -263,6 +263,7 @@ async function handleMessage(env, update) {
           );
           return;
         case "help":
+        case "menu":
           await sendText(env, chatId, helpText());
           return;
         case "privacy":
