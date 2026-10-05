@@ -51,7 +51,7 @@ Set these values interactively, never commit them:
 ## 6. Configure Telegram webhook
 Telegram's Bot API supports an HTTPS webhook plus a `secret_token`; the resulting request contains `X-Telegram-Bot-Api-Secret-Token`. It also allows limiting update types.
 
-Use the replacement token from the previous steps:
+Use the rotated replacement token configured as the Worker secret; do not paste it into source control or workflow input.
 
 `curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" -d "url=${TELEGRAM_WORKER_URL}/telegram/webhook" -d "secret_token=${TELEGRAM_WEBHOOK_SECRET}" -d 'allowed_updates=["message","callback_query"]' -d 'drop_pending_updates=true'`
 
