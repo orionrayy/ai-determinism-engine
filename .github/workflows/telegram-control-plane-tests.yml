@@ -1,0 +1,72 @@
+name: Telegram Control Plane Tests
+
+on:
+  push:
+    branches:
+      - main
+      - feat/telegram-control-plane
+    paths:
+      - "workers/telegram-control-plane/**"
+      - "database/telegram_schema.sql"
+      - "database/test_telegram_schema.py"
+      - "telegram/**"
+      - "gateway.py"
+      - "test_gateway_telegram.py"
+      - ".github/workflows/telegram-control-plane-tests.yml"
+  pull_request:
+    paths:
+      - "workers/telegram-control-plane/**"
+      - "database/telegram_schema.sql"
+      - "database/test_telegram_schema.py"
+      - "telegram/**"
+      - "gateway.py"
+      - "test_gateway_telegram.py"
+      - ".github/workflows/telegram-control-plane-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Python syntax
+        run: python -m py_compile gateway.py test_gateway_telegram.py database/test_telegram_schema.py
+      - name: Database schema tests
+        run: python -m unittest database/test_telegram_schema.py -v
+      - name: Telegram worker syntax and tests
+        run: |
+          node --check workers/telegram-control-plane/src/index.js
+          node --check workers/telegram-control-plane/src/policy.js
+          node --check workers/telegram-control-plane/src/protocol.js
+          node --check workers/telegram-control-plane/src/crypto.js
+          node --check workers/telegram-control-plane/src/db.js
+          node --check workers/telegram-control-plane/src/gateway.js
+          node --check workers/telegram-control-plane/src/control_plane.js
+          node --test workers/telegram-control-plane/test.mjs
+      - name: Secret-shaped text guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE '[0-9]{6,12}:[A-Za-z0-9_-]{20,}' -- 'workers/telegram-control-plane/**' 'telegram/**' 'database/**' 'gateway.py' 'test_gateway_telegram.py'; then
+            echo 'bot-token-shaped secret found in tracked source'
+            exit 1
+          fi
+      - name: Worker package consistency
+        run: |
+          python - <<'PY'
+          import json
+          json.load(open('workers/telegram-control-plane/package.json', encoding='utf-8'))
+          print('package.json ok')
+          PY
