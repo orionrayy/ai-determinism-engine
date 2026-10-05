@@ -167,7 +167,7 @@ jobs:
         env:
           ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
           ORCHESTRATOR_LIVE: ${{ inputs.live && 'true' || 'false' }}
-          ORCHESTRATOR_APPROVE_HIGH_RISK: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.approve_high_risk == true && 'true' || inputs.approve_high_risk == true && 'true' || 'false' }}
+          ORCHESTRATOR_APPROVE_HIGH_RISK: ${{ inputs.approve_high_risk && 'true' || 'false' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
           ORCHESTRATOR_RESEARCH_URL: ${{ secrets.ORCHESTRATOR_RESEARCH_URL }}
