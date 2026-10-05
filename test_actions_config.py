@@ -98,8 +98,8 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_state_uses_sharded_storage_format(self):
         self.assertEqual(self.state.get('storage_format'), 'sharded-v1')
-        self.assertIn('from orchestrator.orchestrator import load_state', self.continuation)
-        self.assertIn('from orchestrator.orchestrator import load_state', self.orchestrator)
+        self.assertIn('python3 -m orchestrator.continuation_runtime', self.continuation)
+        self.assertIn('from .orchestrator import load_state', (ROOT / 'orchestrator' / 'continuation_runtime.py').read_text())
         self.assertNotIn('json.load(open(\'.orchestrator/state.json\'))', self.continuation)
         self.assertNotIn('json.load(open(".orchestrator/state.json"))', self.orchestrator)
 
@@ -129,9 +129,11 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("queue: max", self.orchestrator)
         self.assertIn("cancel-in-progress: false", self.orchestrator)
 
-    def test_continuation_carries_exact_workflow_identity(self):
+    def test_continuation_uses_testable_python_runtime(self):
         self.assertIn("WORKFLOW_ID", self.continuation)
-        self.assertIn("'workflow_id':os.environ['WORKFLOW_ID']", self.continuation)
+        self.assertIn("python3 -m orchestrator.continuation_runtime", self.continuation)
+        decision = self.continuation.split("id: decision", 1)[1].split("- name: Dispatch continuation", 1)[0]
+        self.assertNotIn("python3 - <<'PY'", decision)
         self.assertIn("github.event.client_payload.workflow_id", self.orchestrator)
 
 
@@ -139,8 +141,11 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)
         self.assertIn('args=(--workflow-id "$ORCHESTRATOR_TARGET_WORKFLOW_ID" --step)', self.orchestrator)
 
-    def test_source_issue_trigger_binds_event_action(self):
+    def test_source_issue_trigger_binds_revision_identity(self):
         self.assertIn('ISSUE_ACTION: ${{ github.event.action }}', self.orchestrator)
+        self.assertIn('ISSUE_UPDATED_AT: ${{ github.event.issue.updated_at }}', self.orchestrator)
+        self.assertIn('event_id="issue:${GITHUB_REPOSITORY}:${ISSUE_NUMBER}:${ISSUE_ACTION}:${ISSUE_UPDATED_AT}"', self.orchestrator)
+        self.assertIn('ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}', self.orchestrator)
 
     def test_continuation_dispatch_carries_exact_run_attempt(self):
         self.assertIn('WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}', self.continuation)
@@ -154,17 +159,17 @@ class ActionsConfigTests(unittest.TestCase):
     def test_continuation_binds_to_originating_run(self):
         self.assertIn('workflow_run.id', self.continuation)
         self.assertIn('workflow_run.run_attempt', self.continuation)
-        self.assertIn("item.get('github_run_id')", self.continuation)
-        self.assertIn("item.get('github_run_attempt')", self.continuation)
+        runtime = (ROOT / 'orchestrator' / 'continuation_runtime.py').read_text()
+        self.assertIn('item.get("github_run_id")', runtime)
+        self.assertIn('item.get("github_run_attempt")', runtime)
         self.assertIn("orchestrator-continuation-", self.continuation)
 
     def test_ci_watches_orchestrator_workflow(self):
         self.assertIn('orchestrator.yml', self.tests)
 
-    def test_scheduled_recovery_compacts_terminal_state(self):
+    def test_scheduled_recovery_uses_testable_python_runtime(self):
         self.assertIn('schedule-recovery:', self.orchestrator)
-        self.assertIn('compact_terminal_workflows', self.orchestrator)
-        self.assertIn('ORCHESTRATOR_TERMINAL_COMPACTION_DAYS', self.orchestrator)
+        self.assertNotIn("python3 - <<'PY'", recovery)
         self.assertIn('git add .orchestrator/workflows', self.orchestrator)
     def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
         workflow = read_workflow_text()
