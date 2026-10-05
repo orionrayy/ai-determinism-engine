@@ -16,7 +16,7 @@ Apply the schema from the repository root:
 
 `npx wrangler d1 execute ai-orchestrator-telegram --remote --file=database/telegram_schema.sql`
 
-Cloudflare documents `wrangler d1 create` for provisioning and `wrangler d1 execute --file` for applying a SQL file. citeturn341828search0turn341828search1
+Cloudflare documents `wrangler d1 create` for provisioning and `wrangler d1 execute --file` for applying a SQL file.
 
 ## 3. Generate secrets
 Use independent random values. The data encryption key must represent 32 random bytes; do not reuse the HMAC key.
@@ -28,7 +28,7 @@ Use the result for `TELEGRAM_DATA_ENCRYPTION_KEY`, and generate a separate 32-by
 Use a separate random URL-safe value for `TELEGRAM_WEBHOOK_SECRET`.
 
 ## 4. Load Worker secrets
-Wrangler supports `wrangler secret put`; required secrets declared in `wrangler.jsonc` can be validated during deployment. citeturn341828search2turn341828search4
+Wrangler supports `wrangler secret put`; required secrets declared in `wrangler.jsonc` can be validated during deployment.
 
 Set these values interactively, never commit them:
 
@@ -49,7 +49,7 @@ Set these values interactively, never commit them:
 `npx wrangler deploy`
 
 ## 6. Configure Telegram webhook
-Telegram's Bot API supports an HTTPS webhook plus a `secret_token`; the resulting request contains `X-Telegram-Bot-Api-Secret-Token`. It also allows limiting update types. citeturn889672search2
+Telegram's Bot API supports an HTTPS webhook plus a `secret_token`; the resulting request contains `X-Telegram-Bot-Api-Secret-Token`. It also allows limiting update types.
 
 Use the replacement token from the previous steps:
 
@@ -58,7 +58,7 @@ Use the replacement token from the previous steps:
 Keep `drop_pending_updates=true` only when intentionally discarding updates accumulated before activation.
 
 ## 7. Configure the command menu
-Telegram supports `setMyCommands`; set the public menu to `/start`, `/help`, `/menu`, `/run`, `/runlive`, `/status`, `/resume`, `/approve`, `/prompt`, `/last`, `/privacy`, `/revoke`, and `/delete_me`. The Bot API also supports a private-chat menu button for commands or a Web App. citeturn889672search2turn889672search3
+Telegram supports `setMyCommands`; set the public menu to `/start`, `/help`, `/menu`, `/run`, `/runlive`, `/status`, `/resume`, `/approve`, `/prompt`, `/last`, `/privacy`, `/revoke`, and `/delete_me`. The Bot API also supports a private-chat menu button for commands or a Web App.
 
 Set the privacy-policy URL for the bot in @BotFather to the deployed `/privacy` endpoint.
 
