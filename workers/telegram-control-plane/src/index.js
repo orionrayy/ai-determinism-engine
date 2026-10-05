@@ -1,6 +1,6 @@
 import {constantTimeEqual, isAllowedUser, isApprover, isPrivateMessage, isSafeWorkflowId} from "./policy.js";
 import {callbackAction, normalizeGoal, normalizeWorkflowId, parseCommand, splitFirstArg, telegramEventId} from "./protocol.js";
-import {audit, chatKey, claimUpdate, completeUpdate, deleteUserData, failUpdate, getConsent, getSession, hasDatabase, principalKey, revokeConsent, saveSession, setConsent} from "./db.js";
+import {audit, bindWorkflow, chatKey, claimUpdate, completeUpdate, deleteUserData, failUpdate, getConsent, getSession, hasDatabase, ownsWorkflow, principalKey, revokeConsent, saveSession, setConsent, touchWorkflow} from "./db.js";
 import {buildRunPayload, buildWorkflowPayload, dispatchToGateway} from "./gateway.js";
 import {readWorkflowState, summarizeState} from "./control_plane.js";
 
@@ -139,10 +139,22 @@ async function recordCommand(env, userId, chatId, eventId, action, workflowId, d
   });
 }
 
+async function requireWorkflowAccess(env, userId, workflowId) {
+  const pKey = await principalKey(env, userId);
+  if (await ownsWorkflow(env, workflowId, pKey)) {
+    await touchWorkflow(env, workflowId, pKey);
+    return;
+  }
+  if (isApprover(env, userId)) return;
+  throw new Error("workflow_access_denied");
+}
+
 async function dispatchAndReply(env, message, eventId, payload, action) {
   const result = await dispatchToGateway(env, payload, eventId);
   const workflowId = String(result?.workflow_id || payload?.workflow_id || "");
   if (workflowId) {
+    const pKey = await principalKey(env, message.from.id);
+    await bindWorkflow(env, workflowId, pKey);
     const cKey = await chatKey(env, message.chat.id);
     const session = (await getSession(env, cKey)) || {prompt_mode: false, last_workflow_id: null};
     session.last_workflow_id = workflowId;
@@ -287,6 +299,7 @@ async function handleMessage(env, update) {
           await requireConsent(env, userId);
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
+          await requireWorkflowAccess(env, userId, workflowId);
           const state = await readWorkflowState(env, workflowId);
           const summary = summarizeState(state);
           await recordCommand(
@@ -317,6 +330,7 @@ async function handleMessage(env, update) {
           if (!claim.claimed) return;
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
+          await requireWorkflowAccess(env, userId, workflowId);
           const result = await dispatchToGateway(
             env,
             buildWorkflowPayload("resume", workflowId, eventId),
@@ -401,6 +415,7 @@ async function handleMessage(env, update) {
       workflow_id_invalid: "Workflow ID is invalid or missing.",
       control_plane_not_configured: "Control-plane status access is not configured.",
       gateway_not_configured: "Gateway dispatch is not configured.",
+      workflow_access_denied: "You are not authorized to manage this workflow.",
     }[code] || "Request could not be completed.";
     await sendText(env, chatId, userMessage);
   }
