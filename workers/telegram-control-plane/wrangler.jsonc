@@ -1,0 +1,22 @@
+{
+  "name": "ai-orchestrator-telegram-control-plane",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "secrets": {
+    "required": [
+      "TELEGRAM_BOT_TOKEN",
+      "TELEGRAM_WEBHOOK_SECRET",
+      "TELEGRAM_ALLOWED_USER_IDS",
+      "TELEGRAM_APPROVER_USER_IDS",
+      "TELEGRAM_DATA_ENCRYPTION_KEY",
+      "TELEGRAM_DATA_HMAC_KEY",
+      "GATEWAY_URL",
+      "GATEWAY_SHARED_SECRET",
+      "CONTROL_PLANE_URL",
+      "CONTROL_PLANE_SECRET"
+    ]
+  }
+  // Add the D1 binding after provisioning the database:
+  // "d1_databases": [{"binding":"DB","database_name":"ai-orchestrator-telegram","database_id":"REPLACE_WITH_REAL_DATABASE_ID"}]
+}
