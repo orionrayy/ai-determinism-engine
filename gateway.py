@@ -407,23 +407,41 @@ def compact_workflow_summary(workflow: dict) -> dict:
     }
 
 
+def github_fetch_raw_file(path: str) -> bytes:
+    token = os.environ.get("GITHUB_GATEWAY_TOKEN")
+    repository = os.environ.get(
+        "GITHUB_REPOSITORY",
+        "orionrayy/ai-determinism-engine",
+    )
+    if not token:
+        raise RuntimeError("GITHUB_GATEWAY_TOKEN is not configured")
+    url = f"https://api.github.com/repos/{repository}/{path.lstrip('/')}"
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github.raw+json",
+            "Authorization": f"Bearer {token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "ai-orchestrator-gateway/1.0",
+        },
+        method="GET",
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:
+        raw = response.read(600 * 1024 + 1)
+        if len(raw) > 600 * 1024:
+            raise RuntimeError("workflow_state_too_large")
+        return raw
+
+
 def github_git_workflow_summary(workflow_id: str) -> dict:
     workflow_id = str(workflow_id or "").strip()
     if not SAFE_ID_RE.fullmatch(workflow_id):
         raise ValueError("workflow_id_invalid")
     shard = hashlib.sha256(workflow_id.encode("utf-8")).hexdigest()
-    encoded_path = f".orchestrator/workflows/{shard}.json"
-    payload = github_request_json(
-        f"contents/{urllib.parse.quote(encoded_path, safe='/._-')}",
-    )
-    if str(payload.get("encoding") or "").lower() != "base64":
-        raise RuntimeError("workflow_state_encoding_invalid")
-    raw_content = payload.get("content")
-    if not isinstance(raw_content, str):
-        raise RuntimeError("workflow_state_content_missing")
+    encoded_path = f"contents/.orchestrator/workflows/{shard}.json"
     try:
-        decoded = base64.b64decode(raw_content.replace("\\n", ""), validate=True)
-        workflow = json.loads(decoded.decode("utf-8"))
+        raw_content = github_fetch_raw_file(encoded_path)
+        workflow = json.loads(raw_content.decode("utf-8"))
     except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise RuntimeError("workflow_state_invalid") from exc
     if not isinstance(workflow, dict):
