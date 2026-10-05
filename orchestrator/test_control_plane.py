@@ -16,8 +16,8 @@ class ControlPlaneClientTests(unittest.TestCase):
         c = ControlPlaneClient("https://control.example", "s", owner="w")
         body = canonical_json({"owner":"w"})
         self.assertEqual(
-            c._signature("10","POST","/x",body),
-            hmac.new(b"s", b"\n".join([b"10",b"POST",b"/x",body]), hashlib.sha256).hexdigest(),
+            c._signature("10","POST","/x",body,"req-1"),
+            hmac.new(b"s", b"\n".join([b"10",b"POST",b"/x",b"req-1",body]), hashlib.sha256).hexdigest(),
         )
 
     def test_partial_configuration_fails(self):
@@ -48,6 +48,8 @@ class ControlPlaneClientTests(unittest.TestCase):
             "/v1/resources/repo%3Afile/lease/acquire",
             request.call_args.args[1],
         )
+        self.assertEqual(request.call_args.args[2]["resource_key"], "repo:file")
+        self.assertEqual(request.call_args.args[2]["workflow_id"], "wf")
 
     def test_provider_rate_slot_path(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
@@ -104,6 +106,7 @@ class ControlPlaneClientTests(unittest.TestCase):
         self.assertEqual(ack["status"], "acknowledged")
         self.assertEqual(request.call_args_list[0].args[1], "/v1/workflows/wf/recovery/arm")
         self.assertEqual(request.call_args_list[1].args[1], "/v1/workflows/wf/recovery/ack")
+        self.assertEqual(request.call_args_list[1].args[2]["owner"], "w")
 
     def test_recovery_claim_path(self):
         client = ControlPlaneClient("https://control.example", "s", owner="w")
@@ -194,7 +197,9 @@ class ControlPlaneClientTests(unittest.TestCase):
         self.assertEqual(version, 3)
         self.assertEqual(sequence, 9)
         self.assertEqual(request.call_args_list[0].args[0], "PUT")
+        self.assertEqual(request.call_args_list[0].args[2]["workflow_id"], "wf")
         self.assertEqual(request.call_args_list[1].args[0], "POST")
+        self.assertEqual(request.call_args_list[1].args[2]["workflow_id"], "wf")
 
 
 if __name__ == "__main__":
