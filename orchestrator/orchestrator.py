@@ -4547,7 +4547,6 @@ def _run_one_step_inner(
     control_plane_lease: Any | None = None,
 ) -> str:
     nodes = [Node(**node) for node in workflow["nodes"]]
-    validate_dag(nodes)
     registry = load_registry()
 
     active_federation = workflow.get("federation") or {}
@@ -4567,6 +4566,8 @@ def _run_one_step_inner(
         if recovery != "rearmed":
             return "waiting_agents"
         workflow["nodes"] = [asdict(node) for node in nodes]
+
+    validate_dag(nodes)
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
     workflow['agent_team'] = team_manifest(workflow['id'], nodes)
