@@ -10,8 +10,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from typing import Any
+try:
+    from .deterministic_codec import canonical_json
+except ImportError:
+    from deterministic_codec import canonical_json
+
 
 DEFAULT_LEASE_TTL_SECONDS = 1200
 CONTROL_PLANE_TIMEOUT_SECONDS = 20
@@ -146,6 +152,7 @@ class ControlPlaneClient:
             self._provider_rate_path(provider),
             {
                 "provider": str(provider).strip().lower(),
+                "resource_key": "provider:" + str(provider).strip().lower(),
                 "pool": normalized_pool,
             },
         )
@@ -190,17 +197,25 @@ class ControlPlaneClient:
         method: str,
         path: str,
         payload: dict[str, Any] | None = None,
+        *,
+        request_id: str | None = None,
     ) -> dict[str, Any]:
         body = canonical_json(payload) if payload is not None else b""
         timestamp = str(int(time.time()))
+        request_id = str(request_id or uuid.uuid4().hex).strip()
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "ai-determinism-engine-control-plane/2.0",
+        }
+        if method.upper() != "GET":
+            headers["X-Control-Plane-Request-ID"] = request_id
         req = urllib.request.Request(
             self.base_url + path,
             data=body if method.upper() != "GET" else None,
             method=method.upper(),
             headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "User-Agent": "ai-determinism-engine-control-plane/2.0",
+                **headers,
                 "X-Control-Plane-Timestamp": timestamp,
                 "X-Control-Plane-Signature": self._signature(
                     timestamp,
@@ -275,6 +290,8 @@ class ControlPlaneClient:
             self._workflow_path(workflow_id, "/lease/renew"),
             {
                 "owner": self.owner,
+                "workflow_id": str(workflow_id),
+                "resource_key": str(resource_key),
                 "fence_epoch": int(fence_epoch),
                 "ttl_seconds": self.lease_ttl_seconds,
             },
@@ -297,6 +314,7 @@ class ControlPlaneClient:
             {
                 "owner": self.owner,
                 "workflow_id": str(workflow_id),
+                "resource_key": str(resource_key),
                 "fence_epoch": int(fence_epoch),
             },
         )
@@ -317,6 +335,7 @@ class ControlPlaneClient:
             {
                 "owner": self.owner,
                 "workflow_id": str(workflow_id),
+                "resource_key": str(resource_key),
                 "ttl_seconds": self.lease_ttl_seconds,
             },
         )
@@ -441,6 +460,8 @@ class ControlPlaneClient:
         self,
         workflow_id: str,
         event_id: str,
+        *,
+        owner: str | None = None,
     ) -> dict[str, Any]:
         return self._request(
             "POST",
@@ -529,6 +550,7 @@ class ControlPlaneClient:
             self._workflow_path(workflow_id, "/outbox"),
             {
                 "owner": str(owner),
+                "workflow_id": str(workflow_id),
                 "fence_epoch": int(fence_epoch),
                 "event_type": str(event_type),
                 "payload": payload,
@@ -552,6 +574,7 @@ class ControlPlaneClient:
             self._workflow_path(workflow_id, "/effects/claim"),
             {
                 "owner": self.owner,
+                "workflow_id": str(workflow_id),
                 "fence_epoch": int(fence_epoch),
                 "effect_id": str(effect_id),
                 "semantic_digest": str(semantic_digest),
@@ -579,6 +602,7 @@ class ControlPlaneClient:
             self._workflow_path(workflow_id, "/effects/complete"),
             {
                 "owner": self.owner,
+                "workflow_id": str(workflow_id),
                 "fence_epoch": int(fence_epoch),
                 "effect_id": str(effect_id),
                 "semantic_digest": str(semantic_digest),
@@ -608,6 +632,7 @@ class ControlPlaneClient:
             self._workflow_path(workflow_id, "/effects/resolve"),
             {
                 "owner": self.owner,
+                "workflow_id": str(workflow_id),
                 "fence_epoch": int(fence_epoch),
                 "effect_id": str(effect_id),
                 "semantic_digest": str(semantic_digest),
