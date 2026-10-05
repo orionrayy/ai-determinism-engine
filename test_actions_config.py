@@ -187,15 +187,17 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("schedule-recovery:", self.orchestrator)
         self.assertIn("if: github.event_name == 'schedule'", self.orchestrator)
         self.assertIn("github.event_name != 'schedule'", self.orchestrator)
-        self.assertIn('"workflow_id": workflow_id', self.orchestrator)
-        self.assertIn('"orchestrator.continue"', self.orchestrator)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('"workflow_id": workflow_id', runtime)
+        self.assertIn('"orchestrator.continue"', runtime)
 
     def test_scheduled_recovery_uses_canonical_loader(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('from orchestrator.orchestrator import (', recovery)
-        self.assertIn('load_state', recovery)
-        self.assertNotIn('state_path = Path(".orchestrator/state.json")', recovery)
+        self.assertIn('from orchestrator.scheduled_recovery', recovery)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('load_state', runtime)
+        self.assertNotIn('state_path = Path(".orchestrator/state.json")', runtime)
 
 
     def test_checkout_action_sha_is_consistent_across_all_workflows(self):
