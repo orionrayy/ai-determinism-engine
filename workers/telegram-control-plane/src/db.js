@@ -20,6 +20,58 @@ export async function chatKey(env, telegramChatId) {
   return keyedIdentity(env.TELEGRAM_DATA_HMAC_KEY, "telegram:chat", telegramChatId);
 }
 
+export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
+  requireDatabase(env);
+  const now = Math.floor(Date.now() / 1000);
+  const expires = now + 7 * 24 * 60 * 60;
+  const inserted = await env.DB
+    .prepare(
+      "INSERT OR IGNORE INTO telegram_inbox(event_id,principal_key,status,workflow_id,created_at,updated_at,expires_at) VALUES(?,?, 'processing',NULL,?,?,?)",
+    )
+    .bind(eventId, pKey, now, now, expires)
+    .run();
+  if (Number(inserted?.meta?.changes || 0) > 0) {
+    return {claimed: true, workflowId: null};
+  }
+  const row = await env.DB
+    .prepare("SELECT status,workflow_id,updated_at FROM telegram_inbox WHERE event_id=?")
+    .bind(eventId)
+    .first();
+  if (!row) return {claimed: false, duplicate: true, workflowId: null};
+  const status = String(row.status || "");
+  if (status === "completed") {
+    return {claimed: false, duplicate: true, workflowId: row.workflow_id ? String(row.workflow_id) : null};
+  }
+  if (status === "processing" && Number(row.updated_at || 0) > now - staleAfterSeconds) {
+    return {claimed: false, duplicate: true, workflowId: row.workflow_id ? String(row.workflow_id) : null};
+  }
+  await env.DB
+    .prepare(
+      "UPDATE telegram_inbox SET status='processing',workflow_id=NULL,updated_at=?,expires_at=? WHERE event_id=? AND (status <> 'processing' OR updated_at <= ?)",
+    )
+    .bind(now, expires, eventId, now - staleAfterSeconds)
+    .run();
+  return {claimed: true, workflowId: null};
+}
+
+export async function completeUpdate(env, eventId, workflowId) {
+  requireDatabase(env);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB
+    .prepare("UPDATE telegram_inbox SET status='completed',workflow_id=?,updated_at=? WHERE event_id=?")
+    .bind(workflowId || null, now, eventId)
+    .run();
+}
+
+export async function failUpdate(env, eventId) {
+  requireDatabase(env);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB
+    .prepare("UPDATE telegram_inbox SET status='failed',updated_at=? WHERE event_id=?")
+    .bind(now, eventId)
+    .run();
+}
+
 export async function getConsent(env, pKey) {
   requireDatabase(env);
   const row = await env.DB
@@ -91,6 +143,7 @@ export async function audit(env, {eventId, pKey, cKey, action, workflowId = null
 export async function deleteUserData(env, pKey, cKey) {
   requireDatabase(env);
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM telegram_inbox WHERE principal_key=?").bind(pKey),
     env.DB.prepare("DELETE FROM telegram_audit WHERE principal_key=?").bind(pKey),
     env.DB.prepare("DELETE FROM telegram_consents WHERE principal_key=?").bind(pKey),
     env.DB.prepare("DELETE FROM telegram_sessions WHERE chat_key=?").bind(cKey),
