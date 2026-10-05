@@ -25,6 +25,7 @@ CURRENT_WORKFLOW_SCHEMA_VERSION = 7
 AUTHORITY_GIT_DURABLE = "git_durable"
 AUTHORITY_DISTRIBUTED_CONTROL_PLANE = "distributed_control_plane"
 MAX_PARALLEL = 8
+MAX_NODES = 24
 DEFAULT_MAX_ATTEMPTS_PER_WORKFLOW = 64
 MAX_ATTEMPTS_PER_WORKFLOW = 128
 
@@ -226,6 +227,10 @@ def migrate_state(state: dict[str, Any]) -> dict[str, Any]:
         nodes = workflow.get("nodes", [])
         if not isinstance(nodes, list):
             raise StateSchemaError(f"workflow {workflow_id!r}.nodes must be an array")
+        if len(nodes) > MAX_NODES:
+            raise StateSchemaError(
+                f"workflow {workflow_id!r}.nodes must contain at most {MAX_NODES} items"
+            )
         for node in nodes:
             if not isinstance(node, dict):
                 raise StateSchemaError(f"workflow {workflow_id!r} contains a non-object node")
