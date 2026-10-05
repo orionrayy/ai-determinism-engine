@@ -860,27 +860,27 @@ export class WorkflowControlPlane {
 
     try {
       if (url.pathname.startsWith("/v1/resources/")) {
-        if (request.method === "POST" && url.pathname.endsWith("/rate/acquire")) return finalize(this.providerRateAcquire(body););
-        if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return finalize(this.resourceAcquire(body););
-        if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return finalize(this.resourceRenew(body););
-        if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return finalize(this.resourceRelease(body););
+        if (request.method === "POST" && url.pathname.endsWith("/rate/acquire")) return finalize(this.providerRateAcquire(body));
+        if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return finalize(this.resourceAcquire(body));
+        if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return finalize(this.resourceRenew(body));
+        if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return finalize(this.resourceRelease(body));
         return json({error:"not_found"},404);
       }
       if (request.method === "GET" && url.pathname.endsWith("/state")) return this.readWorkflowState();
       if (request.method === "GET" && url.pathname.endsWith("/recovery")) return this.readRecovery();
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return finalize(this.armRecovery(body););
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/claim")) return finalize(this.claimRecovery(body););
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/clear")) return finalize(this.clearRecovery(body););
-      if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return finalize(this.ackRecovery(body););
-      if (request.method === "PUT" && url.pathname.endsWith("/state")) return finalize(this.writeWorkflowState(body););
-      if (request.method === "POST" && url.pathname.endsWith("/outbox")) return finalize(this.appendOutbox(body););
-      if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return finalize(this.acquire(body););
-      if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return finalize(this.renew(body););
-      if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return finalize(this.release(body););
-      if (request.method === "POST" && url.pathname.endsWith("/effects/claim")) return finalize(this.claim(body););
-      if (request.method === "POST" && url.pathname.endsWith("/effects/complete")) return finalize(this.complete(body););
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/arm")) return finalize(this.armRecovery(body));
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/claim")) return finalize(this.claimRecovery(body));
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/clear")) return finalize(this.clearRecovery(body));
+      if (request.method === "POST" && url.pathname.endsWith("/recovery/ack")) return finalize(this.ackRecovery(body));
+      if (request.method === "PUT" && url.pathname.endsWith("/state")) return finalize(this.writeWorkflowState(body));
+      if (request.method === "POST" && url.pathname.endsWith("/outbox")) return finalize(this.appendOutbox(body));
+      if (request.method === "POST" && url.pathname.endsWith("/lease/acquire")) return finalize(this.acquire(body));
+      if (request.method === "POST" && url.pathname.endsWith("/lease/renew")) return finalize(this.renew(body));
+      if (request.method === "POST" && url.pathname.endsWith("/lease/release")) return finalize(this.release(body));
+      if (request.method === "POST" && url.pathname.endsWith("/effects/claim")) return finalize(this.claim(body));
+      if (request.method === "POST" && url.pathname.endsWith("/effects/complete")) return finalize(this.complete(body));
       if (request.method === "GET" && url.pathname.endsWith("/effects/inspect")) return this.inspect(url);
-      if (request.method === "POST" && url.pathname.endsWith("/effects/resolve")) return finalize(this.resolve(body););
+      if (request.method === "POST" && url.pathname.endsWith("/effects/resolve")) return finalize(this.resolve(body));
       return json({error:"not_found"},404);
     } catch (e) {
       if (e instanceof Response) return e;
