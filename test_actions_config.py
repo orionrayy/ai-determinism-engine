@@ -168,16 +168,25 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('orchestrator.yml', self.tests)
 
     def test_scheduled_recovery_uses_testable_python_runtime(self):
-        self.assertIn('schedule-recovery:', self.orchestrator)
-        self.assertNotIn("python3 - <<'PY'", recovery)
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('python3 -m orchestrator.scheduled_recovery', recovery)
+        self.assertNotIn('python3 - <<\'PY\'', recovery)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('def run()', runtime)
+        self.assertIn('def main()', runtime)
+        self.assertIn('subprocess.run(', runtime)
         self.assertIn('git add .orchestrator/workflows', self.orchestrator)
-    def test_scheduled_recovery_dispatch_is_explicit_post_and_failure_isolated(self):
-        workflow = read_workflow_text()
-        self.assertIn('"gh",\n                          "api",', workflow)
-        self.assertIn('"--method",\n                          "POST"', workflow)
-        self.assertIn('check=False', workflow)
-        self.assertNotIn("status == 'waiting_approval'", workflow)
-        self.assertIn('recovery_event_id', workflow)
+
+    def test_scheduled_recovery_runtime_preserves_dispatch_semantics(self):
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('"gh"', runtime)
+        self.assertIn('"api"', runtime)
+        self.assertIn('"--method"', runtime)
+        self.assertIn('"POST"', runtime)
+        self.assertIn('check=False', runtime)
+        self.assertNotIn('status == "waiting_approval"', runtime)
+        self.assertIn('recovery_event_id(candidate_workflow)', runtime)
 
     def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
         workflow = read_workflow_text()
