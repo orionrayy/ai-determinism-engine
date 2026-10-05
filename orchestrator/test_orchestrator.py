@@ -419,7 +419,10 @@ class OrchestratorTests(unittest.TestCase):
             id="n01-dangerous",
             capability="execute",
             tool="github",
-            input={"instruction": "must never replay remotely"},
+            input={
+                "instruction": "must never replay remotely",
+                "action": "create_issue",
+            },
         )
         node.status = "delegated"
         workflow = {
