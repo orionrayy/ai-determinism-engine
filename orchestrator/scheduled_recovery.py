@@ -15,6 +15,7 @@ except ImportError:
 
 
 DEFAULT_STALE_SECONDS = 1500
+FEDERATION_STALE_SECONDS = 10 * 60
 ACTIVE_RUN_STATUSES = frozenset({
     "queued",
     "in_progress",
@@ -89,6 +90,27 @@ def _execution_uncertain(workflow: Mapping[str, Any]) -> bool:
     return False
 
 
+def is_stale_federation(
+    workflow: Mapping[str, Any],
+    now: datetime,
+    *,
+    stale_seconds: int = FEDERATION_STALE_SECONDS,
+) -> bool:
+    federation = workflow.get("federation")
+    if not isinstance(federation, Mapping):
+        return False
+    if federation.get("status") not in {"prepared", "dispatched"}:
+        return False
+    created = _parse_timestamp(federation.get("created_at"))
+    if created is None:
+        return False
+    current = now
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    current = current.astimezone(timezone.utc)
+    return (current - created).total_seconds() >= max(1, int(stale_seconds))
+
+
 def is_recovery_candidate(
     workflow: Mapping[str, Any],
     now: datetime,
@@ -120,8 +142,20 @@ def is_recovery_candidate(
         if recovery_due is False:
             return False
         federation = workflow.get("federation")
-        federation_status = federation.get("status") if isinstance(federation, Mapping) else None
-        return federation_status in {"prepared", "dispatched"}
+        federation_status = (
+            federation.get("status")
+            if isinstance(federation, Mapping)
+            else None
+        )
+        if federation_status not in {"prepared", "dispatched"}:
+            return False
+        if recovery_due is not True and not is_stale_federation(
+            workflow,
+            now,
+            stale_seconds=FEDERATION_STALE_SECONDS,
+        ):
+            return False
+        return True
     if status == "failed":
         return _execution_uncertain(workflow) or _barrier_failed(workflow)
     return False
@@ -411,6 +445,8 @@ def main() -> int:
 __all__ = [
     "ACTIVE_RUN_STATUSES",
     "DEFAULT_STALE_SECONDS",
+    "FEDERATION_STALE_SECONDS",
+    "is_stale_federation",
     "is_recovery_candidate",
     "is_stale_running",
     "recovery_event_id",
