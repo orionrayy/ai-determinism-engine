@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 import subprocess
 from typing import Any, Mapping
+
+try:
+    from .deterministic_codec import digest
+except ImportError:
+    from deterministic_codec import digest
 
 
 
@@ -177,13 +181,7 @@ def recovery_generation(workflow: Mapping[str, Any]) -> str:
         "federation": federation_state,
         "control_plane_state_version": int(workflow.get("control_plane_state_version") or 0),
     }
-    raw = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return hashlib.sha256(raw).hexdigest()
+    return digest(payload)
 
 
 def recovery_event_id(workflow: Mapping[str, Any]) -> str:
