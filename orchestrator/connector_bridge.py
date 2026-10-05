@@ -237,7 +237,7 @@ def discover_capabilities(
             "configured": bool(spec.get("configured", False)),
             "reconciliation": bool(spec.get("reconciliation", False)),
         }
-        with _DISCOVERY_CACHE_LOCK:
+    with _DISCOVERY_CACHE_LOCK:
         _DISCOVERY_CACHE[bridge_url] = (now + _DISCOVERY_CACHE_TTL, normalized)
     return normalized
 
