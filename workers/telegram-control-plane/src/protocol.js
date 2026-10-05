@@ -82,6 +82,6 @@ export function callbackAction(data) {
   }
   const [namespace, action] = raw.split(":", 2);
   if (namespace !== "consent") throw new Error("callback_invalid");
-  if (!["accept", "revoke"].includes(action)) throw new Error("callback_invalid");
+  if (!["accept", "revoke", "privacy"].includes(action)) throw new Error("callback_invalid");
   return action;
 }
