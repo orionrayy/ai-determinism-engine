@@ -73,7 +73,7 @@ try:
     )
     from .claim_integrity import validate_truth_lock
     from .deterministic_codec import canonical_json, digest
-    from private_input import PrivateInputError, fetch_private_input
+    from .private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .context_budget import ContextBudgetError, pack_node_context
