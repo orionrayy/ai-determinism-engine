@@ -112,7 +112,12 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     if not event_id or len(event_id) > 128:
         raise ValueError("event_id_invalid")
 
-    expected_fp = intent_fingerprint(domain, operation, request_input)
+    fingerprint_input = (
+        {"input": request_input, "approve_high_risk": True}
+        if approve_high_risk
+        else request_input
+    )
+    expected_fp = intent_fingerprint(domain, operation, fingerprint_input)
     supplied_fp = str(payload.get("intent_fingerprint") or "").strip()
     if supplied_fp:
         if not FINGERPRINT_RE.fullmatch(supplied_fp):
@@ -167,6 +172,10 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     if requested_mode not in {"dry-run", "live"}:
         raise ValueError("requested_mode_invalid")
 
+    approve_high_risk = payload.get("approve_high_risk") is True
+    if approve_high_risk and operation != "approve":
+        raise ValueError("approve_high_risk_operation_invalid")
+
     source = str(payload.get("source") or "automation-core").strip()[:128]
     if not source:
         source = "automation-core"
@@ -197,6 +206,7 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
         "source": source,
         "requested_mode": requested_mode,
         "idempotency_key": idempotency_key,
+        "approve_high_risk": approve_high_risk,
         "private_input_ref": private_input_ref,
     }
     goal = f"Execute orchestration operation {domain}.{operation}"
@@ -227,6 +237,7 @@ def github_dispatch(goal: str, metadata: dict, event_id: str | None = None) -> d
         "attempt",
         "requested_mode",
         "idempotency_key",
+        "approve_high_risk",
         "private_input_ref",
     ):
         if field in metadata and metadata[field] not in (None, ""):
@@ -428,6 +439,7 @@ class Handler(BaseHTTPRequestHandler):
                 "attempt",
                 "requested_mode",
                 "idempotency_key",
+                "approve_high_risk",
                 "private_input_ref",
             ):
                 if isinstance(metadata, dict) and field in metadata and metadata[field] not in (None, ""):
