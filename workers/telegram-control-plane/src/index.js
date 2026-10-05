@@ -131,16 +131,20 @@ async function requireConsent(env, userId) {
 
 async function recordCommand(env, userId, chatId, eventId, action, workflowId, digest) {
   if (!hasDatabase(env)) return;
-  const pKey = await principalKey(env, userId);
-  const cKey = await chatKey(env, chatId);
-  await audit(env, {
-    eventId,
-    pKey,
-    cKey,
-    action,
-    workflowId,
-    intentDigest: digest,
-  });
+  try {
+    const pKey = await principalKey(env, userId);
+    const cKey = await chatKey(env, chatId);
+    await audit(env, {
+      eventId,
+      pKey,
+      cKey,
+      action,
+      workflowId,
+      intentDigest: digest,
+    });
+  } catch (error) {
+    console.error("telegram audit persistence failed", typeName(error));
+  }
 }
 
 async function requireWorkflowAccess(env, userId, chatId, workflowId) {
