@@ -33,16 +33,14 @@ The first deployment should bind a Cloudflare D1 database as DB and apply the ve
 Do not place raw Telegram identifiers into the database schema, logs, audit fields, or workflow state.
 
 ## Deployment checklist
-1. Rotate the bot token that was pasted into chat and use the replacement only as TELEGRAM_BOT_TOKEN.
-2. Provision the D1 database and bind it as DB.
-3. Load database/telegram_schema.sql.
-4. Create separate secrets for the bot token, webhook secret, data encryption key, data HMAC key, gateway URL and secret, and control-plane URL and secret.
-5. Set TELEGRAM_ALLOWED_USER_IDS to the exact numeric IDs allowed to operate the bot.
-6. Set TELEGRAM_APPROVER_USER_IDS to a subset of the allowlist.
-7. Deploy the worker.
-8. Configure the Bot API webhook to /telegram/webhook with the same secret token used in TELEGRAM_WEBHOOK_SECRET.
-9. Set the BotFather privacy-policy URL to the deployed /privacy endpoint.
-10. Test /start -> Authorize -> /run a harmless dry-run goal -> /status workflow-id before attempting /runlive.
-11. Keep the bot private-chat-only. Do not add Bot-to-Bot communication or group automation until a separate terms and policy review exists.
-
+1. Revoke/rotate any bot token previously pasted into chat. Store only the replacement in GitHub secret `TELEGRAM_BOT_TOKEN`.
+2. Add GitHub repository secrets `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_ALLOWED_USER_IDS`, `TELEGRAM_APPROVER_USER_IDS`, `TELEGRAM_DATA_ENCRYPTION_KEY`, `TELEGRAM_DATA_HMAC_KEY`, `GATEWAY_URL`, `GATEWAY_SHARED_SECRET`, `CONTROL_PLANE_URL`, and `CONTROL_PLANE_SECRET`. `TELEGRAM_D1_DATABASE_ID` is optional.
+3. Ensure `TELEGRAM_APPROVER_USER_IDS` is a subset of `TELEGRAM_ALLOWED_USER_IDS`.
+4. Run GitHub Actions → `Deploy Telegram Control Plane`. Leave `provision_d1=false` unless a new D1 database must be created.
+5. Review the deployment summary and `/health` result before using the bot.
+6. Configure BotFather exactly as documented in `telegram/BOOTSTRAP.md`: usage restricted, groups disabled, admin rights zero, and advanced modes disabled for v1.
+7. Set the BotFather privacy-policy URL to the deployed Worker `/privacy` endpoint.
+8. Smoke-test `/start` → Authorize → `/run verify Telegram control plane` → `/status <workflow_id>`.
+9. Test `/approvals <workflow_id>` and node-scoped `/approve <workflow_id> <node_id>` only with a deliberately harmless approval-gated workflow.
+10. Keep Telegram private-chat-only. Do not enable Bot-to-Bot, Secretary, Guest, Group, or Bot Management modes until their dedicated policy and control-plane contracts exist.
 For production operations, keep Telegram as the interaction plane. Queueing, scheduling, workers, artifacts, effect reconciliation, and workflow truth stay in the existing orchestration architecture.
