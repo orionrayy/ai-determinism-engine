@@ -20,5 +20,33 @@ class TelegramSchemaTests(unittest.TestCase):
             self.assertEqual(db.execute("SELECT expires_at FROM telegram_audit WHERE event_id='a1'").fetchone()[0], 100)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM telegram_audit").fetchone()[0], 1)
 
+    def test_versioned_migration_has_same_required_contract(self):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        migration = (root / "workers" / "telegram-control-plane" / "migrations" / "0001_telegram_control_plane.sql").read_text(encoding="utf-8")
+        expected_tables = {
+            "telegram_inbox",
+            "telegram_workflows",
+            "telegram_consents",
+            "telegram_sessions",
+            "telegram_audit",
+        }
+        with sqlite3.connect(":memory:") as db:
+            db.executescript(migration)
+            tables = {
+                row[0]
+                for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            }
+            self.assertTrue(expected_tables.issubset(tables))
+            inbox_columns = {
+                row[1]
+                for row in db.execute("PRAGMA table_info(telegram_inbox)")
+            }
+            self.assertTrue({"event_id", "claim_token", "status", "expires_at"}.issubset(inbox_columns))
+            audit_columns = {
+                row[1]
+                for row in db.execute("PRAGMA table_info(telegram_audit)")
+            }
+            self.assertTrue({"event_id", "workflow_id", "intent_digest", "expires_at"}.issubset(audit_columns))
+
 if __name__ == "__main__":
     unittest.main()
