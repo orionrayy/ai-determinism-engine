@@ -185,7 +185,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('"--method"', runtime)
         self.assertIn('"POST"', runtime)
         self.assertIn('check=False', runtime)
-        self.assertNotIn('status == "waiting_approval"', runtime)
+        self.assertIn('status == "waiting_approval"', runtime)
         self.assertIn('recovery_event_id(candidate_workflow)', runtime)
 
     def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
@@ -203,11 +203,10 @@ class ActionsConfigTests(unittest.TestCase):
     def test_scheduled_recovery_uses_canonical_loader(self):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
-        self.assertIn('from orchestrator.scheduled_recovery', recovery)
+        self.assertIn('python3 -m orchestrator.scheduled_recovery', recovery)
         runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
         self.assertIn('load_state', runtime)
         self.assertNotIn('state_path = Path(".orchestrator/state.json")', runtime)
-
 
     def test_checkout_action_sha_is_consistent_across_all_workflows(self):
         expected = "d23441a48e516b6c34aea4fa41551a30e30af803"
