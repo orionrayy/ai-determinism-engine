@@ -91,6 +91,7 @@ jobs:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_ACTION: ${{ github.event.action }}
+          ISSUE_UPDATED_AT: ${{ github.event.issue.updated_at }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
         run: |
@@ -125,10 +126,20 @@ jobs:
             esac
           fi
           printf '%s' "$goal" > /tmp/orchestrator_goal.txt
+          event_id=""
+          if [ "$GITHUB_EVENT_NAME" = "issues" ]; then
+            event_id="issue:${GITHUB_REPOSITORY}:${ISSUE_NUMBER}:${ISSUE_ACTION}:${ISSUE_UPDATED_AT}"
+          else
+            event_id="${{ github.event.client_payload.event_id }}"
+          fi
+          delimiter="ORCHESTRATOR_GOAL_$(python3 -c 'import uuid; print(uuid.uuid4().hex)')"
           {
-            echo "goal=$goal"
+            echo "goal<<$delimiter"
+            printf '%s\n' "$goal"
+            echo "$delimiter"
             echo "issue_number=$trigger_issue"
             echo "workflow_id=$workflow_id"
+            echo "event_id=$event_id"
             echo "execution_id=$EVENT_EXECUTION_ID"
             echo "domain=$EVENT_DOMAIN"
             echo "operation=$EVENT_OPERATION"
@@ -164,7 +175,7 @@ jobs:
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
-          ORCHESTRATOR_EVENT_ID: ${{ github.event.client_payload.event_id }}
+          ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}
           ORCHESTRATOR_EXECUTION_ID: ${{ github.event.client_payload.execution_id }}
           ORCHESTRATOR_EXTERNAL_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EXTERNAL_DOMAIN: ${{ github.event.client_payload.domain }}
@@ -295,243 +306,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-          from datetime import datetime, timezone
-
-          from orchestrator.orchestrator import (
-              AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
-              DEFAULT_TERMINAL_COMPACTION_DAYS,
-              compact_terminal_workflows,
-              load_state,
-              workflow_authority_mode,
-          )
-          from orchestrator.control_plane import ControlPlaneClient, ControlPlaneError
-          from orchestrator.scheduled_recovery import (
-              DEFAULT_STALE_SECONDS,
-              is_recovery_candidate,
-              recovery_event_id,
-          )
-
-          state = load_state()
-          now = datetime.now(timezone.utc)
-
-          try:
-              stale_seconds = max(
-                  1,
-                  int(
-                      os.environ.get(
-                          "ORCHESTRATOR_RECOVERY_STALE_SECONDS",
-                          str(DEFAULT_STALE_SECONDS),
-                      )
-                  ),
-              )
-          except ValueError:
-              stale_seconds = DEFAULT_STALE_SECONDS
-
-          def github_run_status(run_id):
-              try:
-                  result = subprocess.run(
-                      [
-                          "gh",
-                          "api",
-                          "--method",
-                          "GET",
-                          f"repos/{os.environ['REPOSITORY']}/actions/runs/{run_id}",
-                      ],
-                      capture_output=True,
-                      text=True,
-                      check=False,
-                  )
-              except Exception as exc:
-                  print(
-                      f"run_status_lookup_failed run_id={run_id}: "
-                      f"{type(exc).__name__}: {exc}"
-                  )
-                  return "unknown"
-              if result.returncode != 0:
-                  stderr = (result.stderr or "").strip().replace("\\n", " ")
-                  if "HTTP 404" in stderr or '"status":404' in stderr:
-                      return "missing"
-                  print(
-                      f"run_status_lookup_failed run_id={run_id}: "
-                      f"exit={result.returncode} {stderr[:300]}"
-                  )
-                  return "unknown"
-              try:
-                  payload = json.loads(result.stdout or "{}")
-              except json.JSONDecodeError:
-                  print(f"run_status_lookup_failed run_id={run_id}: invalid JSON")
-                  return "unknown"
-              return str(payload.get("status") or "unknown").strip().lower()
-
-          dispatched = 0
-          dispatch_failures = []
-          control_plane = None
-          if (
-              os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
-              and os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
-          ):
-              try:
-                  control_plane = ControlPlaneClient.from_env()
-              except ControlPlaneError as exc:
-                  print(f"control_plane_config_failed: {type(exc).__name__}: {exc}")
-
-          for workflow in state.get("workflows", {}).values():
-              if not isinstance(workflow, dict):
-                  continue
-              workflow_id = str(workflow.get("id") or "").strip()
-              if not workflow_id:
-                  continue
-
-              candidate_workflow = workflow
-              recovery_due = None
-              if workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
-                  if control_plane is None:
-                      dispatch_failures.append(
-                          f"{workflow_id}: distributed state authority unavailable"
-                      )
-                      continue
-                  try:
-                      remote = control_plane.get_workflow_state(workflow_id)
-                  except ControlPlaneError as exc:
-                      dispatch_failures.append(
-                          f"{workflow_id}: control-plane read failed: "
-                          f"{type(exc).__name__}: {exc}"
-                      )
-                      continue
-                  if remote is None:
-                      dispatch_failures.append(
-                          f"{workflow_id}: control-plane state absent"
-                      )
-                      continue
-                  if str(remote.state.get("id") or "").strip() != workflow_id:
-                      dispatch_failures.append(
-                          f"{workflow_id}: control-plane workflow identity mismatch"
-                      )
-                      continue
-                  candidate_workflow = dict(remote.state)
-                  candidate_workflow["control_plane_state_version"] = remote.state_version
-                  recovery_due = bool(remote.recovery_due)
-
-              active_run_status = None
-              if (
-                  candidate_workflow.get("status") == "running"
-                  and candidate_workflow.get("github_run_id")
-              ):
-                  active_run_status = github_run_status(
-                      str(candidate_workflow.get("github_run_id"))
-                  )
-
-              if not is_recovery_candidate(
-                  candidate_workflow,
-                  now,
-                  active_run_status=active_run_status,
-                  stale_seconds=stale_seconds,
-                  recovery_due=recovery_due,
-              ):
-                  continue
-
-              event_id = recovery_event_id(candidate_workflow)
-              if control_plane is not None and workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
-                  try:
-                      claim = control_plane.claim_recovery(
-                          workflow_id,
-                          event_id,
-                          owner="scheduled-recovery:" + os.environ["SCHEDULE_RUN_ID"],
-                          ttl_seconds=300,
-                      )
-                  except ControlPlaneError as exc:
-                      dispatch_failures.append(
-                          f"{workflow_id}: recovery claim failed: "
-                          f"{type(exc).__name__}: {exc}"
-                      )
-                      continue
-                  if str(claim.get("status") or "") != "claimed":
-                      continue
-
-              payload = {
-                  "event_type": "orchestrator.continue",
-                  "client_payload": {
-                      "workflow_id": workflow_id,
-                      "event_id": event_id,
-                      "scheduled_recovery": True,
-                      "schedule_run_id": os.environ["SCHEDULE_RUN_ID"],
-                  },
-              }
-              try:
-                  result = subprocess.run(
-                      [
-                          "gh",
-                          "api",
-                          "--method",
-                          "POST",
-                          f"repos/{os.environ['REPOSITORY']}/dispatches",
-                          "--input",
-                          "-",
-                      ],
-                      input=json.dumps(payload),
-                      text=True,
-                      capture_output=True,
-                      check=False,
-                  )
-              except Exception as exc:
-                  dispatch_failures.append(
-                      f"{workflow_id}: {type(exc).__name__}: {exc}"
-                  )
-                  continue
-
-              if result.returncode != 0:
-                  stderr = (result.stderr or "").strip().replace("\\n", " ")
-                  dispatch_failures.append(
-                      f"{workflow_id}: exit={result.returncode} {stderr[:300]}"
-                  )
-                  continue
-
-              dispatched += 1
-              if control_plane is not None and workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE:
-                  try:
-                      control_plane.ack_recovery(
-                          workflow_id,
-                          event_id,
-                      )
-                  except ControlPlaneError as exc:
-                      print(
-                          f"recovery_ack_failed workflow_id={workflow_id}: "
-                          f"{type(exc).__name__}: {exc}"
-                      )
-
-          retention_raw = os.environ.get(
-              "ORCHESTRATOR_TERMINAL_COMPACTION_DAYS",
-              str(DEFAULT_TERMINAL_COMPACTION_DAYS),
-          )
-          try:
-              retention_days = int(retention_raw)
-          except ValueError:
-              retention_days = DEFAULT_TERMINAL_COMPACTION_DAYS
-
-          compacted = compact_terminal_workflows(
-              state,
-              now=now,
-              retention_days=retention_days,
-          )
-          print(f"dispatched={dispatched}")
-          print(f"compacted={len(compacted)}")
-
-          with open(
-              "/tmp/orchestrator_recovery_failures.json",
-              "w",
-              encoding="utf-8",
-          ) as marker:
-              json.dump(
-                  dispatch_failures[:16],
-                  marker,
-                  ensure_ascii=False,
-                  sort_keys=True,
-              )
-          PY
+          python3 -m orchestrator.scheduled_recovery
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
