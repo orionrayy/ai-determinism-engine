@@ -267,7 +267,11 @@ def github_approve_workflow_node(metadata: dict) -> dict:
         raise RuntimeError("github_approval_search_invalid")
     matches = [
         item for item in items
-        if isinstance(item, dict) and str(item.get("title") or "") == exact_title
+        if (
+            isinstance(item, dict)
+            and "pull_request" not in item
+            and str(item.get("title") or "") == exact_title
+        )
     ]
     if len(matches) != 1:
         if not matches:
