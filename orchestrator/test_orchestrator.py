@@ -6,6 +6,7 @@ import threading
 import unittest
 import time
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
@@ -412,6 +413,68 @@ class OrchestratorTests(unittest.TestCase):
                 {"version": 2, "value": "after"},
             )
             self.assertFalse(list(Path(tmp).glob(".state.json.*.tmp")))
+
+    def test_one_step_rearms_stale_safe_federation_in_direct_step_path(self):
+        node = o.Node(
+            id="n01-federated",
+            capability="execute",
+            tool="noop",
+            input={"instruction": "complete delegated safe task"},
+        )
+        node.status = "delegated"
+        workflow = {
+            "id": "wf-stale-federation-step",
+            "goal": "recover stale federation",
+            "live": False,
+            "status": "waiting_agents",
+            "max_attempts": 8,
+            "attempts_used": 1,
+            "nodes": [o.asdict(node)],
+            "federation": {
+                "id": "fed-stale",
+                "status": "dispatched",
+                "task_count": 1,
+                "created_at": (
+                    datetime.now(timezone.utc) - timedelta(
+                        seconds=o.FEDERATION_STALE_SECONDS + 1
+                    )
+                ).isoformat(),
+                "tasks": [{"task_id": "n01-federated"}],
+                "artifact_id": None,
+                "artifact_digest": None,
+            },
+        }
+
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FEDERATION_ENABLED": "false"},
+            clear=False,
+        ), patch.object(
+            o,
+            "load_registry",
+            return_value={},
+        ), patch.object(
+            o,
+            "persist_workflow",
+        ), patch.object(
+            o,
+            "append_event",
+        ), patch.object(
+            o,
+            "execute_node",
+            return_value={
+                "simulated": True,
+                "tool": "noop",
+                "capability": "execute",
+            },
+        ):
+            result = o._run_one_step_inner(workflow)
+
+        self.assertEqual(result, "completed")
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["federation"]["status"], "abandoned")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(workflow["attempts_used"], 1)
 
     def test_one_step_does_not_require_github_token(self):
         workflow = {
