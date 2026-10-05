@@ -95,7 +95,7 @@ export async function touchWorkflow(env, workflowId, pKey) {
   const now = Math.floor(Date.now() / 1000);
   await env.DB.prepare(
     "UPDATE telegram_workflows SET last_seen_at=?,expires_at=? WHERE workflow_id=? AND principal_key=?"
-  ).bind(now, now, workflowId, pKey).run();
+  ).bind(now, now + 90 * 24 * 60 * 60, workflowId, pKey).run();
 }
 
 export async function ownsWorkflow(env, workflowId, pKey) {
