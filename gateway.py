@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -370,6 +371,71 @@ def dispatch_execution(goal: str, metadata: dict, event_id: str | None = None) -
         raise
 
 
+def compact_workflow_summary(workflow: dict) -> dict:
+    nodes = workflow.get("nodes") or []
+    counts: dict[str, int] = {}
+    pending_approvals = []
+    for raw in nodes:
+        if not isinstance(raw, dict):
+            continue
+        status = str(raw.get("status") or "unknown")
+        counts[status] = counts.get(status, 0) + 1
+        if status == "waiting_approval" and len(pending_approvals) < 16:
+            node_input = raw.get("input")
+            node_input = node_input if isinstance(node_input, dict) else {}
+            pending_approvals.append({
+                "node_id": str(raw.get("id") or ""),
+                "risk": str(raw.get("risk") or "unknown"),
+                "tool": str(raw.get("tool") or ""),
+                "approval_issue": (
+                    int(node_input["approval_issue"])
+                    if str(node_input.get("approval_issue") or "").isdigit()
+                    else None
+                ),
+            })
+    return {
+        "workflow_id": str(workflow.get("id") or ""),
+        "status": str(workflow.get("status") or "unknown"),
+        "mode": str(workflow.get("execution_mode") or ("live" if workflow.get("live") else "dry-run")),
+        "authority_mode": str(workflow.get("authority_mode") or ""),
+        "updated_at": str(workflow.get("updated_at") or workflow.get("created_at") or ""),
+        "node_counts": counts,
+        "pending_approvals": pending_approvals,
+        "failed_node": str(workflow.get("failed_node") or "") or None,
+        "replan_count": int(workflow.get("replan_count") or 0),
+        "attempts_used": int(workflow.get("attempts_used") or 0),
+    }
+
+
+def github_git_workflow_summary(workflow_id: str) -> dict:
+    workflow_id = str(workflow_id or "").strip()
+    if not SAFE_ID_RE.fullmatch(workflow_id):
+        raise ValueError("workflow_id_invalid")
+    shard = hashlib.sha256(workflow_id.encode("utf-8")).hexdigest()
+    encoded_path = f".orchestrator/workflows/{shard}.json"
+    payload = github_request_json(
+        f"contents/{urllib.parse.quote(encoded_path, safe='/._-')}",
+    )
+    if str(payload.get("encoding") or "").lower() != "base64":
+        raise RuntimeError("workflow_state_encoding_invalid")
+    raw_content = payload.get("content")
+    if not isinstance(raw_content, str):
+        raise RuntimeError("workflow_state_content_missing")
+    try:
+        decoded = base64.b64decode(raw_content.replace("\\n", ""), validate=True)
+        workflow = json.loads(decoded.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("workflow_state_invalid") from exc
+    if not isinstance(workflow, dict):
+        raise RuntimeError("workflow_state_invalid")
+    if str(workflow.get("id") or "") != workflow_id:
+        raise RuntimeError("workflow_identity_mismatch")
+    authority = str(workflow.get("authority_mode") or "").strip()
+    if authority != "git_durable":
+        raise RuntimeError("distributed_control_plane_required")
+    return compact_workflow_summary(workflow)
+
+
 def normalized_headers(headers: dict[str, str]) -> dict[str, str]:
     return {
         str(key).lower(): str(value).strip()
@@ -468,6 +534,23 @@ class Handler(BaseHTTPRequestHandler):
                     "shared_secret": bool(os.environ.get("GATEWAY_SHARED_SECRET")),
                 },
             })
+            return
+        match = re.fullmatch(r"/workflow/([A-Za-z0-9_.:-]{1,128})", path)
+        if match:
+            raw = b""
+            headers = dict(self.headers.items())
+            if not authorized(headers, raw, method="GET", path=path):
+                self._send(401, {"ok": False, "error": "unauthorized"})
+                return
+            try:
+                summary = github_git_workflow_summary(match.group(1))
+                self._send(200, {"ok": True, "summary": summary})
+            except RuntimeError as exc:
+                code = str(exc)
+                status = 409 if code == "distributed_control_plane_required" else 404 if code == "workflow_state_invalid" else 503
+                self._send(status, {"ok": False, "error": code})
+            except ValueError as exc:
+                self._send(400, {"ok": False, "error": str(exc)})
             return
         self._send(404, {"ok": False, "error": "not_found"})
 
