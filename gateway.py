@@ -217,7 +217,10 @@ def github_request_json(
     )
     if not token:
         raise RuntimeError("GITHUB_GATEWAY_TOKEN is not configured")
-    url = f"https://api.github.com/repos/{repository}/{path.lstrip('/')}"
+    if path.lstrip("/").startswith("search/"):
+        url = f"https://api.github.com/{path.lstrip('/')}"
+    else:
+        url = f"https://api.github.com/repos/{repository}/{path.lstrip('/')}"
     encoded = None
     if body is not None:
         encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
