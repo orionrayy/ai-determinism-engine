@@ -112,6 +112,10 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     if not event_id or len(event_id) > 128:
         raise ValueError("event_id_invalid")
 
+    approve_high_risk = payload.get("approve_high_risk") is True
+    if approve_high_risk and operation != "approve":
+        raise ValueError("approve_high_risk_operation_invalid")
+
     fingerprint_input = (
         {"input": request_input, "approve_high_risk": True}
         if approve_high_risk
@@ -171,10 +175,6 @@ def build_execution_event(payload: dict) -> tuple[str, dict, str]:
     ).strip().lower()
     if requested_mode not in {"dry-run", "live"}:
         raise ValueError("requested_mode_invalid")
-
-    approve_high_risk = payload.get("approve_high_risk") is True
-    if approve_high_risk and operation != "approve":
-        raise ValueError("approve_high_risk_operation_invalid")
 
     source = str(payload.get("source") or "automation-core").strip()[:128]
     if not source:
