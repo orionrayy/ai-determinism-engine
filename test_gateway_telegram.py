@@ -1,67 +1,82 @@
+import json
+import os
 import unittest
 from unittest.mock import patch
 
 import gateway
 
 
+class Response:
+    def __init__(self, status=200, payload=None):
+        self.status = status
+        self._payload = payload
+    def __enter__(self):
+        return self
+    def __exit__(self, *args):
+        return False
+    def read(self):
+        return json.dumps(self._payload or {}).encode('utf-8')
+
+
 class TelegramGatewayContractTests(unittest.TestCase):
-    def test_approval_flag_is_bound_to_approval_operation(self):
+    def test_approval_payload_is_node_scoped(self):
         goal, metadata, _ = gateway.build_execution_event({
             'domain': 'orchestration',
             'operation': 'approve',
-            'input': {'workflow_id': 'wf:1'},
+            'input': {'workflow_id': 'wf:1', 'node_id': 'n07-deploy'},
             'event_id': 'event-1',
             'idempotency_key': 'event-1',
-            'approve_high_risk': True,
         })
         self.assertEqual(goal, 'Execute orchestration operation orchestration.approve')
-        self.assertIs(metadata['approve_high_risk'], True)
         self.assertEqual(metadata['workflow_id'], 'wf:1')
+        self.assertEqual(metadata['domain'], 'orchestration')
+        self.assertEqual(metadata['operation'], 'approve')
 
-    def test_approval_flag_cannot_be_attached_to_other_operation(self):
-        with self.assertRaisesRegex(ValueError, 'approve_high_risk_operation_invalid'):
-            gateway.build_execution_event({
-                'domain': 'telegram',
-                'operation': 'prompt',
-                'input': {'goal': 'hello'},
-                'event_id': 'event-2',
-                'idempotency_key': 'event-2',
-                'approve_high_risk': True,
-            })
-
-    def test_approval_changes_intent_digest(self):
-        _, normal, _ = gateway.build_execution_event({
+    def test_approval_does_not_change_generic_intent_contract(self):
+        _, first, _ = gateway.build_execution_event({
             'domain': 'orchestration',
             'operation': 'approve',
-            'input': {'workflow_id': 'wf:1'},
-            'event_id': 'event-3',
-            'idempotency_key': 'event-3',
+            'input': {'workflow_id': 'wf:1', 'node_id': 'n07-deploy'},
+            'event_id': 'event-a',
+            'idempotency_key': 'event-a',
         })
-        _, approved, _ = gateway.build_execution_event({
+        _, second, _ = gateway.build_execution_event({
             'domain': 'orchestration',
             'operation': 'approve',
-            'input': {'workflow_id': 'wf:1'},
-            'event_id': 'event-4',
-            'idempotency_key': 'event-4',
-            'approve_high_risk': True,
+            'input': {'workflow_id': 'wf:1', 'node_id': 'n07-deploy'},
+            'event_id': 'event-b',
+            'idempotency_key': 'event-b',
         })
-        self.assertNotEqual(normal['intent_fingerprint'], approved['intent_fingerprint'])
+        self.assertEqual(first['intent_fingerprint'], second['intent_fingerprint'])
 
-    def test_github_dispatch_payload_propagates_approval_flag(self):
-        captured = {}
-        class Response:
-            status = 204
-            def __enter__(self): return self
-            def __exit__(self, *args): return False
-
+    def test_github_approval_finds_exact_open_issue_and_applies_idempotent_label(self):
+        calls = []
+        responses = iter([
+            Response(200, {'items': [{'number': 42, 'title': '[ORCHESTRATOR APPROVAL] wf:1 / n07-deploy'}]}),
+            Response(200, {'labels': [{'name': 'orchestrator-approved'}]}),
+        ])
         def fake_urlopen(request, timeout=30):
-            captured['body'] = request.data.decode('utf-8')
-            return Response()
+            calls.append((request.get_method(), request.full_url, request.data.decode('utf-8') if request.data else ''))
+            return next(responses)
+        metadata = {'workflow_id': 'wf:1', 'node_id': 'n07-deploy'}
+        with patch.dict(os.environ, {'GITHUB_GATEWAY_TOKEN': 'secret', 'GITHUB_REPOSITORY': 'repo/test'}), patch.object(gateway.urllib.request, 'urlopen', side_effect=fake_urlopen):
+            result = gateway.github_approve_workflow_node(metadata)
+        self.assertEqual(result['approval_issue'], 42)
+        self.assertTrue(result['approved'])
+        self.assertEqual(calls[0][0], 'GET')
+        self.assertEqual(calls[1][0], 'POST')
+        self.assertIn('orchestrator-approved', calls[1][2])
 
-        metadata = {'approve_high_risk': True, 'workflow_id': 'wf:1'}
-        with patch.dict('os.environ', {'GITHUB_GATEWAY_TOKEN': 'secret', 'GITHUB_REPOSITORY': 'repo/test'}), patch.object(gateway.urllib.request, 'urlopen', side_effect=fake_urlopen):
-            gateway.github_dispatch('Execute orchestration operation orchestration.approve', metadata, event_id='event-5')
-        self.assertIn('approve_high_risk', captured['body'])
+    def test_github_approval_fails_closed_on_zero_or_duplicate_matches(self):
+        for items, expected in [
+            ([], 'approval_issue_not_found'),
+            ([{'number': 1, 'title': '[ORCHESTRATOR APPROVAL] wf:1 / n07-deploy'}, {'number': 2, 'title': '[ORCHESTRATOR APPROVAL] wf:1 / n07-deploy'}], 'multiple_open_approval_issues'),
+        ]:
+            def fake_urlopen(request, timeout=30):
+                return Response(200, {'items': items})
+            with self.subTest(expected=expected), patch.dict(os.environ, {'GITHUB_GATEWAY_TOKEN': 'secret', 'GITHUB_REPOSITORY': 'repo/test'}), patch.object(gateway.urllib.request, 'urlopen', side_effect=fake_urlopen):
+                with self.assertRaisesRegex(RuntimeError, expected):
+                    gateway.github_approve_workflow_node({'workflow_id': 'wf:1', 'node_id': 'n07-deploy'})
 
 
 if __name__ == '__main__':
