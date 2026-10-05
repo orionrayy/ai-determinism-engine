@@ -1,5 +1,6 @@
 import {hmacHex, sha256Hex} from "./crypto.js";
 import {canonicalJson} from "./protocol.js";
+import {readGitWorkflowSummary} from "./gateway.js";
 import {normalizeWorkflowId} from "./protocol.js";
 
 const MAX_RESPONSE_BYTES = 700 * 1024;
@@ -65,6 +66,35 @@ export function summarizeState(payload) {
     replan_count: Number(state.replan_count || 0),
     attempts_used: Number(state.attempts_used || 0),
   };
+}
+
+
+export async function readWorkflowSummary(env, workflowId) {
+  let controlPlaneError = null;
+  if (env.CONTROL_PLANE_URL && env.CONTROL_PLANE_SECRET) {
+    try {
+      const payload = await readWorkflowState(env, workflowId);
+      return summarizeState(payload);
+    } catch (error) {
+      controlPlaneError = error;
+      if (Number(error?.status || 0) === 404) {
+        controlPlaneError = null;
+      }
+    }
+  }
+  try {
+    return await readGitWorkflowSummary(env, workflowId);
+  } catch (error) {
+    const code = String(error?.message || "workflow_status_unavailable");
+    if (code === "distributed_control_plane_required" && controlPlaneError) {
+      throw controlPlaneError;
+    }
+    if (code === "distributed_control_plane_required") {
+      throw new Error("control_plane_required");
+    }
+    if (controlPlaneError) throw controlPlaneError;
+    throw error;
+  }
 }
 
 export async function statusDigest(summary) {
