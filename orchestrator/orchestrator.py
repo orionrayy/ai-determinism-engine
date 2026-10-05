@@ -6,10 +6,8 @@ from pathlib import Path
 import sys
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-if __package__ in (None, ""):
-    if str(_REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(_REPO_ROOT))
-    __package__ = "orchestrator"
+if __package__ in (None, "") and str(_REPO_ROOT) not in sys.path:
+    sys.path.append(str(_REPO_ROOT))
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import ipaddress
