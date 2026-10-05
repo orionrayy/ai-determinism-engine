@@ -59,6 +59,14 @@ export function normalizeWorkflowId(value) {
   return id;
 }
 
+export function normalizeNodeId(value) {
+  const id = String(value || "").trim();
+  if (!/^[A-Za-z0-9._:-]{1,100}$/.test(id)) {
+    throw new Error("node_id_invalid");
+  }
+  return id;
+}
+
 export function telegramEventId(updateId) {
   const id = Number(updateId);
   if (!Number.isSafeInteger(id) || id < 0) throw new Error("update_id_invalid");
