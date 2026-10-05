@@ -834,7 +834,7 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Telegram update_id is the inbound replay identity. D1/SQLite metadata includes inbox replay state, consent, encrypted short-lived sessions, and bounded audit records. Raw Telegram user/chat IDs and prompt bodies are not persisted.
 - Session encryption uses AES-256-GCM with a key separate from the HMAC key used for derived identifiers.
 - Gateway calls use the existing HMAC request boundary. approve_high_risk is accepted only for the orchestration.approve operation and is included in the semantic intent fingerprint before repository_dispatch.
-- The main orchestrator workflow now propagates repository_dispatch client_payload.approve_high_risk into ORCHESTRATOR_APPROVE_HIGH_RISK.
+- Generic Telegram repository_dispatch approval-bypass propagation was removed. Telegram approvals now target the existing exact GitHub approval issue for a specific workflow/node, preserving the canonical fingerprint/label/continuation semantics.
 - Database reference schema: database/telegram_schema.sql. First target is Cloudflare D1/SQLite-compatible metadata storage; later mapping to the execution-fabric PostgreSQL adapter remains part of E2.
 - Dedicated CI: .github/workflows/telegram-control-plane-tests.yml covers Python/Node syntax, database schema tests, worker tests, and a tracked-source bot-token-shaped secret guard.
 - Telegram compliance boundary: no group/channel collection, no public-platform scraping, no Telegram-derived training/ML dataset, no credential requests, no rate-limit bypass, and no Bot-to-Bot automation in v1. User-submitted prompts may be forwarded only for the declared orchestration purpose under explicit consent.
