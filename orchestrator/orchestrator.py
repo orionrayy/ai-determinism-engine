@@ -4546,12 +4546,27 @@ def _run_one_step_inner(
     control_plane: ControlPlaneClient | None = None,
     control_plane_lease: Any | None = None,
 ) -> str:
-    active_federation = workflow.get("federation") or {}
-    if workflow.get("status") == "waiting_agents" and active_federation.get("status") in {"prepared", "dispatched"}:
-        return "waiting_agents"
-    nodes = [Node(**node) for node in workflow['nodes']]
+    nodes = [Node(**node) for node in workflow["nodes"]]
     validate_dag(nodes)
     registry = load_registry()
+
+    active_federation = workflow.get("federation") or {}
+    if (
+        workflow.get("status") == "waiting_agents"
+        and active_federation.get("status") in {"prepared", "dispatched"}
+    ):
+        recovery = rearm_stale_federation(
+            workflow,
+            nodes,
+            registry,
+        )
+        if recovery == "failed":
+            workflow["nodes"] = [asdict(node) for node in nodes]
+            persist_workflow(workflow)
+            return "failed"
+        if recovery != "rearmed":
+            return "waiting_agents"
+        workflow["nodes"] = [asdict(node) for node in nodes]
     live = bool(workflow.get('live'))
     enforce_node_policy(nodes, registry, live=live)
     workflow['agent_team'] = team_manifest(workflow['id'], nodes)
