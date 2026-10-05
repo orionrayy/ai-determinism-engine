@@ -29,7 +29,7 @@ No Telegram data is used by this component as a training corpus or other unrelat
 
 ## Database
 database/telegram_schema.sql is the portable D1 and SQLite schema.
-The first deployment should bind a Cloudflare D1 database as DB and execute the schema. The schema is deliberately small so it can later be mapped to the PostgreSQL adapter planned by the execution-fabric program.
+The first deployment should bind a Cloudflare D1 database as DB and apply the versioned migrations under workers/telegram-control-plane/migrations. database/telegram_schema.sql remains the portable schema snapshot used by tests and documentation. The logical contract can later be mapped to the PostgreSQL adapter planned by the execution-fabric program.
 Do not place raw Telegram identifiers into the database schema, logs, audit fields, or workflow state.
 
 ## Deployment checklist
