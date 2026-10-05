@@ -179,11 +179,13 @@ class ControlPlaneClient:
         method: str,
         path: str,
         body: bytes,
+        request_id: str = "",
     ) -> str:
         data = b"\n".join([
             timestamp.encode("utf-8"),
             method.upper().encode("utf-8"),
             path.encode("utf-8"),
+            str(request_id).encode("utf-8"),
             body,
         ])
         return hmac.new(
@@ -222,6 +224,7 @@ class ControlPlaneClient:
                     method,
                     path,
                     body,
+                    request_id,
                 ),
             },
         )
