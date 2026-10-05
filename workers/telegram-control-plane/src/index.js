@@ -1,6 +1,6 @@
 import {constantTimeEqual, isAllowedUser, isApprover, isPrivateMessage, isSafeWorkflowId} from "./policy.js";
 import {callbackAction, normalizeGoal, normalizeWorkflowId, parseCommand, splitFirstArg, telegramEventId} from "./protocol.js";
-import {audit, chatKey, deleteUserData, getConsent, getSession, hasDatabase, principalKey, revokeConsent, saveSession, setConsent} from "./db.js";
+import {audit, chatKey, claimUpdate, completeUpdate, deleteUserData, failUpdate, getConsent, getSession, hasDatabase, principalKey, revokeConsent, saveSession, setConsent} from "./db.js";
 import {buildRunPayload, buildWorkflowPayload, dispatchToGateway} from "./gateway.js";
 import {readWorkflowState, summarizeState} from "./control_plane.js";
 
@@ -74,6 +74,27 @@ function commandMenu() {
       [{text: "Revoke", callback_data: "consent:revoke"}],
     ],
   };
+}
+
+
+async function claimMutableUpdate(env, userId, eventId) {
+  const pKey = await principalKey(env, userId);
+  const result = await claimUpdate(env, eventId, pKey);
+  return {pKey, claimed: Boolean(result.claimed), workflowId: result.workflowId || null};
+}
+
+async function completeMutableUpdate(env, eventId, workflowId) {
+  try {
+    await completeUpdate(env, eventId, workflowId);
+  } catch (_) {
+    // Gateway/orchestrator idempotency remains the execution backstop.
+  }
+}
+
+async function failMutableUpdate(env, eventId) {
+  try {
+    await failUpdate(env, eventId);
+  } catch (_) {}
 }
 
 function helpText() {
@@ -159,6 +180,7 @@ async function handleCallback(env, update) {
     await revokeConsent(env, pKey);
     await sendText(env, message.chat.id, "Consent revoked. New execution commands are disabled until you authorize again.");
   } catch (error) {
+    await failMutableUpdate(env, eventId);
     const code = String(error?.message || "request_failed");
     await sendText(env, message.chat.id, code === "database_not_configured"
       ? "Database persistence is not configured; authorization cannot be recorded yet."
@@ -227,7 +249,9 @@ async function handleMessage(env, update) {
         }
         case "run":
         case "runlive": {
-          await requireConsent(env, userId);
+          const pKey = await requireConsent(env, userId);
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           const goal = normalizeGoal(parsed.args);
           const mode = parsed.command === "runlive" ? "live" : "dry-run";
           const workflowId = await dispatchAndReply(
@@ -237,6 +261,7 @@ async function handleMessage(env, update) {
             buildRunPayload(goal, mode, eventId),
             mode === "live" ? "runlive" : "run",
           );
+          await completeMutableUpdate(env, eventId, workflowId);
           await sendText(env, chatId, mode === "live"
             ? "Live execution requested. Workflow: " + workflowId + "\nHigh-risk effects still require approval."
             : "Dry-run accepted. Workflow: " + workflowId);
@@ -244,6 +269,8 @@ async function handleMessage(env, update) {
         }
         case "status": {
           await requireConsent(env, userId);
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           const state = await readWorkflowState(env, workflowId);
@@ -272,6 +299,8 @@ async function handleMessage(env, update) {
         }
         case "resume": {
           await requireConsent(env, userId);
+          const claim = await claimMutableUpdate(env, userId, eventId);
+          if (!claim.claimed) return;
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           const result = await dispatchToGateway(
@@ -279,6 +308,7 @@ async function handleMessage(env, update) {
             buildWorkflowPayload("resume", workflowId, eventId),
             eventId,
           );
+          await completeMutableUpdate(env, eventId, workflowId);
           await recordCommand(env, userId, chatId, eventId, "resume", workflowId, null);
           await sendText(env, chatId, "Resume requested for workflow " + workflowId + ".\nGateway: " + String(result?.queued ? "accepted" : "submitted"));
           return;
@@ -296,6 +326,7 @@ async function handleMessage(env, update) {
             buildWorkflowPayload("approve", workflowId, eventId, true),
             eventId,
           );
+          await completeMutableUpdate(env, eventId, workflowId);
           await recordCommand(env, userId, chatId, eventId, "approve", workflowId, null);
           await sendText(env, chatId, "Approval signal submitted for workflow " + workflowId + ". The orchestrator will still enforce its own validation and policy.");
           return;
@@ -330,6 +361,8 @@ async function handleMessage(env, update) {
       return;
     }
     const goal = normalizeGoal(message.text || "");
+    const claim = await claimMutableUpdate(env, userId, eventId);
+    if (!claim.claimed) return;
     const workflowId = await dispatchAndReply(
       env,
       message,
@@ -337,6 +370,7 @@ async function handleMessage(env, update) {
       buildRunPayload(goal, "dry-run", eventId),
       "prompt_text",
     );
+    await completeMutableUpdate(env, eventId, workflowId);
     await sendText(env, chatId, "Prompt accepted as dry-run. Workflow: " + workflowId);
     void pKey;
   } catch (error) {
