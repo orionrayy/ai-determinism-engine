@@ -830,10 +830,10 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Telegram is an interaction/control frontend, not workflow truth, queue, artifact store, or execution authority.
 - New branch: feat/telegram-control-plane.
 - New Worker: workers/telegram-control-plane. It accepts private-chat webhook updates only, applies an explicit Telegram user allowlist and separate approver allowlist, requires active/revocable consent before orchestration commands, and exposes /privacy as the policy URL endpoint.
-- Supported commands: /run (dry-run), /runlive (live request subject to orchestrator policy), /status, /resume, /approve, /prompt on|off, /last, /privacy, /revoke, /delete_me, /id, /help.
+- Supported commands: /run (dry-run), /runlive (live request subject to orchestrator policy), /status, /approvals, /resume, /approve (node-scoped), /prompt on|off, /last, /privacy, /revoke, /delete_me, /id, /help.
 - Telegram update_id is the inbound replay identity. D1/SQLite metadata includes inbox replay state, consent, encrypted short-lived sessions, and bounded audit records. Raw Telegram user/chat IDs and prompt bodies are not persisted.
 - Session encryption uses AES-256-GCM with a key separate from the HMAC key used for derived identifiers.
-- Gateway calls use the existing HMAC request boundary. approve_high_risk is accepted only for the orchestration.approve operation and is included in the semantic intent fingerprint before repository_dispatch.
+- Gateway calls use the existing HMAC request boundary. Telegram approval is a node-scoped control action targeting the canonical GitHub approval issue; it does not create a new orchestration workflow or bypass the approval fingerprint/continuation path.
 - Generic Telegram repository_dispatch approval-bypass propagation was removed. Telegram approvals now target the existing exact GitHub approval issue for a specific workflow/node, preserving the canonical fingerprint/label/continuation semantics.
 - Database reference schema: database/telegram_schema.sql. First target is Cloudflare D1/SQLite-compatible metadata storage; later mapping to the execution-fabric PostgreSQL adapter remains part of E2.
 - Dedicated CI: .github/workflows/telegram-control-plane-tests.yml covers Python/Node syntax, database schema tests, worker tests, and a tracked-source bot-token-shaped secret guard.
