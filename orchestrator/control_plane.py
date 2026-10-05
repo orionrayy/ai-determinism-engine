@@ -63,15 +63,6 @@ class WorkflowState:
     recovery_event_id: str = ""
     recovery_due_at: int | None = None
 
-def canonical_json(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        default=str,
-        separators=(",", ":"),
-    ).encode("utf-8")
-
 def worker_id() -> str:
     explicit = os.environ.get("ORCHESTRATOR_WORKER_ID", "").strip()
     if explicit:
