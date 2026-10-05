@@ -75,14 +75,11 @@ jobs:
           wrangler_package="wrangler@${WRANGLER_VERSION}"
           db_id="$TELEGRAM_D1_DATABASE_ID"
           if [ -z "$db_id" ]; then
-            existing="$(npx --yes "$wrangler_package" d1 list --json 2>/dev/null || true)"
+            existing="$(npx --yes "$wrangler_package" d1 list --json)"
             db_id="$(python - "$existing" <<'PY'
           import json, sys
           raw=sys.argv[1]
-          try:
-              data=json.loads(raw)
-          except Exception:
-              data=[]
+          data=json.loads(raw)
           items = data if isinstance(data, list) else data.get('result', [])
           for item in items:
               if isinstance(item, dict) and item.get('name') == 'ai-orchestrator-telegram':
@@ -92,23 +89,16 @@ jobs:
             )"
           fi
           if [ -z "$db_id" ] && [ "$PROVISION_D1" = "true" ]; then
-            created="$(npx --yes "$wrangler_package" d1 create "$TELEGRAM_D1_DATABASE_NAME" --binding DB --use-remote --json 2>/dev/null || true)"
-            db_id="$(python - "$created" <<'PY'
+            npx --yes "$wrangler_package" d1 create "$TELEGRAM_D1_DATABASE_NAME" --binding DB --use-remote
+            existing="$(npx --yes "$wrangler_package" d1 list --json)"
+            db_id="$(python - "$existing" <<'PY'
           import json, sys
-          raw=sys.argv[1]
-          try:
-              data=json.loads(raw)
-          except Exception:
-              data={}
-          candidates=[data]
-          if isinstance(data, dict):
-              candidates += [data.get('result') or {}, data.get('database') or {}]
-          for item in candidates:
-              if isinstance(item, dict):
-                  value=item.get('uuid') or item.get('id')
-                  if value:
-                      print(value)
-                      break
+          data=json.loads(sys.argv[1])
+          items = data if isinstance(data, list) else data.get('result', [])
+          for item in items:
+              if isinstance(item, dict) and item.get('name') == 'ai-orchestrator-telegram':
+                  print(item.get('uuid') or item.get('id') or '')
+                  break
           PY
             )"
           fi
