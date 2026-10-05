@@ -228,17 +228,25 @@ class ScheduledRecoveryTests(unittest.TestCase):
 
 
     def test_main_writes_failure_marker_and_defers_exit_decision(self):
+        import builtins
+
         with tempfile.TemporaryDirectory() as tmp:
             marker = os.path.join(tmp, "recovery.json")
+            real_open = builtins.open
+
+            def open_side_effect(path, *args, **kwargs):
+                if path == "/tmp/orchestrator_recovery_failures.json":
+                    path = marker
+                return real_open(path, *args, **kwargs)
+
             with patch("scheduled_recovery.run", return_value=(2, 1, ["wf-1: dispatch failed"])) as run_mock, patch(
                 "builtins.open",
-                side_effect=lambda *args, **kwargs: open(marker, *args[1:], **kwargs)
-                if args and args[0] == "/tmp/orchestrator_recovery_failures.json"
-                else __builtins__["open"](*args, **kwargs),
+                side_effect=open_side_effect,
             ):
                 self.assertEqual(main(), 0)
                 run_mock.assert_called_once()
-            with open(marker, encoding="utf-8") as handle:
+
+            with real_open(marker, encoding="utf-8") as handle:
                 self.assertEqual(json.load(handle), ["wf-1: dispatch failed"])
 
     def test_recovery_event_id_changes_when_recovery_state_changes(self):
