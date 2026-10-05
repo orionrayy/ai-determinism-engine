@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
+import subprocess
 from typing import Any, Mapping
+
 
 
 DEFAULT_STALE_SECONDS = 1500
@@ -187,6 +190,221 @@ def recovery_event_id(workflow: Mapping[str, Any]) -> str:
     return "scheduled-recovery:" + str(workflow.get("id") or "") + ":" + recovery_generation(workflow)[:32]
 
 
+def _github_run_status(repository: str, run_id: str) -> str:
+    try:
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--method",
+                "GET",
+                f"repos/{repository}/actions/runs/{run_id}",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return "unknown"
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        if "HTTP 404" in stderr or '"status":404' in stderr:
+            return "missing"
+        return "unknown"
+    try:
+        payload = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return "unknown"
+    return str(payload.get("status") or "unknown").strip().lower()
+
+
+def run() -> tuple[int, int, list[str]]:
+    repository = os.environ.get("REPOSITORY", "").strip()
+    schedule_run_id = os.environ.get("SCHEDULE_RUN_ID", "").strip()
+    if not repository or not schedule_run_id:
+        raise RuntimeError("REPOSITORY and SCHEDULE_RUN_ID are required")
+
+    try:
+        from .orchestrator import (
+            AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            DEFAULT_TERMINAL_COMPACTION_DAYS,
+            compact_terminal_workflows,
+            load_state,
+            workflow_authority_mode,
+        )
+        from .control_plane import ControlPlaneClient, ControlPlaneError
+    except ImportError:
+        from orchestrator import (
+            AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            DEFAULT_TERMINAL_COMPACTION_DAYS,
+            compact_terminal_workflows,
+            load_state,
+            workflow_authority_mode,
+        )
+        from control_plane import ControlPlaneClient, ControlPlaneError
+
+    state = load_state()
+    now = datetime.now(timezone.utc)
+    try:
+        stale_seconds = max(
+            1,
+            int(
+                os.environ.get(
+                    "ORCHESTRATOR_RECOVERY_STALE_SECONDS",
+                    str(DEFAULT_STALE_SECONDS),
+                )
+            ),
+        )
+    except ValueError:
+        stale_seconds = DEFAULT_STALE_SECONDS
+
+    control_plane = None
+    if (
+        os.environ.get("ORCHESTRATOR_CONTROL_PLANE_URL", "").strip()
+        and os.environ.get("ORCHESTRATOR_CONTROL_PLANE_SECRET", "").strip()
+    ):
+        try:
+            control_plane = ControlPlaneClient.from_env()
+        except ControlPlaneError:
+            control_plane = None
+
+    dispatched = 0
+    failures: list[str] = []
+    for workflow in state.get("workflows", {}).values():
+        if not isinstance(workflow, dict):
+            continue
+        workflow_id = str(workflow.get("id") or "").strip()
+        if not workflow_id:
+            continue
+
+        candidate_workflow: dict[str, Any] = workflow
+        recovery_due: bool | None = None
+        distributed = workflow_authority_mode(workflow) == AUTHORITY_DISTRIBUTED_CONTROL_PLANE
+        if distributed:
+            if control_plane is None:
+                failures.append(f"{workflow_id}: distributed state authority unavailable")
+                continue
+            try:
+                remote = control_plane.get_workflow_state(workflow_id)
+            except ControlPlaneError as exc:
+                failures.append(f"{workflow_id}: control-plane read failed: {type(exc).__name__}: {exc}")
+                continue
+            if remote is None:
+                failures.append(f"{workflow_id}: control-plane state absent")
+                continue
+            if str(remote.state.get("id") or "").strip() != workflow_id:
+                failures.append(f"{workflow_id}: control-plane workflow identity mismatch")
+                continue
+            candidate_workflow = dict(remote.state)
+            candidate_workflow["control_plane_state_version"] = remote.state_version
+            recovery_due = bool(remote.recovery_due)
+
+        active_run_status = None
+        if candidate_workflow.get("status") == "running" and candidate_workflow.get("github_run_id"):
+            active_run_status = _github_run_status(
+                repository,
+                str(candidate_workflow.get("github_run_id")),
+            )
+
+        if not is_recovery_candidate(
+            candidate_workflow,
+            now,
+            active_run_status=active_run_status,
+            stale_seconds=stale_seconds,
+            recovery_due=recovery_due,
+        ):
+            continue
+
+        event_id = recovery_event_id(candidate_workflow)
+        claim_owner = "scheduled-recovery:" + schedule_run_id
+        claimed = False
+        if distributed:
+            try:
+                claim = control_plane.claim_recovery(
+                    workflow_id,
+                    event_id,
+                    owner=claim_owner,
+                    ttl_seconds=300,
+                )
+            except ControlPlaneError as exc:
+                failures.append(f"{workflow_id}: recovery claim failed: {type(exc).__name__}: {exc}")
+                continue
+            if str(claim.get("status") or "") != "claimed":
+                continue
+            claimed = True
+
+        payload = {
+            "event_type": "orchestrator.continue",
+            "client_payload": {
+                "workflow_id": workflow_id,
+                "event_id": event_id,
+                "scheduled_recovery": True,
+                "schedule_run_id": schedule_run_id,
+            },
+        }
+        try:
+            result = subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    "--method",
+                    "POST",
+                    f"repos/{repository}/dispatches",
+                    "--input",
+                    "-",
+                ],
+                input=json.dumps(payload),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+        except Exception as exc:
+            failures.append(f"{workflow_id}: dispatch exception: {type(exc).__name__}: {exc}")
+            continue
+        if result.returncode != 0:
+            stderr = (result.stderr or "").strip().replace("\\n", " ")
+            failures.append(f"{workflow_id}: dispatch exit={result.returncode} {stderr[:300]}")
+            continue
+
+        dispatched += 1
+        if distributed and claimed:
+            try:
+                control_plane.ack_recovery(
+                    workflow_id,
+                    event_id,
+                    owner=claim_owner,
+                )
+            except ControlPlaneError as exc:
+                failures.append(
+                    f"{workflow_id}: recovery ack failed: {type(exc).__name__}: {exc}"
+                )
+
+    retention_raw = os.environ.get(
+        "ORCHESTRATOR_TERMINAL_COMPACTION_DAYS",
+        str(DEFAULT_TERMINAL_COMPACTION_DAYS),
+    )
+    try:
+        retention_days = int(retention_raw)
+    except ValueError:
+        retention_days = DEFAULT_TERMINAL_COMPACTION_DAYS
+    compacted = compact_terminal_workflows(
+        state,
+        now=now,
+        retention_days=retention_days,
+    )
+    return dispatched, len(compacted), failures
+
+
+def main() -> int:
+    dispatched, compacted, failures = run()
+    print(f"dispatched={dispatched}")
+    print(f"compacted={compacted}")
+    print(f"recovery_failures={len(failures)}")
+    for failure in failures[:16]:
+        print(f"recovery_failure={failure}")
+    return 1 if failures else 0
+
+
 __all__ = [
     "ACTIVE_RUN_STATUSES",
     "DEFAULT_STALE_SECONDS",
@@ -194,4 +412,6 @@ __all__ = [
     "is_stale_running",
     "recovery_event_id",
     "recovery_generation",
+    "run",
+    "main",
 ]
