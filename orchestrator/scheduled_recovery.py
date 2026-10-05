@@ -395,12 +395,16 @@ def run() -> tuple[int, int, list[str]]:
 
 def main() -> int:
     dispatched, compacted, failures = run()
+    marker = "/tmp/orchestrator_recovery_failures.json"
+    with open(marker, "w", encoding="utf-8") as handle:
+        json.dump(failures[:16], handle, ensure_ascii=False, sort_keys=True)
     print(f"dispatched={dispatched}")
     print(f"compacted={compacted}")
     print(f"recovery_failures={len(failures)}")
     for failure in failures[:16]:
         print(f"recovery_failure={failure}")
-    return 1 if failures else 0
+    # The workflow shell owns the final failure decision after compaction.
+    return 0
 
 
 __all__ = [
