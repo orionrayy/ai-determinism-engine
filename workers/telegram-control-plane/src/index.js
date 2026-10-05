@@ -70,8 +70,8 @@ async function answerCallback(env, callbackId) {
 function commandMenu() {
   return {
     inline_keyboard: [
-      [{text: "Authorize", callback_data: "consent:accept"}],
-      [{text: "Privacy", callback_data: "consent:revoke"}],
+      [{text: "Authorize", callback_data: "consent:accept"}, {text: "Privacy", callback_data: "consent:privacy"}],
+      [{text: "Revoke", callback_data: "consent:revoke"}],
     ],
   };
 }
@@ -152,6 +152,10 @@ async function handleCallback(env, update) {
       await sendText(env, message.chat.id, "Authorization recorded.\n\n" + helpText());
       return;
     }
+    if (action === "privacy") {
+      await sendText(env, message.chat.id, PRIVACY_TEXT);
+      return;
+    }
     await revokeConsent(env, pKey);
     await sendText(env, message.chat.id, "Consent revoked. New execution commands are disabled until you authorize again.");
   } catch (error) {
@@ -197,6 +201,12 @@ async function handleMessage(env, update) {
         case "privacy":
           await sendText(env, chatId, PRIVACY_TEXT);
           return;
+        case "revoke": {
+          const pKey = await principalKey(env, userId);
+          await revokeConsent(env, pKey);
+          await sendText(env, chatId, "Consent revoked. New execution commands are disabled until you authorize again.");
+          return;
+        }
         case "delete_me": {
           const pKey = await principalKey(env, userId);
           const cKey = await chatKey(env, chatId);
