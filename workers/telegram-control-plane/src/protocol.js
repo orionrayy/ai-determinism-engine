@@ -88,7 +88,9 @@ export function callbackAction(data) {
   if (new TextEncoder().encode(raw).byteLength > MAX_CALLBACK_BYTES) {
     throw new Error("callback_too_large");
   }
-  const [namespace, action] = raw.split(":", 2);
+  const parts = raw.split(":");
+  if (parts.length !== 2) throw new Error("callback_invalid");
+  const [namespace, action] = parts;
   if (namespace !== "consent") throw new Error("callback_invalid");
   if (!["accept", "revoke", "privacy"].includes(action)) throw new Error("callback_invalid");
   return action;
