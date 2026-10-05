@@ -19,12 +19,14 @@ const hexBytes = (hex) => {
   return out;
 };
 
-async function authenticated(request, env, body, path) {
+async function authenticated(request, env, body, path, requestId) {
   const ts = request.headers.get("X-Control-Plane-Timestamp") || "";
   const sig = request.headers.get("X-Control-Plane-Signature") || "";
   const asserted = Number(ts);
   if (!Number.isInteger(asserted) || Math.abs(now() - asserted) > SKEW) return false;
-  const prefix = E.encode([ts, request.method.toUpperCase(), path].join("\n") + "\n");
+  const prefix = E.encode(
+    [ts, request.method.toUpperCase(), path, String(requestId || "")].join("\n") + "\n"
+  );
   const signed = new Uint8Array(prefix.length + body.length);
   signed.set(prefix);
   signed.set(body, prefix.length);
@@ -808,7 +810,7 @@ export class WorkflowControlPlane {
       return json({error:"request_id_required"},400);
     }
     let ok = false;
-    try { ok = await authenticated(request,this.env,raw,url.pathname); } catch (_) { ok = false; }
+    try { ok = await authenticated(request,this.env,raw,url.pathname,requestId); } catch (_) { ok = false; }
     if (!ok) return json({error:"unauthorized"},401);
     let body = {};
     try {
