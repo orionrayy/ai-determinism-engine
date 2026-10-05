@@ -257,11 +257,17 @@ jobs:
       - name: Job summary
         if: always()
         shell: bash
+        env:
+          ORCHESTRATOR_EVENT_SOURCE: ${{ github.event.client_payload.source || 'unknown' }}
         run: |
+          goal_summary="$(cat /tmp/orchestrator_goal.txt)"
+          if [[ "$ORCHESTRATOR_EVENT_SOURCE" == "telegram" ]]; then
+            goal_summary="[redacted: Telegram user input]"
+          fi
           printf '%s\n' \
             "## AI Orchestrator" \
             "" \
-            "- Goal: $([[ "$ORCHESTRATOR_EVENT_SOURCE" == "telegram" ]] && echo "[redacted: Telegram user input]" || cat /tmp/orchestrator_goal.txt)" \
+            "- Goal: $goal_summary" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           from orchestrator.orchestrator import load_state
