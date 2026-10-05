@@ -24,6 +24,11 @@ export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
   requireDatabase(env);
   const now = Math.floor(Date.now() / 1000);
   const expires = now + 7 * 24 * 60 * 60;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM telegram_inbox WHERE expires_at <= ?").bind(now),
+    env.DB.prepare("DELETE FROM telegram_sessions WHERE expires_at <= ?").bind(now),
+    env.DB.prepare("DELETE FROM telegram_audit WHERE expires_at <= ?").bind(now),
+  ]);
   const inserted = await env.DB
     .prepare(
       "INSERT OR IGNORE INTO telegram_inbox(event_id,principal_key,status,workflow_id,created_at,updated_at,expires_at) VALUES(?,?, 'processing',NULL,?,?,?)",
@@ -134,9 +139,9 @@ export async function audit(env, {eventId, pKey, cKey, action, workflowId = null
   const now = Math.floor(Date.now() / 1000);
   await env.DB
     .prepare(
-      "INSERT OR IGNORE INTO telegram_audit(event_id,principal_key,chat_key,action,workflow_id,intent_digest,created_at) VALUES(?,?,?,?,?,?,?)",
+      "INSERT OR IGNORE INTO telegram_audit(event_id,principal_key,chat_key,action,workflow_id,intent_digest,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
     )
-    .bind(eventId, pKey, cKey, action, workflowId, intentDigest, now)
+    .bind(eventId, pKey, cKey, action, workflowId, intentDigest, now, now + 30 * 24 * 60 * 60)
     .run();
 }
 
