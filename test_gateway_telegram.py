@@ -64,6 +64,8 @@ class TelegramGatewayContractTests(unittest.TestCase):
         self.assertEqual(result['approval_issue'], 42)
         self.assertTrue(result['approved'])
         self.assertEqual(calls[0][0], 'GET')
+        self.assertTrue(calls[0][1].startswith('https://api.github.com/search/issues?'))
+        self.assertIn('/repos/repo/test/issues/42/labels', calls[1][1])
         self.assertEqual(calls[1][0], 'POST')
         self.assertIn('orchestrator-approved', calls[1][2])
 
