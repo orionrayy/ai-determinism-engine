@@ -2,7 +2,7 @@ import {constantTimeEqual, isAllowedUser, isApprover, isPrivateMessage} from "./
 import {callbackAction, normalizeGoal, normalizeNodeId, normalizeWorkflowId, parseCommand, splitFirstArg, telegramEventId} from "./protocol.js";
 import {audit, bindWorkflow, chatKey, claimUpdate, completeUpdate, deleteUserData, failUpdate, getConsent, getSession, hasDatabase, ownsWorkflow, principalKey, revokeConsent, saveSession, setConsent, touchWorkflow} from "./db.js";
 import {buildApprovalPayload, buildRunPayload, buildWorkflowPayload, dispatchToGateway} from "./gateway.js";
-import {readWorkflowState, summarizeState} from "./control_plane.js";
+import {readWorkflowSummary} from "./control_plane.js";
 
 const POLICY_VERSION = "2026-10-05";
 const JSON_HEADERS = {"content-type": "application/json; charset=utf-8", "cache-control": "no-store"};
@@ -331,8 +331,7 @@ async function handleMessage(env, update) {
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           await requireWorkflowAccess(env, userId, chatId, workflowId);
-          const state = await readWorkflowState(env, workflowId);
-          const summary = summarizeState(state);
+          const summary = await readWorkflowSummary(env, workflowId);
           await sendText(env, chatId, [
             "Workflow status",
             "ID: " + summary.workflow_id,
@@ -375,8 +374,7 @@ async function handleMessage(env, update) {
           const [workflowIdArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           await requireWorkflowAccess(env, userId, chatId, workflowId);
-          const state = await readWorkflowState(env, workflowId);
-          const summary = summarizeState(state);
+          const summary = await readWorkflowSummary(env, workflowId);
           if (!summary.pending_approvals.length) {
             await sendText(env, chatId, "No pending approvals for " + workflowId + ".");
             return;
