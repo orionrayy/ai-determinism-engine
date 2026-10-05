@@ -31,7 +31,7 @@ The encryption key must represent 32 random bytes. Keep the encryption key and H
 Use independent values for `TELEGRAM_DATA_ENCRYPTION_KEY`, `TELEGRAM_DATA_HMAC_KEY`, and `TELEGRAM_WEBHOOK_SECRET`.
 
 ## Run activation
-Open GitHub Actions → `Deploy Telegram Control Plane` and run it manually.
+After this PR is merged into the repository's default branch, open GitHub Actions → `Deploy Telegram Control Plane` and run it manually. GitHub requires a `workflow_dispatch` workflow to exist on the default branch before the manual Run workflow control is available. You can then select the desired branch/ref for the run. citeturn550058search0turn550058search2
 
 `provision_d1=false` is the safe default. Use `true` only when D1 has not been provisioned and the Cloudflare token has permission to create databases.
 
