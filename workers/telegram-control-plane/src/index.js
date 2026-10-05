@@ -424,7 +424,7 @@ async function handleMessage(env, update) {
           const [workflowIdArg, nodeArg] = splitFirstArg(parsed.args);
           const workflowId = normalizeWorkflowId(workflowIdArg);
           await requireWorkflowAccess(env, userId, chatId, workflowId);
-          const state = await readWorkflowState(env, workflowId);
+          const state = await readWorkflowSummary(env, workflowId);
           const summary = summarizeState(state);
           let nodeId = String(nodeArg || "").trim();
           if (!nodeId) {
@@ -461,7 +461,7 @@ async function handleMessage(env, update) {
           const cKey = await chatKey(env, chatId);
           const session = await getSession(env, cKey);
           const workflowId = normalizeWorkflowId(session?.last_workflow_id || "");
-          const state = await readWorkflowState(env, workflowId);
+          const state = await readWorkflowSummary(env, workflowId);
           const summary = summarizeState(state);
           await sendText(env, chatId, [
             "Last workflow",
