@@ -23,6 +23,7 @@ export async function chatKey(env, telegramChatId) {
 export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
   requireDatabase(env);
   const inboxKey = await keyedIdentity(env.TELEGRAM_DATA_HMAC_KEY, "telegram:update", eventId);
+  const claimToken = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
   const expires = now + 7 * 24 * 60 * 60;
   await env.DB.batch([
@@ -33,15 +34,15 @@ export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
   ]);
   const inserted = await env.DB
     .prepare(
-      "INSERT OR IGNORE INTO telegram_inbox(event_id,principal_key,status,workflow_id,created_at,updated_at,expires_at) VALUES(?,?, 'processing',NULL,?,?,?)",
+      "INSERT OR IGNORE INTO telegram_inbox(event_id,principal_key,status,claim_token,workflow_id,created_at,updated_at,expires_at) VALUES(?,?, 'processing',?,NULL,?,?,?,?)",
     )
-    .bind(inboxKey, pKey, now, now, expires)
+    .bind(inboxKey, pKey, claimToken, now, now, expires)
     .run();
   if (Number(inserted?.meta?.changes || 0) > 0) {
-    return {claimed: true, workflowId: null};
+    return {claimed: true, workflowId: null, claimToken};
   }
   const row = await env.DB
-    .prepare("SELECT status,workflow_id,updated_at FROM telegram_inbox WHERE event_id=?")
+    .prepare("SELECT status,claim_token,workflow_id,updated_at FROM telegram_inbox WHERE event_id=?")
     .bind(inboxKey)
     .first();
   if (!row) return {claimed: false, duplicate: true, workflowId: null};
@@ -52,32 +53,37 @@ export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
   if (status === "processing" && Number(row.updated_at || 0) > now - staleAfterSeconds) {
     return {claimed: false, duplicate: true, workflowId: row.workflow_id ? String(row.workflow_id) : null};
   }
-  await env.DB
+  const reclaimed = await env.DB
     .prepare(
-      "UPDATE telegram_inbox SET status='processing',workflow_id=NULL,updated_at=?,expires_at=? WHERE event_id=? AND (status <> 'processing' OR updated_at <= ?)",
+      "UPDATE telegram_inbox SET status='processing',claim_token=?,workflow_id=NULL,updated_at=?,expires_at=? WHERE event_id=? AND (status <> 'processing' OR updated_at <= ?)",
     )
-    .bind(now, expires, inboxKey, now - staleAfterSeconds)
+    .bind(claimToken, now, expires, inboxKey, now - staleAfterSeconds)
     .run();
-  return {claimed: true, workflowId: null};
+  if (Number(reclaimed?.meta?.changes || 0) !== 1) {
+    return {claimed: false, duplicate: true, workflowId: row.workflow_id ? String(row.workflow_id) : null, claimToken: null};
+  }
+  return {claimed: true, workflowId: null, claimToken};
 }
 
-export async function completeUpdate(env, eventId, workflowId) {
+export async function completeUpdate(env, eventId, workflowId, claimToken) {
   requireDatabase(env);
+  if (!claimToken) return;
   const inboxKey = await keyedIdentity(env.TELEGRAM_DATA_HMAC_KEY, "telegram:update", eventId);
   const now = Math.floor(Date.now() / 1000);
   await env.DB
-    .prepare("UPDATE telegram_inbox SET status='completed',workflow_id=?,updated_at=? WHERE event_id=?")
-    .bind(workflowId || null, now, inboxKey)
+    .prepare("UPDATE telegram_inbox SET status='completed',workflow_id=?,updated_at=? WHERE event_id=? AND claim_token=? AND status='processing'")
+    .bind(workflowId || null, now, inboxKey, claimToken)
     .run();
 }
 
-export async function failUpdate(env, eventId) {
+export async function failUpdate(env, eventId, claimToken) {
   requireDatabase(env);
+  if (!claimToken) return;
   const inboxKey = await keyedIdentity(env.TELEGRAM_DATA_HMAC_KEY, "telegram:update", eventId);
   const now = Math.floor(Date.now() / 1000);
   await env.DB
-    .prepare("UPDATE telegram_inbox SET status='failed',updated_at=? WHERE event_id=?")
-    .bind(now, inboxKey)
+    .prepare("UPDATE telegram_inbox SET status='failed',updated_at=? WHERE event_id=? AND claim_token=? AND status='processing'")
+    .bind(now, inboxKey, claimToken)
     .run();
 }
 
