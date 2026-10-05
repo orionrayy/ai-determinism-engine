@@ -8,7 +8,9 @@ from unittest.mock import patch
 from scheduled_recovery import (
     DEFAULT_STALE_SECONDS,
     ACTIVE_RUN_STATUSES,
+    FEDERATION_STALE_SECONDS,
     is_recovery_candidate,
+    is_stale_federation,
     is_stale_running,
     recovery_event_id,
     recovery_generation,
@@ -174,6 +176,53 @@ class ScheduledRecoveryTests(unittest.TestCase):
             }],
         }
         self.assertFalse(is_recovery_candidate(workflow, self.now))
+
+    def test_fresh_federation_is_not_a_recovery_candidate(self):
+        workflow = {
+            "id": "wf-fresh-fed",
+            "status": "waiting_agents",
+            "federation": {
+                "status": "dispatched",
+                "created_at": (
+                    self.now - timedelta(seconds=FEDERATION_STALE_SECONDS - 1)
+                ).isoformat(),
+            },
+        }
+        self.assertFalse(is_stale_federation(workflow, self.now))
+        self.assertFalse(is_recovery_candidate(workflow, self.now))
+
+    def test_stale_federation_is_a_recovery_candidate(self):
+        workflow = {
+            "id": "wf-stale-fed",
+            "status": "waiting_agents",
+            "federation": {
+                "status": "dispatched",
+                "created_at": (
+                    self.now - timedelta(seconds=FEDERATION_STALE_SECONDS)
+                ).isoformat(),
+            },
+        }
+        self.assertTrue(is_stale_federation(workflow, self.now))
+        self.assertTrue(is_recovery_candidate(workflow, self.now))
+
+    def test_recovery_due_can_override_age_but_only_from_control_plane(self):
+        workflow = {
+            "id": "wf-due-fed",
+            "status": "waiting_agents",
+            "federation": {
+                "status": "dispatched",
+                "created_at": self.now.isoformat(),
+            },
+        }
+        self.assertFalse(is_stale_federation(workflow, self.now))
+        self.assertTrue(
+            is_recovery_candidate(
+                workflow,
+                self.now,
+                active_run_status="missing",
+                recovery_due=True,
+            )
+        )
 
     def test_active_run_suppression_also_covers_waiting_agents(self):
         workflow = {
