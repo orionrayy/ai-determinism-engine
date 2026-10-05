@@ -57,6 +57,7 @@ try:
         migrate_state,
         AUTHORITY_GIT_DURABLE,
         AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        MAX_NODES as STATE_MAX_NODES,
     )
     from .checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from .durability_barrier import DurabilityBarrierError, commit_side_effect_start
@@ -71,6 +72,7 @@ try:
         validate_deliberation_responses,
     )
     from .claim_integrity import validate_truth_lock
+    from .deterministic_codec import canonical_json, digest
     from private_input import PrivateInputError, fetch_private_input
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -109,6 +111,7 @@ except ImportError:
         migrate_state,
         AUTHORITY_GIT_DURABLE,
         AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        MAX_NODES as STATE_MAX_NODES,
     )
     from checkpoint_integrity import CheckpointIntegrityError, verify_checkpoint
     from durability_barrier import DurabilityBarrierError, commit_side_effect_start
@@ -123,6 +126,7 @@ except ImportError:
         validate_deliberation_responses,
     )
     from claim_integrity import validate_truth_lock
+    from deterministic_codec import canonical_json, digest
     from private_input import PrivateInputError, fetch_private_input
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
@@ -147,7 +151,7 @@ EVENT_DIR = STATE_DIR / "events"
 CHECKPOINT_DIR = STATE_DIR / "checkpoints"
 REGISTRY_FILE = ROOT / "orchestrator" / "tools.json"
 
-MAX_NODES = 24
+MAX_NODES = STATE_MAX_NODES
 MAX_REPLANS = 2
 DEFAULT_MAX_PARALLEL = 4
 MAX_CONTEXT_BYTES = 48 * 1024
@@ -158,6 +162,7 @@ MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
 MAX_GENERIC_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_NODE_ID_LENGTH = 100
 SAFE_NODE_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+_EVENT_APPEND_LOCK = threading.Lock()
 
 TRANSITIONS = {
     "pending": {"ready", "cancelled"},
@@ -258,9 +263,18 @@ class Node:
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-def write_json(path: Path, value: Any) -> None:
+def write_json(
+    path: Path,
+    value: Any,
+    *,
+    max_bytes: int | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (json.dumps(value, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    if max_bytes is not None and len(payload) > int(max_bytes):
+        raise RuntimeError(
+            f"serialized JSON for {path.name} exceeds {int(max_bytes)} bytes"
+        )
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.",
         suffix=".tmp",
@@ -394,6 +408,7 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
 
     event_file = _event_file(payload)
     event_file.parent.mkdir(parents=True, exist_ok=True)
+    trace = _trace_envelope(event_type, payload)
     raw_payload = json.dumps(
         payload,
         ensure_ascii=False,
@@ -411,16 +426,17 @@ def append_event(event_type: str, payload: dict[str, Any]) -> None:
     entry = {
         "ts": utc_now(),
         "event_type": str(event_type),
-        "trace": _trace_envelope(event_type, payload),
+        "trace": trace,
         "payload": payload,
     }
     encoded = (
         json.dumps(entry, ensure_ascii=False, sort_keys=True, default=str) + "\n"
     ).encode("utf-8")
-    with event_file.open("ab") as handle:
-        handle.write(encoded)
-        handle.flush()
-        os.fsync(handle.fileno())
+    with _EVENT_APPEND_LOCK:
+        with event_file.open("ab") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 
@@ -1779,6 +1795,7 @@ def _write_workflow_shard(workflow: dict[str, Any]) -> None:
     write_json(
         workflow_shard_path(workflow_id),
         durable_workflow,
+        max_bytes=MAX_WORKFLOW_SHARD_BYTES,
     )
 
 
