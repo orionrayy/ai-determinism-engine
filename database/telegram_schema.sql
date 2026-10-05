@@ -17,6 +17,20 @@ CREATE TABLE IF NOT EXISTS telegram_inbox (
 CREATE INDEX IF NOT EXISTS telegram_inbox_expiry_idx ON telegram_inbox(expires_at);
 CREATE INDEX IF NOT EXISTS telegram_inbox_principal_idx ON telegram_inbox(principal_key, created_at);
 
+CREATE TABLE IF NOT EXISTS telegram_workflows (
+  workflow_id TEXT PRIMARY KEY,
+  principal_key TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS telegram_workflows_principal_idx
+  ON telegram_workflows(principal_key, last_seen_at);
+
+CREATE INDEX IF NOT EXISTS telegram_workflows_expiry_idx
+  ON telegram_workflows(expires_at);
+
 CREATE TABLE IF NOT EXISTS telegram_consents (
   principal_key TEXT PRIMARY KEY,
   policy_version TEXT NOT NULL,
