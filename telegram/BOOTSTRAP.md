@@ -16,7 +16,6 @@ Rotate/revoke any bot token previously pasted into chat and use only the replace
 `TELEGRAM_DATA_HMAC_KEY`
 `GATEWAY_URL`
 `GATEWAY_SHARED_SECRET`
-`CONTROL_PLANE_URL`
 `CONTROL_PLANE_SECRET`
 
 `TELEGRAM_D1_DATABASE_ID` is optional. Omit it when the activation workflow should discover the existing D1 database by name. Set `provision_d1=true` when a new D1 database should be created.
@@ -37,7 +36,7 @@ After this PR is merged into the repository's default branch, open GitHub Action
 
 `drop_pending_updates=false` is the safe default. Set it to `true` only when deliberately discarding updates accumulated before activation.
 
-The workflow resolves/provisions D1, applies the versioned migration `workers/telegram-control-plane/migrations/0001_telegram_control_plane.sql`, generates an ephemeral Wrangler configuration, injects secrets through a temporary file, deploys the Worker, configures the Telegram webhook and command menu, sets the command menu button, and verifies `/health`.
+The workflow resolves/provisions D1, applies the versioned migration `workers/telegram-control-plane/migrations/0001_telegram_control_plane.sql`, deploys the distributed Cloudflare Durable Object control plane, derives its HTTPS Worker URL, injects that URL plus the remaining secrets through temporary files, deploys the Telegram Worker, configures the Telegram webhook and command menu, sets the command menu button, and verifies `/health`. `CONTROL_PLANE_URL` is therefore not a user-supplied secret anymore.
 
 ## BotFather configuration
 Recommended v1:
