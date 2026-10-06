@@ -1,6 +1,11 @@
 name: Deploy Telegram Control Plane
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "telegram/ACTIVATION_TRIGGER.md"
   workflow_dispatch:
     inputs:
       provision_d1:
@@ -69,7 +74,7 @@ jobs:
         id: d1
         shell: bash
         env:
-          PROVISION_D1: ${{ inputs.provision_d1 }}
+          PROVISION_D1: ${{ github.event_name == 'push' && 'true' || inputs.provision_d1 }}
         run: |
           set -euo pipefail
           wrangler_package="wrangler@${WRANGLER_VERSION}"
@@ -182,7 +187,7 @@ jobs:
       - name: Configure Telegram Bot API
         env:
           WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
-          DROP_PENDING_UPDATES: ${{ inputs.drop_pending_updates }}
+          DROP_PENDING_UPDATES: ${{ github.event_name == 'push' && 'false' || inputs.drop_pending_updates }}
         shell: bash
         run: |
           set -euo pipefail
