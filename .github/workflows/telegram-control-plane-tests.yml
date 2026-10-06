@@ -12,6 +12,7 @@ on:
       - "telegram/**"
       - "gateway.py"
       - "test_gateway_telegram.py"
+      - "control-plane/cloudflare/**"
       - ".github/workflows/telegram-control-plane-tests.yml"
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - "telegram/**"
       - "gateway.py"
       - "test_gateway_telegram.py"
+      - "control-plane/cloudflare/**"
       - ".github/workflows/telegram-control-plane-tests.yml"
   workflow_dispatch:
 
@@ -45,6 +47,8 @@ jobs:
         run: python -m py_compile gateway.py test_gateway_telegram.py database/test_telegram_schema.py
       - name: Database schema tests
         run: python -m unittest database/test_telegram_schema.py -v
+      - name: Control Plane worker syntax
+        run: node --check control-plane/cloudflare/src/worker.js
       - name: Telegram worker syntax and tests
         run: |
           node --check workers/telegram-control-plane/src/index.js
