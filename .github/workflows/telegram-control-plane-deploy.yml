@@ -53,7 +53,7 @@ jobs:
         run: |
           set -euo pipefail
           missing=()
-          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET TELEGRAM_ALLOWED_USER_IDS TELEGRAM_APPROVER_USER_IDS TELEGRAM_DATA_ENCRYPTION_KEY TELEGRAM_DATA_HMAC_KEY GATEWAY_URL GATEWAY_SHARED_SECRET CONTROL_PLANE_URL CONTROL_PLANE_SECRET; do
+          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET TELEGRAM_ALLOWED_USER_IDS TELEGRAM_APPROVER_USER_IDS TELEGRAM_DATA_ENCRYPTION_KEY TELEGRAM_DATA_HMAC_KEY GATEWAY_URL GATEWAY_SHARED_SECRET CONTROL_PLANE_SECRET; do
             value="${!name:-}"
             if [ -z "$value" ]; then
               missing+=("$name")
@@ -104,12 +104,28 @@ jobs:
           test -n "$db_id" || { echo "D1 database not found. Set TELEGRAM_D1_DATABASE_ID or rerun with provision_d1=true."; exit 1; }
           echo "database_id=$db_id" >> "$GITHUB_OUTPUT"
 
-      - name: Generate deployment config
-        env:
-          DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+      - name: Deploy Distributed Control Plane
+        id: control_plane
+        working-directory: control-plane/cloudflare
         shell: bash
         run: |
           set -euo pipefail
+          umask 077
+          printf 'CONTROL_PLANE_SECRET=%s\n' "$CONTROL_PLANE_SECRET" > /tmp/control-plane-secrets.env
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
+          npx --yes "$wrangler_package" deploy --config wrangler.toml --secrets-file /tmp/control-plane-secrets.env 2>&1 | tee /tmp/control-plane-deploy.log
+          worker_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/control-plane-deploy.log | tail -1 || true)"
+          test -n "$worker_url" || { echo "Unable to determine distributed Control Plane Worker URL"; exit 1; }
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+
+      - name: Generate deployment config
+        env:
+          DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+          CONTROL_PLANE_DEPLOY_URL: ${{ steps.control_plane.outputs.worker_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CONTROL_PLANE_DEPLOY_URL" || { echo "Control Plane URL was not produced"; exit 1; }
           cat > workers/telegram-control-plane/wrangler.generated.jsonc <<EOF
           {
             "name": "ai-orchestrator-telegram-control-plane",
@@ -150,6 +166,8 @@ jobs:
           npx --yes "$wrangler_package" d1 migrations apply "$TELEGRAM_D1_DATABASE_NAME" --remote --config wrangler.generated.jsonc
 
       - name: Write Worker secret file
+        env:
+          CONTROL_PLANE_DEPLOY_URL: ${{ steps.control_plane.outputs.worker_url }}
         shell: bash
         run: |
           set -euo pipefail
@@ -163,7 +181,7 @@ jobs:
             printf 'TELEGRAM_DATA_HMAC_KEY=%s\n' "$TELEGRAM_DATA_HMAC_KEY"
             printf 'GATEWAY_URL=%s\n' "$GATEWAY_URL"
             printf 'GATEWAY_SHARED_SECRET=%s\n' "$GATEWAY_SHARED_SECRET"
-            printf 'CONTROL_PLANE_URL=%s\n' "$CONTROL_PLANE_URL"
+            printf 'CONTROL_PLANE_URL=%s\n' "$CONTROL_PLANE_DEPLOY_URL"
             printf 'CONTROL_PLANE_SECRET=%s\n' "$CONTROL_PLANE_SECRET"
           } > /tmp/telegram-secrets.env
 
@@ -247,8 +265,9 @@ jobs:
           assert data.get('ok') is True
           assert data.get('service') == 'telegram-control-plane'
           PY
-          printf '%s\n' '## Telegram Control Plane' '' "- Worker: $WORKER_URL" "- Privacy: $WORKER_URL/privacy" >> "$GITHUB_STEP_SUMMARY"
+          CONTROL_URL="${{ steps.control_plane.outputs.worker_url }}"
+          printf '%s\n' '## VORENYX Control Plane Stack' '' "- Control Plane: $CONTROL_URL" "- Telegram Worker: $WORKER_URL" "- Privacy: $WORKER_URL/privacy" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
-        run: rm -f /tmp/telegram-secrets.env workers/telegram-control-plane/wrangler.generated.jsonc
+        run: rm -f /tmp/telegram-secrets.env /tmp/control-plane-secrets.env /tmp/control-plane-deploy.log /tmp/telegram-deploy.log workers/telegram-control-plane/wrangler.generated.jsonc
