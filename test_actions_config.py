@@ -7,16 +7,22 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
+def read_workflow_text():
+    with open(ROOT / '.github' / 'workflows' / 'orchestrator.yml', encoding='utf-8') as handle:
+        return handle.read()
+
+
 class ActionsConfigTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.orchestrator = (ROOT / '.github' / 'workflows' / 'orchestrator.yml').read_text()
+        cls.orchestrator = read_workflow_text()
         cls.continuation = (ROOT / '.github' / 'workflows' / 'orchestrator-continuation.yml').read_text()
         cls.approval = (ROOT / '.github' / 'workflows' / 'orchestrator-approval.yml').read_text()
         cls.federation = (ROOT / '.github' / 'workflows' / 'orchestrator-agent-federation.yml').read_text()
         cls.tests = (ROOT / '.github' / 'workflows' / 'orchestrator-tests.yml').read_text()
         cls.bridge_deploy = (ROOT / '.github' / 'workflows' / 'bridge-deploy.yml').read_text()
         cls.private_input_deploy = (ROOT / '.github' / 'workflows' / 'private-input-deploy.yml').read_text()
+        cls.private_input_tests = (ROOT / '.github' / 'workflows' / 'private-input-tests.yml').read_text()
         cls.state = json.loads((ROOT / '.orchestrator' / 'state.json').read_text())
 
     def test_free_only_workflow_does_not_expose_paid_adapter_secrets(self):
@@ -47,7 +53,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
         self.assertIn("merge-multiple: false", self.federation)
         self.assertIn("fail-fast: false", self.federation)
-        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("max-parallel: 1", self.federation)
     def test_federation_uses_fixed_concurrency_slots(self):
         self.assertIn("agent-federation-", self.federation)
         self.assertIn("github.event.client_payload.slot", self.federation)
@@ -56,7 +62,7 @@ class ActionsConfigTests(unittest.TestCase):
 
     def test_federated_matrix_is_bounded_and_read_only(self):
         self.assertIn("types: [orchestrator.federate]", self.federation)
-        self.assertIn("max-parallel: 4", self.federation)
+        self.assertIn("max-parallel: 1", self.federation)
         self.assertIn("fail-fast: false", self.federation)
         self.assertIn("contents: read", self.federation)
         self.assertIn("agent-result-${{ matrix.task.task_id }}", self.federation)
@@ -68,6 +74,15 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("aggregate:", self.federation)
         self.assertIn("contents: write", self.federation)
         self.assertIn("orchestrator.federation.completed", self.federation)
+
+    def test_supervisor_persists_bounded_research_cache(self):
+        self.assertIn("Restore research cache", self.orchestrator)
+        self.assertIn(
+            "actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809",
+            self.orchestrator,
+        )
+        self.assertIn(".orchestrator/research-cache", self.orchestrator)
+        self.assertIn("orchestrator-research-v1-", self.orchestrator)
 
     def test_supervisor_exposes_opt_in_federation_control(self):
         self.assertIn("federate_safe_agents:", self.orchestrator)
@@ -115,11 +130,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("cancel-in-progress: false", self.orchestrator)
 
     def test_continuation_uses_testable_python_runtime(self):
+        self.assertIn("WORKFLOW_ID", self.continuation)
         self.assertIn("python3 -m orchestrator.continuation_runtime", self.continuation)
         decision = self.continuation.split("id: decision", 1)[1].split("- name: Dispatch continuation", 1)[0]
         self.assertNotIn("python3 - <<'PY'", decision)
-        self.assertIn("WORKFLOW_ID", self.continuation)
         self.assertIn("github.event.client_payload.workflow_id", self.orchestrator)
+
 
     def test_workflow_target_is_preferred_for_approval(self):
         self.assertIn('ORCHESTRATOR_TARGET_WORKFLOW_ID', self.orchestrator)
@@ -155,10 +171,26 @@ class ActionsConfigTests(unittest.TestCase):
         start = self.orchestrator.index('schedule-recovery:')
         recovery = self.orchestrator[start:]
         self.assertIn('python3 -m orchestrator.scheduled_recovery', recovery)
-        self.assertNotIn("python3 - <<'PY'", recovery)
-        self.assertIn('git add .orchestrator/workflows', recovery)
-        self.assertIn('if [ -d .orchestrator/workflows ]; then', recovery)
-        self.assertIn('scheduled recovery is a no-op', recovery)
+        self.assertNotIn('python3 - <<\'PY\'', recovery)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('def run()', runtime)
+        self.assertIn('def main()', runtime)
+        self.assertIn('subprocess.run(', runtime)
+        self.assertIn('git add .orchestrator/workflows', self.orchestrator)
+
+    def test_scheduled_recovery_runtime_preserves_dispatch_semantics(self):
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('"gh"', runtime)
+        self.assertIn('"api"', runtime)
+        self.assertIn('"--method"', runtime)
+        self.assertIn('"POST"', runtime)
+        self.assertIn('check=False', runtime)
+        self.assertIn('status == "waiting_approval"', runtime)
+        self.assertIn('recovery_event_id(candidate_workflow)', runtime)
+
+    def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
+        workflow = read_workflow_text()
+        self.assertIn('if [ -d ".orchestrator/workflows" ]', workflow)
 
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
@@ -168,9 +200,13 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('"workflow_id": workflow_id', runtime)
         self.assertIn('"orchestrator.continue"', runtime)
 
-    def test_scheduled_recovery_runtime_is_importable(self):
-        self.assertIn('orchestrator.scheduled_recovery', self.orchestrator)
-        self.assertNotIn('state_path = Path(".orchestrator/state.json")', self.orchestrator)
+    def test_scheduled_recovery_uses_canonical_loader(self):
+        start = self.orchestrator.index('schedule-recovery:')
+        recovery = self.orchestrator[start:]
+        self.assertIn('python3 -m orchestrator.scheduled_recovery', recovery)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('load_state', runtime)
+        self.assertNotIn('state_path = Path(".orchestrator/state.json")', runtime)
 
     def test_checkout_action_sha_is_consistent_across_all_workflows(self):
         expected = "d23441a48e516b6c34aea4fa41551a30e30af803"
@@ -207,15 +243,24 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertEqual(self.bridge_deploy.count('vercel@59.19.1'), 3)
 
 
+    def test_orchestrator_ci_avoids_unused_node_and_worker_validation(self):
+        self.assertIn("timeout-minutes: 10", self.tests)
+        self.assertNotIn("actions/setup-node@", self.tests)
+        self.assertNotIn("wrangler@4.146.0", self.tests)
+        self.assertNotIn("node workers/private-input/test.mjs", self.tests)
+        self.assertIn("python -m compileall -q orchestrator", self.tests)
+        self.assertIn("python -m orchestrator.eval_harness --json", self.tests)
+
     def test_private_input_boundary_is_wired(self):
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_URL", self.orchestrator)
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_SECRET", self.orchestrator)
         self.assertIn("ORCHESTRATOR_PRIVATE_INPUT_REF", self.orchestrator)
         self.assertIn("ORCHESTRATOR_IDEMPOTENCY_KEY", self.orchestrator)
         self.assertIn("private_input_unavailable", Path("gateway.py").read_text())
-        self.assertIn("workers/private-input/**", self.tests)
-        self.assertIn("node workers/private-input/test.mjs", self.tests)
-        self.assertIn("wrangler@4.146.0", self.tests)
+        self.assertIn("workers/private-input/**", self.private_input_tests)
+        self.assertIn("node workers/private-input/test.mjs", self.private_input_tests)
+        self.assertIn("wrangler@4.146.0", self.private_input_tests)
+        self.assertNotIn("workers/private-input/**", self.tests)
 
     def test_gemini_free_model_allowlist_is_registry_pinned(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())

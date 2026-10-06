@@ -61,7 +61,7 @@ class Handler(BaseHTTPRequestHandler):
             if not secret:
                 raise BridgeRuntimeError("bridge secret is not configured")
             headers = {key.lower(): value.strip() for key, value in self.headers.items()}
-            if not verify_signature(headers, raw, secret):
+            if not verify_signature(headers, raw, secret, method="POST", path=route):
                 self._send(401, {"ok": False, "error": "invalid_signature"})
                 return
             try:

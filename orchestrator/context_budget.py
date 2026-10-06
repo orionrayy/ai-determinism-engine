@@ -18,6 +18,32 @@ class ContextBudgetError(ValueError):
     pass
 
 
+def _bounded_score(value: Any) -> float:
+    try:
+        return max(0.0, min(1.0, float(value or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _trusted_evidence_utility(record: Mapping[str, Any]) -> float:
+    authority = _bounded_score(record.get("authority_score"))
+    independence = _bounded_score(record.get("independence_confidence"))
+    access = 1.0 if str(record.get("access_verification") or "") == "verified" else 0.0
+    integrity = 0.0 if str(record.get("publication_status") or "normal") != "normal" else 1.0
+    try:
+        year = int(record.get("year"))
+    except (TypeError, ValueError):
+        year = 0
+    recency = _bounded_score((year - 2015) / 11.0) if year else 0.0
+    return (
+        0.38 * authority
+        + 0.22 * independence
+        + 0.15 * access
+        + 0.20 * integrity
+        + 0.05 * recency
+    )
+
+
 def canonical_json(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -41,6 +67,65 @@ def bounded_json(value: Any, max_bytes: int) -> tuple[str, bool]:
     return clipped + "...[truncated]", True
 
 
+def _compact_evidence_output(
+    output: Any,
+    max_bytes: int,
+) -> tuple[dict[str, Any] | None, bool]:
+    if not isinstance(output, dict) or not isinstance(output.get("evidence_records"), list):
+        return None, False
+
+    compact: dict[str, Any] = {
+        "query": str(output.get("query") or ""),
+        "independent_source_count": int(output.get("independent_source_count") or 0),
+        "evidence_records": [],
+    }
+    if isinstance(output.get("provider_counts"), dict):
+        compact["provider_counts"] = {
+            str(k): int(v)
+            for k, v in sorted(output["provider_counts"].items())
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+    if isinstance(output.get("extended_errors"), dict):
+        compact["extended_errors"] = {
+            str(k): bounded_json(v, 512)[0]
+            for k, v in sorted(output["extended_errors"].items())
+        }
+
+    truncated = False
+    for raw in sorted(
+        (item for item in output["evidence_records"] if isinstance(item, dict)),
+        key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
+    ):
+        record = {
+            "canonical_id": str(raw.get("canonical_id") or ""),
+            "title": str(raw.get("title") or ""),
+            "providers": sorted(str(v) for v in (raw.get("providers") or []) if str(v)),
+            "year": raw.get("year"),
+            "doi": str(raw.get("doi") or ""),
+            "arxiv_id": str(raw.get("arxiv_id") or ""),
+            "pmid": str(raw.get("pmid") or ""),
+            "pmcid": str(raw.get("pmcid") or ""),
+            "venue": str(raw.get("venue") or ""),
+            "citation_count": int(raw.get("citation_count") or 0),
+            "open_access": bool(raw.get("open_access")),
+            "full_text_url": str(raw.get("full_text_url") or ""),
+            "primaryity": str(raw.get("primaryity") or "unknown"),
+            "authority_signals": sorted(str(v) for v in (raw.get("authority_signals") or []) if str(v)),
+        }
+        probe = dict(compact)
+        probe["evidence_records"] = compact["evidence_records"] + [record]
+        if len(canonical_json(probe)) > max_bytes:
+            truncated = True
+            break
+        compact["evidence_records"].append(record)
+
+    if len(canonical_json(compact)) > max_bytes:
+        compact["evidence_records"] = []
+        compact["evidence_records_truncated"] = True
+        truncated = True
+    return compact, truncated
+
+
 def _dependency_record(
     dependency_id: str,
     dependency: Mapping[str, Any],
@@ -48,7 +133,15 @@ def _dependency_record(
     max_output_bytes: int,
 ) -> dict[str, Any]:
     output = dependency.get("output")
-    output_json, truncated = bounded_json(output, max_output_bytes)
+    structured_output, structured_truncated = _compact_evidence_output(
+        output,
+        max_output_bytes,
+    )
+    if structured_output is not None:
+        output_json = structured_output
+        truncated = structured_truncated
+    else:
+        output_json, truncated = bounded_json(output, max_output_bytes)
     output_sha256 = digest(output)
     evidence_sha256 = dependency.get("evidence_sha256")
     record = {
@@ -76,6 +169,7 @@ def pack_node_context(
     repair_feedback: Mapping[str, Any] | None,
     max_bytes: int = MAX_CONTEXT_BYTES,
     dependency_bytes: int = DEFAULT_DEPENDENCY_BYTES,
+    trusted_evidence_records: list[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if max_bytes < 8 * 1024:
         raise ContextBudgetError("context budget is too small")
@@ -117,6 +211,77 @@ def pack_node_context(
             "preview": repair_json,
         },
     }
+    trusted_evidence_truncated = False
+    if trusted_evidence_records is not None:
+        raw_records = sorted(
+            (
+                item for item in trusted_evidence_records
+                if isinstance(item, Mapping)
+            ),
+            key=lambda item: str(item.get("canonical_id") or item.get("title") or ""),
+        )
+        bounded_records = raw_records[:64]
+        abstract_ids = {
+            str(item.get("canonical_id") or "")
+            for item in sorted(
+                bounded_records,
+                key=lambda item: (
+                    -_trusted_evidence_utility(item),
+                    str(item.get("canonical_id") or item.get("title") or ""),
+                ),
+            )[:32]
+            if str(item.get("canonical_id") or "").strip()
+            and (
+                item.get("abstract")
+                or item.get("full_text")
+                or item.get("text")
+            )
+        }
+        evidence = []
+        for raw in bounded_records:
+            record = {
+                "canonical_id": str(raw.get("canonical_id") or ""),
+                "provider": str(raw.get("provider") or ""),
+                "provider_id": str(raw.get("provider_id") or ""),
+                "title": str(raw.get("title") or "")[:500],
+                "year": raw.get("year"),
+                "doi": str(raw.get("doi") or "")[:200],
+                "arxiv_id": str(raw.get("arxiv_id") or "")[:200],
+                "pmid": str(raw.get("pmid") or "")[:100],
+                "pmcid": str(raw.get("pmcid") or "")[:100],
+                "venue": str(raw.get("venue") or "")[:300],
+                "full_text_url": str(raw.get("full_text_url") or "")[:500],
+                "access_level": str(raw.get("access_level") or "L0"),
+                "access_route": str(raw.get("access_route") or "identifier"),
+                "access_verification": str(
+                    raw.get("access_verification") or "identifier_only"
+                ),
+                "authority_class": str(raw.get("authority_class") or "unknown"),
+                "authority_score": float(raw.get("authority_score") or 0.0),
+                "authority_tier": str(raw.get("authority_tier") or ""),
+                "publication_status": str(raw.get("publication_status") or "normal"),
+                "retraction_signal": bool(raw.get("retraction_signal")),
+                "independence_key": str(raw.get("independence_key") or ""),
+                "independence_confidence": float(raw.get("independence_confidence") or 0.0),
+            }
+            # Preserve canonical metadata for the bounded lane, while giving
+            # abstract-bearing slots to the highest-utility records rather than
+            # whichever canonical IDs happen to sort first.
+            if str(raw.get("canonical_id") or "") in abstract_ids:
+                if raw.get("abstract"):
+                    record["abstract"] = str(raw.get("abstract") or "")[:700]
+                else:
+                    full_text = str(
+                        raw.get("full_text")
+                        or raw.get("text")
+                        or ""
+                    ).strip()
+                    if full_text:
+                        record["text"] = full_text[:700]
+            evidence.append(record)
+        if len(raw_records) > 64:
+            trusted_evidence_truncated = True
+        packed["trusted_evidence"] = evidence
 
     omitted: list[str] = []
     dep_items = {str(key): value for key, value in deps.items()}
@@ -158,6 +323,7 @@ def pack_node_context(
         'omitted_dependencies': sorted(omitted),
         'truncated_contract': contract_truncated,
         'truncated_repair_feedback': repair_truncated,
+        'truncated_trusted_evidence': trusted_evidence_truncated,
     }
 
     def projected_final_size(value: Mapping[str, Any]) -> int:

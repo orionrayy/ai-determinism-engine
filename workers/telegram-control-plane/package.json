@@ -1,0 +1,5 @@
+{
+  "name": "ai-orchestrator-telegram-control-plane",
+  "private": true,
+  "type": "module"
+}

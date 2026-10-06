@@ -155,6 +155,14 @@ jobs:
           gh label create orchestrator-approved --description "Approve a high-risk orchestration action" --color 0E8A16 --force
           gh label create orchestrator-rejected --description "Reject a high-risk orchestration action" --color B60205 --force
 
+      - name: Restore research cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: .orchestrator/research-cache
+          key: orchestrator-research-v1-${{ github.ref_name }}
+          restore-keys: |
+            orchestrator-research-v1-
+
       - name: Run orchestrator
         env:
           ORCHESTRATOR_GOAL: ${{ steps.goal.outputs.goal }}
@@ -167,6 +175,8 @@ jobs:
           ORCHESTRATOR_RESUME: ${{ github.event_name == 'schedule' && 'true' || 'false' }}
           ORCHESTRATOR_ISSUE: ${{ github.event_name == 'issues' && 'true' || 'false' }}
           ORCHESTRATOR_EVENT_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
+          ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}
+          ORCHESTRATOR_EVENT_SOURCE: ${{ github.event.client_payload.source || 'unknown' }}
           ORCHESTRATOR_EXECUTION_ID: ${{ github.event.client_payload.execution_id }}
           ORCHESTRATOR_EXTERNAL_WORKFLOW_ID: ${{ github.event.client_payload.workflow_id }}
           ORCHESTRATOR_EXTERNAL_DOMAIN: ${{ github.event.client_payload.domain }}
@@ -181,9 +191,11 @@ jobs:
           ORCHESTRATOR_REQUESTED_MODE: ${{ github.event.client_payload.requested_mode || 'dry-run' }}
           ORCHESTRATOR_CALLBACK_URL: ${{ secrets.ORCHESTRATOR_CALLBACK_URL }}
           ORCHESTRATOR_CALLBACK_SECRET: ${{ secrets.ORCHESTRATOR_CALLBACK_SECRET }}
+          ORCHESTRATOR_CONTROL_PLANE_URL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_URL }}
+          ORCHESTRATOR_CONTROL_PLANE_SECRET: ${{ secrets.ORCHESTRATOR_CONTROL_PLANE_SECRET }}
+          ORCHESTRATOR_CONTROL_PLANE_LEASE_TTL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_LEASE_TTL || '1200' }}
           ORCHESTRATOR_TARGET_WORKFLOW_ID: ${{ steps.goal.outputs.workflow_id }}
           ORCHESTRATOR_TRIGGER_ISSUE: ${{ steps.goal.outputs.issue_number }}
-          ORCHESTRATOR_EVENT_ID: ${{ steps.goal.outputs.event_id }}
           ORCHESTRATOR_GITHUB_RUN_ID: ${{ github.run_id }}
           ORCHESTRATOR_GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
           ORCHESTRATOR_FREE_ONLY: "true"
@@ -245,11 +257,17 @@ jobs:
       - name: Job summary
         if: always()
         shell: bash
+        env:
+          ORCHESTRATOR_EVENT_SOURCE: ${{ github.event.client_payload.source || 'unknown' }}
         run: |
+          goal_summary="$(cat /tmp/orchestrator_goal.txt)"
+          if [[ "$ORCHESTRATOR_EVENT_SOURCE" == "telegram" ]]; then
+            goal_summary="[redacted: Telegram user input]"
+          fi
           printf '%s\n' \
             "## AI Orchestrator" \
             "" \
-            "- Goal: $(cat /tmp/orchestrator_goal.txt)" \
+            "- Goal: $goal_summary" \
             "- Repository: $GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           from orchestrator.orchestrator import load_state
@@ -283,11 +301,15 @@ jobs:
         with:
           ref: main
           fetch-depth: 1
+
       - name: Dispatch stale workflows
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           SCHEDULE_RUN_ID: ${{ github.run_id }}
+          ORCHESTRATOR_RECOVERY_STALE_SECONDS: ${{ vars.ORCHESTRATOR_RECOVERY_STALE_SECONDS || '1500' }}
+          ORCHESTRATOR_CONTROL_PLANE_URL: ${{ vars.ORCHESTRATOR_CONTROL_PLANE_URL }}
+          ORCHESTRATOR_CONTROL_PLANE_SECRET: ${{ secrets.ORCHESTRATOR_CONTROL_PLANE_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
@@ -295,21 +317,30 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [ -d .orchestrator/workflows ]; then
+
+          if [ -d ".orchestrator/workflows" ]; then
             git add .orchestrator/workflows
-          else
-            echo "No workflow shards to compact; scheduled recovery is a no-op."
-            exit 0
           fi
+
           if git diff --cached --quiet; then
-            exit 0
+            if [ "$(cat /tmp/orchestrator_recovery_failures.json)" = "[]" ]; then
+              exit 0
+            fi
+            echo "Recovery completed with one or more dispatch failures."
+            exit 1
           fi
+
           git commit -m "chore(orchestrator): compact terminal workflow state"
 
           for attempt in 1 2 3; do
             if git push origin HEAD:main; then
-              exit 0
+              if [ "$(cat /tmp/orchestrator_recovery_failures.json)" = "[]" ]; then
+                exit 0
+              fi
+              echo "Recovery completed with one or more dispatch failures."
+              exit 1
             fi
+
             git fetch origin main
             if ! git rebase origin/main; then
               git rebase --abort || true

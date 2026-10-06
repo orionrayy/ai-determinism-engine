@@ -1,0 +1,206 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import os
+import unittest
+from unittest.mock import patch
+
+from control_plane import ControlPlaneClient, ControlPlaneConfigurationError, canonical_json
+
+class ControlPlaneClientTests(unittest.TestCase):
+    def test_canonical_json(self):
+        self.assertEqual(canonical_json({"b":2,"a":1}), b'{"a":2}' if False else b'{"a":1,"b":2}')
+
+    def test_signature(self):
+        c = ControlPlaneClient("https://control.example", "s", owner="w")
+        body = canonical_json({"owner":"w"})
+        self.assertEqual(
+            c._signature("10","POST","/x",body,"req-1"),
+            hmac.new(b"s", b"\n".join([b"10",b"POST",b"/x",b"req-1",body]), hashlib.sha256).hexdigest(),
+        )
+
+    def test_partial_configuration_fails(self):
+        with patch.dict(os.environ, {"ORCHESTRATOR_CONTROL_PLANE_URL":"https://control.example"}, clear=False):
+            os.environ.pop("ORCHESTRATOR_CONTROL_PLANE_SECRET", None)
+            with self.assertRaises(ControlPlaneConfigurationError):
+                ControlPlaneClient.from_env()
+
+    def test_https_is_required(self):
+        with self.assertRaises(ControlPlaneConfigurationError):
+            ControlPlaneClient("http://control.example", "s")
+
+    def test_resource_lock_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={
+                "status": "acquired",
+                "fence_epoch": 4,
+                "expires_at": 12345,
+            },
+        ) as request:
+            lease = client.acquire_resource("repo:file", workflow_id="wf")
+        self.assertEqual(lease.resource_key, "repo:file")
+        self.assertEqual(lease.fence_epoch, 4)
+        self.assertIn(
+            "/v1/resources/repo%3Afile/lease/acquire",
+            request.call_args.args[1],
+        )
+        self.assertEqual(request.call_args.args[2]["resource_key"], "repo:file")
+        self.assertEqual(request.call_args.args[2]["workflow_id"], "wf")
+
+    def test_provider_rate_slot_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={
+                "status": "granted",
+                "provider": "crossref",
+                "retry_after": 0,
+            },
+        ) as request:
+            result = client.acquire_provider_rate_slot("crossref")
+        self.assertEqual(result["status"], "granted")
+        self.assertIn(
+            "/v1/resources/provider%3Acrossref/rate/acquire",
+            request.call_args.args[1],
+        )
+
+    def test_clear_recovery_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "cleared", "workflow_id": "wf"},
+        ) as request:
+            result = client.clear_recovery(
+                "wf",
+                owner="w",
+                fence_epoch=7,
+            )
+        self.assertEqual(result["status"], "cleared")
+        self.assertEqual(request.call_args.args[1], "/v1/workflows/wf/recovery/clear")
+
+    def test_recovery_alarm_paths(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            side_effect=[
+                {"status": "armed", "due_at": 200, "event_id": "recovery:1"},
+                {"status": "acknowledged", "workflow_id": "wf", "event_id": "recovery:1"},
+            ],
+        ) as request:
+            armed = client.arm_recovery(
+                "wf",
+                owner="w",
+                fence_epoch=7,
+                due_at=200,
+                event_id="recovery:1",
+            )
+            ack = client.ack_recovery("wf", "recovery:1")
+        self.assertEqual(armed["status"], "armed")
+        self.assertEqual(ack["status"], "acknowledged")
+        self.assertEqual(request.call_args_list[0].args[1], "/v1/workflows/wf/recovery/arm")
+        self.assertEqual(request.call_args_list[1].args[1], "/v1/workflows/wf/recovery/ack")
+        self.assertEqual(request.call_args_list[1].args[2]["owner"], "w")
+
+    def test_recovery_claim_path(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "claimed", "claim_expires_at": 300},
+        ) as request:
+            result = client.claim_recovery(
+                "wf",
+                "recovery:1",
+                owner="scheduled-recovery:123",
+                ttl_seconds=300,
+            )
+        self.assertEqual(result["status"], "claimed")
+        self.assertEqual(request.call_args.args[1], "/v1/workflows/wf/recovery/claim")
+
+    def test_workflow_state_parses_recovery_envelope(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={
+                "status": "stored",
+                "state_version": 8,
+                "updated_at": 100,
+                "state": {"id": "wf", "status": "running"},
+                "recovery": {
+                    "due": True,
+                    "event_id": "recovery:1",
+                    "due_at": 200,
+                },
+            },
+        ):
+            state = client.get_workflow_state("wf")
+        self.assertTrue(state.recovery_due)
+        self.assertEqual(state.recovery_event_id, "recovery:1")
+        self.assertEqual(state.recovery_due_at, 200)
+
+    def test_hot_state_cas_accepts_atomic_recovery_spec(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            return_value={"status": "stored", "state_version": 4},
+        ) as request:
+            version = client.put_workflow_state(
+                "wf",
+                owner="w",
+                fence_epoch=2,
+                expected_state_version=3,
+                state={"id": "wf", "status": "running"},
+                recovery={
+                    "action": "arm",
+                    "due_at": 200,
+                    "event_id": "recovery:1",
+                },
+            )
+        self.assertEqual(version, 4)
+        payload = request.call_args.args[2]
+        self.assertEqual(payload["recovery"]["action"], "arm")
+        self.assertEqual(payload["recovery"]["event_id"], "recovery:1")
+
+    def test_hot_state_cas_and_outbox_paths(self):
+        client = ControlPlaneClient("https://control.example", "s", owner="w")
+        with patch.object(
+            client,
+            "_request",
+            side_effect=[
+                {"status": "stored", "state_version": 3},
+                {"status": "appended", "sequence": 9},
+            ],
+        ) as request:
+            version = client.put_workflow_state(
+                "wf",
+                owner="w",
+                fence_epoch=2,
+                expected_state_version=2,
+                state={"id": "wf", "status": "running"},
+            )
+            sequence = client.append_outbox_event(
+                "wf",
+                owner="w",
+                fence_epoch=2,
+                event_type="node.completed",
+                payload={"node_id": "n1"},
+            )
+        self.assertEqual(version, 3)
+        self.assertEqual(sequence, 9)
+        self.assertEqual(request.call_args_list[0].args[0], "PUT")
+        self.assertEqual(request.call_args_list[0].args[2]["workflow_id"], "wf")
+        self.assertEqual(request.call_args_list[1].args[0], "POST")
+        self.assertEqual(request.call_args_list[1].args[2]["workflow_id"], "wf")
+
+
+if __name__ == "__main__":
+    unittest.main()

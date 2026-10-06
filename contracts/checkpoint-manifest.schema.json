@@ -1,0 +1,43 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://ai-determinism-engine.local/contracts/checkpoint-manifest.schema.json",
+  "title":"AI Determinism Engine Checkpoint Manifest",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["protocol_version","workflow_id","generation","schema_version","state_digest","watermark","shards"],
+  "properties":{
+    "protocol_version":{"type":"string","minLength":1,"maxLength":32},
+    "workflow_id":{"type":"string","minLength":1,"maxLength":128},
+    "tenant_id":{"type":"string","maxLength":128},
+    "generation":{"type":"integer","minimum":0},
+    "schema_version":{"type":"integer","minimum":1},
+    "state_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "watermark":{"type":"string","minLength":1,"maxLength":256},
+    "parent_generation":{"type":["integer","null"],"minimum":0},
+    "created_at":{"type":"string","format":"date-time"},
+    "shards":{
+      "type":"array","minItems":0,"maxItems":4096,
+      "items":{
+        "type":"object","additionalProperties":false,
+        "required":["name","uri","sha256","bytes","required_for_resume"],
+        "properties":{
+          "name":{"type":"string","minLength":1,"maxLength":512},
+          "uri":{"type":"string","minLength":1,"maxLength":4096},
+          "sha256":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+          "bytes":{"type":"integer","minimum":0},
+          "required_for_resume":{"type":"boolean"},
+          "content_type":{"type":"string","maxLength":256},
+          "logical_type":{"type":"string","maxLength":128},
+          "encryption_scope":{"type":"string","maxLength":256}
+        }
+      }
+    },
+    "gc_policy":{
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "retain_generations":{"type":"integer","minimum":1,"maximum":1024},
+        "terminal_retention_days":{"type":"integer","minimum":0,"maximum":36500}
+      }
+    }
+  }
+}

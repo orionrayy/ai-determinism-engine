@@ -65,6 +65,58 @@ def _free_allowed(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
     return _free(tool, registry)
 
 
+
+def configured_model(tool: str, registry: dict[str, dict[str, Any]]) -> str | None:
+    if tool != "gemini":
+        return None
+    spec = registry.get("gemini", {})
+    default_model = str(spec.get("default_model") or "").strip()
+    if not default_model:
+        return None
+    return (
+        os.environ.get("GEMINI_MODEL")
+        or default_model
+    ).strip()
+
+
+def execution_eligible(
+    tool: str,
+    registry: dict[str, dict[str, Any]],
+    health: dict[str, Any] | None = None,
+    *,
+    live: bool = False,
+    model: str | None = None,
+    now: int | None = None,
+) -> bool:
+    health = health or {}
+    spec = registry.get(tool, {})
+    if os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true" and not bool(spec.get("free_tier", False)):
+        return False
+    if live and not _env_available(tool, registry, True):
+        return False
+    if effective_health(health, tool, now=now) == QUARANTINED:
+        return False
+    if tool == "gemini" and os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true":
+        selected_model = (model or configured_model(tool, registry) or "").strip()
+        spec = registry.get("gemini", {})
+        allowed = spec.get("free_models")
+        if not isinstance(allowed, list) or selected_model not in {str(item).strip() for item in allowed}:
+            return False
+        deadlines = spec.get("free_until")
+        deadline = deadlines.get(selected_model) if isinstance(deadlines, dict) else deadlines
+        if deadline:
+            from datetime import datetime, timezone
+            try:
+                cutoff = datetime.fromisoformat(str(deadline).replace("Z", "+00:00"))
+                if cutoff.tzinfo is None:
+                    cutoff = cutoff.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > cutoff:
+                    return False
+            except ValueError:
+                return False
+    return True
+
+
 def _health_record(health: dict[str, Any], tool: str) -> dict[str, Any]:
     value = health.get(tool)
     return value if isinstance(value, dict) else {}
@@ -109,10 +161,10 @@ def route_capability(
         if tool in exclude:
             continue
         spec = registry.get(tool, {})
-        free_ok = _free_allowed(tool, registry)
+        free_ok = execution_eligible(tool, registry, health, live=live, now=now)
         env_ok = _env_available(tool, registry, live)
         status = effective_health(health, tool, now=now)
-        if status == QUARANTINED:
+        if not free_ok or status == QUARANTINED:
             continue
         risk = _risk(spec)
         # Higher-priority dimensions come first. Lexical order is the final
@@ -216,7 +268,5 @@ def available_tools(
     candidates = _candidates(registry, capability)
     return [
         tool for tool in candidates
-        if _free_allowed(tool, registry)
-        and _env_available(tool, registry, live)
-        and effective_health(health, tool, now=now) != QUARANTINED
+        if execution_eligible(tool, registry, health, live=live, now=now)
     ]

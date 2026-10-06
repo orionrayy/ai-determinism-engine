@@ -6,13 +6,18 @@ import hmac
 import json
 import os
 import re
-import threading
 import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Any
+try:
+    from .deterministic_codec import canonical_json
+except ImportError:
+    from deterministic_codec import canonical_json
+
 
 PROTOCOL = "ai-orchestrator.connector/v1"
 MAX_PAYLOAD_BYTES = 64 * 1024
@@ -71,12 +76,6 @@ class ReconciliationRequest:
 RECONCILIATION_STATES = {"applied", "not_applied", "unknown"}
 
 
-try:
-    from .deterministic_codec import canonical_json
-except ImportError:
-    from deterministic_codec import canonical_json
-
-
 def execution_id(workflow_id: str, node_id: str) -> str:
     return hashlib.sha256(
         f"{workflow_id}:{node_id}".encode("utf-8")
@@ -118,8 +117,20 @@ def build_request(node: Any, goal: str) -> ConnectorRequest:
     return request
 
 
-def sign(timestamp: int, body: bytes, secret: str) -> str:
-    message = str(timestamp).encode("utf-8") + b"\n" + body
+def sign(
+    timestamp: int,
+    body: bytes,
+    secret: str,
+    *,
+    method: str = "POST",
+    path: str = "/bridge",
+) -> str:
+    message = b"\n".join([
+        str(timestamp).encode("utf-8"),
+        str(method).upper().encode("utf-8"),
+        str(path).encode("utf-8"),
+        body,
+    ])
     digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return "sha256=" + digest
 
@@ -431,7 +442,7 @@ def post_reconciliation(
         "User-Agent": "ai-orchestrator-connector-reconciliation/1.0",
         "X-Orchestrator-Protocol": PROTOCOL,
         "X-Orchestrator-Timestamp": str(request.sent_at),
-        "X-Orchestrator-Signature": sign(request.sent_at, body, secret),
+        "X-Orchestrator-Signature": sign(request.sent_at, body, secret, method="POST", path=urllib.parse.urlsplit(url).path or "/bridge"),
         "Idempotency-Key": request.request_id,
     }
     http = urllib.request.Request(
@@ -620,11 +631,16 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         # Retry policy remains centralized in the orchestrator.
         exc.idempotent = bool(action_spec.get("idempotent"))
         raise
+    connector_result = (
+        response.get("result")
+        if isinstance(response, dict) and isinstance(response.get("result"), dict)
+        else response
+    )
     try:
         validate_discovered_result(
             request.connector,
             request.action,
-            response,
+            connector_result,
             inventory,
         )
     except ConnectorBridgeError as exc:
@@ -644,4 +660,5 @@ def execute_connector_bridge(node: Any, goal: str, dry_run: bool) -> dict[str, A
         "discovery": build_discovery_snapshot(inventory),
         "action_spec": action_spec,
         "response": response,
+        "result": connector_result,
     }

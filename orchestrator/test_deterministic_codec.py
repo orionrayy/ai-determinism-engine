@@ -20,5 +20,6 @@ class DeterministicCodecTests(unittest.TestCase):
             hashlib.sha256(b'{"a":1}').hexdigest(),
         )
 
+
 if __name__ == "__main__":
     unittest.main()

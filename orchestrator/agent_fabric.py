@@ -57,8 +57,8 @@ AGENTS = {
     ),
     "critic": AgentProfile(
         "critic",
-        "Challenge outputs and verify them against contracts and evidence.",
-        frozenset({"validate"}),
+        "Challenge outputs, analyze disagreements, and verify them against contracts and evidence.",
+        frozenset({"analyze", "validate"}),
     ),
     "publisher": AgentProfile(
         "publisher",

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-determinism-engine.local/contracts/task-envelope.schema.json",
+  "title": "AI Determinism Engine Task Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol_version","task_id","workflow_id","tenant_id","capability","task_kind","attempt","input","contract","routing","deadline","trace"],
+  "properties": {
+    "protocol_version": {"type":"string","minLength":1,"maxLength":32},
+    "task_id": {"type":"string","minLength":1,"maxLength":128},
+    "workflow_id": {"type":"string","minLength":1,"maxLength":128},
+    "tenant_id": {"type":"string","minLength":1,"maxLength":128},
+    "capability": {"type":"string","minLength":1,"maxLength":128},
+    "task_kind": {"type":"string","enum":["workflow","activity","research","agent","validation","recovery"]},
+    "skill": {
+      "type":"object","additionalProperties":false,"required":["skill_id","version","digest"],
+      "properties":{
+        "skill_id":{"type":"string","minLength":1,"maxLength":160},
+        "version":{"type":"string","minLength":1,"maxLength":64},
+        "digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "attempt": {"type":"integer","minimum":1,"maximum":128},
+    "input": {
+      "type":"object","additionalProperties":false,"required":["mode"],
+      "properties":{
+        "mode":{"type":"string","enum":["inline","reference"]},
+        "payload":{},
+        "uri":{"type":"string","maxLength":2048},
+        "sha256":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}
+      },
+      "allOf":[
+        {"if":{"properties":{"mode":{"const":"inline"}}},"then":{"required":["payload"]}},
+        {"if":{"properties":{"mode":{"const":"reference"}}},"then":{"required":["uri","sha256"]}}
+      ]
+    },
+    "contract": {
+      "type":"object","additionalProperties":false,
+      "required":["effect_identity","retry_mode","reconciliation","fencing"],
+      "properties":{
+        "effect_identity":{"type":"string","enum":["none","engine","provider"]},
+        "retry_mode":{"type":"string","enum":["safe","reconcile","blocked"]},
+        "reconciliation":{"type":"string","enum":["none","deterministic","provider"]},
+        "fencing":{"type":"string","enum":["none","engine","provider"]},
+        "semantic_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "routing": {
+      "type":"object","additionalProperties":false,"required":["required_capabilities","trust_level"],
+      "properties":{
+        "required_capabilities":{"type":"array","items":{"type":"string","maxLength":128},"maxItems":32},
+        "preferred_worker_pool":{"type":"string","maxLength":128},
+        "required_build_id":{"type":"string","maxLength":128},
+        "trust_level":{"type":"string","enum":["untrusted","standard","trusted","isolated"]},
+        "network_class":{"type":"string","maxLength":64}
+      }
+    },
+    "deadline": {
+      "type":"object","additionalProperties":false,"required":["expires_at"],
+      "properties":{
+        "expires_at":{"type":"string","format":"date-time"},
+        "not_before":{"type":"string","format":"date-time"}
+      }
+    },
+    "budget": {
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "max_attempts":{"type":"integer","minimum":1,"maximum":128},
+        "max_runtime_seconds":{"type":"integer","minimum":1},
+        "max_output_bytes":{"type":"integer","minimum":1},
+        "max_llm_tokens":{"type":"integer","minimum":1},
+        "max_provider_calls":{"type":"integer","minimum":0}
+      }
+    },
+    "parent": {
+      "type":"object","additionalProperties":false,
+      "properties":{
+        "task_id":{"type":"string","maxLength":128},
+        "span_id":{"type":"string","maxLength":64}
+      }
+    },
+    "trace": {
+      "type":"object","additionalProperties":false,"required":["trace_id","span_id"],
+      "properties":{
+        "trace_id":{"type":"string","pattern":"^[0-9a-f]{32}$"},
+        "span_id":{"type":"string","pattern":"^[0-9a-f]{16}$"},
+        "traceparent":{"type":"string","maxLength":256}
+      }
+    },
+    "metadata":{"type":"object","additionalProperties":true}
+  }
+}

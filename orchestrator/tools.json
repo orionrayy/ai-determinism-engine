@@ -87,12 +87,50 @@
       "delete_file",
       "dispatch_workflow"
     ],
-    "risk": "medium"
+    "risk": "medium",
+    "effect_contracts": {
+      "create_issue": {
+        "identity": "engine",
+        "retry": "reconcile",
+        "reconciliation": "deterministic",
+        "fencing": "engine",
+        "notes": "Issue body carries deterministic execution marker; reconcile by marker search."
+      },
+      "create_or_update_file": {
+        "identity": "engine",
+        "retry": "reconcile",
+        "reconciliation": "deterministic",
+        "fencing": "engine",
+        "notes": "Exact desired content proves an already-applied write."
+      },
+      "delete_file": {
+        "identity": "engine",
+        "retry": "reconcile",
+        "reconciliation": "deterministic",
+        "fencing": "engine",
+        "notes": "404 proves absence."
+      },
+      "dispatch_workflow": {
+        "identity": "engine",
+        "retry": "blocked",
+        "reconciliation": "none",
+        "fencing": "engine",
+        "notes": "No durable caller-side dispatch reconciliation identity; unknown outcomes stay blocked."
+      }
+    }
   },
   "openai": {
     "required_env": "OPENAI_API_KEY",
     "side_effects": [],
     "free_tier": false,
+    "risk": "low"
+  },
+  "openalex": {
+    "required_env": null,
+    "side_effects": [],
+    "free_tier": true,
+    "cost_class": "free_allowance",
+    "hard_free_requires_no_key": true,
     "risk": "low"
   },
   "webhook": {
@@ -101,7 +139,16 @@
       "external_request"
     ],
     "free_tier": false,
-    "risk": "high"
+    "risk": "high",
+    "effect_contracts": {
+      "*": {
+        "identity": "engine",
+        "retry": "blocked",
+        "reconciliation": "none",
+        "fencing": "engine",
+        "notes": "Generic webhook cannot be assumed idempotent or reconcilable."
+      }
+    }
   },
   "firecrawl": {
     "required_env": "FIRECRAWL_API_KEY",
@@ -132,6 +179,12 @@
       "gemini-3.6-flash",
       "gemini-3.5-flash"
     ],
+    "free_until": {
+      "gemini-3.8-flash": "2026-12-31T23:59:59Z",
+      "gemini-3.7-flash": "2026-12-31T23:59:59Z",
+      "gemini-3.6-flash": "2026-12-31T23:59:59Z",
+      "gemini-3.5-flash": "2026-12-31T23:59:59Z"
+    },
     "risk": "low"
   },
   "research_bundle": {
@@ -151,7 +204,16 @@
       "invoke"
     ],
     "cost_model": "self-hosted/free-hostable; upstream vendor costs depend on configuration",
-    "risk": "high"
+    "risk": "high",
+    "effect_contracts": {
+      "*": {
+        "identity": "provider",
+        "retry": "reconcile",
+        "reconciliation": "provider",
+        "fencing": "engine",
+        "notes": "Bridge propagates Idempotency-Key; provider must honor it for true provider idempotency."
+      }
+    }
   },
   "local_validator": {
     "required_env": null,

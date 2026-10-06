@@ -1,0 +1,53 @@
+name: Private Input Worker Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "private_input.py"
+      - "test_private_input.py"
+      - "contracts/private-input.schema.json"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-tests.yml"
+      - ".github/workflows/private-input-deploy.yml"
+  pull_request:
+    paths:
+      - "private_input.py"
+      - "test_private_input.py"
+      - "contracts/private-input.schema.json"
+      - "workers/private-input/**"
+      - ".github/workflows/private-input-tests.yml"
+      - ".github/workflows/private-input-deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Python private-input tests
+        run: python -m unittest private_input test_private_input -v
+      - name: Node worker tests
+        run: node workers/private-input/test.mjs
+      - name: Validate Worker syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check workers/private-input/src/index.js
+          node --check workers/private-input/src/private_input_object.js
+      - name: Wrangler dry-run
+        run: npx --yes wrangler@4.146.0 deploy --config workers/private-input/wrangler.jsonc --dry-run

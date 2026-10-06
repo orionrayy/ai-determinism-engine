@@ -1,9 +1,12 @@
+import os
 import json
 import tempfile
 import sys
 import threading
 import unittest
+import time
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from state_schema import CURRENT_STATE_VERSION, CURRENT_WORKFLOW_SCHEMA_VERSION
@@ -135,6 +138,29 @@ class OrchestratorTests(unittest.TestCase):
             self.assertFalse(o.tool_available("firecrawl", {"firecrawl": {"free_tier": False}}))
             self.assertFalse(o.tool_available("webhook", {"webhook": {"free_tier": False}}))
             self.assertTrue(o.tool_available("wikipedia", {"wikipedia": {"free_tier": True}}))
+
+    def test_free_only_rejects_expired_gemini_free_model(self):
+        registry = {
+            "gemini": {
+                "free_tier": True,
+                "default_model": "gemini-3.8-flash",
+                "free_models": ["gemini-3.8-flash"],
+                "free_until": {
+                    "gemini-3.8-flash": "2020-01-01T00:00:00Z",
+                },
+            }
+        }
+        with patch.dict(
+            os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true"},
+            clear=False,
+        ):
+            self.assertFalse(
+                o.gemini_model_allowed(
+                    registry,
+                    model="gemini-3.8-flash",
+                )
+            )
 
     def test_free_only_rejects_unlisted_gemini_model(self):
         registry = {
@@ -387,6 +413,121 @@ class OrchestratorTests(unittest.TestCase):
                 {"version": 2, "value": "after"},
             )
             self.assertFalse(list(Path(tmp).glob(".state.json.*.tmp")))
+
+    def test_one_step_fails_closed_for_stale_side_effecting_federation(self):
+        node = o.Node(
+            id="n01-dangerous",
+            capability="execute",
+            tool="github",
+            input={
+                "instruction": "must never replay remotely",
+                "action": "create_issue",
+            },
+        )
+        node.status = "delegated"
+        workflow = {
+            "id": "wf-stale-side-effect",
+            "goal": "blocked recovery",
+            "live": True,
+            "status": "waiting_agents",
+            "nodes": [o.asdict(node)],
+            "federation": {
+                "id": "fed-dangerous",
+                "status": "dispatched",
+                "task_count": 1,
+                "created_at": (
+                    datetime.now(timezone.utc) - timedelta(
+                        seconds=o.FEDERATION_STALE_SECONDS + 1
+                    )
+                ).isoformat(),
+                "tasks": [{"task_id": "n01-dangerous"}],
+                "artifact_id": None,
+                "artifact_digest": None,
+            },
+        }
+
+        with patch.object(
+            o,
+            "load_registry",
+            return_value={"github": {"side_effects": ["issue_write"]}},
+        ), patch.object(
+            o,
+            "persist_workflow",
+        ), patch.object(
+            o,
+            "append_event",
+        ):
+            result = o._run_one_step_inner(workflow)
+
+        self.assertEqual(result, "failed")
+        self.assertEqual(workflow["status"], "failed")
+        self.assertEqual(
+            workflow["error"]["type"],
+            "federation_recovery_safety_error",
+        )
+        self.assertEqual(workflow["nodes"][0]["status"], "delegated")
+
+    def test_one_step_rearms_stale_safe_federation_in_direct_step_path(self):
+        node = o.Node(
+            id="n01-federated",
+            capability="execute",
+            tool="noop",
+            input={"instruction": "complete delegated safe task"},
+        )
+        node.status = "delegated"
+        workflow = {
+            "id": "wf-stale-federation-step",
+            "goal": "recover stale federation",
+            "live": False,
+            "status": "waiting_agents",
+            "max_attempts": 8,
+            "attempts_used": 1,
+            "nodes": [o.asdict(node)],
+            "federation": {
+                "id": "fed-stale",
+                "status": "dispatched",
+                "task_count": 1,
+                "created_at": (
+                    datetime.now(timezone.utc) - timedelta(
+                        seconds=o.FEDERATION_STALE_SECONDS + 1
+                    )
+                ).isoformat(),
+                "tasks": [{"task_id": "n01-federated"}],
+                "artifact_id": None,
+                "artifact_digest": None,
+            },
+        }
+
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FEDERATION_ENABLED": "false"},
+            clear=False,
+        ), patch.object(
+            o,
+            "load_registry",
+            return_value={},
+        ), patch.object(
+            o,
+            "persist_workflow",
+        ), patch.object(
+            o,
+            "append_event",
+        ), patch.object(
+            o,
+            "execute_node",
+            return_value={
+                "simulated": True,
+                "tool": "noop",
+                "capability": "execute",
+            },
+        ):
+            result = o._run_one_step_inner(workflow)
+
+        self.assertEqual(result, "completed")
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(workflow["federation"]["status"], "abandoned")
+        self.assertEqual(workflow["nodes"][0]["status"], "completed")
+        self.assertEqual(workflow["attempts_used"], 1)
 
     def test_one_step_does_not_require_github_token(self):
         workflow = {
@@ -1666,12 +1807,69 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(workflow["status"], "ready")
         self.assertTrue(all(node.status == "ready" for node in nodes))
 
+    def test_min_sources_uses_independent_evidence_not_provider_bucket_count(self):
+        node = o.Node(
+            "n01",
+            "research",
+            "research_bundle",
+            contract={"min_sources": 3},
+        )
+        output = {
+            "sources": {
+                "wikipedia": {},
+                "arxiv": {},
+                "crossref": {},
+                "semantic_scholar": {},
+            },
+            "evidence_records": [
+                {"canonical_id": "doi:10.1000/a", "independence_key": "doi:10.1000/a"},
+                {"canonical_id": "doi:10.1000/b", "independence_key": "doi:10.1000/b"},
+            ],
+            "independent_source_count": 2,
+        }
+        with self.assertRaisesRegex(RuntimeError, "at least 3 sources"):
+            o.validate_node_output(node, output)
+
+    def test_local_validator_uses_independent_evidence_count(self):
+        node = o.Node(
+            "n02",
+            "validate",
+            "local_validator",
+            contract={"min_sources": 3},
+            input={"context": {
+                "dependencies": {
+                    "n01": {
+                        "status": "completed",
+                        "output": {
+                            "sources": {"a": {}, "b": {}, "c": {}},
+                            "evidence_records": [
+                                {"canonical_id": "doi:10.1000/a"},
+                                {"canonical_id": "doi:10.1000/a"},
+                                {"canonical_id": "doi:10.1000/b"},
+                            ],
+                            "independent_source_count": 2,
+                        },
+                    }
+                }
+            }},
+        )
+        result = o.execute_local_validator(node, "validate research")
+        minimum = [
+            item for item in result["checks"]
+            if item.get("check") == "contract:min_sources"
+        ]
+        self.assertEqual(len(minimum), 1)
+        self.assertEqual(minimum[0]["actual"], 2)
+        self.assertFalse(minimum[0]["passed"])
+
     def test_deterministic_research_plan_uses_multi_agent_scatter_gather(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
                 nodes = o.deterministic_plan("research AI safety", {})
         self.assertEqual(nodes[0].agent_role, "researcher")
+        self.assertEqual(nodes[0].input["budget"], "balanced")
         self.assertEqual(nodes[1].agent_role, "skeptic")
+        self.assertEqual(nodes[1].input["budget"], "balanced")
         self.assertEqual(nodes[1].depends_on, [])
         self.assertEqual(nodes[2].agent_role, "analyst")
         self.assertEqual(
@@ -1679,6 +1877,34 @@ class OrchestratorTests(unittest.TestCase):
             ["n01-research", "n02-skeptic"],
         )
         self.assertEqual(nodes[4].agent_role, "critic")
+
+    def test_deterministic_research_plan_diversifies_skeptic_lane(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "REGISTRY_FILE", Path(tmp) / "missing.json"):
+                nodes = o.deterministic_plan("research AI safety", {})
+        self.assertEqual(nodes[0].input["research_focus"], "primary_evidence")
+        self.assertEqual(nodes[1].input["research_focus"], "counterevidence")
+
+    def test_skeptic_research_uses_counterevidence_query_variant(self):
+        node = o.Node(
+            id="n02-skeptic",
+            capability="research",
+            tool="research_bundle",
+            input={
+                "query": "AI safety",
+                "research_focus": "counterevidence",
+            },
+            agent_role="skeptic",
+        )
+        with patch("research_bundle.research_bundle", return_value={"ok": True}) as research:
+            result = o.execute_research_bundle(node, "unused goal")
+        self.assertEqual(result, {"ok": True})
+        query = research.call_args.args[0]
+        self.assertIn("AI safety", query)
+        self.assertIn("counterevidence", query)
+        self.assertIn("contradictions", query)
+        self.assertIn("limitations", query)
+        self.assertIn("alternative findings", query)
 
     def test_workflow_creation_persists_agent_team_manifest(self):
         with patch.dict(o.os.environ, {}, clear=True):
@@ -1845,6 +2071,150 @@ class OrchestratorTests(unittest.TestCase):
         with patch.object(o, "safe_public_https_json", return_value={"status_code": 200, "data": {"ok": True}}):
             result = o.execute_artifact_verifier(node, "verify")
         self.assertTrue(result["checks"][0]["passed"])
+
+    def test_llm_retry_consumes_second_budget_slot(self):
+        node = o.Node(
+            "n01", "analyze", "gemini", [],
+            status="running",
+            max_retries=1,
+        )
+        workflow = {"id": "wf_llm_retry", "llm_calls_used": 1}
+        budget = o.AttemptBudget({
+            "attempts_used": 1,
+            "max_attempts": 4,
+        })
+        with patch.object(
+            o,
+            "execute_node",
+            side_effect=[
+                RuntimeError("transient"),
+                {"candidates": [{"content": {"parts": [{"text": "{}"}]}}],
+                 },
+            ],
+        ), patch.object(
+            o,
+            "execution_failure_policy",
+            return_value=("transient", True, False),
+        ), patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "ORCHESTRATOR_MAX_LLM_CALLS": "2"},
+            clear=False,
+        ):
+            ok, error = o.execute_with_retries(
+                node,
+                "goal",
+                False,
+                attempt_budget=budget,
+                initial_attempt_reserved=True,
+                llm_budget_workflow=workflow,
+            )
+        self.assertTrue(ok)
+        self.assertIsNone(error)
+        self.assertEqual(workflow["llm_calls_used"], 2)
+        self.assertEqual(budget.used, 2)
+
+    def test_llm_retry_fails_closed_when_budget_is_exhausted(self):
+        node = o.Node(
+            "n01", "analyze", "gemini", [],
+            status="running",
+            max_retries=1,
+        )
+        workflow = {"id": "wf_llm_retry_limit", "llm_calls_used": 1}
+        budget = o.AttemptBudget({
+            "attempts_used": 1,
+            "max_attempts": 4,
+        })
+        with patch.object(
+            o,
+            "execute_node",
+            side_effect=RuntimeError("transient"),
+        ) as execute, patch.object(
+            o,
+            "execution_failure_policy",
+            return_value=("transient", True, False),
+        ), patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_FREE_ONLY": "true", "ORCHESTRATOR_MAX_LLM_CALLS": "1"},
+            clear=False,
+        ):
+            ok, error = o.execute_with_retries(
+                node,
+                "goal",
+                False,
+                attempt_budget=budget,
+                initial_attempt_reserved=True,
+                llm_budget_workflow=workflow,
+            )
+        self.assertFalse(ok)
+        self.assertEqual(error["type"], "llm_call_budget_exhausted")
+        self.assertEqual(workflow["llm_calls_used"], 1)
+        self.assertEqual(budget.used, 1)
+        self.assertEqual(execute.call_count, 1)
+
+    def test_free_only_llm_call_budget_is_bounded_and_persisted(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {"id": "wf_llm_budget", "llm_calls_used": 11}
+        with patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+            self.assertTrue(o.reserve_llm_call(workflow, node, live=True))
+            self.assertEqual(workflow["llm_calls_used"], 12)
+            self.assertEqual(workflow["llm_call_limit"], 12)
+            self.assertFalse(o.reserve_llm_call(workflow, node, live=True))
+        self.assertEqual(node.error["type"], "llm_call_budget_exhausted")
+
+    def test_llm_budget_exhaustion_survives_resume_state(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {
+            "id": "wf_llm_resume_budget",
+            "goal": "analyze",
+            "live": True,
+            "llm_calls_used": 12,
+            "nodes": [o.asdict(node)],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                o.os.environ,
+                {"ORCHESTRATOR_FREE_ONLY": "true"},
+                clear=False,
+            ), patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value={"gemini": {"free_tier": True}}),                  patch.object(o, "execute_node") as execute:
+                result = o.run_one_step(workflow)
+                self.assertEqual(result, "failed")
+                execute.assert_not_called()
+                shard = o.workflow_shard_path(workflow["id"])
+                persisted = json.loads(shard.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["llm_calls_used"], 12)
+        self.assertEqual(
+            persisted["nodes"][0]["error"]["type"],
+            "llm_call_budget_exhausted",
+        )
+
+    def test_dry_run_does_not_consume_llm_call_budget(self):
+        node = o.Node("n01", "analyze", "gemini", [])
+        workflow = {"id": "wf_llm_dry"}
+        self.assertTrue(o.reserve_llm_call(workflow, node, live=False))
+        self.assertNotIn("llm_calls_used", workflow)
+
+    def test_simulated_output_still_enforces_deterministic_contracts(self):
+        node = o.Node(
+            "n01", "execute", "noop", [],
+            contract={"required_fields": ["answer"], "min_sources": 1},
+        )
+        with self.assertRaisesRegex(RuntimeError, "contract field missing: answer"):
+            o.validate_node_output(
+                node,
+                {"simulated": True},
+            )
+
+    def test_simulated_epistemic_output_defers_only_epistemic_validation(self):
+        node = o.Node(
+            "n01", "execute", "gemini", [],
+            contract={"epistemic": True, "min_coverage": 0.8},
+        )
+        result = o.validate_node_output(
+            node,
+            {"simulated": True, "candidates": []},
+        )
+        self.assertTrue(result["passed"])
+        self.assertTrue(result["checks"][0]["epistemic_deferred"])
 
     def test_contract_required_field_is_enforced(self):
         node = o.Node(
@@ -2130,6 +2500,45 @@ class OrchestratorTests(unittest.TestCase):
         self.assertEqual(execute.call_count, 0)
         self.assertEqual(workflow["nodes"][0]["error"]["type"], "attempt_budget_exhausted")
 
+    def test_research_bundle_is_not_globally_quota_serialized(self):
+        node = o.Node("n01-research", "research", "research_bundle", [])
+        self.assertFalse(o.quota_sensitive(node))
+
+    def test_quota_sensitive_nodes_are_serialized(self):
+        nodes = [
+            o.Node("n01-llm-a", "analyze", "gemini", []),
+            o.Node("n02-llm-b", "analyze", "gemini", []),
+        ]
+        workflow = {
+            "id": "wf_quota_serial",
+            "goal": "analysis",
+            "live": True,
+            "max_parallel": 2,
+            "nodes": [o.asdict(n) for n in nodes],
+        }
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def fake_execute(node, goal, dry_run):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            time.sleep(0.01)
+            with lock:
+                active -= 1
+            return {"output": "ok"}
+
+        registry = {
+            "gemini": {"free_tier": True, "free_models": ["test-model"]},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)),                  patch.object(o, "EVENT_FILE", Path(tmp) / "events.jsonl"),                  patch.object(o, "CHECKPOINT_DIR", Path(tmp) / "checkpoints"),                  patch.object(o, "load_registry", return_value=registry),                  patch.object(o, "execute_node", side_effect=fake_execute),                  patch.dict(o.os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False):
+                o.run_workflow(workflow)
+        self.assertEqual(workflow["status"], "completed")
+        self.assertEqual(maximum, 1)
+
     def test_parallel_independent_nodes_execute_concurrently(self):
         barrier = threading.Barrier(2)
 
@@ -2352,6 +2761,307 @@ class OrchestratorTests(unittest.TestCase):
                 result = o.run_one_step(workflow)
         self.assertEqual(result, "failed")
         self.assertIn("500", workflow["nodes"][0]["error"]["message"])
+
+    def test_epistemic_contract_accepts_supported_claims(self):
+        node = o.Node(
+            "n01", "draft", "gemini", [],
+            contract={"epistemic": True, "min_coverage": 1.0},
+        )
+        output = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "text": json.dumps({
+                        "result": "answer",
+                        "claims": [{
+                            "claim_id": "c1",
+                            "statement": "fact",
+                            "material": True,
+                            "status": "SUPPORTED_DIRECT",
+                            "evidence_refs": ["doi:10.1/a"],
+                        }],
+                        "evidence_records": [{"canonical_id": "doi:10.1/a"}],
+                        "risks": [],
+                        "next_action": "done",
+                    })
+                }]}
+            }]
+        }
+        result = o.validate_node_output(node, output)
+        self.assertTrue(result["passed"])
+
+    def test_epistemic_contract_rejects_unknown_evidence_reference(self):
+        node = o.Node(
+            "n01", "draft", "gemini", [],
+            contract={"epistemic": True},
+        )
+        output = {
+            "candidates": [{
+                "content": {"parts": [{
+                    "text": json.dumps({
+                        "result": "answer",
+                        "claims": [{
+                            "claim_id": "c1",
+                            "statement": "fact",
+                            "material": True,
+                            "status": "SUPPORTED_DIRECT",
+                            "evidence_refs": ["missing"],
+                        }],
+                        "evidence_records": [{"canonical_id": "doi:10.1/a"}],
+                        "risks": [],
+                        "next_action": "revise",
+                    })
+                }]}
+            }]
+        }
+        with self.assertRaisesRegex(RuntimeError, "epistemic validation failed"):
+            o.validate_node_output(node, output)
+
+    def test_epistemic_gemini_prompt_requires_claim_evidence_contract(self):
+        node = o.Node(
+            "n01", "draft", "gemini", [],
+            contract={"epistemic": True},
+            agent_role="analyst",
+            input={"instruction":"draft from evidence", "workflow_id":"wf-ep"},
+        )
+        captured = {}
+        def fake_http(url, method="GET", body=None, headers=None, timeout=60, max_response_bytes=o.MAX_GENERIC_HTTP_RESPONSE_BYTES):
+            captured["body"] = body
+            return {"status_code": 200, "data": {"ok": True}}
+        registry = {"gemini": {
+            "default_model":"gemini-3.8-flash",
+            "free_models":["gemini-3.8-flash"],
+            "free_tier":True,
+        }}
+        with patch.dict(o.os.environ, {"GEMINI_API_KEY":"x","ORCHESTRATOR_FREE_ONLY":"true"}, clear=True), \
+             patch.object(o, "load_registry", return_value=registry), \
+             patch.object(o, "http_json", side_effect=fake_http):
+            o.execute_gemini(node, "goal")
+        prompt = captured["body"]["contents"][0]["parts"][0]["text"]
+        self.assertIn("claims", prompt)
+        self.assertIn("evidence_records", prompt)
+        self.assertIn("evidence_refs", prompt)
+
+    def test_side_effect_failure_does_not_switch_adapter_without_equivalence_contract(self):
+        node = o.Node(
+            "n01-publish", "publish", "connector_bridge", [],
+            risk="high", max_retries=0,
+        )
+        node.status = "failed"
+        node.error = {
+            "type": "ConnectorRequestError",
+            "message": "definitive upstream rejection",
+            "failure_class": "permanent",
+        }
+        workflow = {
+            "id": "wf-side-effect-replan",
+            "goal": "publish",
+            "live": True,
+            "nodes": [o.asdict(node)],
+            "replan_count": 0,
+            "attempts_used": 1,
+            "max_attempts": 8,
+        }
+        registry = {
+            "capability:publish": {
+                "default_tool": "connector_bridge",
+                "fallback_tools": ["webhook"],
+            },
+            "connector_bridge": {
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+            "webhook": {
+                "free_tier": True,
+                "side_effects": ["external_request"],
+            },
+        }
+        self.assertFalse(o.replan_after_failure(workflow, [node], node, registry))
+        self.assertEqual(node.tool, "connector_bridge")
+
+
+    def test_simulated_research_bundle_defers_provider_contract(self):
+        node = o.Node(
+            "n01", "research", "research_bundle", [],
+            contract={},
+        )
+        output = {
+            "simulated": True,
+            "tool": "research_bundle",
+            "capability": "research",
+        }
+        # Dry-run must still enforce deterministic shape checks, but must not
+        # require live provider evidence that was intentionally not fetched.
+        result = o.validate_node_output(node, output)
+        self.assertTrue(result["passed"])
+        self.assertTrue(any(
+            check.get("check") == "adapter_contract"
+            and check.get("deferred") is True
+            for check in result["checks"]
+        ))
+
+
+    def test_live_workflow_uses_distributed_control_plane_authority(self):
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_LLM_PLANNER": "false",
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+            },
+            clear=False,
+        ), patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow(
+                "authority test",
+                live=True,
+                workflow_id="wf-authority-cp",
+            )
+        self.assertEqual(
+            workflow["authority_mode"],
+            o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        )
+
+    def test_workflow_without_control_plane_uses_git_authority(self):
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_LLM_PLANNER": "false",
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "",
+            },
+            clear=False,
+        ), patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow(
+                "authority test",
+                live=True,
+                workflow_id="wf-authority-git",
+            )
+        self.assertEqual(workflow["authority_mode"], o.AUTHORITY_GIT_DURABLE)
+
+    def test_legacy_control_plane_state_migrates_to_distributed_authority(self):
+        migrated = o.migrate_state({
+            "version": CURRENT_STATE_VERSION,
+            "workflows": {
+                "wf-legacy-cp": {
+                    "id": "wf-legacy-cp",
+                    "live": True,
+                    "control_plane": {"enabled": True},
+                    "nodes": [],
+                }
+            },
+        })
+        self.assertEqual(
+            migrated["workflows"]["wf-legacy-cp"]["authority_mode"],
+            o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+        )
+
+    def test_distributed_workflow_fails_closed_when_control_plane_is_missing(self):
+        workflow = {
+            "id": "wf-authority-block",
+            "goal": "authority block",
+            "live": True,
+            "authority_mode": o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            "status": "ready",
+            "nodes": [],
+        }
+        with patch.dict(
+            o.os.environ,
+            {
+                "ORCHESTRATOR_CONTROL_PLANE_URL": "",
+                "ORCHESTRATOR_CONTROL_PLANE_SECRET": "",
+            },
+            clear=False,
+        ), patch.object(o, "_run_one_step_inner", return_value="inner-ran") as inner:
+            with self.assertRaises(o.ControlPlaneError):
+                o.run_one_step(workflow)
+            inner.assert_not_called()
+
+    def test_distributed_authority_rejects_missing_remote_state(self):
+        workflow = {
+            "id": "wf-authority-missing",
+            "goal": "authority missing",
+            "live": True,
+            "authority_mode": o.AUTHORITY_DISTRIBUTED_CONTROL_PLANE,
+            "status": "running",
+            "nodes": [],
+            "control_plane_state_version": 4,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), patch.dict(
+                o.os.environ,
+                {
+                    "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                    "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+                },
+                clear=False,
+            ), patch.object(
+                o.ControlPlaneClient,
+                "from_env",
+            ) as from_env:
+                client = from_env.return_value
+                client.get_workflow_state.return_value = None
+                o._write_workflow_shard(workflow)
+                with self.assertRaises(RuntimeError):
+                    o.load_workflow(workflow["id"])
+
+    def test_git_authority_does_not_switch_to_control_plane_when_config_appears(self):
+        workflow = {
+            "id": "wf-authority-git-load",
+            "goal": "git authority",
+            "live": True,
+            "authority_mode": o.AUTHORITY_GIT_DURABLE,
+            "status": "ready",
+            "nodes": [],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.object(o, "STATE_DIR", Path(tmp)), patch.dict(
+                o.os.environ,
+                {
+                    "ORCHESTRATOR_CONTROL_PLANE_URL": "https://cp.example.test",
+                    "ORCHESTRATOR_CONTROL_PLANE_SECRET": "test-secret",
+                },
+                clear=False,
+            ), patch.object(
+                o.ControlPlaneClient,
+                "from_env",
+                side_effect=AssertionError("Git-authority workflow must not query control plane"),
+            ):
+                o._write_workflow_shard(workflow)
+                loaded = o.load_workflow(workflow["id"])
+        self.assertEqual(loaded["authority_mode"], o.AUTHORITY_GIT_DURABLE)
+
+    def test_run_one_step_uses_shared_control_plane_session(self):
+        class Session:
+            def __enter__(self):
+                return (None, None)
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        workflow = {
+            "id": "wf-session",
+            "goal": "session",
+            "live": False,
+            "status": "ready",
+            "nodes": [],
+        }
+        with patch.object(o, "control_plane_session", return_value=Session()) as session,              patch.object(o, "_run_one_step_inner", return_value="ok") as inner:
+            result = o.run_one_step(workflow)
+        self.assertEqual(result, "ok")
+        session.assert_called_once_with(workflow)
+        inner.assert_called_once()
+
+    def test_create_workflow_persists_idempotency_key(self):
+        with patch.dict(
+            o.os.environ,
+            {"ORCHESTRATOR_LLM_PLANNER": "false"},
+            clear=False,
+        ), patch.object(o, "load_registry", return_value={}):
+            workflow = o.create_workflow(
+                "idempotency test",
+                live=False,
+                idempotency_key="idem-123",
+            )
+        self.assertEqual(workflow["idempotency_key"], "idem-123")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,254 @@
+name: Deploy Telegram Control Plane
+
+on:
+  workflow_dispatch:
+    inputs:
+      provision_d1:
+        description: "Create the D1 database when it does not exist"
+        required: true
+        type: boolean
+        default: false
+      drop_pending_updates:
+        description: "Drop Telegram updates accumulated before activation"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+      TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.TELEGRAM_ALLOWED_USER_IDS }}
+      TELEGRAM_APPROVER_USER_IDS: ${{ secrets.TELEGRAM_APPROVER_USER_IDS }}
+      TELEGRAM_DATA_ENCRYPTION_KEY: ${{ secrets.TELEGRAM_DATA_ENCRYPTION_KEY }}
+      TELEGRAM_DATA_HMAC_KEY: ${{ secrets.TELEGRAM_DATA_HMAC_KEY }}
+      GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
+      GATEWAY_SHARED_SECRET: ${{ secrets.GATEWAY_SHARED_SECRET }}
+      CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
+      CONTROL_PLANE_SECRET: ${{ secrets.CONTROL_PLANE_SECRET }}
+      TELEGRAM_D1_DATABASE_ID: ${{ secrets.TELEGRAM_D1_DATABASE_ID }}
+      TELEGRAM_D1_DATABASE_NAME: ai-orchestrator-telegram
+      WRANGLER_VERSION: 4.146.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 1
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Validate deployment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$TELEGRAM_BOT_TOKEN"
+          test -n "$TELEGRAM_WEBHOOK_SECRET"
+          test -n "$TELEGRAM_ALLOWED_USER_IDS"
+          test -n "$TELEGRAM_APPROVER_USER_IDS"
+          test -n "$TELEGRAM_DATA_ENCRYPTION_KEY"
+          test -n "$TELEGRAM_DATA_HMAC_KEY"
+          test -n "$GATEWAY_URL"
+          test -n "$GATEWAY_SHARED_SECRET"
+          test -n "$CONTROL_PLANE_URL"
+          test -n "$CONTROL_PLANE_SECRET"
+
+      - name: Resolve D1 database
+        id: d1
+        shell: bash
+        env:
+          PROVISION_D1: ${{ inputs.provision_d1 }}
+        run: |
+          set -euo pipefail
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
+          db_id="$TELEGRAM_D1_DATABASE_ID"
+          if [ -z "$db_id" ]; then
+            existing="$(npx --yes "$wrangler_package" d1 list --json)"
+            db_id="$(python - "$existing" <<'PY'
+          import json, sys
+          raw=sys.argv[1]
+          data=json.loads(raw)
+          items = data if isinstance(data, list) else data.get('result', [])
+          for item in items:
+              if isinstance(item, dict) and item.get('name') == 'ai-orchestrator-telegram':
+                  print(item.get('uuid') or item.get('id') or '')
+                  break
+          PY
+            )"
+          fi
+          if [ -z "$db_id" ] && [ "$PROVISION_D1" = "true" ]; then
+            npx --yes "$wrangler_package" d1 create "$TELEGRAM_D1_DATABASE_NAME" --binding DB --use-remote
+            existing="$(npx --yes "$wrangler_package" d1 list --json)"
+            db_id="$(python - "$existing" <<'PY'
+          import json, sys
+          data=json.loads(sys.argv[1])
+          items = data if isinstance(data, list) else data.get('result', [])
+          for item in items:
+              if isinstance(item, dict) and item.get('name') == 'ai-orchestrator-telegram':
+                  print(item.get('uuid') or item.get('id') or '')
+                  break
+          PY
+            )"
+          fi
+          test -n "$db_id" || { echo "D1 database not found. Set TELEGRAM_D1_DATABASE_ID or rerun with provision_d1=true."; exit 1; }
+          echo "database_id=$db_id" >> "$GITHUB_OUTPUT"
+      - name: Generate deployment config
+        env:
+          DATABASE_ID: ${{ steps.d1.outputs.database_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > workers/telegram-control-plane/wrangler.generated.jsonc <<EOF
+          {
+            "name": "ai-orchestrator-telegram-control-plane",
+            "main": "src/index.js",
+            "compatibility_date": "2026-10-01",
+            "workers_dev": true,
+            "d1_databases": [
+              {
+                "binding": "DB",
+                "database_name": "${TELEGRAM_D1_DATABASE_NAME}",
+                "database_id": "${DATABASE_ID}",
+                "migrations_dir": "migrations"
+              }
+            ],
+            "secrets": {
+              "required": [
+                "TELEGRAM_BOT_TOKEN",
+                "TELEGRAM_WEBHOOK_SECRET",
+                "TELEGRAM_ALLOWED_USER_IDS",
+                "TELEGRAM_APPROVER_USER_IDS",
+                "TELEGRAM_DATA_ENCRYPTION_KEY",
+                "TELEGRAM_DATA_HMAC_KEY",
+                "GATEWAY_URL",
+                "GATEWAY_SHARED_SECRET",
+                "CONTROL_PLANE_URL",
+                "CONTROL_PLANE_SECRET"
+              ]
+            }
+          }
+          EOF
+
+      - name: Apply D1 migrations
+        working-directory: workers/telegram-control-plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
+          npx --yes "$wrangler_package" d1 migrations apply "$TELEGRAM_D1_DATABASE_NAME" --remote --config wrangler.generated.jsonc
+
+      - name: Write Worker secret file
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          {
+            printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN"
+            printf 'TELEGRAM_WEBHOOK_SECRET=%s\n' "$TELEGRAM_WEBHOOK_SECRET"
+            printf 'TELEGRAM_ALLOWED_USER_IDS=%s\n' "$TELEGRAM_ALLOWED_USER_IDS"
+            printf 'TELEGRAM_APPROVER_USER_IDS=%s\n' "$TELEGRAM_APPROVER_USER_IDS"
+            printf 'TELEGRAM_DATA_ENCRYPTION_KEY=%s\n' "$TELEGRAM_DATA_ENCRYPTION_KEY"
+            printf 'TELEGRAM_DATA_HMAC_KEY=%s\n' "$TELEGRAM_DATA_HMAC_KEY"
+            printf 'GATEWAY_URL=%s\n' "$GATEWAY_URL"
+            printf 'GATEWAY_SHARED_SECRET=%s\n' "$GATEWAY_SHARED_SECRET"
+            printf 'CONTROL_PLANE_URL=%s\n' "$CONTROL_PLANE_URL"
+            printf 'CONTROL_PLANE_SECRET=%s\n' "$CONTROL_PLANE_SECRET"
+          } > /tmp/telegram-secrets.env
+
+      - name: Deploy Worker
+        id: deploy
+        working-directory: workers/telegram-control-plane
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrangler_package="wrangler@${WRANGLER_VERSION}"
+          npx --yes "$wrangler_package" deploy --config wrangler.generated.jsonc --secrets-file /tmp/telegram-secrets.env 2>&1 | tee /tmp/telegram-deploy.log
+          worker_url="$(grep -Eo 'https://[A-Za-z0-9.-]+\.workers\.dev' /tmp/telegram-deploy.log | tail -1 || true)"
+          test -n "$worker_url" || { echo "Unable to determine deployed Worker URL"; exit 1; }
+          echo "worker_url=$worker_url" >> "$GITHUB_OUTPUT"
+
+      - name: Configure Telegram Bot API
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+          DROP_PENDING_UPDATES: ${{ inputs.drop_pending_updates }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          token=os.environ['TELEGRAM_BOT_TOKEN']
+          worker=os.environ['WORKER_URL'].rstrip('/')
+          drop=os.environ['DROP_PENDING_UPDATES'].lower() == 'true'
+
+          def call(method, payload):
+              request=urllib.request.Request(
+                  f"https://api.telegram.org/bot{token}/{method}",
+                  data=json.dumps(payload).encode('utf-8'),
+                  headers={'Content-Type':'application/json','User-Agent':'VORENYX-Telegram-Activator/1.0'},
+                  method='POST',
+              )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  raw=response.read().decode('utf-8')
+              data=json.loads(raw)
+              if response.status != 200 or data.get('ok') is not True:
+                  raise RuntimeError(f"Telegram {method} failed")
+              return data.get('result')
+
+          call('setWebhook', {
+              'url': worker + '/telegram/webhook',
+              'secret_token': os.environ['TELEGRAM_WEBHOOK_SECRET'],
+              'allowed_updates': ['message','callback_query'],
+              'drop_pending_updates': drop,
+          })
+          call('setMyCommands', {'commands': [
+              {'command':'start','description':'Initialize VORENYX Orchestrator'},
+              {'command':'menu','description':'Open orchestrator menu'},
+              {'command':'run','description':'Create a dry-run workflow'},
+              {'command':'runlive','description':'Request live execution'},
+              {'command':'status','description':'Show workflow status'},
+              {'command':'approvals','description':'List pending approvals'},
+              {'command':'resume','description':'Resume a workflow'},
+              {'command':'approve','description':'Approve a high-risk node'},
+              {'command':'prompt','description':'Toggle direct prompting'},
+              {'command':'last','description':'Show the last workflow'},
+              {'command':'privacy','description':'Show privacy policy'},
+              {'command':'revoke','description':'Revoke authorization'},
+              {'command':'delete_me','description':'Delete bot records'},
+              {'command':'id','description':'Show Telegram user ID'},
+              {'command':'help','description':'Show help'},
+          ]})
+          call('setChatMenuButton', {'menu_button': {'type':'commands'}})
+          print(json.dumps({'ok':True,'worker_url':worker,'privacy_url':worker+'/privacy'}))
+          PY
+
+      - name: Health check
+        env:
+          WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
+        run: |
+          set -euo pipefail
+          body="$(curl --fail --silent --show-error --max-time 20 "$WORKER_URL/health")"
+          printf '%s\n' "$body"
+          python3 - <<'PY' "$body"
+          import json, sys
+          data=json.loads(sys.argv[1])
+          assert data.get('ok') is True
+          assert data.get('service') == 'telegram-control-plane'
+          PY
+          printf '%s\n' '## Telegram Control Plane' '' "- Worker: $WORKER_URL" "- Privacy: $WORKER_URL/privacy" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f /tmp/telegram-secrets.env workers/telegram-control-plane/wrangler.generated.jsonc

@@ -5,11 +5,13 @@ import hashlib
 import hmac
 import json
 import os
+import sqlite3
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 try:
@@ -46,16 +48,33 @@ def canonical_json(value: Any) -> bytes:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
-def sign(timestamp: int, body: bytes, secret: str) -> str:
-    digest = hmac.new(
-        secret.encode("utf-8"),
-        str(timestamp).encode("utf-8") + b"\n" + body,
-        hashlib.sha256,
-    ).hexdigest()
+def sign(
+    timestamp: int,
+    body: bytes,
+    secret: str,
+    *,
+    method: str = "POST",
+    path: str = "/bridge",
+) -> str:
+    message = b"\n".join([
+        str(timestamp).encode("utf-8"),
+        str(method).upper().encode("utf-8"),
+        str(path).encode("utf-8"),
+        body,
+    ])
+    digest = hmac.new(secret.encode("utf-8"), message, hashlib.sha256).hexdigest()
     return "sha256=" + digest
 
 
-def verify_signature(headers: dict[str, str], body: bytes, secret: str, now: int | None = None) -> bool:
+def verify_signature(
+    headers: dict[str, str],
+    body: bytes,
+    secret: str,
+    now: int | None = None,
+    *,
+    method: str = "POST",
+    path: str = "/bridge",
+) -> bool:
     timestamp = headers.get("x-orchestrator-timestamp", "")
     signature = headers.get("x-orchestrator-signature", "")
     try:
@@ -65,8 +84,68 @@ def verify_signature(headers: dict[str, str], body: bytes, secret: str, now: int
     current = int(time.time()) if now is None else now
     if abs(current - sent_at) > MAX_SKEW_SECONDS:
         return False
-    expected = sign(sent_at, body, secret)
+    expected = sign(sent_at, body, secret, method=method, path=path)
     return hmac.compare_digest(signature, expected)
+
+
+
+IDEMPOTENCY_DB_ENV = "ORCHESTRATOR_BRIDGE_IDEMPOTENCY_DB"
+
+
+def idempotency_db_path() -> str | None:
+    value = os.environ.get(IDEMPOTENCY_DB_ENV, "").strip()
+    return value or None
+
+
+def _sqlite_connection() -> sqlite3.Connection | None:
+    path = idempotency_db_path()
+    if not path:
+        return None
+    db_path = Path(path).expanduser()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(str(db_path), timeout=5.0)
+    connection.execute("PRAGMA busy_timeout=5000")
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS idempotency (
+            request_id TEXT PRIMARY KEY,
+            semantic_digest TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('inflight', 'completed')),
+            expires_at REAL,
+            response_json TEXT
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idempotency_expiry_idx ON idempotency(status, expires_at)"
+    )
+    connection.commit()
+    return connection
+
+
+def _sqlite_cleanup(connection: sqlite3.Connection, now: float) -> None:
+    connection.execute(
+        "DELETE FROM idempotency WHERE status = 'completed' AND expires_at IS NOT NULL AND expires_at <= ?",
+        (now,),
+    )
+
+
+def _sqlite_response(row: tuple[Any, ...], semantic_digest: str) -> dict[str, Any] | None:
+    _, stored_digest, status, expires_at, response_json = row
+    if str(stored_digest) != semantic_digest:
+        raise BridgeRuntimeError(
+            "idempotency key conflicts with an existing request payload"
+        )
+    if status != "completed":
+        return None
+    try:
+        value = json.loads(str(response_json or "{}"))
+    except json.JSONDecodeError as exc:
+        raise BridgeRuntimeError("durable idempotency response is corrupt") from exc
+    if not isinstance(value, dict):
+        raise BridgeRuntimeError("durable idempotency response must be an object")
+    return value
 
 
 ACTION_TYPE_NAMES = {"string", "number", "integer", "boolean", "object", "array"}
@@ -101,9 +180,25 @@ def _normalize_action_spec(
         value = str(types[key] or "").strip().lower()
         if str(key).strip() and value in ACTION_TYPE_NAMES:
             normalized_types[str(key).strip()] = value
+    result_required = raw.get("result_required", [])
+    if not isinstance(result_required, list):
+        result_required = []
+    normalized_result_required = sorted(
+        {str(item).strip() for item in result_required if str(item).strip()}
+    )
+    result_types = raw.get("result_types", {})
+    if not isinstance(result_types, dict):
+        result_types = {}
+    normalized_result_types = {}
+    for key in sorted(result_types):
+        value = str(result_types[key] or "").strip().lower()
+        if str(key).strip() and value in ACTION_TYPE_NAMES:
+            normalized_result_types[str(key).strip()] = value
     return {
         "required": normalized_required,
         "types": normalized_types,
+        "result_required": normalized_result_required,
+        "result_types": normalized_result_types,
         "idempotent": bool(raw.get("idempotent", False)),
         "free_tier": bool(raw.get("free_tier", default_free_tier)),
     }
@@ -151,6 +246,25 @@ def validate_action_input(route: dict[str, Any], action: str, value: Any) -> Non
         found, field_value = _resolve_payload_path(value, field_name)
         if found and not _matches_payload_type(field_value, type_name):
             raise BridgeRuntimeError(f"connector input field {field_name} must be {type_name}")
+
+
+def validate_action_output(route: dict[str, Any], action: str, value: Any) -> None:
+    action_specs = route.get("action_specs", {})
+    raw_spec = action_specs.get(action, {}) if isinstance(action_specs, dict) else {}
+    spec = _normalize_action_spec(
+        raw_spec,
+        default_free_tier=bool(route.get("free_tier", False)),
+    )
+    if not isinstance(value, dict):
+        raise BridgeRuntimeError("connector output must be an object")
+    for field_name in spec["result_required"]:
+        found, _ = _resolve_payload_path(value, field_name)
+        if not found:
+            raise BridgeRuntimeError(f"connector output missing required field: {field_name}")
+    for field_name, type_name in spec["result_types"].items():
+        found, field_value = _resolve_payload_path(value, field_name)
+        if found and not _matches_payload_type(field_value, type_name):
+            raise BridgeRuntimeError(f"connector output field {field_name} must be {type_name}")
 
 
 def describe_routes(routes: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
@@ -210,7 +324,7 @@ def validate_envelope(payload: dict[str, Any], routes: dict[str, dict[str, Any]]
 
 
 def cleanup_idempotency(now: float) -> None:
-    expired = [key for key, (expires, _) in _COMPLETED.items() if expires <= now]
+    expired = [key for key, (expires, _, _) in _COMPLETED.items() if expires <= now]
     for key in expired:
         _COMPLETED.pop(key, None)
 
@@ -232,13 +346,27 @@ def cached_result(request_id: str, semantic_digest: str) -> dict[str, Any] | Non
     with _LOCK:
         cleanup_idempotency(now)
         item = _COMPLETED.get(request_id)
-        if item is None:
+        if item is not None:
+            if item[1] != semantic_digest:
+                raise BridgeRuntimeError(
+                    "idempotency key conflicts with an existing request payload"
+                )
+            return item[2]
+    connection = _sqlite_connection()
+    if connection is None:
+        return None
+    try:
+        _sqlite_cleanup(connection, now)
+        row = connection.execute(
+            "SELECT request_id, semantic_digest, status, expires_at, response_json "
+            "FROM idempotency WHERE request_id = ?",
+            (request_id,),
+        ).fetchone()
+        if row is None:
             return None
-        if item[1] != semantic_digest:
-            raise BridgeRuntimeError(
-                "idempotency key conflicts with an existing request payload"
-            )
-        return item[2]
+        return _sqlite_response(row, semantic_digest)
+    finally:
+        connection.close()
 
 
 def cache_result(
@@ -247,19 +375,109 @@ def cache_result(
     result: dict[str, Any],
     ttl: int = IDEMPOTENCY_TTL_SECONDS,
 ) -> None:
+    expires_at = time.time() + ttl
     with _LOCK:
         cleanup_idempotency(time.time())
         while len(_COMPLETED) >= MAX_COMPLETED_ENTRIES:
             _COMPLETED.pop(next(iter(_COMPLETED)))
-        _COMPLETED[request_id] = (time.time() + ttl, semantic_digest, result)
+        _COMPLETED[request_id] = (expires_at, semantic_digest, result)
+    connection = _sqlite_connection()
+    if connection is None:
+        return
+    try:
+        payload = json.dumps(
+            result,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        connection.execute(
+            """
+            INSERT INTO idempotency (
+                request_id, semantic_digest, status, expires_at, response_json
+            ) VALUES (?, ?, 'completed', ?, ?)
+            ON CONFLICT(request_id) DO UPDATE SET
+                semantic_digest=excluded.semantic_digest,
+                status='completed',
+                expires_at=excluded.expires_at,
+                response_json=excluded.response_json
+            """,
+            (request_id, semantic_digest, expires_at, payload),
+        )
+        _sqlite_cleanup(connection, time.time())
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def acquire_idempotency_slot(
     request_id: str,
     semantic_digest: str,
 ) -> tuple[dict[str, Any] | None, threading.Event | None, bool]:
-    """Return cached result, waiter event, and owner flag for one request identity."""
+    """Return cached result, waiter event, and owner flag for one request identity.
+
+    When ORCHESTRATOR_BRIDGE_IDEMPOTENCY_DB is configured, SQLite becomes the
+    durable single-flight/idempotency ledger. In-flight rows are intentionally
+    not expired automatically: after an owner disappears mid-side-effect, the
+    next caller must remain fail-closed rather than guessing that replay is safe.
+    """
     now = time.time()
+    connection = _sqlite_connection()
+    if connection is not None:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            _sqlite_cleanup(connection, now)
+            row = connection.execute(
+                "SELECT request_id, semantic_digest, status, expires_at, response_json "
+                "FROM idempotency WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+            if row is not None:
+                cached = _sqlite_response(row, semantic_digest)
+                if cached is not None:
+                    connection.commit()
+                    with _LOCK:
+                        _COMPLETED[request_id] = (
+                            float(row[3] or now),
+                            semantic_digest,
+                            cached,
+                        )
+                    return cached, None, False
+                with _LOCK:
+                    local = _INFLIGHT.get(request_id)
+                connection.commit()
+                return None, local[1] if local and local[0] == semantic_digest else None, False
+
+            active_count = connection.execute(
+                "SELECT COUNT(*) FROM idempotency"
+            ).fetchone()[0]
+            if int(active_count) >= MAX_COMPLETED_ENTRIES:
+                connection.commit()
+                raise BridgeRuntimeError(
+                    "durable idempotency store is full; refusing a new side effect"
+                )
+            connection.execute(
+                """
+                INSERT INTO idempotency (
+                    request_id, semantic_digest, status, expires_at, response_json
+                ) VALUES (?, ?, 'inflight', NULL, NULL)
+                """,
+                (request_id, semantic_digest),
+            )
+            connection.commit()
+            event = threading.Event()
+            with _LOCK:
+                _INFLIGHT[request_id] = (semantic_digest, event)
+            return None, event, True
+        except Exception:
+            try:
+                connection.rollback()
+            except sqlite3.Error:
+                pass
+            raise
+        finally:
+            connection.close()
+
     with _LOCK:
         cleanup_idempotency(now)
         item = _COMPLETED.get(request_id)
@@ -288,6 +506,8 @@ def release_idempotency_slot(
     request_id: str,
     event: threading.Event,
 ) -> None:
+    # A durable in-flight row is deliberately retained on owner failure. Removing
+    # it here would turn an unknown external outcome into an unsafe replay.
     with _LOCK:
         current = _INFLIGHT.get(request_id)
         if current is not None and current[1] is event:
@@ -505,18 +725,17 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     if cached is not None:
         return {**cached, "idempotent_replay": True}
     if not owner:
-        assert event is not None
-        if not event.wait(IDEMPOTENCY_WAIT_TIMEOUT_SECONDS):
-            raise BridgeUpstreamError(
-                "timed out waiting for the original idempotent request",
-                status_code=503,
-                uncertain=True,
-            )
-        cached = cached_result(request_id, semantic_digest)
-        if cached is not None:
-            return {**cached, "idempotent_replay": True}
+        deadline = time.time() + IDEMPOTENCY_WAIT_TIMEOUT_SECONDS
+        if event is not None:
+            event.wait(max(0.0, IDEMPOTENCY_WAIT_TIMEOUT_SECONDS))
+        while time.time() < deadline:
+            cached = cached_result(request_id, semantic_digest)
+            if cached is not None:
+                return {**cached, "idempotent_replay": True}
+            time.sleep(0.10)
         raise BridgeUpstreamError(
-            "original idempotent request did not complete successfully",
+            "original idempotent request did not complete successfully; durable "
+            "idempotency state remains fail-closed",
             status_code=503,
             uncertain=True,
         )
@@ -524,12 +743,14 @@ def handle_request(payload: dict[str, Any], shared_secret: str) -> dict[str, Any
     assert event is not None
     try:
         result = dispatch_upstream(route, payload)
+        validate_action_output(route, action, result.get("data") if isinstance(result, dict) and "data" in result else result)
         response = {
             "ok": True,
             "protocol": PROTOCOL,
             "request_id": request_id,
             "connector": connector,
             "action": action,
+            "result": result.get("data", result),
             "upstream": result,
         }
         cache_result(request_id, semantic_digest, response)

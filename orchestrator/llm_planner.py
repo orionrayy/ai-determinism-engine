@@ -80,6 +80,13 @@ def configured_model(registry: dict) -> str:
     return model
 
 
+def _planner_thinking_level() -> str:
+    level = str(os.environ.get("GEMINI_PLANNER_THINKING_LEVEL") or "medium").strip().lower()
+    if level not in {"low", "medium", "high"}:
+        raise ValueError("GEMINI_PLANNER_THINKING_LEVEL must be low, medium, or high")
+    return level
+
+
 def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False) -> list:
     goal = str(goal or "")
     if len(goal.encode("utf-8")) > MAX_PLANNER_GOAL_BYTES:
@@ -92,9 +99,17 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
     capabilities = sorted(
         key.split(':', 1)[1] for key in registry if key.startswith('capability:')
     )
-    tools = sorted(
+    all_tools = sorted(
         key for key in registry if not key.startswith('capability:')
     )
+    if os.environ.get('ORCHESTRATOR_FREE_ONLY', 'true').lower() == 'true':
+        tools = [
+            key for key in all_tools
+            if bool(registry.get(key, {}).get('free_tier', False))
+            or key in {'noop', 'local_validator', 'research_bundle'}
+        ]
+    else:
+        tools = all_tools
     bridge_inventory = {}
     if live:
         bridge_url = os.environ.get('ORCHESTRATOR_CONNECTOR_BRIDGE_URL', '').strip()
@@ -146,7 +161,9 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
             },
             'contents': [{'parts': [{'text': prompt}]}],
             'generationConfig': {
-                'temperature': 0.1,
+                'thinkingConfig': {
+                    'thinkingLevel': _planner_thinking_level(),
+                },
                 'maxOutputTokens': 4096,
                 'responseMimeType': 'application/json',
             },
