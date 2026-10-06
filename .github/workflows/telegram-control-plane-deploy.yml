@@ -1,11 +1,6 @@
 name: Deploy Telegram Control Plane
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "telegram/ACTIVATION_TRIGGER.md"
   workflow_dispatch:
     inputs:
       provision_d1:
@@ -57,24 +52,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -n "$CLOUDFLARE_ACCOUNT_ID"
-          test -n "$CLOUDFLARE_API_TOKEN"
-          test -n "$TELEGRAM_BOT_TOKEN"
-          test -n "$TELEGRAM_WEBHOOK_SECRET"
-          test -n "$TELEGRAM_ALLOWED_USER_IDS"
-          test -n "$TELEGRAM_APPROVER_USER_IDS"
-          test -n "$TELEGRAM_DATA_ENCRYPTION_KEY"
-          test -n "$TELEGRAM_DATA_HMAC_KEY"
-          test -n "$GATEWAY_URL"
-          test -n "$GATEWAY_SHARED_SECRET"
-          test -n "$CONTROL_PLANE_URL"
-          test -n "$CONTROL_PLANE_SECRET"
+          missing=()
+          for name in CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_WEBHOOK_SECRET TELEGRAM_ALLOWED_USER_IDS TELEGRAM_APPROVER_USER_IDS TELEGRAM_DATA_ENCRYPTION_KEY TELEGRAM_DATA_HMAC_KEY GATEWAY_URL GATEWAY_SHARED_SECRET CONTROL_PLANE_URL CONTROL_PLANE_SECRET; do
+            value="${!name:-}"
+            if [ -z "$value" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            printf 'Missing required GitHub Actions secrets: %s\n' "${missing[*]}"
+            exit 1
+          fi
 
       - name: Resolve D1 database
         id: d1
         shell: bash
         env:
-          PROVISION_D1: ${{ github.event_name == 'push' && 'true' || inputs.provision_d1 }}
+          PROVISION_D1: ${{ inputs.provision_d1 }}
         run: |
           set -euo pipefail
           wrangler_package="wrangler@${WRANGLER_VERSION}"
@@ -109,6 +103,7 @@ jobs:
           fi
           test -n "$db_id" || { echo "D1 database not found. Set TELEGRAM_D1_DATABASE_ID or rerun with provision_d1=true."; exit 1; }
           echo "database_id=$db_id" >> "$GITHUB_OUTPUT"
+
       - name: Generate deployment config
         env:
           DATABASE_ID: ${{ steps.d1.outputs.database_id }}
@@ -187,7 +182,7 @@ jobs:
       - name: Configure Telegram Bot API
         env:
           WORKER_URL: ${{ steps.deploy.outputs.worker_url }}
-          DROP_PENDING_UPDATES: ${{ github.event_name == 'push' && 'false' || inputs.drop_pending_updates }}
+          DROP_PENDING_UPDATES: ${{ inputs.drop_pending_updates }}
         shell: bash
         run: |
           set -euo pipefail
