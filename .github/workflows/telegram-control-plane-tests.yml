@@ -84,6 +84,7 @@ jobs:
           generated_var = '"CONTROL_PLANE_URL": "' + "$" + "{CONTROL_PLANE_DEPLOY_URL}"
           assert legacy_secret_ref not in workflow
           assert generated_var in workflow
+          assert "printf 'CONTROL_PLANE_URL=%s\\n' \"$CONTROL_PLANE_DEPLOY_URL\"" not in workflow
           assert '"CONTROL_PLANE_URL",' not in workflow
           assert '"CONTROL_PLANE_SECRET"' in workflow
           PY
