@@ -34,7 +34,7 @@ export async function claimUpdate(env, eventId, pKey, staleAfterSeconds = 300) {
   ]);
   const inserted = await env.DB
     .prepare(
-      "INSERT OR IGNORE INTO telegram_inbox(event_id,principal_key,status,claim_token,workflow_id,created_at,updated_at,expires_at) VALUES(?,?, 'processing',?,NULL,?,?,?,?)",
+      "INSERT OR IGNORE INTO telegram_inbox(event_id,principal_key,status,claim_token,workflow_id,created_at,updated_at,expires_at) VALUES(?,?, 'processing',?,NULL,?,?,?)",
     )
     .bind(inboxKey, pKey, claimToken, now, now, expires)
     .run();
