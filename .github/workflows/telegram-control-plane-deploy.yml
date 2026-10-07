@@ -32,7 +32,6 @@ jobs:
       TELEGRAM_DATA_HMAC_KEY: ${{ secrets.TELEGRAM_DATA_HMAC_KEY }}
       GATEWAY_URL: ${{ secrets.GATEWAY_URL }}
       GATEWAY_SHARED_SECRET: ${{ secrets.GATEWAY_SHARED_SECRET }}
-      CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}
       CONTROL_PLANE_SECRET: ${{ secrets.CONTROL_PLANE_SECRET }}
       TELEGRAM_D1_DATABASE_ID: ${{ secrets.TELEGRAM_D1_DATABASE_ID }}
       TELEGRAM_D1_DATABASE_NAME: ai-orchestrator-telegram
@@ -132,6 +131,9 @@ jobs:
             "main": "src/index.js",
             "compatibility_date": "2026-10-01",
             "workers_dev": true,
+            "vars": {
+              "CONTROL_PLANE_URL": "${CONTROL_PLANE_DEPLOY_URL}"
+            },
             "d1_databases": [
               {
                 "binding": "DB",
@@ -150,7 +152,6 @@ jobs:
                 "TELEGRAM_DATA_HMAC_KEY",
                 "GATEWAY_URL",
                 "GATEWAY_SHARED_SECRET",
-                "CONTROL_PLANE_URL",
                 "CONTROL_PLANE_SECRET"
               ]
             }
