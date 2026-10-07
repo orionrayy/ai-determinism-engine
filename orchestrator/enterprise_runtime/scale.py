@@ -45,26 +45,63 @@ def run_w1(*, task_count: int = 100, workers: int = 4) -> CampaignResult:
     with tempfile.TemporaryDirectory() as tmp:
         db = Path(tmp) / "w1.sqlite"
         queue = SQLiteTaskQueue(str(db))
+        failure_once = {i for i in range(task_count) if i % 17 == 0}
+
+        def execute(payload: dict[str, Any], claim: Any) -> TaskResultEnvelope:
+            index = int(str(claim.task_id).rsplit("-", 1)[-1])
+            if index in failure_once and claim.attempt == 1:
+                return TaskResultEnvelope(
+                    "1.0", claim.task_id, "wf-scale", claim.tenant_id, claim.attempt,
+                    "failed", "safe", {}, {"trace_id": "w1", "span_id": claim.task_id},
+                    error_code="injected_transient_failure", worker_id=claim.worker_id,
+                )
+            return _result_from_claim(payload, claim)
+
         try:
             for i in range(task_count):
                 queue.enqueue(
                     f"w1-task-{i:05d}", "tenant-w1",
-                    {"workflow_id": "wf-scale", "trace": {"trace_id": "w1", "span_id": f"task-{i}"}},
+                    {
+                        "workflow_id": "wf-scale",
+                        "trace": {"trace_id": "w1", "span_id": f"task-{i}"},
+                    },
                     dedupe_key=f"w1-dedupe-{i:05d}",
+                    max_attempts=3,
                 )
+            workers_pool = [
+                LongLivedWorker(f"worker-{index}", queue, execute)
+                for index in range(workers)
+            ]
             processed = 0
-            for index in range(workers):
-                worker = LongLivedWorker(f"worker-{index}", queue, _result_from_claim)
-                while worker.run_once():
-                    processed += 1
-            passed = processed == task_count and queue.depth() == 0
+            stalled_rounds = 0
+            while True:
+                progress = 0
+                for worker in workers_pool:
+                    if worker.run_once():
+                        processed += 1
+                        progress += 1
+                if progress == 0:
+                    stalled_rounds += 1
+                    if queue.depth() == 0:
+                        break
+                    if stalled_rounds > 2:
+                        return CampaignResult(
+                            "W1", False, task_count, time.perf_counter() - started,
+                            {"processed": processed, "queue_depth": queue.depth(), "reason": "stalled"},
+                        )
+                else:
+                    stalled_rounds = 0
+            passed = queue.depth() == 0 and all(
+                queue.status(f"w1-task-{i:05d}") == "completed" for i in range(task_count)
+            )
             return CampaignResult("W1", passed, task_count, time.perf_counter() - started, {
-                "processed": processed, "workers": workers, "queue_depth": queue.depth()
+                "claim_iterations": processed,
+                "workers": workers,
+                "injected_transient_failures": len(failure_once),
+                "queue_depth": queue.depth(),
             })
         finally:
             queue.close()
-
-
 def run_w2(*, task_count: int = 64) -> CampaignResult:
     """State/partition failure-injection campaign over the $0 file reference substrate."""
     task_count = max(1, min(int(task_count), 1000))
