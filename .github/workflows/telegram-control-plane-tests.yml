@@ -67,6 +67,22 @@ jobs:
             echo 'bot-token-shaped secret found in tracked source'
             exit 1
           fi
+      - name: Deployment configuration consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f workers/telegram-control-plane/wrangler.jsonc
+          ! grep -q '"CONTROL_PLANE_URL"' workers/telegram-control-plane/wrangler.jsonc
+          grep -q '"CONTROL_PLANE_SECRET"' workers/telegram-control-plane/wrangler.jsonc
+          python - <<'PY'
+          from pathlib import Path
+          workflow = Path(".github/workflows/telegram-control-plane-deploy.yml").read_text(encoding="utf-8")
+          assert "CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}" not in workflow
+          assert '"CONTROL_PLANE_URL": "${CONTROL_PLANE_DEPLOY_URL}"' in workflow
+          assert '"CONTROL_PLANE_URL",' not in workflow
+          assert '"CONTROL_PLANE_SECRET"' in workflow
+          PY
+
       - name: Worker package consistency
         run: |
           python - <<'PY'
