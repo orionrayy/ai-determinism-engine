@@ -13,7 +13,6 @@
       "TELEGRAM_DATA_HMAC_KEY",
       "GATEWAY_URL",
       "GATEWAY_SHARED_SECRET",
-      "CONTROL_PLANE_URL",
       "CONTROL_PLANE_SECRET"
     ]
   }
