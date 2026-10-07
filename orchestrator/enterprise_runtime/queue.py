@@ -315,7 +315,8 @@ class PostgresTaskQueue:
                    WHERE task_id=%s AND status='processing'
                      AND worker_id=%s AND claim_id=%s""",
                 (status, now if retry_at is None else int(retry_at), str(error)[:2048],
-                 now, claim.task_id, claim.worker_id, claim.claim_id)
+                 now, claim.task_id, claim.worker_id, claim.claim_id),
+            )
             conn.commit()
             return status
         finally:
