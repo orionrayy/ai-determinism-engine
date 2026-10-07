@@ -182,7 +182,6 @@ jobs:
             printf 'TELEGRAM_DATA_HMAC_KEY=%s\n' "$TELEGRAM_DATA_HMAC_KEY"
             printf 'GATEWAY_URL=%s\n' "$GATEWAY_URL"
             printf 'GATEWAY_SHARED_SECRET=%s\n' "$GATEWAY_SHARED_SECRET"
-            printf 'CONTROL_PLANE_URL=%s\n' "$CONTROL_PLANE_DEPLOY_URL"
             printf 'CONTROL_PLANE_SECRET=%s\n' "$CONTROL_PLANE_SECRET"
           } > /tmp/telegram-secrets.env
 
