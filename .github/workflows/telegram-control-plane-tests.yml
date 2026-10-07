@@ -77,8 +77,10 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           workflow = Path(".github/workflows/telegram-control-plane-deploy.yml").read_text(encoding="utf-8")
-          assert "CONTROL_PLANE_URL: ${{ secrets.CONTROL_PLANE_URL }}" not in workflow
-          assert '"CONTROL_PLANE_URL": "${CONTROL_PLANE_DEPLOY_URL}"' in workflow
+          legacy_secret_ref = "CONTROL_PLANE_URL: " + "$" + "{{ secrets.CONTROL_PLANE_URL }}"
+          generated_var = '"CONTROL_PLANE_URL": "' + "$" + "{CONTROL_PLANE_DEPLOY_URL}"
+          assert legacy_secret_ref not in workflow
+          assert generated_var in workflow
           assert '"CONTROL_PLANE_URL",' not in workflow
           assert '"CONTROL_PLANE_SECRET"' in workflow
           PY
