@@ -8,10 +8,11 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 
 Repository: `orionrayy/ai-determinism-engine`
 Primary branch: `main`
-Current main baseline: orchestration hardening v66 deterministic trace contract + offline evaluation harness + v65 deterministic context/federation/ingress integrity + v64 deep workload orchestration + v63 general blueprint workload compiler + v62 planner input bound + v61 durable event redaction + v60 attempt-budget accounting + v59 resource-safety and durable diagnostics + v58 checkpoint identity and HTTP resource bounds + v57 concurrent connector idempotency single-flight + v56 connector correctness + v55 durable connector output redaction + v54 connector output contracts/response bounds + v53 terminal workflow state lifecycle/compaction + v52 identity-first ingress deduplication + v51 repository-event target routing + v50 goal-ingress state-load repair + v49 targeted workflow hydration + v48 sharded workflow persistence + v47 continuation/ingress/persistence race closure + v46 discovery snapshot provenance + v45 SSRF-safe artifact verification + v44 free-only reconciliation cost closure + v43 connector upstream cost gate + v42 free Gemini model gate + v41 private structured input boundary + v40 recovery routing/exact Actions run-attempt binding + v39 federation fairness/backpressure + earlier durable control-plane generations.
-Candidate integration branch: v78 recovery-authority consolidation, validated at commit 9bccd7964537c8869cd9c94725283c5786f0f865 on 2026-10-04. v78 does not change the main baseline until PR integration.
-Execution model: GitHub Actions + stdlib Python
-Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow
+Current main baseline: v79.x correctness/evidence hardening + v80 portable enterprise-runtime/control-plane foundation + integrated Telegram control-plane frontend and deployment stack. Main uses deterministic DAG orchestration, bounded parallelism, durable state/recovery, effect contracts/fencing, resource locks, supervised multi-agent coordination, evidence/epistemic gates, workload compilation, GitHub Actions federation, and optional Cloudflare Durable Object coordination authority for distributed live workflows. Security/cost lineage includes v43 connector upstream cost gate, v42 free Gemini model gate, v41 private structured input boundary, and v44 — reconciliation cost closure; v65 deterministic integrity/liveness hardening remains part of the baseline.
+Observed main head before this remediation: `c530d9ac542b82c2aefd59ccc65df660e3b55795` (2026-10-06).
+The v78/v79 work recorded below is historical implementation context; it is no longer a pending candidate merge on main.
+Execution model: GitHub Actions + stdlib Python, with optional Cloudflare Durable Objects and the Telegram Worker control frontend.
+Cost policy: free-first; `ORCHESTRATOR_FREE_ONLY=true` in the production workflow.
 Current execution-fabric branch: `main`
 
 ### Candidate v79.1 efficiency and evidence hardening
@@ -826,7 +827,7 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Integration state: feat/v77-evidence-access-routing is 313 commits ahead of current main because it includes the full existing v67-v74 lineage plus v75-v77. Integration PR #137 is intentionally draft; main remains unchanged.
 - Deferred P1/P2 work: full ExecutionRuntime consolidation, richer claim↔evidence graph/entailment verification, provider-level fencing where external systems support it, contradiction-driven retrieval, risk-coverage calibration, and optional Durable Object Alarm wakeups. These remain separate because adding them before the current invariants are stable would increase failure-domain coupling.
 
-## Candidate Telegram control-plane frontend — 2026-10-05
+## Integrated Telegram control-plane frontend — 2026-10-05
 - Telegram is an interaction/control frontend, not workflow truth, queue, artifact store, or execution authority.
 - New branch: feat/telegram-control-plane.
 - New Worker: workers/telegram-control-plane. It accepts private-chat webhook updates only, applies an explicit Telegram user allowlist and separate approver allowlist, requires active/revocable consent before orchestration commands, and exposes /privacy as the policy URL endpoint.
@@ -837,7 +838,14 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Generic Telegram repository_dispatch approval-bypass propagation was removed. Telegram approvals now target the existing exact GitHub approval issue for a specific workflow/node, preserving the canonical fingerprint/label/continuation semantics.
 - Database reference schema: database/telegram_schema.sql. First target is Cloudflare D1/SQLite-compatible metadata storage; later mapping to the execution-fabric PostgreSQL adapter remains part of E2.
 - Dedicated CI: .github/workflows/telegram-control-plane-tests.yml covers Python/Node syntax, database schema tests, worker tests, and a tracked-source bot-token-shaped secret guard.
-- Activation: .github/workflows/telegram-control-plane-deploy.yml provisions/resolves D1, applies versioned migrations, injects Worker secrets via a temporary secrets file, deploys the Worker, configures the Telegram webhook and command menu, and runs /health verification. It requires explicit Cloudflare/Gateway/control-plane/Telegram secrets; the current ChatGPT environment has no Cloudflare connector and cannot safely manufacture those credentials.
+- Activation: .github/workflows/telegram-control-plane-deploy.yml provisions/resolves D1, applies versioned migrations, deploys the distributed Durable Object control plane first, derives its HTTPS Worker URL, injects that URL as a generated runtime variable plus the remaining secrets through temporary files, deploys the Telegram Worker, configures the Telegram webhook and command menu, and runs /health verification. The control-plane URL is not a secret; the control-plane authentication secret remains secret-only.
 - D1 schema is tracked through workers/telegram-control-plane/migrations/0001_telegram_control_plane.sql; database/telegram_schema.sql is the portable snapshot. Base wrangler.jsonc remains deploy-neutral so an unprovisioned D1 UUID is never committed.
 - Telegram compliance boundary: no group/channel collection, no public-platform scraping, no Telegram-derived training/ML dataset, no credential requests, no rate-limit bypass, and no Bot-to-Bot automation in v1. User-submitted prompts may be forwarded only for the declared orchestration purpose under explicit consent.
 - Bot token is never stored in source control. Any token pasted into chat or another untrusted surface must be rotated before deployment and supplied only as TELEGRAM_BOT_TOKEN secret.
+
+## Remediation hardening — 2026-10-07
+- Fixed Telegram D1 inbox claim SQL placeholder/bind arity in `workers/telegram-control-plane/src/db.js`. The claim path now has matching eight-column/eight-value SQL with six bound parameters.
+- Added a D1-facing inbox lifecycle regression test covering first claim, completion, duplicate suppression, stale reclaim, and SQL placeholder/bind arity.
+- Removed `CONTROL_PLANE_URL` from the static Telegram Worker secret contract. The deployment workflow now injects the derived Durable Object URL through generated `vars`; `CONTROL_PLANE_SECRET` remains the only control-plane credential.
+- Added Telegram CI configuration-consistency checks so the static Worker config cannot regress to treating the control-plane URL as a secret.
+- This remediation is intentionally limited to correctness/configuration hardening; enterprise queue/state/worker/observability scale phases in issue #149 remain explicit follow-on work until each phase has its own implementation and acceptance evidence.
