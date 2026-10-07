@@ -148,7 +148,11 @@ class FakeD1 {
 
 test('Telegram inbox claim is single-flight, completable, and reclaimable after staleness', async () => {
   const db = new FakeD1();
-  const env = {DB: db, TELEGRAM_DATA_HMAC_KEY: 'test-hmac-key'};
+  const env = {
+    DB: db,
+    TELEGRAM_DATA_HMAC_KEY: 'test-hmac-key',
+    TELEGRAM_DATA_ENCRYPTION_KEY: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+  };
 
   const first = await claimUpdate(env, 'tg:100', 'principal');
   assert.equal(first.claimed, true);
