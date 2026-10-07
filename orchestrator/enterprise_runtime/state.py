@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import hashlib
+import json
+from pathlib import Path
+import tempfile
+import threading
+from typing import Any, Callable, Iterable
+
+
+class StateIntegrityError(RuntimeError):
+    pass
+
+
+def _json(value: Any) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+
+
+def _digest(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class EventRecord:
+    sequence: int
+    event_type: str
+    payload: dict[str, Any]
+    event_digest: str
+
+    @classmethod
+    def make(cls, sequence: int, event_type: str, payload: dict[str, Any]) -> "EventRecord":
+        body = {"sequence": int(sequence), "event_type": str(event_type), "payload": dict(payload)}
+        return cls(int(sequence), str(event_type), dict(payload), _digest(_json(body)))
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "sequence": self.sequence,
+            "event_type": self.event_type,
+            "payload": dict(self.payload),
+            "event_digest": self.event_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class StateManifest:
+    workflow_id: str
+    tenant_id: str
+    generation: int
+    state_digest: str
+    snapshot_watermark: int
+    watermark: int
+    snapshot_file: str
+    event_file: str
+    artifact_refs_file: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workflow_id": self.workflow_id,
+            "tenant_id": self.tenant_id,
+            "generation": self.generation,
+            "state_digest": self.state_digest,
+            "snapshot_watermark": self.snapshot_watermark,
+            "watermark": self.watermark,
+            "snapshot_file": self.snapshot_file,
+            "event_file": self.event_file,
+            "artifact_refs_file": self.artifact_refs_file,
+        }
+
+
+class FileObjectStore:
+    """Atomic filesystem object store for the $0/reference mode."""
+
+    def __init__(self, root: str | Path) -> None:
+        self.root = Path(root).resolve()
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.RLock()
+
+    def _safe_path(self, key: str) -> Path:
+        if not isinstance(key, str) or not key.strip() or chr(0) in key:
+            raise StateIntegrityError("invalid object key")
+        target = (self.root / key).resolve()
+        try:
+            target.relative_to(self.root)
+        except ValueError as exc:
+            raise StateIntegrityError("object key escapes object store") from exc
+        return target
+
+    def put_bytes(self, key: str, data: bytes) -> str:
+        target = self._safe_path(key)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with self._lock:
+            with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as tmp:
+                tmp.write(data)
+                tmp.flush()
+                temp_name = Path(tmp.name)
+            temp_name.replace(target)
+        return _digest(data)
+
+    def get_bytes(self, key: str) -> bytes:
+        return self._safe_path(key).read_bytes()
+
+    def exists(self, key: str) -> bool:
+        return self._safe_path(key).is_file()
+
+    def delete(self, key: str) -> None:
+        path = self._safe_path(key)
+        if path.exists():
+            path.unlink()
+
+
+class SegmentedWorkflowStore:
+    """Snapshot + immutable event-tail reference store with integrity checks."""
+
+    def __init__(self, object_store: FileObjectStore) -> None:
+        self.objects = object_store
+        self._lock = threading.RLock()
+
+    def write_snapshot(
+        self, workflow_id: str, tenant_id: str, state: dict[str, Any], *,
+        generation: int, watermark: int, artifact_refs: Iterable[dict[str, Any]] = ()
+    ) -> StateManifest:
+        workflow_id, tenant_id = str(workflow_id), str(tenant_id)
+        generation, watermark = int(generation), int(watermark)
+        if generation < 1 or watermark < 0:
+            raise StateIntegrityError("generation/watermark must be valid")
+        prefix = f"workflows/{workflow_id}"
+        snapshot_key = f"{prefix}/snapshot-{generation}.json"
+        event_key = f"{prefix}/events-{generation}.jsonl"
+        refs_key = f"{prefix}/artifact-refs-{generation}.json"
+        snapshot = _json(dict(state))
+        self.objects.put_bytes(snapshot_key, snapshot)
+        self.objects.put_bytes(refs_key, _json(list(artifact_refs)))
+        self.objects.put_bytes(event_key, b"")
+        manifest = StateManifest(
+            workflow_id, tenant_id, generation, _digest(snapshot),
+            watermark, watermark, snapshot_key, event_key, refs_key
+        )
+        self.objects.put_bytes(f"{prefix}/manifest.json", _json(manifest.to_dict()))
+        return manifest
+
+    def _load_manifest(self, workflow_id: str) -> StateManifest:
+        try:
+            raw = json.loads(self.objects.get_bytes(f"workflows/{workflow_id}/manifest.json"))
+            required = {
+                "workflow_id","tenant_id","generation","state_digest",
+                "snapshot_watermark","watermark","snapshot_file","event_file","artifact_refs_file"
+            }
+            if set(raw) != required or raw["workflow_id"] != workflow_id:
+                raise StateIntegrityError("manifest fields or identity mismatch")
+            manifest = StateManifest(**raw)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            raise StateIntegrityError("invalid workflow manifest") from exc
+        if (
+            manifest.generation < 1
+            or manifest.snapshot_watermark < 0
+            or manifest.watermark < manifest.snapshot_watermark
+        ):
+            raise StateIntegrityError("invalid manifest watermarks")
+        return manifest
+
+    def load_manifest(self, workflow_id: str) -> StateManifest:
+        return self._load_manifest(workflow_id)
+
+    def append_event(
+        self, workflow_id: str, event_type: str, payload: dict[str, Any], *, sequence: int
+    ) -> EventRecord:
+        with self._lock:
+            manifest = self._load_manifest(workflow_id)
+            expected = manifest.watermark + 1
+            if int(sequence) != expected:
+                raise StateIntegrityError(f"event sequence gap: expected {expected}, got {sequence}")
+            record = EventRecord.make(sequence, event_type, payload)
+            existing = self.objects.get_bytes(manifest.event_file)
+            self.objects.put_bytes(manifest.event_file, existing + _json(record.to_dict()) + b"\n")
+            updated = StateManifest(
+                manifest.workflow_id, manifest.tenant_id, manifest.generation,
+                manifest.state_digest, manifest.snapshot_watermark, int(sequence),
+                manifest.snapshot_file, manifest.event_file, manifest.artifact_refs_file
+            )
+            self.objects.put_bytes(f"workflows/{workflow_id}/manifest.json", _json(updated.to_dict()))
+            return record
+
+    def _events(self, manifest: StateManifest) -> list[EventRecord]:
+        try:
+            raw_lines = self.objects.get_bytes(manifest.event_file).decode("utf-8").splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            raise StateIntegrityError("event tail missing or invalid") from exc
+        records: list[EventRecord] = []
+        expected = manifest.snapshot_watermark + 1
+        for line in raw_lines:
+            if not line.strip():
+                continue
+            try:
+                data = json.loads(line)
+                record = EventRecord(int(data["sequence"]), str(data["event_type"]), dict(data["payload"]), str(data["event_digest"]))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise StateIntegrityError("malformed event record") from exc
+            if record.sequence != expected:
+                raise StateIntegrityError(f"event sequence mismatch: expected {expected}, got {record.sequence}")
+            if EventRecord.make(record.sequence, record.event_type, record.payload).event_digest != record.event_digest:
+                raise StateIntegrityError("event digest mismatch")
+            records.append(record)
+            expected += 1
+        if expected - 1 != manifest.watermark:
+            raise StateIntegrityError("manifest watermark does not match event tail")
+        return records
+
+    def reconstruct(
+        self, workflow_id: str, reducer: Callable[[dict[str, Any], EventRecord], dict[str, Any]]
+    ) -> dict[str, Any]:
+        manifest = self._load_manifest(workflow_id)
+        snapshot = self.objects.get_bytes(manifest.snapshot_file)
+        if _digest(snapshot) != manifest.state_digest:
+            raise StateIntegrityError("snapshot digest mismatch")
+        if not self.objects.exists(manifest.artifact_refs_file):
+            raise StateIntegrityError("artifact reference shard missing")
+        try:
+            state = json.loads(snapshot)
+        except json.JSONDecodeError as exc:
+            raise StateIntegrityError("snapshot is not valid JSON") from exc
+        if not isinstance(state, dict):
+            raise StateIntegrityError("snapshot state must be an object")
+        for record in self._events(manifest):
+            state = reducer(state, record)
+            if not isinstance(state, dict):
+                raise StateIntegrityError("state reducer must return an object")
+        return state
+
+    def verify(
+        self, workflow_id: str, reducer: Callable[[dict[str, Any], EventRecord], dict[str, Any]]
+    ) -> bool:
+        try:
+            self.reconstruct(workflow_id, reducer)
+            return True
+        except (OSError, StateIntegrityError, ValueError, TypeError):
+            return False
