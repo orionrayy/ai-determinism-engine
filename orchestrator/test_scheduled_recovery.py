@@ -341,7 +341,8 @@ class ScheduledRecoveryTests(unittest.TestCase):
             })
             env.pop("ORCHESTRATOR_CONTROL_PLANE_URL", None)
             env.pop("ORCHESTRATOR_CONTROL_PLANE_SECRET", None)
-            env.pop("GITHUB_TOKEN", None)
+            for token_name in ("GITHUB_TOKEN", "GH_TOKEN"):
+                env.pop(token_name, None)
 
             result = subprocess.run(
                 [sys.executable, "-m", "orchestrator.scheduled_recovery"],
