@@ -9,6 +9,9 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
+ROOT = Path(__file__).resolve().parent
+
+
 from scheduled_recovery import (
     DEFAULT_STALE_SECONDS,
     ACTIVE_RUN_STATUSES,
