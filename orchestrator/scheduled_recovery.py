@@ -430,7 +430,10 @@ def run() -> tuple[int, int, list[str]]:
 
 def main() -> int:
     dispatched, compacted, failures = run()
-    marker = "/tmp/orchestrator_recovery_failures.json"
+    marker = os.environ.get(
+        "ORCHESTRATOR_RECOVERY_FAILURE_MARKER",
+        "/tmp/orchestrator_recovery_failures.json",
+    ).strip() or "/tmp/orchestrator_recovery_failures.json"
     with open(marker, "w", encoding="utf-8") as handle:
         json.dump(failures[:16], handle, ensure_ascii=False, sort_keys=True)
     print(f"dispatched={dispatched}")
@@ -454,3 +457,7 @@ __all__ = [
     "run",
     "main",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

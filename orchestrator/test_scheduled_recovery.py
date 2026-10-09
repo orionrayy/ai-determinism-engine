@@ -1,9 +1,16 @@
 import json
 import os
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parent
+
 
 from scheduled_recovery import (
     DEFAULT_STALE_SECONDS,
@@ -310,6 +317,51 @@ class ScheduledRecoveryTests(unittest.TestCase):
             "nodes": [{"id": "n1", "status": "failed", "error": {"execution_uncertain": False}}],
         }
         self.assertNotEqual(recovery_event_id(first), recovery_event_id(second))
+
+
+    def test_module_invocation_executes_main_and_writes_empty_failure_marker(self):
+        # Exercise the exact workflow command in a disposable copy of the package.
+        # The copied project starts with no workflow state, so recovery cannot
+        # dispatch anything to GitHub or mutate the real repository.
+        with tempfile.TemporaryDirectory() as tmp:
+            temp_root = Path(tmp)
+            project_root = temp_root / "project"
+            shutil.copytree(
+                ROOT,
+                project_root / "orchestrator",
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+            marker = temp_root / "recovery-failures.json"
+            env = os.environ.copy()
+            env.update({
+                "PYTHONPATH": str(project_root),
+                "REPOSITORY": "test/example-repo",
+                "SCHEDULE_RUN_ID": "unit-test-schedule-run",
+                "ORCHESTRATOR_RECOVERY_FAILURE_MARKER": str(marker),
+            })
+            env.pop("ORCHESTRATOR_CONTROL_PLANE_URL", None)
+            env.pop("ORCHESTRATOR_CONTROL_PLANE_SECRET", None)
+            for token_name in ("GITHUB_TOKEN", "GH_TOKEN"):
+                env.pop(token_name, None)
+
+            result = subprocess.run(
+                [sys.executable, "-m", "orchestrator.scheduled_recovery"],
+                cwd=project_root,
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=20,
+                check=False,
+            )
+
+            self.assertEqual(
+                result.returncode,
+                0,
+                msg=f"module invocation failed\\nstdout:\\n{result.stdout}\\nstderr:\\n{result.stderr}",
+            )
+            self.assertTrue(marker.is_file(), "module invocation did not write the recovery marker")
+            self.assertEqual(json.loads(marker.read_text(encoding="utf-8")), [])
+            self.assertIn("recovery_failures=0", result.stdout)
 
 
 if __name__ == "__main__":
