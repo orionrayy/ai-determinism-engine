@@ -366,10 +366,15 @@ class ScheduledRecoveryTests(unittest.TestCase):
 
 
     def test_normalize_stderr_flattens_actual_and_escaped_whitespace(self):
-        raw = " dispatch failed \\r\\n status: 404\\tHTTP \\\\nnext line\\\\r\\\\tend "
+        raw_actual = " dispatch failed \r\n status: 404\tHTTP\tend "
+        raw_escaped = r"failed\nwith escaped\r whitespace\tend"
         self.assertEqual(
-            _normalize_stderr(raw),
-            "dispatch failed status: 404 HTTP next line end",
+            _normalize_stderr(raw_actual),
+            "dispatch failed status: 404 HTTP end",
+        )
+        self.assertEqual(
+            _normalize_stderr(raw_escaped),
+            "failed with escaped whitespace end",
         )
 
     def test_normalize_stderr_limits_output(self):
@@ -377,7 +382,7 @@ class ScheduledRecoveryTests(unittest.TestCase):
 
     def test_normalize_stderr_handles_empty_and_none(self):
         self.assertEqual(_normalize_stderr(None), "")
-        self.assertEqual(_normalize_stderr(" \\r\\n\\t "), "")
+        self.assertEqual(_normalize_stderr(" \r\n\t "), "")
 
 
 if __name__ == "__main__":
