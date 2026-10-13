@@ -19,6 +19,7 @@ from scheduled_recovery import (
     is_recovery_candidate,
     is_stale_federation,
     is_stale_running,
+    _normalize_stderr,
     recovery_event_id,
     recovery_generation,
     main,
@@ -362,6 +363,26 @@ class ScheduledRecoveryTests(unittest.TestCase):
             self.assertTrue(marker.is_file(), "module invocation did not write the recovery marker")
             self.assertEqual(json.loads(marker.read_text(encoding="utf-8")), [])
             self.assertIn("recovery_failures=0", result.stdout)
+
+
+    def test_normalize_stderr_flattens_actual_and_escaped_whitespace(self):
+        raw_actual = " dispatch failed \r\n status: 404\tHTTP\tend "
+        raw_escaped = r"failed\nwith escaped\r whitespace\tend"
+        self.assertEqual(
+            _normalize_stderr(raw_actual),
+            "dispatch failed status: 404 HTTP end",
+        )
+        self.assertEqual(
+            _normalize_stderr(raw_escaped),
+            "failed with escaped whitespace end",
+        )
+
+    def test_normalize_stderr_limits_output(self):
+        self.assertEqual(_normalize_stderr("x" * 350), "x" * 300)
+
+    def test_normalize_stderr_handles_empty_and_none(self):
+        self.assertEqual(_normalize_stderr(None), "")
+        self.assertEqual(_normalize_stderr(" \r\n\t "), "")
 
 
 if __name__ == "__main__":

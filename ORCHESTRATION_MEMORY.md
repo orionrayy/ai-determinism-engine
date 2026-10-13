@@ -856,3 +856,11 @@ The system should fail closed on unsafe tool selection and unknown side-effect o
 - Test-safety hardening removes both `GITHUB_TOKEN` and `GH_TOKEN` from the subprocess environment. The fixture uses empty workflow state and removes control-plane credentials, preventing GitHub dispatch or production-state mutation.
 - CI evidence before the final test-safety/doc updates: Orchestrator Tests run #2172 (run ID 37924693288) passed compile, schema/worker syntax, import smoke, Actionlint, embedded workflow syntax, unit tests, and the control-plane evaluation harness. The final branch head must pass a fresh CI run before merge.
 - Acceptance is not complete at PR CI alone: after merge, verify a scheduled recovery run on `main` reaches the post-recovery gate and that continuation behavior follows the actual recovery result. Do not infer plan/checkpoint/connector integrity solely from marker creation.
+
+
+## Recovery stderr normalization — 2026-10-14
+- Confirmed defect: scheduled recovery normalized only the literal two-character escape sequence `\\n`; actual CR/LF and tabs could remain in dispatch error output. This affects log legibility, not dispatch semantics.
+- Candidate fix on `fix/recovery-stderr-normalization-2026-10-14`: add `_normalize_stderr()` to flatten actual whitespace and legacy escaped whitespace, and retain the existing 300-character output bound.
+- Added focused regression cases for actual CRLF/tab, legacy escaped whitespace, truncation, and empty/None input. Tests/CI are pending; do not treat this as validated until the PR's actual checks pass.
+- Tool-write diagnosis: GitHub read calls and branch-scoped `update_file` calls succeeded during this cycle. Earlier reports did not retain an exact rejection payload, so the earlier “safety gate” cause is unproven. Do not repeat that attribution unless a concrete returned error identifies it.
+- Scheduler correction: the ChatGPT automation `Orchestrator Autonomous Engineering Watch` was configured as `condition_watch` despite an hourly RRULE. It was changed to `exact_schedule`, with a local Asia/Jakarta start of 06:00 and hourly execution at minute 00. This changes the audit automation only; the repository's GitHub Actions cron was not altered.
