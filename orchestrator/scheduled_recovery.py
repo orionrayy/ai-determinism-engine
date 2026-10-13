@@ -223,6 +223,13 @@ def recovery_event_id(workflow: Mapping[str, Any]) -> str:
     return "scheduled-recovery:" + str(workflow.get("id") or "") + ":" + recovery_generation(workflow)[:32]
 
 
+def _normalize_stderr(value: Any, *, limit: int = 300) -> str:
+    """Flatten actual and legacy escaped whitespace in CLI error output."""
+    raw = str(value or "")
+    raw = raw.replace("\\n", " ").replace("\\r", " ").replace("\\t", " ")
+    return " ".join(raw.split())[:max(0, int(limit))]
+
+
 def _github_run_status(repository: str, run_id: str) -> str:
     try:
         result = subprocess.run(
@@ -395,7 +402,7 @@ def run() -> tuple[int, int, list[str]]:
             failures.append(f"{workflow_id}: dispatch exception: {type(exc).__name__}: {exc}")
             continue
         if result.returncode != 0:
-            stderr = (result.stderr or "").strip().replace("\\n", " ")
+            stderr = _normalize_stderr(result.stderr)
             failures.append(f"{workflow_id}: dispatch exit={result.returncode} {stderr[:300]}")
             continue
 
