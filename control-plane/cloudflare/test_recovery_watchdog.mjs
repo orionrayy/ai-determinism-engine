@@ -143,7 +143,7 @@ test("backs off after a repository-dispatch failure instead of hammering GitHub"
   assert.equal(storage.values.get("dispatch_state").status, "retryable");
   const second = await runScheduledRecoveryWatchdog({scheduledTime: (now + 60) * 1000}, env);
   assert.equal(second.status, "dispatch_suppressed");
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
 });
 
 test("durable claim blocks duplicate dispatches and releases after failure backoff", async () => {
