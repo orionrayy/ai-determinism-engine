@@ -12,14 +12,23 @@ The repository's GitHub Actions `schedule` trigger remains the primary low-cost 
 
 ## Deployment prerequisite
 
-The Cloudflare script is not active merely because this file exists. After reviewing/merging the PR, deploy `control-plane/cloudflare` with Wrangler and set `GITHUB_RECOVERY_TOKEN` as a Worker secret (never store it in the repository):
+The Worker must not be deployed without its GitHub credential. `wrangler.toml` declares `GITHUB_RECOVERY_TOKEN` as required, so a deployment without it should fail validation.
+
+Create a small JSON secrets file **outside the repository** and restrict access to it. Its content must have this shape; replace the placeholder locally and never paste the real token into ChatGPT or commit the file:
+
+```json
+{"GITHUB_RECOVERY_TOKEN":"<set-this-locally-in-a-private-file>"}
+```
+
+Then deploy code and secret together:
 
 ```sh
 cd control-plane/cloudflare
-npx wrangler deploy
-npx wrangler secret put GITHUB_RECOVERY_TOKEN
+npx wrangler deploy --secrets-file "$HOME/.config/ai-determinism-engine/watchdog-secrets.json"
 ```
 
-The first deploy may run without the secret; in that state the watchdog fails closed and logs `missing_github_recovery_token`. Then use `wrangler secret put` to add the secret securely; that command creates and deploys a new Worker version. Use a dedicated, minimum-scope GitHub credential with Actions read and Contents write permissions for `orionrayy/ai-determinism-engine`. Do not paste the token into command arguments, source code, CI logs, or this PR. Validate the deployed Cron Trigger and the first watchdog logs before treating the fallback as operational.
+Use a dedicated, minimum-scope fine-grained GitHub credential with **Actions: read** and **Contents: write** permissions for `orionrayy/ai-determinism-engine`. The watchdog does not read or log the token value. The documented `wrangler secret put GITHUB_RECOVERY_TOKEN` command is an alternative after the Worker already exists; it deploys a new version immediately.
+
+After deployment, validate that the Cron Trigger is listed and inspect the first watchdog logs. The connected Cloudflare account previously listed only `sugarnymous-staging-edge`, so this Worker has not been deployed by this task; the PR intentionally does not create production resources.
 
 This does not replace/alter the canonical orchestration state authority, perform a blind workflow rerun, mutate `main` directly, or retry an external connector side effect. The existing workflow-scoped recovery and idempotency rules remain authoritative.
