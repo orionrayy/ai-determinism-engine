@@ -6,6 +6,17 @@ compatibility_date = "2026-10-01"
 name = "WORKFLOW_CONTROL"
 class_name = "WorkflowControlPlane"
 
+[[durable_objects.bindings]]
+name = "RECOVERY_WATCHDOG"
+class_name = "RecoveryWatchdog"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["WorkflowControlPlane"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["RecoveryWatchdog"]
+
+[triggers]
+crons = ["*/5 * * * *"]
