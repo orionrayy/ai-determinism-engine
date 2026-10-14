@@ -331,6 +331,7 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('class RecoveryWatchdog', watchdog)
         self.assertIn('transaction(async (txn)', watchdog)
         self.assertIn('crons = ["*/5 * * * *"]', wrangler)
+        self.assertIn('required = ["GITHUB_RECOVERY_TOKEN"]', wrangler)
         self.assertIn('recovery_watchdog.mjs', self.tests)
 
 if __name__ == '__main__':
