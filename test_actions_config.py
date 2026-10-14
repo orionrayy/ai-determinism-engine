@@ -319,9 +319,6 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("State persistence rebase conflict; refusing to overwrite concurrent main state.", self.orchestrator)
         self.assertIn("State persistence push failed after bounded retries.", self.orchestrator)
 
-if __name__ == '__main__':
-    unittest.main()
-
 
     def test_cloudflare_watchdog_is_backup_recovery_only_and_deduplicated(self):
         watchdog = (ROOT / 'control-plane' / 'cloudflare' / 'src' / 'recovery_watchdog.mjs').read_text()
@@ -335,3 +332,6 @@ if __name__ == '__main__':
         self.assertIn('transaction(async (txn)', watchdog)
         self.assertIn('crons = ["*/5 * * * *"]', wrangler)
         self.assertIn('recovery_watchdog.mjs', self.tests)
+
+if __name__ == '__main__':
+    unittest.main()
