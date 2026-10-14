@@ -121,7 +121,7 @@ class ActionsConfigTests(unittest.TestCase):
             self.orchestrator,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'scheduled-recovery'",
+            "(github.event_name == 'schedule' || (github.event_name == 'repository_dispatch' && github.event.action == 'orchestrator.recovery')) && 'scheduled-recovery'",
             self.orchestrator,
         )
         self.assertIn("github.run_id", self.orchestrator)
