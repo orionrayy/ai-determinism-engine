@@ -1,3 +1,7 @@
+import {RecoveryWatchdog, runScheduledRecoveryWatchdog} from "./recovery_watchdog.mjs";
+
+export {RecoveryWatchdog};
+
 const E = new TextEncoder();
 const SKEW = 300;
 const MAX_BODY = 768 * 1024;
@@ -902,6 +906,10 @@ function resourceMatchForRequest(pathname) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(runScheduledRecoveryWatchdog(controller, env));
+  },
+
   async fetch(request,env) {
     const url = new URL(request.url);
     const workflowMatch = url.pathname.match(/^\/v1\/workflows\/([^/]+)(?:\/.*)?$/);
