@@ -321,3 +321,17 @@ class ActionsConfigTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+    def test_cloudflare_watchdog_is_backup_recovery_only_and_deduplicated(self):
+        watchdog = (ROOT / 'control-plane' / 'cloudflare' / 'src' / 'recovery_watchdog.mjs').read_text()
+        worker = (ROOT / 'control-plane' / 'cloudflare' / 'src' / 'worker.js').read_text()
+        wrangler = (ROOT / 'control-plane' / 'cloudflare' / 'wrangler.toml').read_text()
+        self.assertIn('orchestrator.recovery', self.orchestrator)
+        self.assertIn("github.event.action == 'orchestrator.recovery'", self.orchestrator)
+        self.assertIn("runScheduledRecoveryWatchdog(controller, env)", worker)
+        self.assertIn('GITHUB_RECOVERY_TOKEN', watchdog)
+        self.assertIn('class RecoveryWatchdog', watchdog)
+        self.assertIn('transaction(async (txn)', watchdog)
+        self.assertIn('crons = ["*/5 * * * *"]', wrangler)
+        self.assertIn('recovery_watchdog.mjs', self.tests)
