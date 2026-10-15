@@ -25,6 +25,7 @@ function clampInteger(value, fallback, minimum, maximum) {
 
 async function githubRequest(token, path, init = {}) {
   const headers = {
+    "user-agent": "ai-determinism-engine-schedule-watchdog",
     accept: "application/vnd.github+json",
     authorization: "Bearer " + token,
     "x-github-api-version": "2022-11-28",
@@ -152,8 +153,9 @@ export async function runScheduledRecoveryWatchdog(controller, env) {
     return {status: "disabled", reason: "missing_github_recovery_token"};
   }
 
-  const scheduledMs = Number(controller?.scheduledTime);
-  const nowMs = Number.isFinite(scheduledMs) && scheduledMs > 0 ? scheduledMs : Date.now();
+  // A delayed Cron invocation must be judged against actual execution time, not its
+  // intended schedule time; keep scheduledTime only as trigger metadata.
+  const nowMs = Date.now();
   const now = Math.floor(nowMs / 1000);
   const staleSeconds = clampInteger(env.ORCHESTRATOR_WATCHDOG_STALE_SECONDS, DEFAULT_STALE_SECONDS, 900, 7200);
   const cooldownSeconds = clampInteger(env.ORCHESTRATOR_WATCHDOG_DISPATCH_COOLDOWN_SECONDS, DEFAULT_DISPATCH_COOLDOWN_SECONDS, 900, 7200);
