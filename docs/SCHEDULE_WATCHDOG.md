@@ -5,6 +5,7 @@ The repository's GitHub Actions `schedule` trigger remains the primary low-cost 
 ## Operation
 
 - Runs every five minutes and reads the ten most recent `schedule` runs for `main`.
+- Sends a stable `User-Agent` on GitHub API calls. Schedule age is measured against actual invocation time (`Date.now()`), not the intended `controller.scheduledTime`, so delayed Cron invocations do not distort the stale threshold.
 - Does nothing when the latest scheduled run is younger than 30 minutes, when a recent scheduled run is queued/in progress, or when the run history is unavailable.
 - When stale, emits `repository_dispatch` with event type `orchestrator.recovery`. The GitHub workflow routes that event only to `schedule-recovery`, not to the planner/executor job.
 - A Durable Object claim suppresses parallel/duplicate dispatches, allows only one successful dispatch per stale-run identity per cooldown, and applies a five-minute retry backoff to dispatch failures.
@@ -13,6 +14,8 @@ The repository's GitHub Actions `schedule` trigger remains the primary low-cost 
 ## Deployment prerequisite
 
 The Worker must not be deployed without its GitHub credential. `wrangler.toml` declares `GITHUB_RECOVERY_TOKEN` as required, so a deployment without it should fail validation.
+
+The repository's existing `.github/workflows/telegram-control-plane-deploy.yml` currently places only `CONTROL_PLANE_SECRET` in the Control Plane `--secrets-file`; it does not inject `GITHUB_RECOVERY_TOKEN`. Do not use that automated deployment path for this configuration until the credential flow is explicitly approved, wired, and covered by a deployment contract test. The private secrets-file procedure below remains the documented path; no credential has been created or deployed by this change.
 
 Create a small JSON secrets file **outside the repository** and restrict access to it. Its content must have this shape; replace the placeholder locally and never paste the real token into ChatGPT or commit the file:
 
