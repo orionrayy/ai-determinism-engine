@@ -86,6 +86,30 @@ test("does not dispatch when the latest scheduled run is fresh", async (t) => {
   assert.equal(calls, 1);
 });
 
+test("uses actual invocation time when a cron invocation is delayed", async (t) => {
+  const previousFetch = globalThis.fetch;
+  const previousNow = Date.now;
+  const actualNowMs = Date.UTC(2026, 9, 15, 6, 0, 0);
+  Date.now = () => actualNowMs;
+  const now = Math.floor(actualNowMs / 1000);
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return jsonResponse({workflow_runs: [runRecord(now, {
+      created_at: new Date((now - 300) * 1000).toISOString(),
+      run_started_at: new Date((now - 300) * 1000).toISOString(),
+    })]});
+  };
+  t.after(() => { globalThis.fetch = previousFetch; Date.now = previousNow; });
+  const result = await runScheduledRecoveryWatchdog(
+    {scheduledTime: (now - 3600) * 1000},
+    makeEnv(makeStorage())
+  );
+  assert.equal(result.status, "fresh_schedule");
+  assert.equal(result.age_seconds, 300);
+  assert.equal(calls, 1);
+});
+
 test("dispatches recovery once for a stale schedule and carries deterministic event identity", async (t) => {
   const previousFetch = globalThis.fetch;
   const now = Math.floor(Date.now() / 1000);
@@ -102,6 +126,8 @@ test("dispatches recovery once for a stale schedule and carries deterministic ev
   const result = await runScheduledRecoveryWatchdog({scheduledTime: now * 1000}, makeEnv(storage));
   assert.equal(result.status, "dispatch_requested");
   assert.equal(requests.length, 2);
+  assert.equal(requests[0].init.headers["user-agent"], "ai-determinism-engine-schedule-watchdog");
+  assert.equal(requests[1].init.headers["user-agent"], "ai-determinism-engine-schedule-watchdog");
   const sent = JSON.parse(requests[1].init.body);
   assert.equal(sent.event_type, "orchestrator.recovery");
   assert.equal(sent.client_payload.event_id, "cloudflare-watchdog:12345");
