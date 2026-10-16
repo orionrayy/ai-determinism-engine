@@ -46,3 +46,8 @@ The previous paragraphs describe the v0.9.0-era checkpoint. They are retained as
 - Added stdlib-only online runner and hosted CI contract: 50 chronology-spread real timestamp cases × 5 fixed rules = 250 evaluations; 5 source anchors × 12 scenario archetypes × 20 variants = 1,200 generated market paths; 20 software input categories × 12 variations = 240 software checks.
 - Local tests cover the runner with bundled/fixture data. The hosted live network run has not yet completed at this checkpoint; only its first successful workflow artifact can establish the observed upstream row count and current source hash.
 - Current decision gate remains `NO_TRADE`. Scenario validation is a software-contract measure, not evidence of alpha; there are no calibrated or validated live forecasts and no live order routing.
+
+
+## Final v1.1.0 rebuild — verified 2026-10-16
+
+After adding the source-register entry and the portable online benchmark suite, the release was rebuilt from a clean verification path. Final artifact SHA-256 is 259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e (245,370 bytes; 98 files in ZIP; manifest lists 51 sources). Final verification: pytest 169 passed; unittest discovery 102 passed; compileall PASS; source dataset audit has zero hard failures and one expected unknown-timezone warning; baseline and online-smoke benchmark entry points PASS; HTML IDs/inline JS checks PASS; extraction test reran pytest and passed. The source remains a research prototype, and remote acquisition of DS51 is pending the hosted GitHub Actions run.
