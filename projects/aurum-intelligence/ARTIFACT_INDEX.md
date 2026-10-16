@@ -39,3 +39,8 @@ The latest complete code snapshot is v0.9.0. Notes about v1.0.0 timestamp-valida
 - CI: `.github/workflows/aurum-online-dataset-benchmark.yml`; it acquires the allow-listed public CSV at runtime, does not push or persist raw data in Git, emits the SHA-256 and report, and uploads result artifacts for 14 days.
 - Live upstream data: pending the first hosted workflow result. An offline smoke result is not a substitute for that verification.
 - The ZIP is available as a conversation artifact and is not a committed binary file under this repository.
+
+
+## Final v1.1.0 rebuild — verified 2026-10-16
+
+After adding the source-register entry and the portable online benchmark suite, the release was rebuilt from a clean verification path. Final artifact SHA-256 is 259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e (245,370 bytes; 98 files in ZIP; manifest lists 51 sources). Final verification: pytest 169 passed; unittest discovery 102 passed; compileall PASS; source dataset audit has zero hard failures and one expected unknown-timezone warning; baseline and online-smoke benchmark entry points PASS; HTML IDs/inline JS checks PASS; extraction test reran pytest and passed. The source remains a research prototype, and remote acquisition of DS51 is pending the hosted GitHub Actions run.
