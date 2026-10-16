@@ -26,9 +26,9 @@ Fresh online sample: 35,954 rows, 3,070,226 bytes, SHA-256 `acb0d2f86b030a3ead93
 The +00:00 offset is the representation seen in the file, not independent proof of the provider's intended timezone. Broker, quote-side, license scope and fill semantics remain unverified. DS51 remains `reference_only`. The positive PnL of the breakout baseline comes from only seven trades and cannot establish alpha. See `benchmarks/live_dataset_benchmark_2026-10-16.md` and its JSON companion.
 
 
-## Latest checkpoint — v1.3.0 (local release verified; hosted full-history benchmark pending)
+## Latest checkpoint — v1.3.0 (hosted full-history benchmark verified)
 
-- Source artifact: aurum-intelligence-v1.3.0.zip, SHA-256 51a82f710033eee0cb7723c8940721d8c3bcd64565159650ba90e6235945ff0b, 267,854 bytes.
-- Local tests: 181 pytest, 109 unittest, 11 dedicated online-runner tests; compiler, UI static checks and clean ZIP extraction passed.
-- Online benchmark now replays all eligible bars, reports five chronological folds, and evaluates prequential probability baselines with Brier/log loss, reliability/ECE/MCE and a deterministic moving-block bootstrap. The successful live dataset result from the previous code was only 50 sampled timestamps; the new full-history metrics remain pending a successful workflow run on the v1.3.0 source.
-- Decision gate remains NO_TRADE. Synthetic 35,954-row throughput is a contract test, not real-market predictive evidence.
+- Source package aurum-intelligence-v1.3.0.zip: 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67; 107 ZIP entries. Clean checks: 181 pytest, 109 unittest, 11 online benchmark tests; compileall, JS/HTML and extracted archive pass.
+- Hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5: 35,954 OHLCV rows; 35,893 sequential opportunities per fixed rule; five disjoint folds 7,175 / 7,176 / 7,176 / 7,176 / 7,190; 1,200 market path and 240 robustness cases passed.
+- All active fixed-rule baselines lose with assumed costs in full replay and tail. Expanding-rate Brier 0.250019 vs 0.250000 for constant 0.5, interval crosses zero; rolling base rate is worse. These are diagnostics, not calibrated forecasts.
+- Decision remains NO_TRADE. Data rights, timezone, broker execution semantics, real costs, independent regimes and paper trading remain unverified.

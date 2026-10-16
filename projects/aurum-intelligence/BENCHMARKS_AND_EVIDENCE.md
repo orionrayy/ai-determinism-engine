@@ -81,4 +81,16 @@ Separately, hosted GitHub Actions run [#38851629049](https://github.com/orionray
 
 The v1.2.0 interface offers Sederhana/Tingkat lanjut modes; mode selection is presentation only. The Mini App stores the choice locally; Telegram mode settings persist in SQLite with migration. No model accuracy, win rate, or world-leading superiority claim is made.
 
+## v1.3.0 full-history hosted benchmark — 2026-10-16
+
+Run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5. Detailed Markdown and JSON reports: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and .json.
+
+- Dataset: 35,954 rows, SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db, dates 2026-03-26 through 2026-09-25.
+- Full replay after 60-bar warm-up: 35,893 opportunities per rule. Five disjoint fold sizes 7,175 / 7,176 / 7,176 / 7,176 / 7,190; fold 5 is exactly the final 20% tail.
+- Assumed round-trip costs: 0.30 spread plus 0.10 slippage each fill, total 0.50 price units/trade; not measured broker costs.
+- Full / tail net PnL: last_return_sign -19,531.435 / -3,766.090; ema5_vs_ema10 -17,497.475 / -3,577.310; mean_reversion_z10 -8,710.560 / -1,762.260; prior20_range_breakout -2,290.290 / -480.350. All active rules lose in both.
+- The selected-case breakout +2.37 across seven trades is not robust; full history is -2,290.29 across 4,035 trades.
+- Prequential baselines, 35,893 forecasts: constant Brier .250000, expanding .250019, rolling-288 .250749. Expanding-vs-constant Brier improvement interval [-0.0000639, +0.0000412] spans zero.
+- 1,200/1,200 market-path and 240/240 software checks pass. They validate runner contracts, not predictive skill.
+- Keep NO_TRADE. No calibrated TP-before-SL forecast or broker-executable backtest is validated.
 

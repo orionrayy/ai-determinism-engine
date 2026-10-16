@@ -1,30 +1,29 @@
 # Aurum Intelligence v1.3.0 — implementation checkpoint
 
-**Status at commit time:** local source release cleanly verified; the updated live-dataset CI run is pending for this new benchmark protocol. Trading decisions remain NO_TRADE and no live order execution is enabled.
+**Checkpoint:** 2026-10-16, Asia/Jakarta. Status: research/UX prototype, not production trading software. Decision gate remains NO_TRADE.
 
-## Engineering increment
+## Implemented and locally verified
 
-- Full-history rule replay evaluates every eligible chronological next-bar opportunity after a 60-bar warm-up, rather than using only 50 timestamp-spread cases.
-- Five disjoint chronological folds, a descriptive full-history summary, an early 80% segment and the final chronological 20% tail are reported for each fixed baseline. Rule definitions are fixed; no fitting or tuning is performed.
-- Three prequential probability baselines are evaluated for next-candle body up versus not-up: constant 0.5, expanding Laplace base-rate, and rolling 288-bar Laplace base-rate.
-- Metrics: Brier score, log loss, Brier skill, 10-bin reliability, descriptive ECE/MCE, and deterministic moving-block bootstrap intervals for paired Brier improvement.
-- Benchmark runner is optimized to avoid rescanning every prior bar for each decision, which would be quadratic on a 35k-row dataset.
-- CI gates assert decision-row count, fold partition coverage, probability forecast count, reliability metrics and continued absence of a calibrated or live model.
+- Full-history replay evaluates all eligible sequential next-bar opportunities after 60 warm-up bars; the 50 timestamps × 5 rules output remains a separate selected-case diagnostic.
+- Five contiguous, disjoint chronological folds. Folds 1–4 partition development; fold 5 is exactly the final 20% chronological tail.
+- Causal prequential rate baselines for next-bar candle body up/not-up: constant 0.5, expanding Laplace, rolling 288-bar Laplace.
+- Brier score, log loss, Brier skill, reliability bins, descriptive ECE/MCE and deterministic moving-block bootstrap intervals.
+- Optimized fixed-rule calculations; regression tests cover rule parity, full-history coverage, disjoint folds, causality/leakage invariance, metrics and insufficient-history behavior.
 
-## Local v1.3.0 release verification
+Clean source release checks: 181 pytest, 109 application unittest, 11 online benchmark tests; compileall PASS; Mini App JS syntax PASS; 48 unique HTML IDs, no duplicates; ZIP integrity and extracted-archive pytest PASS.
 
-- Archive: aurum-intelligence-v1.3.0.zip, 267,854 bytes, SHA-256 51a82f710033eee0cb7723c8940721d8c3bcd64565159650ba90e6235945ff0b.
-- pytest: 181 passed.
-- unittest (application suite): 109 passed.
-- Dedicated online benchmark suite: 11 passed.
-- Python compileall, Mini App JavaScript syntax, 48 unique HTML IDs, ZIP integrity and clean-extraction pytest: PASS.
-- Bundled smoke data stays 60 bars; 50 selected cases / 250 comparisons; 1,200 synthetic market paths and 240 software cases pass.
-- Synthetic throughput validation exercised 35,954 generated rows: 35,893 sequential decisions per rule, five chronological folds and 35,893 prequential probability forecasts; 1,200/1,200 market paths and 240/240 software robustness cases passed. This validates throughput/contracts only, not market prediction.
+Downloadable source artifact: aurum-intelligence-v1.3.0.zip, 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67, 107 ZIP entries. ZIP is not tracked as a binary in this repository.
 
-## Evidence guardrails
+## Hosted online evidence
 
-- Prequential probabilities are historical-rate baselines, not a trained/calibrated model and not TP-before-SL probabilities.
-- Brier/log-loss/ECE/MCE on a single aggregated OHLCV source are descriptive, and block-bootstrap uncertainty is approximate.
-- Full-history rule metrics are descriptive; five folds show variability but do not create five independent data sources.
-- Data license, source rights for intended use, timezone provenance, broker Bid/Ask, measured costs and actual fills remain unverified.
-- Maintain NO_TRADE and do not claim world-leading accuracy or superiority without replicated out-of-sample evidence and comparable baselines.
+Run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5. Public dataset has 35,954 XAUUSD M5 OHLCV rows, SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db, date range 2026-03-26 through 2026-09-25.
+
+- Full replay: 35,893 sequential opportunities per rule.
+- Five disjoint folds: 7,175 / 7,176 / 7,176 / 7,176 / 7,190; fold 5 equals final 20% tail.
+- 1,200/1,200 synthetic market-path and 240/240 software robustness contracts passed.
+- All four active fixed-rule baselines lose in complete replay and tail under assumed total costs of 0.50 price units/trade.
+- Expanding base-rate Brier 0.250019 vs 0.250000 for constant 0.5; the approximate improvement interval crosses zero. Rolling-288 Brier 0.250749, worse than constant. These are direction diagnostics, not TP-before-SL probabilities.
+
+## Remaining gates
+
+Rights/provenance, timestamp interpretation, broker quote side, Bid/Ask/tick inputs, real execution costs/fills, independent regimes, external holdout and paper trading remain unvalidated. No world-leading accuracy or profitability claim is made; live order execution remains disabled.

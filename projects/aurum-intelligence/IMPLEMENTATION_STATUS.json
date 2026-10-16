@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-16T17:40:00+07:00",
+  "checkpoint": "2026-10-16T18:15:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -31,7 +31,8 @@
       "repository_advertises_MIT_license": true,
       "data_rights_scope_verified": false,
       "timezone_semantics_verified": false,
-      "broker_provenance_verified": false
+      "broker_provenance_verified": false,
+      "license_intended_use_verified": false
     },
     "locally_bundled_sources_sampled": 1
   },
@@ -74,7 +75,26 @@
     "prequential_probability_predictions_synthetic": 35893,
     "synthetic_market_paths_passed": 1200,
     "software_stress_scenarios_passed": 240,
-    "external_live_full_history_status": "pending CI for v1.3.0 code"
+    "external_live_full_history_status": "pending CI for v1.3.0 code",
+    "online_dataset_full_history_opportunities_per_rule": 35893,
+    "online_dataset_chronological_folds": [
+      7175,
+      7176,
+      7176,
+      7176,
+      7190
+    ],
+    "online_dataset_tail_holdout_fraction": 0.2,
+    "prequential_probability_predictions": 35893,
+    "prequential_constant_brier": 0.25,
+    "prequential_expanding_brier": 0.2500191120883127,
+    "prequential_expanding_brier_skill": -0.0000764483532507132,
+    "prequential_expanding_brier_improvement_ci_95": [
+      -0.00006390820231564408,
+      0.00004121343219002724
+    ],
+    "prequential_rolling_288_brier": 0.2507488734984891,
+    "prequential_rolling_288_brier_skill": -0.0029954939939564884
   },
   "integrations": {
     "telegram_live_tested": false,
@@ -94,24 +114,27 @@
   "release": {
     "version": "1.3.0",
     "archive": "aurum-intelligence-v1.3.0.zip",
-    "bytes": 267854,
-    "sha256": "51a82f710033eee0cb7723c8940721d8c3bcd64565159650ba90e6235945ff0b",
+    "bytes": 278402,
+    "sha256": "53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67",
+    "files_in_zip": 107,
+    "manifest_files": 106,
     "pytest": "181 passed",
     "unittest": "109 tests passed",
-    "online_benchmark_unit_tests": "11 tests passed",
-    "source_status": "local release verified; updated live full-history CI pending"
+    "online_benchmark_tests": "11 tests passed",
+    "release_checks": "PASS",
+    "zip_extraction_retest": "181 pytest passed",
+    "artifact_storage": "downloadable project artifact; ZIP not tracked as a GitHub binary"
   },
   "online_dataset_benchmark": {
     "workflow": ".github/workflows/aurum-online-dataset-benchmark.yml",
     "branch": "feature/aurum-online-dataset-benchmark",
     "status": "PASS",
-    "run_id": 38851629049,
-    "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851629049",
-    "artifact_id": 12025522071,
-    "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851436990/artifacts/12025522071",
-    "artifact_bytes": 9207,
-    "artifact_sha256": "4a7b36c050a5628fa00ce54d5209c17fd3bd1203b26a9e82d244971884b943d4",
-    "artifact_expires_at": "2026-10-30T04:35:53Z",
+    "run_id": 38888666520,
+    "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520",
+    "source_commit": "d790435b9f09d623a795aa6ab7ee4d1732515aa5",
+    "artifact_id": 12040248097,
+    "artifact_bytes": 14319,
+    "artifact_sha256": "8a21fda87e8031b52b7ab2bada70b2dff58b5cefe402728a1afcea121a397dbe",
     "dataset_rows": 35954,
     "dataset_bytes": 3070226,
     "dataset_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
@@ -121,15 +144,32 @@
     "intervals_over_600s": 136,
     "real_cases": 50,
     "baseline_evaluations": 250,
+    "full_history_opportunities_per_rule": 35893,
+    "chronological_fold_counts": [
+      7175,
+      7176,
+      7176,
+      7176,
+      7190
+    ],
+    "fold5_is_tail_holdout": true,
     "market_scenarios": 1200,
     "market_passed": 1200,
     "software_scenarios": 240,
     "software_passed": 240,
-    "benchmark_runtime_ms": 458.588,
+    "probability_target": "next_bar_candle_body_up_vs_not_up",
+    "probability_predictions": 35893,
+    "constant_brier": 0.25,
+    "expanding_brier": 0.2500191120883127,
+    "expanding_brier_improvement_ci_95": [
+      -0.00006390820231564408,
+      0.00004121343219002724
+    ],
+    "rolling_288_brier": 0.2507488734984891,
     "decision_output": "NO_TRADE",
     "predictive_model_validated": false,
-    "raw_dataset_committed": false,
     "live_trading_enabled": false,
-    "raw_dataset_redistributed": false
+    "report_path": "projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md",
+    "machine_readable_report_path": "projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.json"
   }
 }

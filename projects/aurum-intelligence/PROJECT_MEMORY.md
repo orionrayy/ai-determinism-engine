@@ -75,4 +75,13 @@ This section supersedes older version-specific statements above where they diffe
 - Upstream repository advertises an MIT license, but data rights scope/provenance and broker/execution semantics remain under review; raw market data is not redistributed. Example breakout PnL of +2.37 price units occurred on only seven trades under assumed costs and is not evidence of stable alpha.
 - User-experience modes do not change the model, confidence or risk rules. Production remains blocked on independent multi-regime walk-forward calibration, broker-specific costs, paper trading, security review and authorized provider integration. Do not claim world-leading accuracy.
 
+## Latest checkpoint override — v1.3.0 hosted full-history run (2026-10-16)
+
+- Release aurum-intelligence-v1.3.0.zip: 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67; clean build passes 181 pytest, 109 unittest, 11 benchmark tests, compileall, Mini App static checks and ZIP extraction.
+- Hosted run #38888666520 succeeded on commit d790435b9f09d623a795aa6ab7ee4d1732515aa5. Dataset: 35,954 rows, SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db, 2026-03-26 through 2026-09-25.
+- Full replay is 35,893 sequential opportunities per fixed rule; five disjoint folds contain 7,175 / 7,176 / 7,176 / 7,176 / 7,190 observations, final fold equals last 20%.
+- All active fixed baselines are net negative in full and tail under assumed costs. The selected-case breakout positive does not survive complete replay.
+- Prequential direction baselines do not establish Brier improvement over constant 0.5; no calibrated TP-before-SL model is validated. Decision remains NO_TRADE.
+- Machine-readable evidence and detailed report are under projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.json/.md. Raw OHLCV is not redistributed.
+- Next: review rights/provenance/timezone, acquire licensed broker Bid/Ask/tick data and measured costs, validate independent chronological regimes and external holdout, calibrate exact target, and paper trade before production.
 
