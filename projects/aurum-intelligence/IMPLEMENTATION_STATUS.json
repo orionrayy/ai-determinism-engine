@@ -12,7 +12,7 @@
     "dataset": "data/xauusd_5m_public_sample.csv",
     "rows": 60,
     "source_register_entries": 51,
-    "sources_sampled": 1,
+    "sources_sampled": 2,
     "source_timezone_verified": false,
     "broker_provenance_verified": false,
     "primary_dataset_rows": 60,
@@ -20,8 +20,13 @@
     "DS51": {
       "name": "GetData Finance XAUUSD M5 community OHLCV",
       "status": "reference_only",
-      "live_ci_download_verified": false,
-      "license_intended_use_verified": false
+      "live_ci_download_verified": true,
+      "live_rows": 35954,
+      "live_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "live_benchmark_passed": true,
+      "license_intended_use_verified": false,
+      "timezone_verified": false,
+      "broker_provenance_verified": false
     }
   },
   "benchmarks": {
@@ -71,11 +76,26 @@
   "online_dataset_benchmark": {
     "workflow": ".github/workflows/aurum-online-dataset-benchmark.yml",
     "branch": "feature/aurum-online-dataset-benchmark",
-    "status": "pending_first_hosted_run",
+    "status": "live_download_and_benchmark_passed_artifact_upload_retry_pending",
+    "last_observed_run_id": 38851340128,
+    "observed_dataset_rows": 35954,
+    "observed_dataset_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+    "observed_real_cases": 50,
+    "observed_baseline_evaluations": 250,
+    "observed_market_scenarios": 1200,
+    "observed_market_passed": 1200,
+    "observed_software_scenarios": 240,
+    "observed_software_passed": 240,
+    "benchmark_runtime_ms": 458.635,
+    "decision_output": "NO_TRADE",
+    "test_step": "PASS",
+    "live_acquisition_step": "PASS",
+    "assertions_step": "PASS",
+    "artifact_upload_step": "FAIL - artifact name contained a literal backslash; workflow interpolation corrected and retry queued",
+    "raw_dataset_committed": false,
     "case_requirement": 50,
     "baseline_evaluation_requirement": 250,
     "market_scenario_target": 1200,
-    "software_scenario_target": 240,
-    "raw_dataset_committed": false
+    "software_scenario_target": 240
   }
 }
