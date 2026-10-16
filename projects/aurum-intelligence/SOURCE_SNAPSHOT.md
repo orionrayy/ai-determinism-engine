@@ -24,3 +24,8 @@ The earlier v0.9.0 section records the source archive that was available before 
 - The source package now includes the bounded external dataset benchmarking pipeline, generated smoke artifacts, ISO-8601 timestamp regression and source register DS51 (reference-only). The user project memory also has a portable online runner plus GitHub Actions workflow so the dataset is fetched from a hosted network-enabled runner.
 - The ZIP is a conversation-download artifact. The memory repository does not contain the full application ZIP as a tracked binary; the source code for the CI checker is committed under this folder once this branch is reviewed/merged.
 - Offline smoke results must not be substituted for live-upstream evidence. The live runner's observed row count and SHA are still pending.
+
+
+## Final v1.1.0 rebuild — verified 2026-10-16
+
+After adding the source-register entry and the portable online benchmark suite, the release was rebuilt from a clean verification path. Final artifact SHA-256 is 259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e (245,370 bytes; 98 files in ZIP; manifest lists 51 sources). Final verification: pytest 169 passed; unittest discovery 102 passed; compileall PASS; source dataset audit has zero hard failures and one expected unknown-timezone warning; baseline and online-smoke benchmark entry points PASS; HTML IDs/inline JS checks PASS; extraction test reran pytest and passed. The source remains a research prototype, and remote acquisition of DS51 is pending the hosted GitHub Actions run.
