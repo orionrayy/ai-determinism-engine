@@ -55,3 +55,8 @@ Acceptance: end-to-end sandbox/paper evidence, reversible deployment, no secrets
 - [ ] Verify first successful hosted workflow log and uploaded artifact; update DS51 from `reference_only` only after the upstream download, current data quality, and intended-use licensing have been reviewed.
 - [ ] Acquire licensed broker Bid/Ask/tick data and document timezone/DST, symbol contract, volume semantics, spread/commission and fill information.
 - [ ] Run chronological multi-fold/out-of-sample evaluation on broader independent time regimes; keep all trade outcomes matured and preserve an untouched final holdout.
+
+
+## Final v1.1.0 rebuild — verified 2026-10-16
+
+After adding the source-register entry and the portable online benchmark suite, the release was rebuilt from a clean verification path. Final artifact SHA-256 is 259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e (245,370 bytes; 98 files in ZIP; manifest lists 51 sources). Final verification: pytest 169 passed; unittest discovery 102 passed; compileall PASS; source dataset audit has zero hard failures and one expected unknown-timezone warning; baseline and online-smoke benchmark entry points PASS; HTML IDs/inline JS checks PASS; extraction test reran pytest and passed. The source remains a research prototype, and remote acquisition of DS51 is pending the hosted GitHub Actions run.
