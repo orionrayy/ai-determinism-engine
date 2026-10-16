@@ -4,13 +4,14 @@ This directory is the durable working notebook for the XAUUSD/gold analysis and 
 
 Start with **PROJECT_MEMORY.md**, then **PROGRESS_LOG.md**, **BENCHMARKS_AND_EVIDENCE.md**, **RESEARCH_SUMMARY.md**, **ROADMAP.md**, and **SOURCE_SNAPSHOT.md**.
 
-## Current state (2026-10-16; latest checkpoint v1.1.0)
-- The reconciled complete application source is built as `aurum-intelligence-v1.1.0.zip` (245,370 bytes; SHA-256 `259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e`). It is a downloadable conversation artifact, not a binary committed to this folder.
-- Final release builder evidence: pytest 169 passed, unittest 102 passed, compileall and all release checks passed; the 98-file archive was extracted and pytest rerun.
-- Primary bundled dataset remains 60 community XAUUSD M5 bars with unknown timezone and broker/execution semantics. Source register now has 51 entries; DS51 is a separate GetData public OHLCV candidate and remains reference-only until live CI acquisition, quality review, and intended-use licensing checks pass.
-- The new online CI benchmark is in `.github/workflows/aurum-online-dataset-benchmark.yml`; it requires 50 chronological timestamps, 250 fixed-rule comparisons, 200+ market scenarios, 200+ software stress cases, and uploads JSON/CSV/Markdown evidence without committing the raw feed.
-- Verified offline smoke: 30 timestamp cases / 150 baseline comparisons, 480 market paths, and 240 software input cases passed their expected validation contracts. The hosted live dataset benchmark now passes: 35,954 rows, 50 cases/250 baseline evaluations, 1,200/1,200 market paths, and 240/240 software cases. See `benchmarks/live_dataset_benchmark_2026-10-16.md`; source terms, intended timezone and broker semantics remain under review, so DS51 remains reference-only.
-- These tests do not show predictive edge. Model forecasts remain unvalidated and production decision output stays `NO_TRADE`.
+## Current state (2026-10-16; latest checkpoint v1.2.0)
+- Latest source artifact: aurum-intelligence-v1.2.0.zip (260,781 bytes; SHA-256 19912b690e74af802a7170316703d40048a67731a1eb26d806c9929f048d2db3). It remains a downloadable artifact, not a binary tracked in this folder.
+- Clean release validation: 176 pytest passed; 109 unittest passed; compileall, inline JS syntax and HTML-ID audit pass; clean ZIP extraction reruns 176 tests.
+- UX increment: persistent-accessible Sederhana/Tingkat lanjut mode in the Mini App; Telegram mode preference backed by SQLite with backward-compatible migration. Mini App mode is browser-local, not server-synchronized. Both modes preserve the NO_TRADE decision gate.
+- Local reproducible dataset remains 60 public community XAUUSD M5 bars, with unknown timezone/broker provenance. Release smoke has 50 observed cases / 250 comparisons, 1,200/1,200 market-path contracts and 240/240 software robustness cases.
+- Hosted online CI run [#38851629049](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851629049) passed on the benchmark branch using 35,954 public CSV rows (SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db), 50 timestamp cases / 250 evaluations, 1,200/1,200 market paths and 240/240 software checks. The sampled data ends 2026-09-25; it is not a live feed.
+- The source repository declares an MIT license; market-data rights scope/provenance, quote side, broker semantics and actual fills still need review. The raw 3 MB CSV is not redistributed. Forecast model has zero out-of-sample predictions on the bundled sample and is not calibrated; model superiority is not claimed.
+- Live Telegram/OANDA credentials, MT5/cTrader account integration, real browser/mobile acceptance testing, paper trading and deployment are not validated. Keep trading disabled.
 
 Never add credentials, tokens, .env files, or personal account information to this folder.
 
