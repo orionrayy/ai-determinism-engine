@@ -54,3 +54,8 @@ Satisfying software scenarios validates assertion behavior only; it does not val
 - DS51 remains `reference_only` until a live runner succeeds and a separate data-rights/provenance review approves its intended use. Raw OHLCV is not committed into the repository artifact.
 - The generated 1,200 paths are counterfactuals. The 240 software cases are input-validation checks. Neither set increases the number of historical observations or independent market regimes.
 - Decision output remains `NO_TRADE`; no live signal, model validation, or order execution was enabled by this change.
+
+
+## Final v1.1.0 rebuild — verified 2026-10-16
+
+After adding the source-register entry and the portable online benchmark suite, the release was rebuilt from a clean verification path. Final artifact SHA-256 is 259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e (245,370 bytes; 98 files in ZIP; manifest lists 51 sources). Final verification: pytest 169 passed; unittest discovery 102 passed; compileall PASS; source dataset audit has zero hard failures and one expected unknown-timezone warning; baseline and online-smoke benchmark entry points PASS; HTML IDs/inline JS checks PASS; extraction test reran pytest and passed. The source remains a research prototype, and remote acquisition of DS51 is pending the hosted GitHub Actions run.
