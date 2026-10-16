@@ -4,11 +4,12 @@ This directory is the durable working notebook for the XAUUSD/gold analysis and 
 
 Start with **PROJECT_MEMORY.md**, then **PROGRESS_LOG.md**, **BENCHMARKS_AND_EVIDENCE.md**, **RESEARCH_SUMMARY.md**, **ROADMAP.md**, and **SOURCE_SNAPSHOT.md**.
 
-## Current state (2026-10-16)
-- Latest complete source artifact available for audit: v0.9.0; it contains 85 archive entries with app code, tests, data sample, benchmark results, scripts, provider adapters, and Mini App.
-- A v1.0.0 progress checkpoint reports timestamp-validator hardening and richer dataset-quality diagnostics, but a complete v1.0.0 source archive was not present in the working filesystem. Those changes must be reconciled into the source and re-tested before claiming a v1.0.0 code release.
-- Current evidence is a 60-bar XAUUSD M5 community excerpt; 50 sources are registered, only one sampled.
-- 250 case-based next-candle rows, 90 TP/SL barrier rows, and two separate 240-case matrices (software robustness and synthetic market paths) are diagnostics, not proof of predictive edge.
-- ML candidates return `insufficient_history` and zero OOS forecasts on the bundled sample. No probability is calibrated; production signal gate remains `NO_TRADE`.
+## Current state (2026-10-16; latest checkpoint v1.1.0)
+- The reconciled complete application source is built as `aurum-intelligence-v1.1.0.zip` (223,353 bytes; SHA-256 `4f3aafa682d1777a1dc6d220ad65b4b931b76760dafa8700818f8d1c0c18e623`). It is a downloadable conversation artifact, not a binary committed to this folder.
+- Release builder evidence at the base v1.1 build: pytest 153 passed, unittest 92 passed, compileall and all release checks passed; the archive was extracted and pytest rerun.
+- Primary bundled dataset remains 60 community XAUUSD M5 bars with unknown timezone and broker/execution semantics. Source register now has 51 entries; DS51 is a separate GetData public OHLCV candidate and remains reference-only until live CI acquisition, quality review, and intended-use licensing checks pass.
+- The new online CI benchmark is in `.github/workflows/aurum-online-dataset-benchmark.yml`; it requires 50 chronological timestamps, 250 fixed-rule comparisons, 200+ market scenarios, 200+ software stress cases, and uploads JSON/CSV/Markdown evidence without committing the raw feed.
+- Verified offline smoke: 30 timestamp cases / 150 baseline comparisons, 480 market paths, and 240 software input cases passed their expected validation contracts. The live hosted dataset result remains pending until the workflow runs.
+- These tests do not show predictive edge. Model forecasts remain unvalidated and production decision output stays `NO_TRADE`.
 
 Never add credentials, tokens, .env files, or personal account information to this folder.
