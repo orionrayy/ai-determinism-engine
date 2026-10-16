@@ -13,3 +13,14 @@ The latest complete source artifact available during checkpoint creation was **A
 Key source paths in the v0.9.0 archive: `app/main.py`, `app/config.py`, `app/engine/`, `app/providers/`, `app/infra/database.py`, `app/telegram/api.py`, `webapp/index.html`, `scripts/`, `tests/`, `data/` and `benchmarks/`.
 
 No credentials are included. Never commit Telegram tokens, broker API keys, OAuth refresh tokens, personal account identifiers, or private logs.
+
+
+## Current source artifact supersedes the preceding snapshot notes
+
+The earlier v0.9.0 section records the source archive that was available before exact v1.0.0 reconciliation. On 2026-10-16, the v1.0.0 archive was retrieved and tested, then rebuilt as v1.1.0.
+
+- Current downloadable artifact: `aurum-intelligence-v1.1.0.zip`; SHA-256 `4f3aafa682d1777a1dc6d220ad65b4b931b76760dafa8700818f8d1c0c18e623`; size 223,353 bytes.
+- Base v1.1.0 clean-build evidence: 153 pytest pass, 92 unittest pass, compileall PASS, release checks PASS, and extracted ZIP re-tests PASS.
+- The source package now includes the bounded external dataset benchmarking pipeline, generated smoke artifacts, ISO-8601 timestamp regression and source register DS51 (reference-only). The user project memory also has a portable online runner plus GitHub Actions workflow so the dataset is fetched from a hosted network-enabled runner.
+- The ZIP is a conversation-download artifact. The memory repository does not contain the full application ZIP as a tracked binary; the source code for the CI checker is committed under this folder once this branch is reviewed/merged.
+- Offline smoke results must not be substituted for live-upstream evidence. The live runner's observed row count and SHA are still pending.
