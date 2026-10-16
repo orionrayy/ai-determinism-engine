@@ -44,6 +44,20 @@ jobs:
           assert r['dataset']['rows'] >= 1000, r['dataset']
           assert r['real_case_benchmark']['cases'] >= 50, r['real_case_benchmark']
           assert r['real_case_benchmark']['evaluations'] >= 250, r['real_case_benchmark']
+          full = r['full_history_replay']
+          assert full['decision_opportunities'] == r['dataset']['rows'] - full['warmup_bars'] - 1, full
+          assert len(full['chronological_folds']) == 5, full
+          assert sum(f['opportunities'] for f in full['chronological_folds']) == full['decision_opportunities'], full
+          assert set(full['rules']) == {'last_return_sign', 'ema5_vs_ema10', 'mean_reversion_z10', 'prior20_range_breakout', 'flat_no_trade'}, full
+          prob = r['prequential_probability_diagnostics']
+          assert prob['status'] == 'DIAGNOSTIC_ONLY', prob
+          assert prob['predictions'] == r['dataset']['rows'] - 60 - 1, prob
+          assert not prob['validated_model'] and not prob['calibrated_model'], prob
+          assert len(prob['methods']) == 3, prob
+          for method in prob['methods'].values():
+              assert method['n'] == prob['predictions'], method
+              assert method['reliability']['ece_descriptive'] is not None, method
+              assert method['reliability']['mce_descriptive'] is not None, method
           assert r['scenarios']['market_paths'] >= 200, r['scenarios']
           assert r['scenarios']['market_failed'] == 0, r['scenarios']
           assert r['scenarios']['software_scenarios'] >= 200, r['scenarios']
@@ -55,6 +69,10 @@ jobs:
               'dataset_sha256': r['source']['sha256'],
               'real_cases': r['real_case_benchmark']['cases'],
               'baseline_evaluations': r['real_case_benchmark']['evaluations'],
+              'full_history_decisions_per_rule': r['full_history_replay']['decision_opportunities'],
+              'chronological_folds': len(r['full_history_replay']['chronological_folds']),
+              'prequential_probability_predictions': r['prequential_probability_diagnostics']['predictions'],
+              'probability_diagnostics_status': r['prequential_probability_diagnostics']['status'],
               'market_paths': r['scenarios']['market_paths'],
               'market_passed': r['scenarios']['market_passed'],
               'software_scenarios': r['scenarios']['software_scenarios'],

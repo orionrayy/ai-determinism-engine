@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Online, read-only XAUUSD dataset audit and deterministic benchmark; stdlib only."""
-import argparse, csv, hashlib, io, json, math, statistics, sys, time
+import argparse, csv, hashlib, io, json, math, random, statistics, sys, time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.error import URLError, HTTPError
@@ -74,7 +74,7 @@ def parse_csv(payload, min_rows=1000):
     return rows
 
 def fetch():
-    req = Request(SOURCE, headers={"User-Agent": "Aurum-Intelligence/1.1.0 online-benchmark"})
+    req = Request(SOURCE, headers={"User-Agent": "Aurum-Intelligence/1.3.0 online-benchmark"})
     last = None
     for attempt in range(3):
         try:
@@ -112,20 +112,25 @@ def ema(xs, span):
     return value
 
 def get_signal(rows, i, rule):
-    closes = [x["close"] for x in rows[:i+1]]
-    p = closes[-1]
-    if rule == "flat_no_trade": return 0
-    if rule == "last_return_sign": return int(p > closes[-2]) - int(p < closes[-2])
+    if i < 1 or i >= len(rows):
+        raise ValueError("decision index out of range")
+    p = rows[i]["close"]
+    if rule == "flat_no_trade":
+        return 0
+    if rule == "last_return_sign":
+        previous = rows[i - 1]["close"]
+        return int(p > previous) - int(p < previous)
     if rule == "ema5_vs_ema10":
-        xs = closes[-60:]
-        return int(ema(xs, 5) > ema(xs, 10)) - int(ema(xs, 5) < ema(xs, 10))
+        xs = [x["close"] for x in rows[max(0, i - 59):i + 1]]
+        short, long = ema(xs, 5), ema(xs, 10)
+        return int(short > long) - int(short < long)
     if rule == "mean_reversion_z10":
-        xs = closes[-10:]
+        xs = [x["close"] for x in rows[max(0, i - 9):i + 1]]
         sd = statistics.pstdev(xs)
         z = (p - statistics.mean(xs)) / sd if sd else 0
         return -1 if z > 1 else 1 if z < -1 else 0
-    prev = rows[max(0, i-20):i]
-    return 1 if p > max(x["high"] for x in prev) else -1 if p < min(x["low"] for x in prev) else 0
+    previous = rows[max(0, i - 20):i]
+    return 1 if p > max(x["high"] for x in previous) else -1 if p < min(x["low"] for x in previous) else 0
 
 def case_replay(rows, n=50):
     out = []
@@ -138,6 +143,255 @@ def case_replay(rows, n=50):
             cost = .5 if s else 0.0
             out.append({"decision_index": i, "decision_time": rows[i]["timestamp"].isoformat(), "outcome_time": target["timestamp"].isoformat(), "rule": rule, "signal": s, "next_body_direction": int(move > 0) - int(move < 0), "gross_pnl_units": round(gross, 8), "assumed_cost_units": cost, "net_pnl_units": round(gross-cost, 8), "cost_is_assumption": True})
     return out
+
+def _max_drawdown(values):
+    equity = peak = drawdown = 0.0
+    for value in values:
+        equity += value
+        peak = max(peak, equity)
+        drawdown = max(drawdown, peak - equity)
+    return drawdown
+
+
+def _trade_summary(values, correct, opportunities):
+    wins = sum(v for v in values if v > 0)
+    losses = -sum(v for v in values if v < 0)
+    trades = len(values)
+    return {
+        "opportunities": opportunities,
+        "trades": trades,
+        "signal_coverage": trades / opportunities if opportunities else None,
+        "directional_accuracy": correct / trades if trades else None,
+        "net_pnl_units": round(sum(values), 8),
+        "mean_net_pnl_per_trade": round(statistics.mean(values), 8) if values else None,
+        "profit_factor": round(wins / losses, 8) if losses else None,
+        "profit_factor_status": "defined" if losses else ("no_trades" if not values else "no_losing_trades"),
+        "max_drawdown_units": round(_max_drawdown(values), 8),
+    }
+
+
+def run_full_history_replay(rows, warmup_bars=60, holdout_fraction=0.20,
+                            round_trip_spread=0.30, slippage_per_fill=0.10,
+                            round_trip_commission=0.0):
+    """Evaluate every valid sequential next-bar opportunity with fixed rules.
+
+    Rules are not fitted/tuned here. The last chronological segment is reported separately;
+    full-history results are descriptive and are not an independent out-of-sample claim.
+    """
+    if not isinstance(warmup_bars, int) or warmup_bars < 30 or len(rows) < warmup_bars + 10:
+        raise ValueError("insufficient_history_or_invalid_warmup")
+    if not 0.05 <= holdout_fraction <= 0.50:
+        raise ValueError("holdout_fraction_out_of_range")
+    costs = (round_trip_spread, slippage_per_fill, round_trip_commission)
+    if not all(math.isfinite(float(v)) and float(v) >= 0 for v in costs):
+        raise ValueError("invalid_cost_assumption")
+    n = len(rows)
+    split = max(warmup_bars + 1, min(n - 2, int(n * (1 - holdout_fraction))))
+    ranges = {
+        "full_history": (warmup_bars, n - 1),
+        "early_segment": (warmup_bars, split),
+        "chronological_tail_holdout": (split, n - 1),
+    }
+    opportunities_total = n - warmup_bars - 1
+    folds = []
+    for fold_index in range(5):
+        start = warmup_bars + (fold_index * opportunities_total) // 5
+        end = warmup_bars + ((fold_index + 1) * opportunities_total) // 5
+        name = "chronological_fold_" + str(fold_index + 1)
+        ranges[name] = (start, end)
+        folds.append({
+            "name": name, "start_index": start, "end_index_exclusive": end,
+            "start_time": rows[start]["timestamp"].isoformat(),
+            "end_time": rows[end - 1]["timestamp"].isoformat(),
+            "opportunities": end - start,
+        })
+    cost_per_trade = round_trip_spread + 2 * slippage_per_fill + round_trip_commission
+    summary = {}
+    for rule in RULES:
+        segments = {}
+        for segment, (start, end) in ranges.items():
+            pnls, correct, opportunities = [], 0, max(0, end - start)
+            for i in range(start, end):
+                side = get_signal(rows, i, rule)
+                target = rows[i + 1]
+                move = target["close"] - target["open"]
+                actual = int(move > 0) - int(move < 0)
+                if side:
+                    pnls.append(side * move - cost_per_trade)
+                    correct += int(side == actual)
+            segments[segment] = _trade_summary(pnls, correct, opportunities)
+        summary[rule] = segments
+    return {
+        "kind": "fixed_rule_full_history_and_chronological_tail_diagnostic",
+        "n_candles": n,
+        "decision_opportunities": opportunities_total,
+        "warmup_bars": warmup_bars,
+        "tail_holdout_fraction_requested": holdout_fraction,
+        "tail_holdout_start_index": split,
+        "tail_holdout_start_time": rows[split]["timestamp"].isoformat(),
+        "chronological_folds": folds,
+        "signal_contract": "signal_after_close_i_enter_next_open_exit_next_close",
+        "rules_fitted_or_tuned": False,
+        "cost_model": {
+            "round_trip_spread_units_assumed": round_trip_spread,
+            "slippage_per_fill_units_assumed": slippage_per_fill,
+            "round_trip_commission_units_assumed": round_trip_commission,
+            "total_cost_per_trade_units": cost_per_trade,
+            "status": "assumptions_not_observed_broker_costs",
+        },
+        "rules": summary,
+        "limitations": [
+            "Community OHLCV is not bid/ask quotes, ticks, or actual broker fills.",
+            "Rules and costs are diagnostic; no rule was tuned on this dataset.",
+            "Full-history metrics are descriptive; the last chronological segment is not an independent external dataset.",
+            "Next-candle body direction and close-open PnL are not equivalent to TP-before-SL outcomes or executable returns.",
+        ],
+    }
+
+
+def iter_prequential_probability_rows(rows, warmup_bars=60, rolling_window=288):
+    """Generate causal next-bar up/not-up probability baselines using closed bars only."""
+    if warmup_bars < 2 or rolling_window < 2:
+        raise ValueError("invalid_probability_baseline_policy")
+    outcomes = [int(row["close"] > row["open"]) for row in rows]
+    for i in range(warmup_bars, len(rows) - 1):
+        history = outcomes[1:i + 1]
+        recent = history[-rolling_window:]
+        yield {
+            "decision_index": i,
+            "target_index": i + 1,
+            "target_time": rows[i + 1]["timestamp"].isoformat(),
+            "actual_up": outcomes[i + 1],
+            "p_constant_50pct": 0.5,
+            "p_expanding_laplace": (sum(history) + 1.0) / (len(history) + 2.0),
+            "p_rolling_laplace": (sum(recent) + 1.0) / (len(recent) + 2.0),
+            "training_labels_available": len(history),
+        }
+
+
+def _binary_log_loss(probability, actual, epsilon=1e-12):
+    p = min(1.0 - epsilon, max(epsilon, float(probability)))
+    return -(actual * math.log(p) + (1 - actual) * math.log(1 - p))
+
+
+def _reliability_summary(probabilities, outcomes, bins=10):
+    n = len(probabilities)
+    rows, ece, gaps = [], 0.0, []
+    for index in range(bins):
+        lower, upper = index / bins, (index + 1) / bins
+        selected = [(p, y) for p, y in zip(probabilities, outcomes)
+                    if lower <= p < upper or (index == bins - 1 and p == 1.0)]
+        mean_probability = statistics.mean(p for p, _ in selected) if selected else None
+        observed_rate = statistics.mean(y for _, y in selected) if selected else None
+        gap = abs(mean_probability - observed_rate) if selected else None
+        if selected:
+            ece += len(selected) / n * gap
+            gaps.append(gap)
+        rows.append({"lower": lower, "upper": upper, "n": len(selected),
+                     "mean_probability": mean_probability, "observed_up_rate": observed_rate,
+                     "absolute_calibration_gap": gap})
+    return {
+        "bins": rows,
+        "ece_descriptive": ece if n else None,
+        "mce_descriptive": max(gaps) if gaps else None,
+        "calibration_status": "prequential_baseline_diagnostic_not_a_calibrated_trading_model",
+    }
+
+
+def _block_bootstrap_ci(values, block_size=288, replicates=200, seed=20261016):
+    """Deterministic moving-block bootstrap for paired loss improvements; approximate only."""
+    n = len(values)
+    if n < 30:
+        return {"lower_95": None, "upper_95": None, "status": "insufficient_samples", "n": n}
+    block = min(max(2, int(block_size)), n)
+    rng = random.Random(seed)
+    estimates = []
+    for _ in range(replicates):
+        total, sampled = 0.0, 0
+        while sampled < n:
+            start = rng.randrange(0, n - block + 1)
+            take = min(block, n - sampled)
+            total += sum(values[start:start + take])
+            sampled += take
+        estimates.append(total / n)
+    estimates.sort()
+    return {
+        "lower_95": estimates[int(0.025 * (replicates - 1))],
+        "upper_95": estimates[int(0.975 * (replicates - 1))],
+        "status": "approximate_moving_block_bootstrap",
+        "block_size_bars": block, "replicates": replicates, "seed": seed, "n": n,
+    }
+
+
+def run_prequential_probability_diagnostics(rows, warmup_bars=60, rolling_window=288,
+                                            bootstrap_replicates=200):
+    """Evaluate causal direction-rate baselines; none is claimed calibrated or production-ready."""
+    forecasts = list(iter_prequential_probability_rows(rows, warmup_bars, rolling_window))
+    if len(forecasts) < 30:
+        return {"status": "insufficient_history", "predictions": len(forecasts),
+                "validated_model": False, "calibrated_model": False, "methods": {}}
+    actuals = [row["actual_up"] for row in forecasts]
+    rolling_name = "rolling_" + str(rolling_window) + "_bar_laplace_base_rate"
+    fields = {
+        "constant_50pct": "p_constant_50pct",
+        "expanding_laplace_base_rate": "p_expanding_laplace",
+        rolling_name: "p_rolling_laplace",
+    }
+    probabilities = {name: [row[field] for row in forecasts] for name, field in fields.items()}
+    briers = {name: [(p - y) ** 2 for p, y in zip(ps, actuals)]
+              for name, ps in probabilities.items()}
+    log_losses = {name: [_binary_log_loss(p, y) for p, y in zip(ps, actuals)]
+                  for name, ps in probabilities.items()}
+    base_brier = briers["constant_50pct"]
+    base_log_loss = log_losses["constant_50pct"]
+    metrics = {}
+    base_brier_mean = statistics.mean(base_brier)
+    for name, ps in probabilities.items():
+        brier_values, log_values = briers[name], log_losses[name]
+        metrics[name] = {
+            "n": len(ps),
+            "brier_score": statistics.mean(brier_values),
+            "log_loss": statistics.mean(log_values),
+            "mean_probability": statistics.mean(ps),
+            "observed_up_rate": statistics.mean(actuals),
+            "brier_skill_vs_constant_50pct": 1.0 - statistics.mean(brier_values) / base_brier_mean
+                if base_brier_mean else None,
+            "mean_brier_improvement_vs_constant_50pct": statistics.mean(
+                [base - value for base, value in zip(base_brier, brier_values)]),
+            "mean_log_loss_improvement_vs_constant_50pct": statistics.mean(
+                [base - value for base, value in zip(base_log_loss, log_values)]),
+            "reliability": _reliability_summary(ps, actuals),
+        }
+    out = {
+        "status": "DIAGNOSTIC_ONLY",
+        "target": "next_bar_candle_body_up_vs_not_up",
+        "predictions": len(forecasts),
+        "first_decision_index": forecasts[0]["decision_index"],
+        "last_decision_index": forecasts[-1]["decision_index"],
+        "forecast_timing": "after close[i], predict body direction of i+1 with outcomes through i only",
+        "base_rate_window_bars": {"expanding": "all previously closed candles", "rolling": rolling_window},
+        "methods": metrics,
+        "uncertainty": {
+            name: _block_bootstrap_ci(
+                [base - value for base, value in zip(base_brier, briers[name])],
+                block_size=min(288, max(2, len(forecasts) // 5)),
+                replicates=bootstrap_replicates, seed=20261016 + idx,
+            )
+            for idx, name in enumerate(("expanding_laplace_base_rate", rolling_name), 1)
+        },
+        "validated_model": False,
+        "calibrated_model": False,
+        "live_signal_enabled": False,
+        "limitations": [
+            "These are causal historical-rate baselines, not a trained trading model.",
+            "The target is candle-body up vs not-up, not TP-before-SL or profitable execution.",
+            "ECE/MCE are descriptive; temporal dependence and market regime shifts remain.",
+            "Moving-block bootstrap intervals are approximate; the block length is heuristic.",
+            "Data is community OHLCV, not broker Bid/Ask/tick/fill data.",
+        ],
+    }
+    return out
+
 
 def valid_path(rows):
     if not rows: return False
@@ -221,7 +475,7 @@ def write_csv(path, rows):
 def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
     t=time.perf_counter(); rows=parse_csv(payload,min_rows)
     intervals=[(rows[i]["timestamp"]-rows[i-1]["timestamp"]).total_seconds() for i in range(1,len(rows))]
-    digest=hashlib.sha256(payload).hexdigest(); replay=case_replay(rows,cases); market=market_scenarios(rows,anchors); software=software_scenarios(rows)
+    digest=hashlib.sha256(payload).hexdigest(); replay=case_replay(rows,cases); market=market_scenarios(rows,anchors); software=software_scenarios(rows); full_history=run_full_history_replay(rows); probability=run_prequential_probability_diagnostics(rows)
     baselines=[]
     for rule in RULES:
         xs=[r for r in replay if r["rule"]==rule]; trades=[r for r in xs if r["signal"]]; pnl=[r["net_pnl_units"] for r in trades]; equity=peak=dd=0.0
@@ -231,15 +485,33 @@ def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
     fail=sum(not r["passed"] for r in market)+sum(not r["passed"] for r in software)
     status="PASS" if fail==0 and len(replay)==cases*5 and len(market)>=200 and len(software)>=200 else "FAIL"
     output.mkdir(parents=True,exist_ok=True); write_csv(output/"real_data_case_results.csv",replay); write_csv(output/"market_scenario_results.csv",market); write_csv(output/"software_scenario_results.csv",software)
-    report={"status":status,"product":"Aurum Intelligence","version":"1.1.0","source":{"repository":SOURCE_REPO,"url":source_url,"license_reference":LICENSE,"license_verified_for_intended_use":False,"sha256":digest,"bytes":len(payload)},"dataset":{"rows":len(rows),"start":rows[0]["timestamp"].isoformat(),"end":rows[-1]["timestamp"].isoformat(),"source_timezone_verified":False,"median_interval_seconds":statistics.median(intervals) if intervals else None,"intervals_over_600s":sum(x>600 for x in intervals)},"real_case_benchmark":{"cases":cases,"evaluations":len(replay),"cost_model":"assumed 0.30 spread plus 0.10 slippage per fill; not broker observed","rules":baselines},"scenarios":{"market_paths":len(market),"market_passed":sum(r["passed"] for r in market),"market_failed":sum(not r["passed"] for r in market),"market_anchors":anchors,"market_archetypes":len(ARCHETYPES),"software_scenarios":len(software),"software_passed":sum(r["passed"] for r in software),"software_failed":sum(not r["passed"] for r in software)},"runtime_ms":round((time.perf_counter()-t)*1000,3),"limitations":["community OHLCV is not broker Bid/Ask or actual fills","source timezone and license scope require independent verification","costs are assumptions, not measured broker values","generated paths are counterfactuals, not historical events","scenario passes do not establish predictive skill"],"decision_output":"NO_TRADE","predictive_model_validated":False,"live_trading_enabled":False}
+    report={"status":status,"product":"Aurum Intelligence","version":"1.3.0","source":{"repository":SOURCE_REPO,"url":source_url,"license_reference":LICENSE,"license_verified_for_intended_use":False,"sha256":digest,"bytes":len(payload)},"dataset":{"rows":len(rows),"start":rows[0]["timestamp"].isoformat(),"end":rows[-1]["timestamp"].isoformat(),"source_timezone_verified":False,"median_interval_seconds":statistics.median(intervals) if intervals else None,"intervals_over_600s":sum(x>600 for x in intervals)},"real_case_benchmark":{"cases":cases,"evaluations":len(replay),"case_sampling":"timestamp-spread sample across complete dataset","cost_model":"assumed 0.30 spread plus 0.10 slippage per fill; not broker observed","rules":baselines},"full_history_replay":full_history,"prequential_probability_diagnostics":probability,"scenarios":{"market_paths":len(market),"market_passed":sum(r["passed"] for r in market),"market_failed":sum(not r["passed"] for r in market),"market_anchors":anchors,"market_archetypes":len(ARCHETYPES),"software_scenarios":len(software),"software_passed":sum(r["passed"] for r in software),"software_failed":sum(not r["passed"] for r in software)},"runtime_ms":round((time.perf_counter()-t)*1000,3),"limitations":["community OHLCV is not broker Bid/Ask or actual fills","source timezone and license scope require independent verification","costs are assumptions, not measured broker values","generated paths are counterfactuals, not historical events","scenario passes do not establish predictive skill"],"decision_output":"NO_TRADE","predictive_model_validated":False,"live_trading_enabled":False}
     (output/"online_dataset_benchmark.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     md=["# Aurum online dataset benchmark","","Result: "+status+"; decision gate: NO_TRADE.","","- Dataset SHA-256: "+digest,"- Rows: "+str(len(rows)),"- Range: "+report["dataset"]["start"]+" through "+report["dataset"]["end"],"- Historical cases: "+str(cases)+"; baseline evaluations: "+str(len(replay)),"- Market scenarios: "+str(len(market))+" ("+str(report["scenarios"]["market_passed"])+" passed)","- Software stress cases: "+str(len(software))+" ("+str(report["scenarios"]["software_passed"])+" passed)","","| Rule | Trades | Direction accuracy | Net PnL units | Max drawdown |","|---|---:|---:|---:|---:|"]
     for r in baselines:
         accuracy = "n/a" if r["direction_accuracy"] is None else format(r["direction_accuracy"], ".4f")
         md.append("| {} | {} | {} | {:.4f} | {:.4f} |".format(r["rule"], r["trades"], accuracy, r["net_pnl_units"], r["max_drawdown_units"]))
-    md += ["","This is a public-data structure and diagnostic benchmark, not a broker-executable backtest or a validated prediction. Recheck the exact license, source timezone, spread, commission, slippage and fill data before production use.","License reference: "+LICENSE,""]
+    md += ["", "## Full-history fixed-rule replay", "",
+        "Every eligible next-bar opportunity is evaluated after a 60-bar warm-up. Rules are fixed and not fitted/tuned. The last 20% is reported as a chronological tail segment; metrics are descriptive, not proof of generalization.", "",
+        "| Rule | Segment | Opportunities | Trades | Coverage | Direction accuracy | Net PnL units | Max drawdown |",
+        "|---|---|---:|---:|---:|---:|---:|---:|"]
+    for rule_name, segments in full_history["rules"].items():
+        for segment_name in ("chronological_fold_1", "chronological_fold_2", "chronological_fold_3", "chronological_fold_4", "chronological_fold_5", "chronological_tail_holdout"):
+            m = segments[segment_name]
+            coverage = "n/a" if m["signal_coverage"] is None else format(m["signal_coverage"], ".4f")
+            accuracy = "n/a" if m["directional_accuracy"] is None else format(m["directional_accuracy"], ".4f")
+            md.append("| {} | {} | {} | {} | {} | {} | {:.4f} | {:.4f} |".format(rule_name, segment_name, m["opportunities"], m["trades"], coverage, accuracy, m["net_pnl_units"], m["max_drawdown_units"]))
+    md += ["", "## Causal prequential probability diagnostics", "",
+        "Predictions: {}. Target: next-bar candle body up vs not-up. These are historical-rate baselines, not a calibrated trading model.".format(probability.get("predictions", 0)), "",
+        "| Baseline | N | Brier | Log loss | Brier skill vs 0.5 | ECE descriptive | MCE descriptive |",
+        "|---|---:|---:|---:|---:|---:|---:|"]
+    for method_name, m in probability.get("methods", {}).items():
+        reliability = m["reliability"]
+        md.append("| {} | {} | {:.6f} | {:.6f} | {:.6f} | {:.6f} | {:.6f} |".format(method_name, m["n"], m["brier_score"], m["log_loss"], m["brier_skill_vs_constant_50pct"], reliability["ece_descriptive"], reliability["mce_descriptive"]))
+    md += ["", "Brier-improvement uncertainty uses a deterministic moving-block bootstrap; intervals are approximate. ECE/MCE are descriptive and sensitive to regime change/temporal dependence.",
+        "", "This is a structure and probability-baseline diagnostic, not a broker-executable backtest or validated model. Verify dataset rights, timezone, quote side, execution costs and fills before production use.", "License reference: " + LICENSE, ""]
     (output/"online_dataset_benchmark.md").write_text("\n".join(md),encoding="utf-8")
-    return {"status":status,"dataset_rows":len(rows),"dataset_sha256":digest,"real_data_cases":cases,"real_data_evaluations":len(replay),"market_scenarios":len(market),"market_passed":report["scenarios"]["market_passed"],"software_scenarios":len(software),"software_passed":report["scenarios"]["software_passed"],"runtime_ms":report["runtime_ms"],"decision_output":"NO_TRADE"}
+    return {"status":status,"dataset_rows":len(rows),"dataset_sha256":digest,"real_data_cases":cases,"real_data_evaluations":len(replay),"full_history_decision_opportunities":full_history["decision_opportunities"],"prequential_probability_predictions":probability.get("predictions",0),"market_scenarios":len(market),"market_passed":report["scenarios"]["market_passed"],"software_scenarios":len(software),"software_passed":report["scenarios"]["software_passed"],"runtime_ms":report["runtime_ms"],"decision_output":"NO_TRADE"}
 
 def main():
     p=argparse.ArgumentParser(); p.add_argument("--input",type=Path); p.add_argument("--output-dir",type=Path,default=Path("benchmark-output")); p.add_argument("--min-rows",type=int,default=1000); p.add_argument("--cases",type=int,default=50); p.add_argument("--scenario-anchors",type=int,default=5); a=p.parse_args()

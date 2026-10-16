@@ -1,10 +1,10 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-16T16:58:00+07:00",
+  "checkpoint": "2026-10-16T17:40:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
-  "latest_complete_source_version": "1.2.0",
+  "latest_complete_source_version": "1.3.0",
   "v1_0_source_reconciled": true,
   "production_ready": false,
   "decision_gate": "NO_TRADE",
@@ -36,7 +36,7 @@
     "locally_bundled_sources_sampled": 1
   },
   "benchmarks": {
-    "pytest_passed": 176,
+    "pytest_passed": 181,
     "unittest_passed": 109,
     "next_candle_case_rows": 250,
     "tp_sl_rows": 90,
@@ -67,7 +67,14 @@
     "mini_app_inline_js_syntax": "PASS",
     "clean_zip_extraction": "PASS",
     "model_calibrated": false,
-    "bundled_dataset_rows": 60
+    "bundled_dataset_rows": 60,
+    "online_benchmark_tests_passed": 11,
+    "full_history_local_synthetic_rows": 35954,
+    "full_history_local_synthetic_decisions_per_rule": 35893,
+    "prequential_probability_predictions_synthetic": 35893,
+    "synthetic_market_paths_passed": 1200,
+    "software_stress_scenarios_passed": 240,
+    "external_live_full_history_status": "pending CI for v1.3.0 code"
   },
   "integrations": {
     "telegram_live_tested": false,
@@ -78,24 +85,21 @@
     "browser_device_acceptance_tested": false
   },
   "required_next": [
-    "review upstream data-rights scope and independent source provenance; keep DS51 reference_only until approved",
-    "acquire licensed broker-specific bid/ask/tick data with verified timezone, contract and volume semantics",
-    "expand to multiple independent market sources and non-overlapping market regimes; preserve chronological folds and an untouched holdout",
-    "train and calibrate TP-before-SL probability forecasts; evaluate Brier/log loss, reliability, ECE/MCE and uncertainty intervals on sufficient out-of-sample predictions",
-    "incorporate measured spread, commission, slippage, swap/rollover and fill semantics; evaluate net-of-cost performance against no-trade with multiple-testing controls",
-    "add real browser/mobile/Telegram tests and authorized read-only integration tests",
-    "keep live order execution disabled until explicit security, risk, paper-trading, monitoring and rollback gates pass"
+    "inspect the new hosted live-data benchmark run and record all-row replay, chronological fold and prequential probability metrics",
+    "review market data rights, original provenance, timestamp semantics and broker quote/execution meanings",
+    "acquire licensed broker-specific bid/ask/tick data with measured commission, spread, slippage and fill handling",
+    "compare multiple independent sources and non-overlapping market regimes using an untouched final holdout and mature-label leakage controls",
+    "do not enable calibrated probabilities or live signals until sufficient out-of-sample evidence and paper trading gates pass"
   ],
   "release": {
-    "version": "1.2.0",
-    "archive": "aurum-intelligence-v1.2.0.zip",
-    "bytes": 260781,
-    "sha256": "19912b690e74af802a7170316703d40048a67731a1eb26d806c9929f048d2db3",
-    "files_in_zip": 105,
-    "manifest_files_excluding_manifest": 104,
-    "pytest": "176 passed",
+    "version": "1.3.0",
+    "archive": "aurum-intelligence-v1.3.0.zip",
+    "bytes": 267854,
+    "sha256": "51a82f710033eee0cb7723c8940721d8c3bcd64565159650ba90e6235945ff0b",
+    "pytest": "181 passed",
     "unittest": "109 tests passed",
-    "artifact_storage": "downloadable project artifact; not committed as binary to this GitHub repository"
+    "online_benchmark_unit_tests": "11 tests passed",
+    "source_status": "local release verified; updated live full-history CI pending"
   },
   "online_dataset_benchmark": {
     "workflow": ".github/workflows/aurum-online-dataset-benchmark.yml",
