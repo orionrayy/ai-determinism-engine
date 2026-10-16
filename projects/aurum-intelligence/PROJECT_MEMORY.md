@@ -34,3 +34,15 @@ OANDA code is a market-data adapter, not evidence of a connected brokerage accou
 
 ## Safety and security
 Do not commit tokens, API keys, OAuth refresh tokens, account identifiers, .env secrets or private logs. Any later order-routing work requires explicit authorization, least-privilege credentials, risk caps, idempotency, audit logs, sandbox/paper trading, and a separate security review. No promise of profit or world-leading performance is evidenced.
+
+## Latest checkpoint override — v1.1.0 (2026-10-16, Asia/Jakarta)
+
+The previous paragraphs describe the v0.9.0-era checkpoint. They are retained as historical evidence; the verified latest source artifact is now **Aurum Intelligence v1.1.0**, built from the reconciled v1.0.0 archive plus the current v1.1.0 changes. The new ZIP is a downloadable conversation artifact, not a binary committed to this repository.
+
+- Release ZIP: `aurum-intelligence-v1.1.0.zip`, 223,353 bytes, SHA-256 `4f3aafa682d1777a1dc6d220ad65b4b931b76760dafa8700818f8d1c0c18e623`.
+- Fresh release builder checks: pytest **153 passed** at the base v1.1 build stage; unittest **92 passed**; compileall, dataset audit, bundled benchmark, online-benchmark smoke, HTML/JS checks and extracted-ZIP retest passed. The full pytest count increases once the additional online-runner test module is included; see latest progress evidence for the final rerun.
+- Primary bundled source remains 60 public community OHLCV bars, SHA-256 `dae535a16e13cf49f123231b1ee72e19787259e7a5f943b017a013346f36a93b`. Source timezone and broker/executable quote semantics remain unknown.
+- Source acquisition register is extended to 51 entries; DS51 is a new public GetData Finance OHLCV candidate and stays `reference_only` until online CI actually fetches and validates the current upstream CSV.
+- Added stdlib-only online runner and hosted CI contract: 50 chronology-spread real timestamp cases × 5 fixed rules = 250 evaluations; 5 source anchors × 12 scenario archetypes × 20 variants = 1,200 generated market paths; 20 software input categories × 12 variations = 240 software checks.
+- Local tests cover the runner with bundled/fixture data. The hosted live network run has not yet completed at this checkpoint; only its first successful workflow artifact can establish the observed upstream row count and current source hash.
+- Current decision gate remains `NO_TRADE`. Scenario validation is a software-contract measure, not evidence of alpha; there are no calibrated or validated live forecasts and no live order routing.
