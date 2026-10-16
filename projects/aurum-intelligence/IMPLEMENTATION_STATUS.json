@@ -1,0 +1,45 @@
+{
+  "project": "Aurum Intelligence",
+  "checkpoint": "2026-10-16",
+  "repository": "orionrayy/ai-determinism-engine",
+  "project_path": "projects/aurum-intelligence",
+  "status": "research-ux-prototype",
+  "latest_complete_source_version": "0.9.0",
+  "v1_0_source_reconciled": false,
+  "production_ready": false,
+  "decision_gate": "NO_TRADE",
+  "data": {
+    "dataset": "data/xauusd_5m_public_sample.csv",
+    "rows": 60,
+    "source_register_entries": 50,
+    "sources_sampled": 1,
+    "source_timezone_verified": false,
+    "broker_provenance_verified": false
+  },
+  "benchmarks": {
+    "pytest_passed": 126,
+    "unittest_passed": 92,
+    "next_candle_case_rows": 250,
+    "tp_sl_rows": 90,
+    "software_stress_scenarios": 240,
+    "software_stress_passed": 240,
+    "synthetic_market_scenarios": 240,
+    "synthetic_market_scenarios_passed": 240,
+    "model_oos_predictions": 0
+  },
+  "integrations": {
+    "telegram_live_tested": false,
+    "oanda_live_tested": false,
+    "mt5_account_connector": false,
+    "ctrader_account_connector": false,
+    "docker_production_tested": false
+  },
+  "required_next": [
+    "reconcile mixed-timezone validator fix into tracked source",
+    "run full suite and benchmark from clean checkout",
+    "expand licensed chronological multi-regime dataset",
+    "execution-cost-aware walk-forward and untouched holdout",
+    "calibrate TP-before-SL probabilities",
+    "paper-trading and integration evidence"
+  ]
+}
