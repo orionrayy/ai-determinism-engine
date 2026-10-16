@@ -1,31 +1,49 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-16",
+  "checkpoint": "2026-10-16T11:10:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
-  "latest_complete_source_version": "0.9.0",
-  "v1_0_source_reconciled": false,
+  "latest_complete_source_version": "1.1.0",
+  "v1_0_source_reconciled": true,
   "production_ready": false,
   "decision_gate": "NO_TRADE",
   "data": {
     "dataset": "data/xauusd_5m_public_sample.csv",
     "rows": 60,
-    "source_register_entries": 50,
+    "source_register_entries": 51,
     "sources_sampled": 1,
     "source_timezone_verified": false,
-    "broker_provenance_verified": false
+    "broker_provenance_verified": false,
+    "primary_dataset_rows": 60,
+    "primary_dataset_sha256": "dae535a16e13cf49f123231b1ee72e19787259e7a5f943b017a013346f36a93b",
+    "DS51": {
+      "name": "GetData Finance XAUUSD M5 community OHLCV",
+      "status": "reference_only",
+      "live_ci_download_verified": false,
+      "license_intended_use_verified": false
+    }
   },
   "benchmarks": {
-    "pytest_passed": 126,
-    "unittest_passed": 92,
+    "pytest_passed": 169,
+    "unittest_passed": 102,
     "next_candle_case_rows": 250,
     "tp_sl_rows": 90,
     "software_stress_scenarios": 240,
     "software_stress_passed": 240,
     "synthetic_market_scenarios": 240,
     "synthetic_market_scenarios_passed": 240,
-    "model_oos_predictions": 0
+    "model_oos_predictions": 0,
+    "external_dataset_smoke_market_paths": 1200,
+    "external_dataset_smoke_market_paths_passed": 1200,
+    "external_dataset_smoke_case_rows": 250,
+    "external_dataset_smoke_software_scenarios": 240,
+    "external_dataset_smoke_software_scenarios_passed": 240,
+    "portable_runner_offline_case_rows": 150,
+    "portable_runner_offline_market_paths": 480,
+    "portable_runner_offline_market_passed": 480,
+    "portable_runner_offline_software_scenarios": 240,
+    "portable_runner_offline_software_passed": 240
   },
   "integrations": {
     "telegram_live_tested": false,
@@ -35,11 +53,29 @@
     "docker_production_tested": false
   },
   "required_next": [
-    "reconcile mixed-timezone validator fix into tracked source",
-    "run full suite and benchmark from clean checkout",
-    "expand licensed chronological multi-regime dataset",
-    "execution-cost-aware walk-forward and untouched holdout",
-    "calibrate TP-before-SL probabilities",
-    "paper-trading and integration evidence"
-  ]
+    "run and inspect hosted online-dataset benchmark, verify current upstream row count/hash/schema",
+    "review DS51 source terms, timestamp timezone, broker/quote provenance and commercial/redistribution rights",
+    "expand to licensed broker-specific bid/ask/tick data and independent chronological regimes",
+    "execution-cost-aware walk-forward, matured-label purge and untouched final holdout",
+    "calibrate TP-before-SL probabilities and preserve NO_TRADE until evidence gates pass",
+    "paper-trading and end-to-end authorized integration evidence"
+  ],
+  "release": {
+    "version": "1.1.0",
+    "archive": "aurum-intelligence-v1.1.0.zip",
+    "bytes": 245370,
+    "sha256": "259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e",
+    "files_in_zip": 98,
+    "artifact_storage": "downloadable conversation artifact; not committed as binary to this GitHub repository"
+  },
+  "online_dataset_benchmark": {
+    "workflow": ".github/workflows/aurum-online-dataset-benchmark.yml",
+    "branch": "feature/aurum-online-dataset-benchmark",
+    "status": "pending_first_hosted_run",
+    "case_requirement": 50,
+    "baseline_evaluation_requirement": 250,
+    "market_scenario_target": 1200,
+    "software_scenario_target": 240,
+    "raw_dataset_committed": false
+  }
 }
