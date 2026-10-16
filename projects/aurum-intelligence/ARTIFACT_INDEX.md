@@ -29,3 +29,13 @@ Directory: `projects/aurum-intelligence/`
 ## Required version reconciliation
 
 The latest complete code snapshot is v0.9.0. Notes about v1.0.0 timestamp-validator and data-quality improvements are recorded as progress but must be reconciled into the tracked source and retested before a v1.0.0 source release is claimed.
+
+
+## Latest verified artifact — v1.1.0
+
+- `aurum-intelligence-v1.1.0.zip` — 223,353 bytes, SHA-256 `4f3aafa682d1777a1dc6d220ad65b4b931b76760dafa8700818f8d1c0c18e623`; built by the release script from reconciled v1.0.0 source and verified through fresh ZIP extraction.
+- Base release verification: pytest 153 passed, unittest 92 passed, compileall PASS, release checks PASS, extracted archive pytest PASS. Later extra portable-runner tests are documented in the progress log.
+- Portable hosted benchmark source: `online-benchmark/ci_benchmark.py` and `test_ci_benchmark.py`, committed under `projects/aurum-intelligence/online-benchmark/` on branch `feature/aurum-online-dataset-benchmark`.
+- CI: `.github/workflows/aurum-online-dataset-benchmark.yml`; it acquires the allow-listed public CSV at runtime, does not push or persist raw data in Git, emits the SHA-256 and report, and uploads result artifacts for 14 days.
+- Live upstream data: pending the first hosted workflow result. An offline smoke result is not a substitute for that verification.
+- The ZIP is available as a conversation artifact and is not a committed binary file under this repository.
