@@ -55,3 +55,13 @@ Artifact SHA-256: `7c661df1afafc372fd2816f2074ceb05aa7af0f8c7a388e64f07aa6b4bc43
 Fresh online sample: 35,954 rows, 3,070,226 bytes, SHA-256 `acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db`; timestamp range `2026-03-26T02:30:00+00:00`–`2026-09-25T20:40:00+00:00`; median interval 300 seconds; 136 intervals longer than 600 seconds. The remote report ran 50 timestamp cases / 250 rule comparisons, 1,200/1,200 market-path contracts and 240/240 software robustness contracts. Runtime 458.588 ms. All counts/assertions passed; decision output remains `NO_TRADE`.
 
 The +00:00 offset is the representation seen in the file, not independent proof of the provider's intended timezone. Broker, quote-side, license scope and fill semantics remain unverified. DS51 remains `reference_only`. The positive PnL of the breakout baseline comes from only seven trades and cannot establish alpha. See `benchmarks/live_dataset_benchmark_2026-10-16.md` and its JSON companion.
+
+## Latest verified artifact — v1.2.0
+
+- File: aurum-intelligence-v1.2.0.zip, 260,781 bytes, SHA-256 19912b690e74af802a7170316703d40048a67731a1eb26d806c9929f048d2db3; 105 ZIP entries.
+- Verification: 176 pytest, 109 unittest, compileall, Mini App JS syntax, HTML uniqueness, ZIP integrity and clean-extraction test all pass.
+- New v1.2 changes: Mini App Sederhana/Tingkat lanjut switch; Telegram equivalent; SQLite migration; four new regression tests for mode UI plus database mode selection/migration. Benchmark version labels read VERSION.
+- Hosted online benchmark run #38851629049 and outputs are preserved in the source artifact and documented in V1_2_0_IMPLEMENTATION_CHECKPOINT.md. Result: 35,954 rows / 250 baseline evaluations / 1,200 market-path scenarios / 240 software stress cases, all structural/scenario checks passing. The sample ends 2026-09-25; it is not live data.
+- **Storage boundary:** the ZIP has not been committed as a binary to the GitHub folder. It is available as a downloadable source artifact. Project memory and release metadata are committed on this branch; this PR is still draft and must not be treated as merged.
+
+
