@@ -45,3 +45,13 @@ Acceptance: chronological event-study protocol and ablation tests pass without c
 - Paper-trade before any live order routing; keep order execution disabled pending dedicated safety review.
 
 Acceptance: end-to-end sandbox/paper evidence, reversible deployment, no secrets in source/logs, signed-off security and risk plan.
+
+## v1.1.0 follow-up — online dataset evidence gate
+
+- [x] Reconcile and build the source from the v1.0.0 archive; regenerate release manifest and SHA-256; re-extract and rerun tests.
+- [x] Add a bounded, fixed-host public dataset fetcher with 16 MiB limit, bounded retries, strict schema/finite/OHLC/time-order checks and source checksum.
+- [x] Add the 50 timestamp-spread × 5 baseline protocol, 1,200 counterfactual path contracts over five anchors, and a 240-case software robustness suite.
+- [x] Add the CI workflow, test module, and JSON/CSV/Markdown evidence artifacts without storing the raw online dataset in Git.
+- [ ] Verify first successful hosted workflow log and uploaded artifact; update DS51 from `reference_only` only after the upstream download, current data quality, and intended-use licensing have been reviewed.
+- [ ] Acquire licensed broker Bid/Ask/tick data and document timezone/DST, symbol contract, volume semantics, spread/commission and fill information.
+- [ ] Run chronological multi-fold/out-of-sample evaluation on broader independent time regimes; keep all trade outcomes matured and preserve an untouched final holdout.
