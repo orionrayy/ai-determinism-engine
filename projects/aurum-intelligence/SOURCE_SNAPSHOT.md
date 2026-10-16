@@ -57,3 +57,6 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - All active baselines lose in full history and tail under an assumed 0.50 price-unit round-trip cost. Prequential expanding base-rate Brier does not significantly improve upon constant 0.5 under the approximate block-bootstrap interval; rolling base-rate is worse.
 - Machine-readable evidence and summary are persisted under projects/aurum-intelligence/benchmarks/. Current app package remains a downloadable artifact rather than a tracked GitHub binary.
 
+## v1.3.1 hosted calibration verified
+
+Hosted run #38897894594 on code commit `6017eec3141fb803907583abeca006a230e90be4` is PASS. The artifact confirms the current public dataset's 35,954 rows, five disjoint chronological replay folds, 1,200/1,200 market path contracts, 240/240 software checks, and 240/240 temporal calibration synthetic contracts. No raw dataset is bundled or redistributed. Active rules lose under assumed costs; no model is production-calibrated and `NO_TRADE` stays active.

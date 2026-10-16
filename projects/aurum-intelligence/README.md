@@ -39,3 +39,11 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 The downloadable v1.3.1 package adds leakage-aware Platt calibration evaluation: only matured earlier OOS labels fit the transform and metrics are reported on a later chronological holdout. The clean local build passed 185 pytest, 109 unittest, compileall, Mini App JS/HTML and ZIP extraction checks. Eight tests and 240/240 synthetic contracts pass. The synthetic example is not market evidence; the bundled 60-bar data still yields zero TP-before-SL OOS forecasts. NO_TRADE remains active.
 
 Release ZIP: 276,128 bytes; SHA-256 b63af5ab3412e7cb0bac14deffdb0d8cf07e024b0e46364d6fe5e1329d831d5b.
+
+## v1.3.1 hosted calibration CI verified
+
+The current PR code commit `6017eec3141fb803907583abeca006a230e90be4` passed hosted CI run [#38897894594](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38897894594). The temporal calibration unit tests and 240/240 synthetic contracts passed, as did live public data acquisition, full-history replay assertions, and artifact upload.
+
+Calibration artifact: #12044756186, 14,966 bytes, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`, expires 2026-10-30. It contains 35,954-row dataset diagnostics, 35,893 all-history opportunities per rule, 1,200/1,200 market-path contracts, 240/240 software checks, and the separate 240/240 temporal-calibration contract report. Synthetic calibration cases are not market-performance evidence.
+
+The current release remains a research prototype with `NO_TRADE`; no validated live model or trading activation is claimed.

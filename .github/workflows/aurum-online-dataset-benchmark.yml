@@ -5,6 +5,7 @@ on:
     paths:
       - "projects/aurum-intelligence/online-benchmark/**"
       - "projects/aurum-intelligence/temporal-calibration-v1.3/**"
+      - "projects/aurum-intelligence/V1_3_1_IMPLEMENTATION_CHECKPOINT.md"
       - ".github/workflows/aurum-online-dataset-benchmark.yml"
   workflow_dispatch:
 

@@ -94,3 +94,8 @@ Run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/ru
 - 1,200/1,200 market-path and 240/240 software checks pass. They validate runner contracts, not predictive skill.
 - Keep NO_TRADE. No calibrated TP-before-SL forecast or broker-executable backtest is validated.
 
+## v1.3.1 hosted calibration CI and replay verified
+
+Run [#38897894594](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38897894594) PASS on commit `6017eec3141fb803907583abeca006a230e90be4`. Artifact #12044756186, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`.
+
+The artifact confirms 35,954 public XAUUSD M5 rows, 35,893 sequential opportunities per baseline over five chronological folds, 50 point-case inputs / 250 baseline comparisons, 1,200/1,200 market-path scenarios, 240/240 software robustness cases, and 240/240 temporal-calibration synthetic contracts. All hosted validation/count gates passed. Calibration scenario data are synthetic and not forecast-skill evidence. The source CSV period ends 2026-09-25 and source-rights/broker/timezone semantics remain unverified. The current decision remains `NO_TRADE`.

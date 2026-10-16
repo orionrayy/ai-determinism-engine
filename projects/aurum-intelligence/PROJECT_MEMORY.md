@@ -85,3 +85,9 @@ This section supersedes older version-specific statements above where they diffe
 - Machine-readable evidence and detailed report are under projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.json/.md. Raw OHLCV is not redistributed.
 - Next: review rights/provenance/timezone, acquire licensed broker Bid/Ask/tick data and measured costs, validate independent chronological regimes and external holdout, calibrate exact target, and paper trade before production.
 
+## Latest v1.3.1 hosted CI checkpoint — 2026-10-16
+
+- Release ZIP v1.3.1: 276,128 bytes; SHA-256 `b63af5ab3412e7cb0bac14deffdb0d8cf07e024b0e46364d6fe5e1329d831d5b`; local release passes 185 pytest, 109 unittest, compileall, JS/HTML audits and clean extraction retest.
+- Hosted run [#38897894594](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38897894594) passed on code commit `6017eec3141fb803907583abeca006a230e90be4`. The Platt calibration unit tests and 240/240 synthetic contract cases passed; online dataset acquisition, full-history counts, 1,200 market paths, 240 software robustness scenarios and evidence upload also passed.
+- New artifact #12044756186, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`. Full dataset remains 35,954 community rows ending 2026-09-25. Active fixed-rule baselines remain net-negative under assumed costs; no production-calibrated forecast exists.
+- Synthetic 720-row calibration illustration is strictly a code/metrics check, not financial accuracy evidence. Actual bundled market sample still yields zero OOS TP-before-SL predictions; decision stays `NO_TRADE`.

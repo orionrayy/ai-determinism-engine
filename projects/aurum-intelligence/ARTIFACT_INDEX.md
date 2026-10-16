@@ -71,3 +71,9 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Permanent summaries: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and .json. No raw 35,954-row CSV is redistributed.
 - All four active fixed-rule baselines are net-negative under assumed costs in full history and final tail. No calibrated trading model exists; NO_TRADE remains active.
 
+## v1.3.1 hosted CI artifact
+
+- Run #38897894594 passed on commit `6017eec3141fb803907583abeca006a230e90be4`.
+- Artifact #12044756186, 14,966 bytes; SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`.
+- Includes full-history diagnostics, direct-case outcomes, 1,200 market scenarios, 240 software scenarios and the 240/240 temporal-calibration contract report.
+- The app release ZIP is downloadable, not committed as a binary. No raw public CSV is redistributed.

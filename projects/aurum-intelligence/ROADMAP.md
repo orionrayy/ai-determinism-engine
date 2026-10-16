@@ -98,3 +98,11 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Validate across independent chronological regimes and an untouched external holdout.
 - [ ] Validate calibration for the exact TP-before-SL target and paper-trade before production.
 
+## v1.3.1 hosted CI checkpoint
+
+- [x] Temporal calibration unit tests and 240/240 synthetic contract scenarios passed in hosted CI run #38897894594.
+- [x] Hosted dataset acquisition, full-history replay, five chronological folds, 1,200 market-path and 240 robustness assertions passed.
+- [x] Evidence uploaded as artifact #12044756186; SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`.
+- [ ] Data rights/provenance/timezone review, licensed Bid/Ask/tick data and measured costs.
+- [ ] Independent market-regime holdout and exact-target calibration with sufficient real OOS observations.
+- [ ] Paper trading, security/risk review and approval before any live execution.
