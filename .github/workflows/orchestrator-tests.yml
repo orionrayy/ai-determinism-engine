@@ -83,7 +83,9 @@ jobs:
       - name: Contract schema syntax
         run: python -m json.tool contracts/task-envelope.schema.json >/dev/null && python -m json.tool contracts/skill-manifest.schema.json >/dev/null && python -m json.tool contracts/checkpoint-manifest.schema.json >/dev/null && python -m json.tool contracts/worker-registration.schema.json >/dev/null
       - name: Control-plane Worker syntax
-        run: node --check control-plane/cloudflare/src/worker.js
+        run: node --check control-plane/cloudflare/src/worker.js && node --check control-plane/cloudflare/src/recovery_watchdog.mjs
+      - name: Control-plane schedule watchdog tests
+        run: node --test control-plane/cloudflare/test_recovery_watchdog.mjs
       - name: Import smoke
         run: python -c "import orchestrator.orchestrator" && python orchestrator/orchestrator.py --help >/dev/null
 
