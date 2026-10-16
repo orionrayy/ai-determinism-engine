@@ -38,3 +38,19 @@ Remote dataset server advertises 8,887,001 rows, but widely separated indices in
 
 ## Interpretation
 Satisfying software scenarios validates assertion behavior only; it does not validate predictive skill. A 60-bar one-session sample cannot establish stable alpha or probability calibration. No ML model is validated, no live BUY/SELL output is enabled, live provider integrations and broker-specific replay are untested, and deployment wasn't verified. Production status remains **research/UX prototype; decision gate = `NO_TRADE`**.
+
+## v1.1.0 release verification and online dataset candidate — 2026-10-16
+
+### Reproduced package evidence
+- Release archive: `aurum-intelligence-v1.1.0.zip`; 223,353 bytes; SHA-256 `4f3aafa682d1777a1dc6d220ad65b4b931b76760dafa8700818f8d1c0c18e623`.
+- Base release-builder report: pytest 153 passed, unittest 92 passed, compileall PASS, audit no hard failures (unknown timezone warning only), baseline benchmark PASS, external-data benchmark smoke PASS, release ZIP extraction/retest PASS.
+- Bundled-sample hash remains `dae535a16e13cf49f123231b1ee72e19787259e7a5f943b017a013346f36a93b`, 60 M5 bars. The package smoke benchmark chooses 50 valid decisions from this one excerpt and writes 250 comparison rows; clustered times remain statistically dependent.
+- Portable online-runner smoke (local fixture only): 30 cases × 5 baselines = 150 rule comparisons, 480 synthetic market path scenarios over two anchors, and 240 software input cases; 100% of expected-valid/expected-invalid contracts detected. Runtime observed about 26 ms on this local environment. This is not performance evidence for the upstream market data or for strategy profitability.
+- GitHub Actions benchmark contract (new branch): the hosted job must fetch current upstream CSV, record its SHA-256 and timestamp range, run 50 spread-out cases = 250 baseline comparisons, at least 200 scenario cases, and preserve CSV/JSON/Markdown artifacts. The live dataset result is still pending; do not claim an observed upstream row count/hash until its run artifacts are verified.
+
+### New public-source candidate DS51
+- Repository: `getdata-finance/xauusd-5m-ohlcv-metals-historical-data`, raw CSV URL recorded in `data_source_register.csv`.
+- The source describes community-aggregated OHLCV. Current broker, timezone, price-side and actual fill semantics are not independently verified. A public repository link or MIT license badge does not automatically settle licensing for commercial derivatives or redistribution.
+- DS51 remains `reference_only` until a live runner succeeds and a separate data-rights/provenance review approves its intended use. Raw OHLCV is not committed into the repository artifact.
+- The generated 1,200 paths are counterfactuals. The 240 software cases are input-validation checks. Neither set increases the number of historical observations or independent market regimes.
+- Decision output remains `NO_TRADE`; no live signal, model validation, or order execution was enabled by this change.
