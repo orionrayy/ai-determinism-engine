@@ -1,10 +1,10 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-16T11:36:00+07:00",
+  "checkpoint": "2026-10-16T16:58:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
-  "latest_complete_source_version": "1.1.0",
+  "latest_complete_source_version": "1.2.0",
   "v1_0_source_reconciled": true,
   "production_ready": false,
   "decision_gate": "NO_TRADE",
@@ -20,17 +20,24 @@
     "DS51": {
       "name": "GetData Finance XAUUSD M5 community OHLCV",
       "status": "reference_only",
+      "hosted_ci_benchmark_verified": true,
       "live_ci_download_verified": true,
       "live_rows": 35954,
+      "live_bytes": 3070226,
       "live_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
-      "license_intended_use_verified": false,
+      "timestamp_start": "2026-03-26T02:30:00+00:00",
+      "timestamp_end": "2026-09-25T20:40:00+00:00",
+      "latest_observation_is_current_live_data": false,
+      "repository_advertises_MIT_license": true,
+      "data_rights_scope_verified": false,
       "timezone_semantics_verified": false,
       "broker_provenance_verified": false
-    }
+    },
+    "locally_bundled_sources_sampled": 1
   },
   "benchmarks": {
-    "pytest_passed": 169,
-    "unittest_passed": 102,
+    "pytest_passed": 176,
+    "unittest_passed": 109,
     "next_candle_case_rows": 250,
     "tp_sl_rows": 90,
     "software_stress_scenarios": 240,
@@ -53,41 +60,53 @@
     "online_dataset_market_scenarios": 1200,
     "online_dataset_market_passed": 1200,
     "online_dataset_software_scenarios": 240,
-    "online_dataset_software_passed": 240
+    "online_dataset_software_passed": 240,
+    "python_compileall": "PASS",
+    "html_ids": 48,
+    "html_duplicate_ids": 0,
+    "mini_app_inline_js_syntax": "PASS",
+    "clean_zip_extraction": "PASS",
+    "model_calibrated": false,
+    "bundled_dataset_rows": 60
   },
   "integrations": {
     "telegram_live_tested": false,
     "oanda_live_tested": false,
     "mt5_account_connector": false,
     "ctrader_account_connector": false,
-    "docker_production_tested": false
+    "docker_production_tested": false,
+    "browser_device_acceptance_tested": false
   },
   "required_next": [
-    "run and inspect hosted online-dataset benchmark, verify current upstream row count/hash/schema",
-    "review DS51 source terms, timestamp timezone, broker/quote provenance and commercial/redistribution rights",
-    "expand to licensed broker-specific bid/ask/tick data and independent chronological regimes",
-    "execution-cost-aware walk-forward, matured-label purge and untouched final holdout",
-    "calibrate TP-before-SL probabilities and preserve NO_TRADE until evidence gates pass",
-    "paper-trading and end-to-end authorized integration evidence"
+    "review upstream data-rights scope and independent source provenance; keep DS51 reference_only until approved",
+    "acquire licensed broker-specific bid/ask/tick data with verified timezone, contract and volume semantics",
+    "expand to multiple independent market sources and non-overlapping market regimes; preserve chronological folds and an untouched holdout",
+    "train and calibrate TP-before-SL probability forecasts; evaluate Brier/log loss, reliability, ECE/MCE and uncertainty intervals on sufficient out-of-sample predictions",
+    "incorporate measured spread, commission, slippage, swap/rollover and fill semantics; evaluate net-of-cost performance against no-trade with multiple-testing controls",
+    "add real browser/mobile/Telegram tests and authorized read-only integration tests",
+    "keep live order execution disabled until explicit security, risk, paper-trading, monitoring and rollback gates pass"
   ],
   "release": {
-    "version": "1.1.0",
-    "archive": "aurum-intelligence-v1.1.0.zip",
-    "bytes": 245370,
-    "sha256": "259103a2bf406498048e31c8ea97970c9f1ecd6bbf7636bd3bed07d7ca0ecb6e",
-    "files_in_zip": 98,
-    "artifact_storage": "downloadable conversation artifact; not committed as binary to this GitHub repository"
+    "version": "1.2.0",
+    "archive": "aurum-intelligence-v1.2.0.zip",
+    "bytes": 260781,
+    "sha256": "19912b690e74af802a7170316703d40048a67731a1eb26d806c9929f048d2db3",
+    "files_in_zip": 105,
+    "manifest_files_excluding_manifest": 104,
+    "pytest": "176 passed",
+    "unittest": "109 tests passed",
+    "artifact_storage": "downloadable project artifact; not committed as binary to this GitHub repository"
   },
   "online_dataset_benchmark": {
     "workflow": ".github/workflows/aurum-online-dataset-benchmark.yml",
     "branch": "feature/aurum-online-dataset-benchmark",
     "status": "PASS",
-    "run_id": 38851436990,
-    "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851436990",
+    "run_id": 38851629049,
+    "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851629049",
     "artifact_id": 12025522071,
     "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851436990/artifacts/12025522071",
-    "artifact_bytes": 9208,
-    "artifact_sha256": "7c661df1afafc372fd2816f2074ceb05aa7af0f8c7a388e64f07aa6b4bc43ef9",
+    "artifact_bytes": 9207,
+    "artifact_sha256": "4a7b36c050a5628fa00ce54d5209c17fd3bd1203b26a9e82d244971884b943d4",
     "artifact_expires_at": "2026-10-30T04:35:53Z",
     "dataset_rows": 35954,
     "dataset_bytes": 3070226,
@@ -105,6 +124,8 @@
     "benchmark_runtime_ms": 458.588,
     "decision_output": "NO_TRADE",
     "predictive_model_validated": false,
-    "raw_dataset_committed": false
+    "raw_dataset_committed": false,
+    "live_trading_enabled": false,
+    "raw_dataset_redistributed": false
   }
 }
