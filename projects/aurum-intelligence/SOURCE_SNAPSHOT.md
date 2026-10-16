@@ -49,4 +49,11 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Hosted online run #38851629049: 35,954 rows, 250 baseline comparisons, 1,200/1,200 synthetic paths, 240/240 software checks. This verifies dataset/schema and runner contracts, not model accuracy. Source ends 2026-09-25; provenance, intended data-rights scope, quote-side and executable broker costs remain unverified.
 - Current source boundary: the downloadable ZIP is still an artifact, not a GitHub binary committed under this folder. This PR is draft; do not report a merge or production deployment.
 
+## v1.3.0 full-history result verified
+
+- Source artifact: aurum-intelligence-v1.3.0.zip, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67, 278,402 bytes.
+- Hosted run #38888666520 passed on the tested benchmark source commit; 35,954 community bars were replayed over 35,893 eligible next-candle decisions per rule.
+- Five disjoint folds have 7,175 / 7,176 / 7,176 / 7,176 / 7,190 opportunities; fold 5 is the final 20% tail.
+- All active baselines lose in full history and tail under an assumed 0.50 price-unit round-trip cost. Prequential expanding base-rate Brier does not significantly improve upon constant 0.5 under the approximate block-bootstrap interval; rolling base-rate is worse.
+- Machine-readable evidence and summary are persisted under projects/aurum-intelligence/benchmarks/. Current app package remains a downloadable artifact rather than a tracked GitHub binary.
 

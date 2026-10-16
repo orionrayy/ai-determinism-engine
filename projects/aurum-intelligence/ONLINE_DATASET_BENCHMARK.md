@@ -57,3 +57,12 @@ Artifact SHA-256: `7c661df1afafc372fd2816f2074ceb05aa7af0f8c7a388e64f07aa6b4bc43
 Fresh online sample: 35,954 rows, 3,070,226 bytes, SHA-256 `acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db`; timestamp range `2026-03-26T02:30:00+00:00`–`2026-09-25T20:40:00+00:00`; median interval 300 seconds; 136 intervals longer than 600 seconds. The remote report ran 50 timestamp cases / 250 rule comparisons, 1,200/1,200 market-path contracts and 240/240 software robustness contracts. Runtime 458.588 ms. All counts/assertions passed; decision output remains `NO_TRADE`.
 
 The +00:00 offset is the representation seen in the file, not independent proof of the provider's intended timezone. Broker, quote-side, license scope and fill semantics remain unverified. DS51 remains `reference_only`. The positive PnL of the breakout baseline comes from only seven trades and cannot establish alpha. See `benchmarks/live_dataset_benchmark_2026-10-16.md` and its JSON companion.
+
+## v1.3.0 full-history benchmark supersedes selected-case-only results
+
+Latest hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520), PASS. The 35,954-row public CSV (SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db; 2026-03-26 through 2026-09-25) supports 35,893 sequential opportunities per fixed rule. Five disjoint folds contain 7,175 / 7,176 / 7,176 / 7,176 / 7,190 opportunities.
+
+Under assumed 0.50 price-unit round-trip costs, all active baselines lose in full history and tail. The older selected-case breakout +2.37 on seven trades is contradicted by full-history -2,290.29 on 4,035 trades. Prequential Brier scores are 0.250000 for constant 0.5, 0.250019 for expanding base-rate and 0.250749 for rolling-288 base-rate; expanding Brier improvement interval crosses zero. No trained/calibrated TP-before-SL model is validated. Keep NO_TRADE.
+
+Full report: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and JSON companion.
+

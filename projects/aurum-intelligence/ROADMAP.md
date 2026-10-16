@@ -85,4 +85,16 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Complete browser/mobile accessibility and authorized read-only provider/Telegram integration tests.
 - [ ] Keep live order execution gated behind paper-trading evidence, least-privilege security review, independent risk approval and rollback plan.
 
+## v1.3.0 full-history benchmark verified
+
+- [x] Hosted full-history benchmark passed on the public 35,954-row XAUUSD M5 sample.
+- [x] Replay every eligible next-bar opportunity after warm-up; 35,893 decisions per fixed rule.
+- [x] Report five disjoint chronological folds, with fold 5 exactly the final 20% tail.
+- [x] Add causal prequential probability baselines and proper scoring/reliability metrics plus approximate block-bootstrap uncertainty.
+- [x] 1,200/1,200 market-path contracts and 240/240 software robustness cases pass.
+- [x] Persist full metrics as Markdown and JSON under projects/aurum-intelligence/benchmarks/.
+- [ ] Confirm intended-use rights, provenance and timezone semantics for the online source.
+- [ ] Acquire licensed broker Bid/Ask/tick data and measured costs/fill semantics.
+- [ ] Validate across independent chronological regimes and an untouched external holdout.
+- [ ] Validate calibration for the exact TP-before-SL target and paper-trade before production.
 

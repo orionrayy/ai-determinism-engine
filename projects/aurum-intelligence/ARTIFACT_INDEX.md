@@ -64,4 +64,10 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Hosted online benchmark run #38851629049 and outputs are preserved in the source artifact and documented in V1_2_0_IMPLEMENTATION_CHECKPOINT.md. Result: 35,954 rows / 250 baseline evaluations / 1,200 market-path scenarios / 240 software stress cases, all structural/scenario checks passing. The sample ends 2026-09-25; it is not live data.
 - **Storage boundary:** the ZIP has not been committed as a binary to the GitHub folder. It is available as a downloadable source artifact. Project memory and release metadata are committed on this branch; this PR is still draft and must not be treated as merged.
 
+## v1.3.0 persisted full-history evidence
+
+- Current local release: aurum-intelligence-v1.3.0.zip, 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67; 107 ZIP entries. Tests: 181 pytest, 109 unittest, 11 online benchmark tests, compileall, browser syntax/HTML checks and clean extraction all pass.
+- Hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520): 35,954 public community rows, 35,893 all-bar decision opportunities per fixed rule, five disjoint chronological folds, 1,200 market-path and 240 robustness checks pass.
+- Permanent summaries: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and .json. No raw 35,954-row CSV is redistributed.
+- All four active fixed-rule baselines are net-negative under assumed costs in full history and final tail. No calibrated trading model exists; NO_TRADE remains active.
 
