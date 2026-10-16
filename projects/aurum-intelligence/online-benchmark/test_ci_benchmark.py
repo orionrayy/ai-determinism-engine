@@ -62,7 +62,9 @@ class OnlineBenchmarkTests(unittest.TestCase):
         self.assertFalse(result["rules_fitted_or_tuned"])
         self.assertEqual(sum(f["opportunities"] for f in result["chronological_folds"]), 149)
         self.assertEqual(result["chronological_folds"][0]["start_index"], 30)
+        self.assertEqual(result["chronological_folds"][-1]["start_index"], result["tail_holdout_start_index"])
         self.assertEqual(result["chronological_folds"][-1]["end_index_exclusive"], 179)
+        self.assertEqual(result["rules"]["ema5_vs_ema10"]["chronological_fold_5"], result["rules"]["ema5_vs_ema10"]["chronological_tail_holdout"])
         for left, right in zip(result["chronological_folds"], result["chronological_folds"][1:]):
             self.assertEqual(left["end_index_exclusive"], right["start_index"])
         for rule in b.RULES:

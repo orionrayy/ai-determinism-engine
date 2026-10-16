@@ -193,10 +193,11 @@ def run_full_history_replay(rows, warmup_bars=60, holdout_fraction=0.20,
         "chronological_tail_holdout": (split, n - 1),
     }
     opportunities_total = n - warmup_bars - 1
+    development_opportunities = split - warmup_bars
     folds = []
-    for fold_index in range(5):
-        start = warmup_bars + (fold_index * opportunities_total) // 5
-        end = warmup_bars + ((fold_index + 1) * opportunities_total) // 5
+    for fold_index in range(4):
+        start = warmup_bars + (fold_index * development_opportunities) // 4
+        end = warmup_bars + ((fold_index + 1) * development_opportunities) // 4
         name = "chronological_fold_" + str(fold_index + 1)
         ranges[name] = (start, end)
         folds.append({
@@ -205,6 +206,16 @@ def run_full_history_replay(rows, warmup_bars=60, holdout_fraction=0.20,
             "end_time": rows[end - 1]["timestamp"].isoformat(),
             "opportunities": end - start,
         })
+    # Fold five is exactly the final chronological holdout; the five folds are disjoint.
+    name = "chronological_fold_5"
+    start, end = ranges["chronological_tail_holdout"]
+    ranges[name] = (start, end)
+    folds.append({
+        "name": name, "start_index": start, "end_index_exclusive": end,
+        "start_time": rows[start]["timestamp"].isoformat(),
+        "end_time": rows[end - 1]["timestamp"].isoformat(),
+        "opportunities": end - start,
+    })
     cost_per_trade = round_trip_spread + 2 * slippage_per_fill + round_trip_commission
     summary = {}
     for rule in RULES:
@@ -492,11 +503,11 @@ def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
         accuracy = "n/a" if r["direction_accuracy"] is None else format(r["direction_accuracy"], ".4f")
         md.append("| {} | {} | {} | {:.4f} | {:.4f} |".format(r["rule"], r["trades"], accuracy, r["net_pnl_units"], r["max_drawdown_units"]))
     md += ["", "## Full-history fixed-rule replay", "",
-        "Every eligible next-bar opportunity is evaluated after a 60-bar warm-up. Rules are fixed and not fitted/tuned. The last 20% is reported as a chronological tail segment; metrics are descriptive, not proof of generalization.", "",
+        "Every eligible next-bar opportunity is evaluated after a 60-bar warm-up. Rules are fixed and not fitted/tuned. Folds 1–4 partition the first 80%; fold 5 is exactly the final 20% tail holdout. The five folds are disjoint; metrics are descriptive, not proof of generalization.", "",
         "| Rule | Segment | Opportunities | Trades | Coverage | Direction accuracy | Net PnL units | Max drawdown |",
         "|---|---|---:|---:|---:|---:|---:|---:|"]
     for rule_name, segments in full_history["rules"].items():
-        for segment_name in ("chronological_fold_1", "chronological_fold_2", "chronological_fold_3", "chronological_fold_4", "chronological_fold_5", "chronological_tail_holdout"):
+        for segment_name in ("chronological_fold_1", "chronological_fold_2", "chronological_fold_3", "chronological_fold_4", "chronological_fold_5"):
             m = segments[segment_name]
             coverage = "n/a" if m["signal_coverage"] is None else format(m["signal_coverage"], ".4f")
             accuracy = "n/a" if m["directional_accuracy"] is None else format(m["directional_accuracy"], ".4f")
