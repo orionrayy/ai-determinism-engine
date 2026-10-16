@@ -1,10 +1,10 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-16T18:15:00+07:00",
+  "checkpoint": "2026-10-16T18:44:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
-  "latest_complete_source_version": "1.3.0",
+  "latest_complete_source_version": "1.3.1",
   "v1_0_source_reconciled": true,
   "production_ready": false,
   "decision_gate": "NO_TRADE",
@@ -37,7 +37,7 @@
     "locally_bundled_sources_sampled": 1
   },
   "benchmarks": {
-    "pytest_passed": 181,
+    "pytest_passed": 185,
     "unittest_passed": 109,
     "next_candle_case_rows": 250,
     "tp_sl_rows": 90,
@@ -94,7 +94,17 @@
       0.00004121343219002724
     ],
     "prequential_rolling_288_brier": 0.2507488734984891,
-    "prequential_rolling_288_brier_skill": -0.0029954939939564884
+    "prequential_rolling_288_brier_skill": -0.0029954939939564884,
+    "temporal_calibration_scenarios": 240,
+    "temporal_calibration_scenarios_passed": 240,
+    "temporal_calibration_scenarios_failed": 0,
+    "temporal_calibration_tests": 8,
+    "temporal_calibration_demo_rows": 720,
+    "temporal_calibration_demo_fit_rows": 360,
+    "temporal_calibration_demo_holdout_rows": 360,
+    "temporal_calibration_demo_is_synthetic": true,
+    "temporal_calibration_deployment_enabled": false,
+    "decision_output": "NO_TRADE"
   },
   "integrations": {
     "telegram_live_tested": false,
@@ -105,24 +115,30 @@
     "browser_device_acceptance_tested": false
   },
   "required_next": [
-    "inspect the new hosted live-data benchmark run and record all-row replay, chronological fold and prequential probability metrics",
     "review market data rights, original provenance, timestamp semantics and broker quote/execution meanings",
     "acquire licensed broker-specific bid/ask/tick data with measured commission, spread, slippage and fill handling",
     "compare multiple independent sources and non-overlapping market regimes using an untouched final holdout and mature-label leakage controls",
-    "do not enable calibrated probabilities or live signals until sufficient out-of-sample evidence and paper trading gates pass"
+    "do not enable calibrated probabilities or live signals until sufficient out-of-sample evidence and paper trading gates pass",
+    "verify hosted CI for the v1.3.1 temporal calibration component",
+    "review data rights, provenance, timezone and source quote/execution semantics",
+    "acquire licensed broker-specific Bid/Ask/tick data and measured costs/fill semantics",
+    "validate exact TP-before-SL target calibration across independent chronological regimes and untouched holdout",
+    "keep NO_TRADE and live execution disabled until external evidence, paper trading and safety gates pass"
   ],
   "release": {
-    "version": "1.3.0",
-    "archive": "aurum-intelligence-v1.3.0.zip",
-    "bytes": 278402,
-    "sha256": "53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67",
-    "files_in_zip": 107,
-    "manifest_files": 106,
-    "pytest": "181 passed",
+    "version": "1.3.1",
+    "archive": "aurum-intelligence-v1.3.1.zip",
+    "bytes": 276128,
+    "sha256": "b63af5ab3412e7cb0bac14deffdb0d8cf07e024b0e46364d6fe5e1329d831d5b",
+    "files_in_zip": 110,
+    "manifest_files": 109,
+    "pytest": "185 passed",
     "unittest": "109 tests passed",
     "online_benchmark_tests": "11 tests passed",
+    "temporal_calibration_tests": "8 tests passed",
+    "temporal_calibration_scenarios": "240/240 passed",
     "release_checks": "PASS",
-    "zip_extraction_retest": "181 pytest passed",
+    "zip_extraction_retest": "185 pytest passed",
     "artifact_storage": "downloadable project artifact; ZIP not tracked as a GitHub binary"
   },
   "online_dataset_benchmark": {
@@ -171,5 +187,36 @@
     "live_trading_enabled": false,
     "report_path": "projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md",
     "machine_readable_report_path": "projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.json"
+  },
+  "calibration_diagnostics": {
+    "component": "projects/aurum-intelligence/temporal-calibration-v1.3/",
+    "status": "locally_verified; hosted CI pending",
+    "method": "regularized monotone Platt scaling on matured earlier OOS forecasts; later chronological holdout",
+    "metrics": [
+      "Brier score",
+      "log loss",
+      "equal-width ECE/MCE",
+      "reliability bins",
+      "moving-block bootstrap intervals"
+    ],
+    "scenario_count": 240,
+    "passed": 240,
+    "failed": 0,
+    "tests": 8,
+    "synthetic_demo": {
+      "rows": 720,
+      "calibration_rows": 360,
+      "holdout_rows": 360,
+      "raw_holdout_brier": 0.15274254168269238,
+      "calibrated_holdout_brier": 0.15215911037285726,
+      "raw_holdout_log_loss": 0.4735545015539176,
+      "calibrated_holdout_log_loss": 0.47240764657184975,
+      "raw_holdout_ece": 0.052436675978238485,
+      "calibrated_holdout_ece": 0.04456223599464544,
+      "synthetic_only_not_market_evidence": true
+    },
+    "live_signal_enabled": false,
+    "deployment_calibrated": false,
+    "validated": false
   }
 }

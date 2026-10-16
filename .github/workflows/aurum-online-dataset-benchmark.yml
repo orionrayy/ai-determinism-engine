@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "projects/aurum-intelligence/online-benchmark/**"
+      - "projects/aurum-intelligence/temporal-calibration-v1.3/**"
       - ".github/workflows/aurum-online-dataset-benchmark.yml"
   workflow_dispatch:
 
@@ -25,6 +26,21 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+      - name: Test temporal calibration component and validate 240 scenarios
+        working-directory: projects/aurum-intelligence/temporal-calibration-v1.3
+        run: |
+          python -m unittest -v
+          python run_calibration_contracts.py > /tmp/aurum-calibration-contracts.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/aurum-calibration-contracts.json').read_text(encoding='utf-8'))
+          assert result['status'] == 'PASS', result
+          assert result['scenario_count'] == 240 and result['passed'] == 240 and result['failed'] == 0, result
+          assert result['synthetic_only'] is True, result
+          assert result['deployment_calibrated'] is False and result['live_signal_enabled'] is False, result
+          print(json.dumps(result, indent=2))
+          PY
       - name: Unit-test parser, baselines and scenario contracts
         working-directory: projects/aurum-intelligence/online-benchmark
         run: python -m unittest -v
@@ -82,6 +98,10 @@ jobs:
       - name: Add benchmark report to job summary
         if: always()
         run: |
+          if [ -f /tmp/aurum-calibration-contracts.json ]; then
+            echo "## Temporal calibration contract benchmark (synthetic only)" >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/aurum-calibration-contracts.json >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ -f /tmp/aurum-online-benchmark/online_dataset_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/online_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -90,6 +110,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aurum-online-dataset-benchmark-${{ github.run_id }}
-          path: /tmp/aurum-online-benchmark/
+          path: |
+            /tmp/aurum-online-benchmark/
+            /tmp/aurum-calibration-contracts.json
           if-no-files-found: warn
           retention-days: 14

@@ -32,3 +32,10 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5: 35,954 OHLCV rows; 35,893 sequential opportunities per fixed rule; five disjoint folds 7,175 / 7,176 / 7,176 / 7,176 / 7,190; 1,200 market path and 240 robustness cases passed.
 - All active fixed-rule baselines lose with assumed costs in full replay and tail. Expanding-rate Brier 0.250019 vs 0.250000 for constant 0.5, interval crosses zero; rolling base rate is worse. These are diagnostics, not calibrated forecasts.
 - Decision remains NO_TRADE. Data rights, timezone, broker execution semantics, real costs, independent regimes and paper trading remain unverified.
+
+
+## v1.3.1 temporal calibration diagnostic
+
+The downloadable v1.3.1 package adds leakage-aware Platt calibration evaluation: only matured earlier OOS labels fit the transform and metrics are reported on a later chronological holdout. The clean local build passed 185 pytest, 109 unittest, compileall, Mini App JS/HTML and ZIP extraction checks. Eight tests and 240/240 synthetic contracts pass. The synthetic example is not market evidence; the bundled 60-bar data still yields zero TP-before-SL OOS forecasts. NO_TRADE remains active.
+
+Release ZIP: 276,128 bytes; SHA-256 b63af5ab3412e7cb0bac14deffdb0d8cf07e024b0e46364d6fe5e1329d831d5b.
