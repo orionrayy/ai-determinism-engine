@@ -3,7 +3,7 @@ name: Aurum Online Dataset Benchmark
 on:
   pull_request:
     paths:
-      - "projects/aurum-intelligence/**"
+      - "projects/aurum-intelligence/online-benchmark/**"
       - ".github/workflows/aurum-online-dataset-benchmark.yml"
   workflow_dispatch:
 
