@@ -17,7 +17,7 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
     def test_live_and_price_benchmark_gates_remain_no_trade(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn(">= 700000", workflow)
-        self.assertIn("decision_output"] == "NO_TRADE", workflow)
+        self.assertIn("r['decision_output'] == 'NO_TRADE'", workflow)
         self.assertIn("live_signal_enabled'] is False", workflow)
         self.assertIn(">= 20000", workflow)
 
