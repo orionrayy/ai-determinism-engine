@@ -131,6 +131,9 @@ class BarrierOOSBenchmarkTests(unittest.TestCase):
         same = barrier.paired_block_bootstrap_improvements(
             raw, raw, labels, block_size=2, replicates=40, seed=7
         )
+        self.assertEqual(same["replicates"], 40)
+        self.assertEqual(same["n"], len(labels))
+        self.assertEqual(same["method"], "paired_moving_block_bootstrap_raw_minus_calibrated")
         for metric in ("brier_score", "log_loss"):
             result = same["metrics"][metric]
             self.assertEqual(result["point_estimate_raw_minus_calibrated"], 0.0)
