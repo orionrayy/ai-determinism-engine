@@ -368,7 +368,17 @@
     "decision_output": "NO_TRADE",
     "validated_model": false,
     "calibrated_model": false,
-    "live_signal_enabled": false
+    "live_signal_enabled": false,
+    "latest_documentation_head_verification": {
+      "workflow_run_id": 39026245471,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39026245471",
+      "conclusion": "success",
+      "head_sha": "65958a8e68f0c3feed22693996f881b86c9d495f",
+      "artifact_id": 12098043414,
+      "artifact_bytes": 2595322,
+      "artifact_sha256": "184ff507423f4902dd8d9f86647d0e6ca5fe3fd73513de4d604f1b3823bc16aa",
+      "note": "Re-run after status/checkpoint documentation; the audited code/test head and lineage assertions passed again."
+    }
   },
   "next_p0": [
     "Verify source-owner provenance, quote-basis and timestamp/candle-label semantics across primary, secondary and tick inputs; do not count secondary and tick as independent until lineage is explained.",
