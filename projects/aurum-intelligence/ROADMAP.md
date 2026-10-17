@@ -132,3 +132,17 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Benchmark execution-aware strategies with measured spread, commission, slippage, swap and realistic fill/timeout behavior.
 - [ ] Evaluate exact TP-before-SL labels and calibration on mature, chronological OOS outcomes with an untouched holdout; retain abstention when sample size or evidence is inadequate.
 - [ ] Complete paper-trading, security/risk and live Telegram/provider acceptance before any production signal/order capability.
+
+
+## Final hosted candidate verification — 2026-10-17
+
+- [x] Run final candidate PR head e9f73719bc9acfbd0f9e85c777a97d856b76e1b5 through hosted CI: run #39015468873 PASS; 8 temporal-calibration tests and 22 Python unit/regression tests pass; live data acquisition, benchmark, final contracts and artifact upload pass.
+- [x] Save the report artifact #12094870433 (33,975 bytes; SHA-256 8a23015c04bcd27821d41be4abebcf408e1f57df40a9fd399e406b98bad26bb3; expiration 2026-10-31 07:57:28 UTC). Raw input datasets are not in the artifact.
+- [x] Complete the bounded timestamp-offset probe without applying any shifted timestamps.
+- [x] Persist the final checkpoint in IMPLEMENTATION_STATUS.json and PROGRESS_LOG.md.
+- [ ] Investigate M5 price-level divergence. Exact timestamp overlap is 11,509 bars; direction agreement is 97.933%, yet median absolute close delta is 63.515 price units and median relative delta is 1.3580%. Relative P95 is 2.0576% against 0.50% diagnostic limit; status remains DIVERGENT.
+- [ ] Audit candle timestamp/label conventions and original feed lineage. The best observed offset (-7 hours) improves median relative delta by only 6.3458%; under the 20% material threshold there is no candidate shift. Do not shift or merge the source bars.
+- [ ] Verify the legal rights and intended commercial use of source data, plus its broker/quote-side and timezone provenance.
+- [ ] Acquire independently documented broker Bid/Ask/tick history with real spreads, commissions, slippage, swap, and fill semantics.
+- [ ] Re-run execution-aware strategy replay, exact TP-before-SL calibration, mature-label leakage controls, independent chronological regimes and untouched final holdout.
+- [ ] Keep NO_TRADE, cross-source confirmation disabled, production readiness false, and live execution disabled until evidence gates and paper-trading/security approval pass.
