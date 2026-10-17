@@ -166,6 +166,36 @@ def compare_price_bars(primary_rows, quote_bars, *, source_label="community OHLC
     }, sample_rows
 
 
+def classify_lineage_overlap(exact_ohlc_matches, overlap_bars, threshold=0.95, minimum_overlap=1000):
+    """Flag possible shared lineage or quote-basis mislabeling; never assert independence."""
+    matches = int(exact_ohlc_matches)
+    overlap = int(overlap_bars)
+    if matches < 0 or overlap < 0 or matches > overlap:
+        raise TickDatasetError("invalid_lineage_overlap_counts")
+    fraction = matches / overlap if overlap else None
+    if overlap < minimum_overlap:
+        classification = "INSUFFICIENT_OVERLAP_FOR_LINEAGE_DIAGNOSTIC"
+    elif fraction is not None and fraction >= threshold:
+        classification = "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED"
+    else:
+        classification = "NO_NEAR_EXACT_OHLC_MATCH_EVIDENCE_NOT_PROOF_OF_INDEPENDENCE"
+    return {
+        "status": classification,
+        "exact_ohlc_match_count": matches,
+        "overlap_bars": overlap,
+        "exact_ohlc_match_fraction": fraction,
+        "review_threshold_fraction": threshold,
+        "source_independence_verified": False,
+        "independent_source_confirmation": False,
+        "automatic_source_promotion": False,
+        "interpretation": (
+            "near-exact Bid OHLC identity with a repository that describes its bars as mid-quote "
+            "can reflect shared data lineage or a price-basis label problem; neither explanation "
+            "is assumed without source-owner/provenance evidence"
+        ),
+    }
+
+
 def _request_bytes(url, cap, label, timeout=60):
     req = Request(url, headers={"User-Agent": "Aurum-Intelligence/1.4.1 research-benchmark"})
     last = None
@@ -330,6 +360,11 @@ def run(output_dir):
     )
     spread = spread_diagnostics(tick_frame["bid_price"].to_numpy(), tick_frame["ask_price"].to_numpy())
     stamp_min, stamp_max = tick_frame["timestamp"].min(), tick_frame["timestamp"].max()
+    secondary_bid = secondary_comparison["basis_comparisons"]["bid"]
+    lineage_diagnostic = classify_lineage_overlap(
+        secondary_bid["exact_ohlc_match_count"],
+        secondary_bid["exact_timestamp_overlap_bars"],
+    )
     report = {
         "status": "PASS" if (
             comparison["status"] == "THIRD_SOURCE_DIAGNOSTIC_ONLY"
@@ -382,6 +417,7 @@ def run(output_dir):
         "spread": spread,
         "cross_source_comparison": comparison,
         "secondary_community_comparison": secondary_comparison,
+        "data_lineage_diagnostic": lineage_diagnostic,
         "runtime_ms": round((time.perf_counter() - started) * 1000, 3),
         "decision_output": "NO_TRADE",
         "reference_only": True,
@@ -437,6 +473,16 @@ def run(output_dir):
                 "n/a" if close_stats["p95"] is None else "{:.4f}".format(close_stats["p95"]),
             ))
     md += [
+        "",
+        "## Source-lineage and quote-basis warning",
+        "",
+        "- Secondary OHLCV versus tick-derived Bid: {} exact OHLC matches out of {} overlapping bars ({:.4%}).".format(
+            lineage_diagnostic["exact_ohlc_match_count"], lineage_diagnostic["overlap_bars"],
+            lineage_diagnostic["exact_ohlc_match_fraction"] or 0.0,
+        ),
+        "- Classification: {}.".format(lineage_diagnostic["status"]),
+        "- The secondary repository describes its source as mid-quote OHLCV, while its bars are almost exactly identical to the tick-derived Bid bars. This suggests possible shared lineage or a price-basis labeling issue; it does not prove either explanation.",
+        "- Treat the tick feed and this secondary OHLCV as non-independent for validation until lineage is verified. No source is automatically promoted.",
         "",
         "Timestamp matching uses exact UTC five-minute bucket starts. No offsets, rescaling, interpolation, synthetic continuity, or source promotion are applied.",
         "Source comparison is diagnostic only. The community feed's candle timestamp convention and executable price basis have not been independently proved; the third feed also discloses reconstructed broker provenance.",
