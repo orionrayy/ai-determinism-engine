@@ -595,13 +595,22 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side):
     all_event_count = 0
     neutral_count = 0
     ambiguous_count = 0
+    final_test_start = int(len(anchors) * 0.80)
+    frozen_final_test_counts = None
     for k, anchor in enumerate(anchors):
         anchor = int(anchor)
-        while pending_cursor < len(pending) and pending[pending_cursor][0] < anchor:
-            _, rule, side, label = pending[pending_cursor]
-            counts[(rule, side)][0] += 1
-            counts[(rule, side)][1] += int(label)
-            pending_cursor += 1
+        # Freeze the probability baseline at the first final-test timestamp.
+        # Only events matured strictly before that timestamp may seed final-test predictions.
+        if k <= final_test_start:
+            while pending_cursor < len(pending) and pending[pending_cursor][0] < anchor:
+                _, rule, side, label = pending[pending_cursor]
+                counts[(rule, side)][0] += 1
+                counts[(rule, side)][1] += int(label)
+                pending_cursor += 1
+            if k == final_test_start:
+                frozen_final_test_counts = {key: list(value) for key, value in counts.items()}
+        elif frozen_final_test_counts is not None:
+            counts = {key: list(value) for key, value in frozen_final_test_counts.items()}
         for rule in STRATEGIES:
             direction = int(signals[rule][k])
             if direction == 0:
@@ -637,8 +646,8 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side):
     improvements = (0.5 - labels) ** 2 - (probs - labels) ** 2
     output = {
         "status": "DIAGNOSTIC_ONLY",
-        "matured_label_rule": "Only outcomes whose end index is strictly before the next decision index update priors; label horizon is 60 contiguous M1 bars.",
-        "probability_method": "rule-and-side-specific Laplace-smoothed historical prevalence from previously matured labels; no future labels or optimized model parameters",
+        "matured_label_rule": "Only outcomes whose end index is strictly before the next decision index update development/calibration priors; the final 20% test freezes those priors at its first timestamp and never consumes any final-test labels.",
+        "probability_method": "rule-and-side-specific Laplace-smoothed historical prevalence from previously matured labels; development/calibration are prequential, final 20% uses frozen matured priors from before its first test timestamp; no optimized model parameters",
         "strategy_event_candidates": all_event_count,
         "neutral_abstentions": neutral_count,
         "ambiguous_same_bar_events_excluded": ambiguous_count,
@@ -657,6 +666,7 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side):
             **_metric_pack([row["probability"] for row in rows], [row["label"] for row in rows]),
             "endpoints_are_chronological": True,
             "parameter_fitting_on_partition": False,
+            "final_test_priors_frozen": partition == "final_holdout",
         }
     if output["binary_scored_strategy_events"] < MIN_SCENARIO_ANCHORS:
         raise BenchmarkError(f"binary_scored_strategy_events_below_20000_gate:{output['binary_scored_strategy_events']}")
@@ -875,7 +885,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         "",
         "- PASS certifies only that the declared minimum rows/scenarios, parser, contracts, metrics and artifact generation succeeded.",
         "- Source metadata says Dukascopy via dukascopy-node; upstream provenance and data-use rights are not independently verified. Use for research only pending review.",
-        "- The probability predictor uses only earlier, fully matured TP/SL outcomes. It is a baseline, not a trained or deployment-calibrated Aurum model.",
+        "- The development/calibration predictor uses only earlier, fully matured TP/SL outcomes. At the final-test boundary, prior counts are frozen and no final-test label is used to update predictions; this is a fixed prequential prevalence baseline, not a trained or deployment-calibrated Aurum model.",
         "- Any model-vs-0.5 Brier skill and bootstrap interval are descriptive; they do not establish alpha, profitability or world-leading accuracy.",
         "- Same-bar TP/SL collisions are excluded; missing minute bars are not interpolated for scenario windows.",
         "- Execution cost stats reflect this public Bid/Ask feed, not the user's intended broker's measured spread, commissions, swaps, slippage, or fills.",
