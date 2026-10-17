@@ -89,3 +89,12 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Run #38897894594 passed against commit `6017eec3141fb803907583abeca006a230e90be4`: temporal calibration tests and 240 synthetic scenarios passed; live dataset fetch, full-history replay and count assertions passed; artifact upload succeeded.
 - Artifact #12044756186, 14,966 bytes, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`. Expiration 2026-10-30.
 - Local v1.3.1 clean release stays 185 pytest / 109 unittest; archive entry root corrected to `aurum-intelligence-v1.3.1/`, 110 ZIP entries.
+
+
+## 2026-10-17 — P0 v1.4.0 evaluation + cross-source audit
+
+- Added `evaluation_protocol_v1_4.py` and focused tests: next-open entry after signal-close, ATR TP/SL barriers, fixed horizon, same-bar barrier collision is ambiguous/excluded, time-ordered 70/10/20 partitions, matured-label prequential baseline, Platt calibration only on calibration rows whose outcomes mature before holdout start, and interval/price-jump data-quality profile.
+- Added `source_concordance_v1_0.py` plus tests and a second public community feed (`Sai310421/xauusd-data`) to online CI. Datasets are matched on exact timestamps and kept separate; OHLC price differences, return correlation, overlap, signed offset and threshold flags are emitted to JSON/CSV/Markdown.
+- Latest hosted run [#39022220573](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39022220573) PASS. Main source: 35,954 rows; 94,604 candidate events, 94,084 resolved binary labels, 520 ambiguous same-bar events. Secondary: 17,371 rows, 11,509 exact overlapping timestamps, zero exact OHLC matches, median close difference 134.885 bps, p95 203.661 bps, one-bar return correlation 0.99845. Result classified `SOURCE_DISAGREEMENT_REVIEW_REQUIRED` and never auto-corrected/merged.
+- Artifact #12096704482, 2,556,935 bytes, SHA-256 `94d432018fa313db265bc01dbeba1e37df5efc0a3c90f65eaec432259877f7de`.
+- This is a successful benchmark/evaluator run, not validation of source truth or trading performance. Keep `NO_TRADE`. Next: resolve source/time/price basis + rights; obtain licensed broker Bid/Ask/tick and measured costs; then rerun independent regimes and untouched holdout.
