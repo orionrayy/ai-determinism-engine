@@ -106,3 +106,29 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Data rights/provenance/timezone review, licensed Bid/Ask/tick data and measured costs.
 - [ ] Independent market-regime holdout and exact-target calibration with sufficient real OOS observations.
 - [ ] Paper trading, security/risk review and approval before any live execution.
+
+
+## Multi-source real-dataset benchmark — PR #165 checkpoint (2026-10-17)
+
+### Completed implementation / evidence
+- [x] Add fixed-host, byte-bounded readers for community XAUUSD M5/M1 files from two public repositories; normalize explicit timestamps to UTC and report naive-timezone assumptions.
+- [x] Validate each file independently, preserve each SHA-256, time range and gap statistics; never concatenate or merge source bars.
+- [x] Run 50 timestamp-spread cases × 5 fixed rules per source, full-history replay, chronological tail diagnostics, and causal direction-probability baselines.
+- [x] Run 720 synthetic market-path and 240 software robustness contracts per dataset; label synthetic cases separately from observed market records.
+- [x] Add exact-timestamp M5 overlap analysis, relative price-difference compatibility thresholds (0.25% median / 0.50% P95), and a hard block on cross-source confirmation/production readiness when series are divergent.
+- [x] CI [run #39014942332](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39014942332) passed on PR #165 head 707f563c7b4382e5a35a18197d1a0ec4100fc305; 8 temporal-calibration tests and 22 source/benchmark unit tests passed; live download/benchmark assertions and report upload passed.
+- [x] Persist report JSON/Markdown and hashes as artifact #12094680550; raw input datasets are not uploaded to the benchmark artifact.
+
+### Findings that prevent a source-level readiness claim
+- Data rows sum to 140,164 across 3 files; this is not a deduplicated/independent sample size.
+- The two M5 sources have 11,509 exact UTC timestamp matches, 97.933% close-to-close direction agreement, but median relative close-price delta 1.3580% and P95 delta 2.0576%, against 0.25% / 0.50% diagnostic limits. Cross-source status is DIVERGENT, independence UNVERIFIED.
+- Every active fixed-rule baseline is net-negative over full history on each dataset under assumed costs. The simple causal direction-rate estimators show no meaningful Brier skill over the constant 0.5 comparator. The benchmark result does not prove alpha or calibrated TP-before-SL probability.
+- Keep NO_TRADE; predictive_model_validated=false, deployment_calibrated=false, production_ready=false, cross_source_confirmation_allowed=false, and live order execution disabled.
+
+### Next engineering gates (still open)
+- [ ] Investigate M5 price-level divergence: compare timestamp semantics, bar label/open-close convention, upstream publisher/feed lineage and sample candles before deciding whether the source can be compared or should be excluded.
+- [ ] Verify original source-data rights and commercial-use scope; repository license alone is insufficient.
+- [ ] Add an independently verified broker/feed source or licensed Bid/Ask/tick data; record source identity and timestamp/quote-side semantics.
+- [ ] Benchmark execution-aware strategies with measured spread, commission, slippage, swap and realistic fill/timeout behavior.
+- [ ] Evaluate exact TP-before-SL labels and calibration on mature, chronological OOS outcomes with an untouched holdout; retain abstention when sample size or evidence is inadequate.
+- [ ] Complete paper-trading, security/risk and live Telegram/provider acceptance before any production signal/order capability.
