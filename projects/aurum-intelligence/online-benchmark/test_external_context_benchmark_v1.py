@@ -115,6 +115,20 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
         self.assertFalse(report["validated"])
         self.assertFalse(report["live_signal_enabled"])
 
+    def test_context_incremental_value_is_compared_directly_to_price_only(self):
+        report=bench.run_context_ablation_benchmark(make_rows(),context_observation_count=120_000,
+            price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
+        price=report["ablations"]["price_only"]
+        cot=report["ablations"]["price_cot"]
+        self.assertEqual(price["status"],"SCORED")
+        self.assertEqual(cot["status"],"SCORED")
+        self.assertEqual(price["scored_rows_sha256"],cot["scored_rows_sha256"])
+        self.assertEqual(price["labels_sha256"],cot["labels_sha256"])
+        self.assertEqual(cot["paired_moving_block_ci_vs_price_only"]["comparison_reference"],"price_only")
+        self.assertEqual(cot["paired_moving_block_ci_vs_price_only"]["replicates"],40)
+        self.assertIn("brier_improvement_price_only_minus_model",
+            cot["paired_moving_block_ci_vs_price_only"])
+
 
 if __name__=="__main__":
     unittest.main()
