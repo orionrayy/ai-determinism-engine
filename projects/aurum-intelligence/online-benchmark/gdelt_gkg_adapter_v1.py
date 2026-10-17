@@ -207,6 +207,7 @@ def acquire_historical_gkg(
             except (ValueError, OverflowError):
                 continue
         candidates = sorted(candidates)
+        discovered_archive_count = len(candidates)
         if len(candidates) > max_archives:
             # Deterministic evenly spaced selection over the preregistered period.
             indices = sorted({round(i * (len(candidates)-1) / (max_archives-1))
@@ -242,12 +243,20 @@ def acquire_historical_gkg(
             if len(observations) >= target_records:
                 break
         deduped = deduplicate_snapshots(observations)
-        if len(deduped) >= target_records:
+        archive_window_complete = len(candidates) == discovered_archive_count
+        if len(deduped) >= target_records and archive_window_complete:
             status = "PASS"
+        elif len(deduped) > 0:
+            status = "PARTIAL"
         else:
             status = "NOT_MET"
         return AcquisitionResult(status, tuple(deduped), tuple(manifests),
             warnings=(f"real_unique_observations={len(deduped)}", f"aggregate_bytes={total_bytes}",
-                      f"target_records={target_records}", "no_article_body_retained"))
+                      f"target_records={target_records}",
+                      f"discovered_archives={discovered_archive_count}",
+                      f"sampled_archives={len(candidates)}",
+                      f"archive_window_complete={str(archive_window_complete).lower()}",
+                      "sampling_design=deterministic_evenly_spaced_archive_sample",
+                      "no_article_body_retained"))
     except (ValueError, RuntimeError, UnicodeError) as exc:
         return AcquisitionResult("FAILED", error_code=str(exc))
