@@ -113,6 +113,7 @@ def build_readiness_gates(results, overlap, pipeline_status):
     provenance_verified = bool(results) and all(
         item["source"].get("broker_provenance_verified", False)
         and item["source"].get("timezone_semantics_verified", False)
+        and item["source"].get("quote_side_verified", False)
         for item in results
     )
     rights_verified = bool(results) and all(
@@ -127,7 +128,7 @@ def build_readiness_gates(results, overlap, pipeline_status):
     if not independent:
         blockers.append("CROSS_SOURCE_INDEPENDENCE_UNVERIFIED")
     if not provenance_verified:
-        blockers.append("SOURCE_PROVENANCE_OR_TIMEZONE_UNVERIFIED")
+        blockers.append("SOURCE_PROVENANCE_TIMEZONE_OR_QUOTE_SIDE_UNVERIFIED")
     if not rights_verified:
         blockers.append("UNDERLYING_DATA_RIGHTS_OR_COMMERCIAL_USE_UNVERIFIED")
     return {
