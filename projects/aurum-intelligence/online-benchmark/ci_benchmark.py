@@ -7,10 +7,15 @@ from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
 import evaluation_protocol_v1_4 as eval_protocol
+import source_concordance_v1_0 as source_concordance
 
 SOURCE = "https://raw.githubusercontent.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/main/XAUUSD_5m.csv"
 SOURCE_REPO = "getdata-finance/xauusd-5m-ohlcv-metals-historical-data"
 LICENSE = "https://github.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/blob/main/LICENSE"
+SECONDARY_SOURCE = "https://raw.githubusercontent.com/Sai310421/xauusd-data/main/csv/XAUUSD/XAUUSD_M5_2026Q1Q2.csv"
+SECONDARY_SOURCE_REPO = "Sai310421/xauusd-data"
+SECONDARY_LICENSE = "https://github.com/Sai310421/xauusd-data/blob/main/LICENSE"
+SECONDARY_README = "https://github.com/Sai310421/xauusd-data/blob/main/README.md"
 MAX_BYTES = 16 * 1024 * 1024
 RULES = ("last_return_sign", "ema5_vs_ema10", "mean_reversion_z10", "prior20_range_breakout", "flat_no_trade")
 ARCHETYPES = ("normal", "high_volatility", "low_volatility", "upside_gap", "downside_gap", "long_wicks", "compressed_wicks", "volume_spike", "zero_volume", "missing_bar", "duplicate_timestamp", "invalid_ohlc")
@@ -97,6 +102,31 @@ def fetch():
             if attempt < 2:
                 time.sleep(.3 * (attempt + 1))
     raise RuntimeError("source download failed after bounded retries: " + type(last).__name__)
+
+
+def fetch_secondary():
+    """Fetch a second public community OHLCV source under the same size/retry safety limits."""
+    req = Request(SECONDARY_SOURCE, headers={"User-Agent": "Aurum-Intelligence/1.4.0 source-concordance"})
+    last = None
+    for attempt in range(3):
+        try:
+            with urlopen(req, timeout=40) as res:
+                if not res.geturl().startswith("https://raw.githubusercontent.com/Sai310421/"):
+                    raise DatasetError("secondary redirect outside approved origin")
+                size = res.headers.get("Content-Length")
+                if size and int(size) > MAX_BYTES:
+                    raise DatasetError("secondary Content-Length exceeded cap")
+                body = res.read(MAX_BYTES + 1)
+                if len(body) > MAX_BYTES:
+                    raise DatasetError("secondary download exceeded cap")
+                return body
+        except DatasetError:
+            raise
+        except (OSError, URLError, HTTPError) as exc:
+            last = exc
+            if attempt < 2:
+                time.sleep(.3 * (attempt + 1))
+    raise RuntimeError("secondary source download failed after bounded retries: " + type(last).__name__)
 
 def choose_indices(n, count=50):
     lo, hi = 29, n - 2
@@ -485,10 +515,10 @@ def write_csv(path, rows):
         if rows:
             w=csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
 
-def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
+def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE, secondary_payload=None, secondary_source_url=SECONDARY_SOURCE):
     t=time.perf_counter(); rows=parse_csv(payload,min_rows)
     intervals=[(rows[i]["timestamp"]-rows[i-1]["timestamp"]).total_seconds() for i in range(1,len(rows))]
-    digest=hashlib.sha256(payload).hexdigest(); replay=case_replay(rows,cases); market=market_scenarios(rows,anchors); software=software_scenarios(rows); full_history=run_full_history_replay(rows); probability=run_prequential_probability_diagnostics(rows); quality=eval_protocol.audit_dataset_quality(rows); tp_sl_protocol,tp_sl_events=eval_protocol.run_tp_sl_protocol(rows,get_signal,RULES)
+    digest=hashlib.sha256(payload).hexdigest(); replay=case_replay(rows,cases); market=market_scenarios(rows,anchors); software=software_scenarios(rows); full_history=run_full_history_replay(rows); probability=run_prequential_probability_diagnostics(rows); quality=eval_protocol.audit_dataset_quality(rows); tp_sl_protocol,tp_sl_events=eval_protocol.run_tp_sl_protocol(rows,get_signal,RULES); secondary_rows=parse_csv(secondary_payload,min_rows) if secondary_payload is not None else []; secondary_crosscheck,overlap_sample=source_concordance.compare_source_datasets(rows,secondary_rows) if secondary_rows else ({"status":"NOT_RUN","reason":"secondary source was not supplied; local fixture mode","reference_only":True,"decision_output":"NO_TRADE"},[]); secondary_crosscheck.update({"source_repository":SECONDARY_SOURCE_REPO,"source_url":secondary_source_url,"license_reference":SECONDARY_LICENSE,"readme_reference":SECONDARY_README,"dataset_sha256":hashlib.sha256(secondary_payload).hexdigest() if secondary_payload is not None else None,"dataset_bytes":len(secondary_payload) if secondary_payload is not None else None,"repository_license_label":"MIT per repository LICENSE; upstream data rights not independently verified","intended_use_rights_verified":False,"timezone_claim_from_readme":"UTC; not independently verified","reference_only":True}); secondary_quality=eval_protocol.audit_dataset_quality(secondary_rows) if secondary_rows else None
     baselines=[]
     for rule in RULES:
         xs=[r for r in replay if r["rule"]==rule]; trades=[r for r in xs if r["signal"]]; pnl=[r["net_pnl_units"] for r in trades]; equity=peak=dd=0.0
@@ -496,9 +526,9 @@ def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
         correct=sum(r["signal"]==r["next_body_direction"] for r in trades)
         baselines.append({"rule":rule,"cases":len(xs),"trades":len(trades),"direction_accuracy":correct/len(trades) if trades else None,"net_pnl_units":round(sum(pnl),8),"max_drawdown_units":round(dd,8)})
     fail=sum(not r["passed"] for r in market)+sum(not r["passed"] for r in software)
-    status="PASS" if fail==0 and len(replay)==cases*5 and len(market)>=200 and len(software)>=200 else "FAIL"
-    output.mkdir(parents=True,exist_ok=True); write_csv(output/"real_data_case_results.csv",replay); write_csv(output/"market_scenario_results.csv",market); write_csv(output/"software_scenario_results.csv",software); write_csv(output/"tp_sl_barrier_outcomes.csv",tp_sl_events); (output/"tp_sl_evaluation_protocol.json").write_text(json.dumps(tp_sl_protocol,indent=2,allow_nan=False)+"\n",encoding="utf-8")
-    report={"status":status,"product":"Aurum Intelligence","version":"1.4.0-p0-evaluation-protocol","application_version":"1.3.1","source":{"repository":SOURCE_REPO,"url":source_url,"license_reference":LICENSE,"license_verified_for_intended_use":False,"sha256":digest,"bytes":len(payload)},"dataset":{"rows":len(rows),"start":rows[0]["timestamp"].isoformat(),"end":rows[-1]["timestamp"].isoformat(),"source_timezone_verified":False,"median_interval_seconds":statistics.median(intervals) if intervals else None,"intervals_over_600s":sum(x>600 for x in intervals)},"dataset_quality":quality,"tp_sl_evaluation_protocol":tp_sl_protocol,"real_case_benchmark":{"cases":cases,"evaluations":len(replay),"case_sampling":"timestamp-spread sample across complete dataset","cost_model":"assumed 0.30 spread plus 0.10 slippage per fill; not broker observed","rules":baselines},"full_history_replay":full_history,"prequential_probability_diagnostics":probability,"scenarios":{"market_paths":len(market),"market_passed":sum(r["passed"] for r in market),"market_failed":sum(not r["passed"] for r in market),"market_anchors":anchors,"market_archetypes":len(ARCHETYPES),"software_scenarios":len(software),"software_passed":sum(r["passed"] for r in software),"software_failed":sum(not r["passed"] for r in software)},"runtime_ms":round((time.perf_counter()-t)*1000,3),"limitations":["community OHLCV is not broker Bid/Ask or actual fills","source timezone and license scope require independent verification","costs are assumptions, not measured broker values","generated paths are counterfactuals, not historical events","scenario passes do not establish predictive skill"],"decision_output":"NO_TRADE","predictive_model_validated":False,"live_trading_enabled":False}
+    status="PASS" if fail==0 and len(replay)==cases*5 and len(market)>=200 and len(software)>=200 and (secondary_payload is None or secondary_crosscheck.get("status")=="CROSS_SOURCE_DIAGNOSTIC_ONLY") else "FAIL"
+    output.mkdir(parents=True,exist_ok=True); write_csv(output/"real_data_case_results.csv",replay); write_csv(output/"market_scenario_results.csv",market); write_csv(output/"software_scenario_results.csv",software); write_csv(output/"tp_sl_barrier_outcomes.csv",tp_sl_events); write_csv(output/"secondary_source_overlap_sample.csv",overlap_sample); (output/"tp_sl_evaluation_protocol.json").write_text(json.dumps(tp_sl_protocol,indent=2,allow_nan=False)+"\n",encoding="utf-8"); (output/"secondary_source_crosscheck.json").write_text(json.dumps(secondary_crosscheck,indent=2,allow_nan=False)+"\n",encoding="utf-8")
+    report={"status":status,"product":"Aurum Intelligence","version":"1.4.0-p0-evaluation-protocol","application_version":"1.3.1","source":{"repository":SOURCE_REPO,"url":source_url,"license_reference":LICENSE,"license_verified_for_intended_use":False,"sha256":digest,"bytes":len(payload)},"dataset":{"rows":len(rows),"start":rows[0]["timestamp"].isoformat(),"end":rows[-1]["timestamp"].isoformat(),"source_timezone_verified":False,"median_interval_seconds":statistics.median(intervals) if intervals else None,"intervals_over_600s":sum(x>600 for x in intervals)},"dataset_quality":quality,"secondary_source_quality":secondary_quality,"secondary_source_crosscheck":secondary_crosscheck,"tp_sl_evaluation_protocol":tp_sl_protocol,"real_case_benchmark":{"cases":cases,"evaluations":len(replay),"case_sampling":"timestamp-spread sample across complete dataset","cost_model":"assumed 0.30 spread plus 0.10 slippage per fill; not broker observed","rules":baselines},"full_history_replay":full_history,"prequential_probability_diagnostics":probability,"scenarios":{"market_paths":len(market),"market_passed":sum(r["passed"] for r in market),"market_failed":sum(not r["passed"] for r in market),"market_anchors":anchors,"market_archetypes":len(ARCHETYPES),"software_scenarios":len(software),"software_passed":sum(r["passed"] for r in software),"software_failed":sum(not r["passed"] for r in software)},"runtime_ms":round((time.perf_counter()-t)*1000,3),"limitations":["community OHLCV is not broker Bid/Ask or actual fills","source timezone and license scope require independent verification","costs are assumptions, not measured broker values","generated paths are counterfactuals, not historical events","scenario passes do not establish predictive skill"],"decision_output":"NO_TRADE","predictive_model_validated":False,"live_trading_enabled":False}
     (output/"online_dataset_benchmark.json").write_text(json.dumps(report,indent=2,allow_nan=False)+"\n",encoding="utf-8")
     md=["# Aurum online dataset benchmark","","Result: "+status+"; decision gate: NO_TRADE.","","- Dataset SHA-256: "+digest,"- Rows: "+str(len(rows)),"- Range: "+report["dataset"]["start"]+" through "+report["dataset"]["end"],"- Historical cases: "+str(cases)+"; baseline evaluations: "+str(len(replay)),"- Market scenarios: "+str(len(market))+" ("+str(report["scenarios"]["market_passed"])+" passed)","- Software stress cases: "+str(len(software))+" ("+str(report["scenarios"]["software_passed"])+" passed)","","| Rule | Trades | Direction accuracy | Net PnL units | Max drawdown |","|---|---:|---:|---:|---:|"]
     for r in baselines:
@@ -523,6 +553,10 @@ def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
         md.append("| {} | {} | {:.6f} | {:.6f} | {:.6f} | {:.6f} | {:.6f} |".format(method_name, m["n"], m["brier_score"], m["log_loss"], m["brier_skill_vs_constant_50pct"], reliability["ece_descriptive"], reliability["mce_descriptive"]))
     md += ["", "Brier-improvement uncertainty uses a deterministic moving-block bootstrap; intervals are approximate. ECE/MCE are descriptive and sensitive to regime change/temporal dependence.",
         "", "This is a structure and probability-baseline diagnostic, not a broker-executable backtest or validated model. Verify dataset rights, timezone, quote side, execution costs and fills before production use.", "License reference: " + LICENSE, ""]
+md += ["", "## Cross-source data concordance (reference-only)", "",
+        "- Secondary source: {} ({} rows); repository label is MIT, but upstream data rights and broker provenance remain unverified.".format(secondary_source_url, len(secondary_rows) if secondary_rows else 0),
+        "- Exact matched timestamps: {}. Status: {}. Median close difference: {} bps; p95: {} bps; one-bar return correlation: {}.".format(secondary_crosscheck.get("common_timestamps", 0), secondary_crosscheck.get("status"), secondary_crosscheck.get("absolute_close_difference_basis_points", {}).get("median"), secondary_crosscheck.get("absolute_close_difference_basis_points", {}).get("p95"), secondary_crosscheck.get("one_bar_return_correlation")),
+        "- Datasets are kept separate; comparison uses exact overlapping timestamps only. Neither source is treated as executable ground truth.", ""]
     md += ["", "## P0 TP-before-SL chronological evaluation protocol", "",
         "- Protocol: {}. Candidate trade events: {}. Binary-scored events: {}. Same-bar ambiguous events: {}.".format(tp_sl_protocol.get("protocol_version"), tp_sl_protocol.get("candidate_trade_events", 0), tp_sl_protocol.get("scored_binary_events", 0), tp_sl_protocol.get("ambiguous_same_bar_events", 0)),
         "- Partitions: development 70%, calibration 10%, final chronological holdout 20%; calibration labels that exit after holdout start are purged.",
@@ -540,16 +574,19 @@ def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE):
             tp_rate = "n/a" if summary.get("tp_first_rate") is None else "{:.4f}".format(summary["tp_first_rate"])
             md.append("| {} | {} | {} | {} | {} | {} | {} | {} |".format(rule_name, side_name, summary["candidate_signals"], summary["resolved_binary_labels"], tp_rate, oos.get("status"), raw_brier, cal_brier))
     md += ["", "This report scores a causal expanding base-rate comparator for the exact TP-before-SL target. Platt calibration is fitted only on the designated calibration segment and only from labels matured by holdout start. These are historical single-source OHLC diagnostics—not a validated trading model or broker-executable result.", "",
-        "Dataset quality profile: {}".format(json.dumps(quality, sort_keys=True)), ""]
+        "Dataset quality profile: {}".format(json.dumps(quality, sort_keys=True)), "Secondary-source quality profile: {}".format(json.dumps(secondary_quality, sort_keys=True)) if secondary_quality else "Secondary-source quality profile: not run in local fixture mode", ""]
     (output/"online_dataset_benchmark.md").write_text("\n".join(md),encoding="utf-8")
-    return {"status":status,"dataset_rows":len(rows),"dataset_sha256":digest,"real_data_cases":cases,"real_data_evaluations":len(replay),"full_history_decision_opportunities":full_history["decision_opportunities"],"prequential_probability_predictions":probability.get("predictions",0),"market_scenarios":len(market),"market_passed":report["scenarios"]["market_passed"],"software_scenarios":len(software),"software_passed":report["scenarios"]["software_passed"],"runtime_ms":report["runtime_ms"],"decision_output":"NO_TRADE","tp_sl_protocol_status":tp_sl_protocol.get("status"),"tp_sl_candidate_trade_events":tp_sl_protocol.get("candidate_trade_events",0),"tp_sl_scored_binary_events":tp_sl_protocol.get("scored_binary_events",0),"tp_sl_ambiguous_same_bar_events":tp_sl_protocol.get("ambiguous_same_bar_events",0)}
+    return {"status":status,"dataset_rows":len(rows),"dataset_sha256":digest,"real_data_cases":cases,"real_data_evaluations":len(replay),"full_history_decision_opportunities":full_history["decision_opportunities"],"prequential_probability_predictions":probability.get("predictions",0),"market_scenarios":len(market),"market_passed":report["scenarios"]["market_passed"],"software_scenarios":len(software),"software_passed":report["scenarios"]["software_passed"],"runtime_ms":report["runtime_ms"],"decision_output":"NO_TRADE","secondary_source_status":secondary_crosscheck.get("status"),"secondary_common_timestamps":secondary_crosscheck.get("common_timestamps",0),"secondary_close_difference_p95_bps":secondary_crosscheck.get("absolute_close_difference_basis_points",{}).get("p95"),"secondary_return_correlation":secondary_crosscheck.get("one_bar_return_correlation"),"tp_sl_protocol_status":tp_sl_protocol.get("status"),"tp_sl_candidate_trade_events":tp_sl_protocol.get("candidate_trade_events",0),"tp_sl_scored_binary_events":tp_sl_protocol.get("scored_binary_events",0),"tp_sl_ambiguous_same_bar_events":tp_sl_protocol.get("ambiguous_same_bar_events",0)}
 
 def main():
-    p=argparse.ArgumentParser(); p.add_argument("--input",type=Path); p.add_argument("--output-dir",type=Path,default=Path("benchmark-output")); p.add_argument("--min-rows",type=int,default=1000); p.add_argument("--cases",type=int,default=50); p.add_argument("--scenario-anchors",type=int,default=5); a=p.parse_args()
+    p=argparse.ArgumentParser(); p.add_argument("--input",type=Path); p.add_argument("--secondary-input",type=Path); p.add_argument("--output-dir",type=Path,default=Path("benchmark-output")); p.add_argument("--min-rows",type=int,default=1000); p.add_argument("--cases",type=int,default=50); p.add_argument("--scenario-anchors",type=int,default=5); a=p.parse_args()
     if a.cases<30 or a.scenario_anchors<1: p.error("cases must be >=30 and anchors >=1")
     try:
         payload=a.input.read_bytes() if a.input else fetch(); url="local-file:"+a.input.name if a.input else SOURCE
-        result=run(payload,a.output_dir,a.min_rows,a.cases,a.scenario_anchors,url); print(json.dumps(result,indent=2)); return 0 if result["status"]=="PASS" else 2
+        if a.secondary_input: secondary_payload=a.secondary_input.read_bytes(); secondary_url="local-file:"+a.secondary_input.name
+        elif not a.input: secondary_payload=fetch_secondary(); secondary_url=SECONDARY_SOURCE
+        else: secondary_payload=None; secondary_url=SECONDARY_SOURCE
+        result=run(payload,a.output_dir,a.min_rows,a.cases,a.scenario_anchors,url,secondary_payload,secondary_url); print(json.dumps(result,indent=2)); return 0 if result["status"]=="PASS" else 2
     except Exception as exc:
         print(json.dumps({"status":"FAIL","error_type":type(exc).__name__,"error":str(exc)[:300]},indent=2),file=sys.stderr); return 1
 if __name__ == "__main__":

@@ -80,6 +80,10 @@ jobs:
           assert r['scenarios']['software_scenarios'] >= 200, r['scenarios']
           assert r['scenarios']['software_failed'] == 0, r['scenarios']
           assert r['decision_output'] == 'NO_TRADE', r['decision_output']
+          cross = r['secondary_source_crosscheck']
+          assert cross['status'] == 'CROSS_SOURCE_DIAGNOSTIC_ONLY', cross
+          assert cross['common_timestamps'] >= 1000, cross
+          assert cross['reference_only'] is True and cross['provider_provenance_independently_verified'] is False, cross
           tp = r['tp_sl_evaluation_protocol']
           assert tp['protocol_version'] == '1.4.0', tp
           assert tp['status'] == 'DIAGNOSTIC_ONLY', tp
@@ -102,6 +106,10 @@ jobs:
               'market_passed': r['scenarios']['market_passed'],
               'software_scenarios': r['scenarios']['software_scenarios'],
               'software_passed': r['scenarios']['software_passed'],
+              'secondary_source_status': cross['status'],
+              'secondary_common_timestamps': cross['common_timestamps'],
+              'secondary_close_difference_p95_bps': cross['absolute_close_difference_basis_points']['p95'],
+              'secondary_return_correlation': cross['one_bar_return_correlation'],
               'tp_sl_protocol_status': tp['status'],
               'tp_sl_candidate_trade_events': tp['candidate_trade_events'],
               'tp_sl_scored_binary_events': tp['scored_binary_events'],
