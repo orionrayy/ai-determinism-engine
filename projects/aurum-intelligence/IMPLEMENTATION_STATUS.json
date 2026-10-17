@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-16T18:44:00+07:00",
+  "checkpoint": "2026-10-17T14:48:43+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -234,5 +234,114 @@
     "scenario_passed": 240,
     "scenario_failed": 0,
     "synthetic_only": true
+  },
+  "multi_source_benchmark": {
+    "status": "HOSTED_CI_PASS_PIPELINE; SOURCE_COMPATIBILITY_BLOCKED",
+    "candidate_branch": "feature/aurum-multi-source-benchmark",
+    "pull_request": {
+      "number": 165,
+      "url": "https://github.com/orionrayy/ai-determinism-engine/pull/165",
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "head_sha": "707f563c7b4382e5a35a18197d1a0ec4100fc305",
+      "base_branch": "feature/aurum-online-dataset-benchmark"
+    },
+    "hosted_ci": {
+      "run_id": 39014942332,
+      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39014942332",
+      "status": "success",
+      "artifact_id": 12094680550,
+      "artifact_bytes": 32870,
+      "artifact_sha256": "2cd809365080a3adb564ebd8c73fe8a3a48f635349aa18bec602e5ca9f3d8350",
+      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39014942332/artifacts/12094680550",
+      "artifact_expires_at": "2026-10-31T07:48:40Z"
+    },
+    "measured_coverage": {
+      "source_files": 3,
+      "dataset_rows_sum_not_deduplicated": 140164,
+      "real_timestamp_cases_per_source": 50,
+      "fixed_rule_comparisons": 750,
+      "synthetic_market_path_contracts": 2160,
+      "synthetic_software_contracts": 720,
+      "test_files_passed": 22,
+      "temporal_calibration_unit_tests_passed": 8,
+      "decision_output": "NO_TRADE",
+      "predictive_model_validated": false,
+      "deployment_calibrated": false,
+      "live_signal_enabled": false,
+      "live_order_execution_enabled": false,
+      "production_ready": false
+    },
+    "sources": [
+      {
+        "id": "getdata_xauusd_m5",
+        "repository": "getdata-finance/xauusd-5m-ohlcv-metals-historical-data",
+        "rows": 35954,
+        "bytes": 3070226,
+        "sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+        "start_utc": "2026-03-26T02:30:00+00:00",
+        "end_utc": "2026-09-25T20:40:00+00:00",
+        "median_interval_seconds": 300,
+        "broker_provenance_verified": false,
+        "intended_data_rights_verified": false
+      },
+      {
+        "id": "sai_community_xauusd_m5",
+        "repository": "Sai310421/xauusd-data",
+        "rows": 17371,
+        "bytes": 1109711,
+        "sha256": "ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d",
+        "start_utc": "2026-02-25T00:00:00+00:00",
+        "end_utc": "2026-05-26T00:00:00+00:00",
+        "median_interval_seconds": 300,
+        "naive_timestamps_interpreted_as_utc_per_repo_README": true,
+        "timezone_verified": false,
+        "broker_provenance_verified": false,
+        "intended_data_rights_verified": false
+      },
+      {
+        "id": "sai_community_xauusd_m1",
+        "repository": "Sai310421/xauusd-data",
+        "rows": 86839,
+        "bytes": 5546476,
+        "sha256": "de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13",
+        "start_utc": "2026-02-25T00:00:00+00:00",
+        "end_utc": "2026-05-26T00:00:00+00:00",
+        "median_interval_seconds": 60,
+        "naive_timestamps_interpreted_as_utc_per_repo_README": true,
+        "timezone_verified": false,
+        "broker_provenance_verified": false,
+        "intended_data_rights_verified": false
+      }
+    ],
+    "cross_source_m5": {
+      "exact_timestamp_matches": 11509,
+      "direction_agreement": 0.9793301936159079,
+      "median_absolute_close_delta_price_units": 63.515,
+      "p95_absolute_close_delta_price_units": 94.445,
+      "max_absolute_close_delta_price_units": 105.61,
+      "median_relative_close_delta": 0.013580126354403586,
+      "p95_relative_close_delta": 0.020575666596235546,
+      "median_relative_limit": 0.0025,
+      "p95_relative_limit": 0.005,
+      "compatibility_status": "DIVERGENT",
+      "source_independence": "UNVERIFIED",
+      "cross_source_confirmation_allowed": false
+    },
+    "benchmark_interpretation": {
+      "all_active_fixed_rule_baselines_net_negative_under_assumed_costs": true,
+      "observed_broker_execution_costs": false,
+      "predictive_direction_skill_over_constant_50pct": false,
+      "real_tp_before_sl_oos_predictions_available": false,
+      "note": "PASS means acquisition/schema/benchmark/scenario contracts succeeded; it does not mean strategy profitability or model validation."
+    },
+    "blockers": [
+      "Investigate the divergent M5 price levels and verify source timestamps, bars and data lineage before using cross-source confirmation.",
+      "Audit source rights and original provider/broker provenance.",
+      "Acquire licensed broker Bid/Ask/tick data and measured spreads, fees, slippage and fill semantics.",
+      "Validate exact TP-before-SL probabilities across independent chronological regimes and an untouched final holdout.",
+      "Complete paper trading, security/risk review, and real Telegram/OANDA integration tests before deployment."
+    ]
   }
 }
