@@ -94,6 +94,16 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
         self.assertTrue(np.all(d["ts"][anchors] - d["ts"][anchors - b.WARMUP_BARS] == b.WARMUP_BARS * 60_000))
         self.assertTrue(np.all(d["ts"][anchors + b.HORIZON_BARS] - d["ts"][anchors] == b.HORIZON_BARS * 60_000))
 
+    def test_candidate_windows_exclude_invalid_atr_anchors(self):
+        d = fixture(2600)
+        atr = b.indicators(d)["atr14"]
+        atr[100:2200:7] = np.nan
+        anchors, eligible = b.candidate_anchor_indices(d, required_count=250, atr_values=atr)
+        self.assertEqual(len(anchors), 250)
+        self.assertGreaterEqual(eligible, 250)
+        self.assertTrue(np.all(np.isfinite(atr[anchors])))
+        self.assertTrue(np.all(atr[anchors] > 0))
+
     def test_scenario_matrix_produces_two_sides_times_three_atr_targets(self):
         d = fixture(800)
         features = b.indicators(d)
@@ -135,6 +145,15 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
             self.assertEqual(len({row["prior_matured_labels"] for row in per_rule}), 1)
             self.assertTrue(all(row["prior_matured_labels"] >= 0 for row in per_rule))
         self.assertTrue(evaluation["chronological_partitions"]["final_holdout"]["final_test_priors_frozen"])
+        self.assertIn("global_prior_probability", final_rows[0])
+        global_probs = {round(row["global_prior_probability"], 12) for row in final_rows}
+        self.assertEqual(len(global_probs), 1)
+        self.assertIsNotNone(evaluation["global_prequential_base_rate_baseline"]["brier"])
+        self.assertIsNotNone(evaluation["aggregate"]["brier_skill_vs_global_matured_label_baseline"])
+        self.assertIsNotNone(evaluation["chronological_partitions"]["final_holdout"]["brier_skill_vs_global_matured_label_baseline"])
+        self.assertTrue(
+            evaluation["moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate"]["replicates"] > 0
+        )
 
     def test_metrics_and_block_bootstrap_are_deterministic_and_descriptive(self):
         p = [0.4, 0.6] * 100
