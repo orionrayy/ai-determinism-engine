@@ -76,7 +76,7 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int]:
 
     gdelt_result = acquire_historical_gkg(
         PREREGISTERED_GDELT_START, PREREGISTERED_GDELT_END,
-        target_records=CONTEXT_TARGET, max_archives=100, aggregate_cap=256 * 1024 * 1024,
+        target_records=CONTEXT_TARGET, max_archives=100, aggregate_cap=320 * 1024 * 1024,
     )
     gdelt_obs = list(gdelt_result.observations)
     observations.extend(gdelt_obs)
