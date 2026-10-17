@@ -59,6 +59,39 @@ def _source_state(source_statuses: Mapping[str, str], family: str) -> str:
     return upper if upper in VALID_SOURCE_STATES else "UNKNOWN"
 
 
+def _merge_coverage_intervals(
+    intervals: Sequence[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    """Merge touching/overlapping observed archive windows, preserving real gaps."""
+    normalized = []
+    for index, pair in enumerate(intervals):
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            raise ValueError(f"invalid_news_coverage_interval_at_{index}")
+        start = _utc_aware(pair[0], "news_coverage_start")
+        end = _utc_aware(pair[1], "news_coverage_end")
+        if start >= end:
+            raise ValueError(f"invalid_news_coverage_interval_order_at_{index}")
+        normalized.append((start, end))
+    normalized.sort(key=lambda item: (item[0], item[1]))
+    merged: list[tuple[datetime, datetime]] = []
+    for start, end in normalized:
+        if merged and start <= merged[-1][1]:
+            prior_start, prior_end = merged[-1]
+            merged[-1] = (prior_start, max(prior_end, end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _window_fully_covered(
+    start: datetime,
+    end: datetime,
+    intervals: Sequence[tuple[datetime, datetime]],
+) -> bool:
+    """A window is complete only when one merged observed interval spans it."""
+    return any(left <= start and right >= end for left, right in intervals)
+
+
 def _news_deduplicate(rows: Sequence[ExternalObservation]) -> tuple[list[ExternalObservation], int]:
     unique: list[ExternalObservation] = []
     seen_documents: set[str] = set()
@@ -85,6 +118,7 @@ def build_asof_features(
     observations: Sequence[ExternalObservation],
     *,
     source_statuses: Mapping[str, str] | None = None,
+    news_coverage_intervals: Sequence[tuple[datetime, datetime]] = (),
 ) -> list[dict[str, object]]:
     """Create stable as-of features in O((anchors + events) log events) time.
 
@@ -109,6 +143,14 @@ def build_asof_features(
         row["decision_time"] = dt
         anchors.append((dt, decision_id, row))
     anchors.sort(key=lambda item: (item[0], item[1]))
+
+    # Archive windows become observable only at their end time (the conservative
+    # archive-availability boundary). Excluding future intervals prevents coverage
+    # metadata itself from leaking future source availability into earlier decisions.
+    raw_news_coverage = _merge_coverage_intervals(news_coverage_intervals)
+    raw_news_coverage.sort(key=lambda item: (item[1], item[0]))
+    visible_news_coverage: list[tuple[datetime, datetime]] = []
+    coverage_cursor = 0
 
     # Keep only explicitly timed rows. The unknown-timing count remains visible in every output.
     unknown_count = 0
@@ -141,6 +183,18 @@ def build_asof_features(
     output: list[dict[str, object]] = []
 
     for decision_time, _decision_id, base in anchors:
+        while (coverage_cursor < len(raw_news_coverage)
+               and raw_news_coverage[coverage_cursor][1] <= decision_time):
+            visible_news_coverage.append(raw_news_coverage[coverage_cursor])
+            coverage_cursor += 1
+        merged_visible_news_coverage = _merge_coverage_intervals(visible_news_coverage)
+        news_window_1h_fully_covered = _window_fully_covered(
+            decision_time - timedelta(hours=1), decision_time, merged_visible_news_coverage
+        )
+        news_window_24h_fully_covered = _window_fully_covered(
+            decision_time - timedelta(hours=24), decision_time, merged_visible_news_coverage
+        )
+
         while future_index < len(timed):
             item = timed[future_index]
             available = item.available_at.astimezone(timezone.utc)
@@ -212,12 +266,22 @@ def build_asof_features(
         )
         out["feature_macro_level"] = sum(latest_macro_values) / len(latest_macro_values) if latest_macro_values else None
         out["feature_macro_change"] = sum(macro_changes) / len(macro_changes) if macro_changes else None
-        out["feature_news_count_1h"] = len(news_1h)
-        out["feature_news_count_24h"] = len(news_24h)
-        out["feature_news_tone_mean_24h"] = sum(tone_values) / len(tone_values) if tone_values else None
+        # A sparse archive sample cannot turn unsampled periods into genuine zero-news
+        # observations. Keep numeric news features only when the respective historical
+        # window is fully covered by acquired, already-available archive batches.
+        out["news_window_1h_fully_covered"] = news_window_1h_fully_covered
+        out["news_window_24h_fully_covered"] = news_window_24h_fully_covered
+        out["news_coverage_intervals_visible"] = len(visible_news_coverage)
+        out["feature_news_count_1h"] = len(news_1h) if news_window_1h_fully_covered else None
+        out["feature_news_count_24h"] = len(news_24h) if news_window_24h_fully_covered else None
+        out["feature_news_tone_mean_24h"] = (
+            sum(tone_values) / len(tone_values)
+            if tone_values and news_window_24h_fully_covered else None
+        )
         for theme in THEME_WHITELIST:
-            out[f"feature_news_{theme.lower()}_count_24h"] = sum(
-                1 for item in news_24h if theme in item.attributes.get("themes", ())
+            out[f"feature_news_{theme.lower()}_count_24h"] = (
+                sum(1 for item in news_24h if theme in item.attributes.get("themes", ()))
+                if news_window_24h_fully_covered else None
             )
         out["news_duplicate_records_removed"] = duplicate_count
         out["availability_proxy_count"] = proxy_count
@@ -236,12 +300,16 @@ def build_asof_features(
             "not_yet_available" if macro_state in {"PASS", "PARTIAL"} else
             "source_unavailable" if macro_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
-        out["coverage_news"] = (
-            "partial_coverage" if news_state == "PARTIAL" else
-            "available" if news_24h and news_state == "PASS" else
-            "available_zero_events" if news_state == "PASS" else
-            "source_unavailable" if news_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
-        )
+        if news_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"}:
+            news_coverage_status = "source_unavailable"
+        elif news_state in {"PASS", "PARTIAL"}:
+            if news_window_24h_fully_covered:
+                news_coverage_status = "available" if news_24h else "available_zero_events"
+            else:
+                news_coverage_status = "incomplete_source_window"
+        else:
+            news_coverage_status = "unknown"
+        out["coverage_news"] = news_coverage_status
         out["feature_family_latest_available_at"] = {
             family: family_latest[family] for family in sorted(family_latest)
         }
