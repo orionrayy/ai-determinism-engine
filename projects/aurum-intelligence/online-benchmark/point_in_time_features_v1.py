@@ -145,11 +145,21 @@ def build_asof_features(
     anchors.sort(key=lambda item: (item[0], item[1]))
 
     # Archive windows become observable only at their end time (the conservative
-    # archive-availability boundary). Excluding future intervals prevents coverage
-    # metadata itself from leaking future source availability into earlier decisions.
-    raw_news_coverage = _merge_coverage_intervals(news_coverage_intervals)
+    # archive-availability boundary). Keep raw intervals separate here: merging an
+    # interval with a future contiguous batch would delay visibility of the earlier
+    # batch and distort as-of coverage at that boundary.
+    raw_news_coverage: list[tuple[datetime, datetime]] = []
+    for index, pair in enumerate(news_coverage_intervals):
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            raise ValueError(f"invalid_news_coverage_interval_at_{index}")
+        coverage_start = _utc_aware(pair[0], "news_coverage_start")
+        coverage_end = _utc_aware(pair[1], "news_coverage_end")
+        if coverage_start >= coverage_end:
+            raise ValueError(f"invalid_news_coverage_interval_order_at_{index}")
+        raw_news_coverage.append((coverage_start, coverage_end))
     raw_news_coverage.sort(key=lambda item: (item[1], item[0]))
     visible_news_coverage: list[tuple[datetime, datetime]] = []
+    merged_visible_news_coverage: list[tuple[datetime, datetime]] = []
     coverage_cursor = 0
 
     # Keep only explicitly timed rows. The unknown-timing count remains visible in every output.
@@ -183,11 +193,13 @@ def build_asof_features(
     output: list[dict[str, object]] = []
 
     for decision_time, _decision_id, base in anchors:
+        prior_coverage_cursor = coverage_cursor
         while (coverage_cursor < len(raw_news_coverage)
                and raw_news_coverage[coverage_cursor][1] <= decision_time):
             visible_news_coverage.append(raw_news_coverage[coverage_cursor])
             coverage_cursor += 1
-        merged_visible_news_coverage = _merge_coverage_intervals(visible_news_coverage)
+        if coverage_cursor > prior_coverage_cursor:
+            merged_visible_news_coverage = _merge_coverage_intervals(visible_news_coverage)
         news_window_1h_fully_covered = _window_fully_covered(
             decision_time - timedelta(hours=1), decision_time, merged_visible_news_coverage
         )
