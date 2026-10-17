@@ -57,7 +57,8 @@ Feature builder interfaces:
 
 Benchmark interface:
 - run_context_benchmark(price_rows, observations, config) -> dict[str, object].
-- Price-only and augmented models use matching decision rows, labels, splits and metrics; report source coverage/status, ablations, Brier/log loss/ECE/MCE, fair causal base-rate baseline, moving-block uncertainty, regime breakdown and scale_status. decision_output always NO_TRADE.
+- fit_logistic_baseline(train_features, train_labels, feature_names) -> dict[str, object]; predict_logistic_probability(model, features) -> numpy.ndarray. Model uses deterministic L2 full-batch gradient descent, lambda=1.0, learning rate=0.05, maximum 200 steps, zero initialization and stable sigmoid; normalization is fitted on development data only.
+- Price-only and augmented models use matching decision rows, labels, splits and metrics; report source coverage/status, ablations, Brier/log loss/ECE/MCE, fair causal base-rate baseline, moving-block uncertainty, regime breakdown and scale_status. decision_output always NO_TRADE. Reuse temporal-calibration-v1.3/calibration_diagnostics.py for Platt fitting and probability metrics. Fit Platt only on labels matured in the calibration slice, purge non-mature boundary events, and score the untouched final 20% tail once.
 
 ---
 
@@ -135,7 +136,7 @@ Benchmark interface:
 
 - [ ] Step 1 — Write tests: test_all_ablations_use_same_decision_rows_and_labels, test_final_holdout_is_not_used_for_feature_or_threshold_selection, test_matured_labels_only_update_causal_baseline, test_future_feature_mutation_does_not_change_holdout_predictions, test_block_bootstrap_is_deterministic, test_low_count_calibration_is_flagged, test_context_scale_below_100k_is_NOT_MET_not_synthetic_pass, test_report_never_enables_trading.
 - [ ] Step 2 — Run python -m unittest -v test_external_context_benchmark_v1.py; expected RED.
-- [ ] Step 3 — Implement deterministic L2-regularized logistic regression as the augmented probability baseline, with fixed lambda=1.0, maximum 200 iterations and deterministic initialization. Fit feature scaling/model parameters on the development partition only; select no hyperparameters on the final holdout. Compare price-only to price+COT, price+macro, price+news and eligible combined context on identical timestamps/labels. Report causal base-rate/prequential baseline, Brier/log loss/ECE/MCE/reliability, moving-block CI, coverage/attrition, regimes, provider states and source caveats. Final 20% tail is scoring-only and never used for feature/threshold selection.
+- [ ] Step 3 — Implement deterministic L2 logistic regression for each ablation: zero initialization, stable sigmoid, full-batch gradient descent with lambda=1.0, learning rate=0.05 and max 200 steps. Fit normalization and model only on development rows; fit Platt calibration using only mature calibration-slice labels by reusing temporal-calibration-v1.3/calibration_diagnostics.py (minimum 100 calibration samples). Purge split-boundary examples whose labels are not mature at the next segment start. The final 20% tail is scoring-only and never used for feature, normalization, model or calibrator selection. Compare price-only to price+COT, price+macro, price+news and eligible combined context on identical timestamps/labels. Report causal base-rate/prequential baseline, Brier/log loss/ECE/MCE/reliability, moving-block CI, coverage/attrition, regimes, provider states and source caveats.
 - [ ] Step 4 — Run bounded real historical acquisition/benchmark; produce compact JSON/Markdown and manifest hashes only, retain existing 700k/20k gates, and report failure/partial/NOT_MET honestly.
 - [ ] Step 5 — Run focused and complete tests; commit: feat(aurum): benchmark external context ablations.
 
