@@ -205,3 +205,14 @@ The current candidate does not change the application response path or trading g
 - [ ] Keep deployment blocked if the paired uncertainty interval includes zero or the event-rate reference is not consistently beaten across the predeclared source/side tests. Do not pick a best source/side using this final holdout.
 
 The prior exact-target baseline improved after Platt scaling in only some source/side pairs; changes were small and inconsistent. The paired CI is required to assess those gains without mistaking overlapping marginal intervals for a paired test. No trading gate changes are made.
+
+
+## 2026-10-17 — real bid/ask tick probe gate passed
+
+- [x] Add bounded read-only sampler for the public tick feed with allowlisted HTTPS host/path, request/byte limits, retry limits, schema validation, row-index continuity, timestamp order checks and no raw tick persistence.
+- [x] Sample 1,000 quote records at each of three disjoint head/middle/tail offsets; report spread quantiles in price units and basis points with per-window hashes.
+- [x] Verify live hosted CI for serialization, data-quality, source-count and hard safety assertions. Run #39021204557 passed all 13 steps; artifact #12096921783.
+- [x] Persist results in `benchmarks/tick_quote_probe_2026-10-17.md/.json`; 3,000 rows tested, no crossed/locked quotes or timestamp-order violations inside those windows.
+- [ ] Resolve data rights, original broker lineage, timezone and quote semantics before any commercial or production use.
+- [ ] Acquire licensed broker Bid/Ask/tick/fill history and measured costs; public quote spread quantiles are not fill/slippage observations.
+- [ ] Keep deployment blocked: all 12 paired 95% calibration-gain intervals include zero. Prove independent OOS skill and net economic utility before reconsidering `NO_TRADE`.
