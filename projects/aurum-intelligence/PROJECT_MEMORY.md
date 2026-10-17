@@ -91,3 +91,11 @@ This section supersedes older version-specific statements above where they diffe
 - Hosted run [#38897894594](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38897894594) passed on code commit `6017eec3141fb803907583abeca006a230e90be4`. The Platt calibration unit tests and 240/240 synthetic contract cases passed; online dataset acquisition, full-history counts, 1,200 market paths, 240 software robustness scenarios and evidence upload also passed.
 - New artifact #12044756186, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`. Full dataset remains 35,954 community rows ending 2026-09-25. Active fixed-rule baselines remain net-negative under assumed costs; no production-calibrated forecast exists.
 - Synthetic 720-row calibration illustration is strictly a code/metrics check, not financial accuracy evidence. Actual bundled market sample still yields zero OOS TP-before-SL predictions; decision stays `NO_TRADE`.
+
+
+## Gap audit and prioritization — 2026-10-17
+
+- Added `GAP_AUDIT_AND_COMPETITIVE_POSITION_2026-10-17.md` on the existing draft PR branch. It consolidates the supplied 100-weakness/100-comparison inventory into evidence classes, risk-weighted remediation priorities, acceptance gates, category-appropriate competitor benchmarking, and free-first constraints.
+- Correct distinction: the bundled TP-before-SL candidate still has 60 bars and zero OOS predictions; a separate hosted historical replay used 35,954 community XAUUSD M5 rows. Both facts can be true. The online dataset remains historical, not a live feed; licensing/intended-use rights, independent provenance, intended timezone, broker/quote-side semantics and actual fills remain unresolved.
+- The current full-history replay does not establish predictive edge: active fixed-rule baselines lost under assumed costs and direction-only baselines did not show meaningful Brier skill over a constant reference. Synthetic scenario contracts remain software/stress evidence, not market observations.
+- Keep `NO_TRADE`; no live execution or claim of validated/calibrated trading performance is authorized. The audit is documentary and does not modify application behavior.
