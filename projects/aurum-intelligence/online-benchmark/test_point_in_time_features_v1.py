@@ -83,6 +83,18 @@ class PointInTimeFeatureTests(unittest.TestCase):
         self.assertEqual(row["coverage_news"], "incomplete_source_window")
         self.assertEqual(row["news_coverage_intervals_visible"], 0)
 
+    def test_future_contiguous_archive_does_not_hide_visible_prior_batch(self):
+        row=features.build_asof_features(
+            [{"decision_id":"a","decision_time":self.t}], [],
+            source_statuses={"news":"PASS"},
+            news_coverage_intervals=[
+                (self.t-timedelta(minutes=15), self.t),
+                (self.t, self.t+timedelta(minutes=15)),
+            ],
+        )[0]
+        self.assertEqual(row["news_coverage_intervals_visible"], 1)
+        self.assertEqual(row["coverage_news"], "incomplete_source_window")
+
     def test_family_coverage_is_reported_without_dropping_baseline_rows(self):
         rows=features.build_asof_features(self.rows,[],source_statuses={"news":"NOT_MET","cot":"PASS"})
         self.assertEqual(len(rows),2)
