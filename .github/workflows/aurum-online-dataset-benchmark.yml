@@ -6,6 +6,7 @@ on:
       - "projects/aurum-intelligence/online-benchmark/**"
       - "projects/aurum-intelligence/temporal-calibration-v1.3/**"
       - "projects/aurum-intelligence/V1_3_1_IMPLEMENTATION_CHECKPOINT.md"
+      - "projects/aurum-intelligence/ONLINE_MULTI_SOURCE_BENCHMARK.md"
       - ".github/workflows/aurum-online-dataset-benchmark.yml"
   workflow_dispatch:
 
@@ -19,7 +20,7 @@ concurrency:
 jobs:
   online-dataset-benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -44,7 +45,7 @@ jobs:
           PY
       - name: Unit-test parser, baselines and scenario contracts
         working-directory: projects/aurum-intelligence/online-benchmark
-        run: python -m unittest -v
+        run: python -m unittest discover -p 'test*.py' -v
       - name: Acquire current community dataset and benchmark
         run: >-
           python projects/aurum-intelligence/online-benchmark/ci_benchmark.py
@@ -96,6 +97,53 @@ jobs:
               'software_passed': r['scenarios']['software_passed'],
               'decision_output': r['decision_output']}, indent=2))
           PY
+      - name: Fetch and benchmark multiple public market datasets separately
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py
+          --output-dir /tmp/aurum-multi-source-benchmark
+          --cases 50 --min-total-rows 100000
+      - name: Enforce multi-source evidence and safety contracts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.json')
+          result = json.loads(path.read_text(encoding='utf-8'))
+          assert result['status'] == 'PASS', result
+          assert result['source_count'] == 3, result
+          assert result['dataset_rows_sum_not_deduplicated'] >= 100000, result
+          assert result['real_data_rule_comparisons'] >= 750, result
+          assert result['synthetic_market_path_contracts'] >= 2000, result
+          assert result['synthetic_software_contracts'] >= 600, result
+          assert result['decision_output'] == 'NO_TRADE', result
+          assert result['predictive_model_validated'] is False, result
+          assert result['model_calibrated_for_deployment'] is False, result
+          assert result['live_signal_enabled'] is False, result
+          assert result['live_order_execution_enabled'] is False, result
+          overlap = result['overlap_concordance'][0]
+          assert overlap['exact_timestamp_matches'] >= 1000, overlap
+          assert overlap['datasets_merged'] is False, overlap
+          assert overlap['independence_status'].startswith('UNVERIFIED'), overlap
+          for source in result['sources']:
+              assert source['status'] == 'PASS', source
+              assert len(source['source']['sha256']) == 64, source
+              assert source['real_data_benchmark']['rule_comparisons'] >= 150, source
+              assert source['source']['source_timezone_verified'] is False, source
+              assert source['source']['broker_provenance_verified'] is False, source
+              assert source['predictive_model_validated'] is False, source
+              assert source['decision_output'] == 'NO_TRADE', source
+          print(json.dumps({
+              'status': result['status'],
+              'source_count': result['source_count'],
+              'dataset_rows_sum_not_deduplicated': result['dataset_rows_sum_not_deduplicated'],
+              'real_data_rule_comparisons': result['real_data_rule_comparisons'],
+              'synthetic_market_path_contracts': result['synthetic_market_path_contracts'],
+              'synthetic_software_contracts': result['synthetic_software_contracts'],
+              'cross_source_exact_timestamp_matches': overlap['exact_timestamp_matches'],
+              'decision_output': result['decision_output'],
+              'runtime_ms': result['runtime_ms'],
+          }, indent=2))
+          PY
       - name: Add benchmark report to job summary
         if: always()
         run: |
@@ -106,6 +154,9 @@ jobs:
           if [ -f /tmp/aurum-online-benchmark/online_dataset_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/online_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
+          if [ -f /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md ]; then
+            cat /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload audit and replay artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -114,5 +165,7 @@ jobs:
           path: |
             /tmp/aurum-online-benchmark/
             /tmp/aurum-calibration-contracts.json
+            /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.json
+            /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md
           if-no-files-found: warn
           retention-days: 14
