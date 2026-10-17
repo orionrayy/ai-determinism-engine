@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T18:24:00+07:00",
+  "checkpoint": "2026-10-17T18:35:16.158+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -445,6 +445,41 @@
         "live_signal_enabled": false,
         "decision_output": "NO_TRADE"
       }
+    }
+  },
+  "external_context_research_spec": {
+    "path": "docs/superpowers/specs/2026-10-17-aurum-point-in-time-external-context-design.md",
+    "status": "DESIGN_WRITTEN_AWAITING_USER_REVIEW",
+    "specification_commit": "5672fa167377aa23129a8f8cca4c21d0fddde1c6",
+    "scope": [
+      "point_in_time_schema",
+      "CFTC_COT",
+      "GDELT_GKG_archived_news_metadata",
+      "BLS_release_observations",
+      "optional_FRED_ALFRED_vintages",
+      "same_row_ablation_benchmark",
+      "leakage_and_data_rights_gates"
+    ],
+    "implementation_started": false,
+    "trade_gate": "NO_TRADE",
+    "primary_sources_reviewed": [
+      "https://www.cftc.gov/MarketReports/CommitmentsofTraders/HistoricalCompressed/index.htm",
+      "https://www.cftc.gov/MarketReports/CommitmentsofTraders/ReleaseSchedule/index.htm",
+      "https://fred.stlouisfed.org/docs/api/fred/series_observations.html",
+      "https://fred.stlouisfed.org/docs/api/fred/realtime_period.html",
+      "https://www.bls.gov/developers/api_faqs.htm",
+      "https://www.gdeltproject.org/"
+    ],
+    "last_full_benchmark_run": {
+      "id": 39028110673,
+      "conclusion": "success",
+      "tested_head": "375aa2e3c225394943f177a5243d5c18ccd04fd9"
+    },
+    "latest_pr_head_startup_failure": {
+      "id": 39028331604,
+      "head": "576c1de66e9a7b91da3ba38782235d03732a87dd",
+      "conclusion": "startup_failure",
+      "jobs_created": 0
     }
   }
 }
