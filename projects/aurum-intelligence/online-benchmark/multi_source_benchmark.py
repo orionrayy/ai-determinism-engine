@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 import ci_benchmark as core
+import barrier_oos_benchmark as barrier_benchmark
 
 USER_AGENT = "Aurum-Intelligence/multi-source-benchmark"
 CASE_COUNT = 50
@@ -242,6 +243,10 @@ def run_one(spec, payload, cases=CASE_COUNT, bootstrap_replicates=80):
     probability = core.run_prequential_probability_diagnostics(
         rows, bootstrap_replicates=bootstrap_replicates
     )
+    # Evaluate the actual TP-before-SL target on causal chronological splits; do not enable signals.
+    barrier_oos = barrier_benchmark.run_barrier_oos(
+        rows, source_id=spec["id"], bootstrap_replicates=40
+    )
     market = core.market_scenarios(rows, anchors=SCENARIO_ANCHORS)
     software = core.software_scenarios(rows)
     market_passed = sum(item["passed"] for item in market)
@@ -291,6 +296,7 @@ def run_one(spec, payload, cases=CASE_COUNT, bootstrap_replicates=80):
         },
         "full_history_replay": full,
         "prequential_probability_diagnostics": probability,
+        "target_specific_barrier_oos": barrier_oos,
         "scenarios": {
             "market_paths": len(market), "market_passed": market_passed,
             "software_scenarios": len(software), "software_passed": software_passed,
@@ -698,7 +704,33 @@ def render_markdown(report):
                 name, metric["n"], metric["brier_score"], metric["log_loss"],
                 "n/a" if skill is None else format(skill, ".6f")))
         lines.append("")
-    lines.extend(["## Non-negotiable caveats", ""])
+    lines.extend([
+        "## TP-before-SL chronological out-of-sample diagnostic", "",
+        "Target: TP reached before SL within 12 bars using ATR-based barriers; entry is next-bar open, same-bar ambiguity is stop-first, and timeout is reported separately. This is an OHLC research label, not a broker fill.", "",
+        "| Source | Side | Train N | Calibration N | Holdout N | TP event rate | Raw Brier | Calibrated Brier | Raw log loss | Calibrated log loss | Calibrator |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+    ])
+    for item in report["sources"]:
+        barrier = item.get("target_specific_barrier_oos", {})
+        for side in ("long", "short"):
+            result = barrier.get("sides", {}).get(side, {})
+            raw = result.get("raw_holdout_metrics") or {}
+            adjusted = result.get("calibrated_holdout_metrics") or {}
+            fit = result.get("calibration", {}).get("calibrator_fit", {})
+            holdout = result.get("holdout", {})
+            lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+                item["source"]["id"], side,
+                result.get("train_rows", 0), result.get("calibration_rows", 0),
+                holdout.get("rows", result.get("holdout_rows", 0)),
+                "n/a" if holdout.get("positive_rate") is None else format(holdout["positive_rate"], ".4f"),
+                "n/a" if raw.get("brier_score") is None else format(raw["brier_score"], ".6f"),
+                "n/a" if adjusted.get("brier_score") is None else format(adjusted["brier_score"], ".6f"),
+                "n/a" if raw.get("log_loss") is None else format(raw["log_loss"], ".6f"),
+                "n/a" if adjusted.get("log_loss") is None else format(adjusted["log_loss"], ".6f"),
+                fit.get("status", "not_fitted")))
+    lines.extend([
+        "", "All TP-before-SL results are diagnostics only. The model/calibrator are not validated for deployment, the holdout has not authorized model selection, and NO_TRADE/live-execution guards remain unchanged.",
+        "", "## Non-negotiable caveats", ""])
     lines.extend("- " + text for text in report["limitations"])
     lines.extend(["", "Do not enable live signals or order execution from this benchmark."])
     return "\n".join(lines) + "\n"
