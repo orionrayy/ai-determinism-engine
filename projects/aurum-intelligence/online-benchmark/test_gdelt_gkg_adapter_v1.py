@@ -67,6 +67,26 @@ class GdeltGkgTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             gdelt.normalize_archive_url("http://example.com/gdeltv2/20230101120000.gkg.csv.zip")
 
+    def test_master_list_selector_uses_url_column_and_keeps_historical_gkg_rows(self):
+        listing = "\\n".join([
+            "6800000 abc http://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip",
+            "6800000 def http://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
+            "150000 ghi http://data.gdeltproject.org/gdeltv2/20240101120000.export.CSV.zip",
+            "6800000 jkl http://attacker.invalid/gdeltv2/20240101120000.gkg.csv.zip",
+            "6800000 mno http://data.gdeltproject.org/gdeltv2/20260101120000.gkg.csv.zip",
+        ])
+        selected, discovered = gdelt.select_historical_gkg_archives(
+            listing,
+            datetime(2023, 1, 1, tzinfo=timezone.utc),
+            datetime(2025, 6, 30, tzinfo=timezone.utc),
+            max_archives=10,
+        )
+        self.assertEqual(discovered, 2)
+        self.assertEqual([url for _, url in selected], [
+            "https://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip",
+            "https://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
+        ])
+
     def test_no_article_body_is_persisted(self):
         raw=row("20260301120000-1")
         result=gdelt.parse_gkg_tsv(raw,manifest(raw))
