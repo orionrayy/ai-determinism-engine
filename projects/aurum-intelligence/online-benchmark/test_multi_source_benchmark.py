@@ -50,6 +50,11 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertEqual(len(ids), len(set(ids)))
         self.assertEqual(len(ids), 3)
         for source in multi.SOURCES:
+            self.assertIn("terms_url", source)
+            self.assertIn("provenance_claim", source)
+            self.assertIn("quote_side_claim", source)
+            self.assertFalse(source["underlying_data_rights_verified"])
+            self.assertFalse(source["commercial_use_approved"])
             prefix = "https://raw.githubusercontent.com/" + source["repository"] + "/"
             self.assertTrue(source["url"].startswith(prefix))
             self.assertGreater(source["max_bytes"], 0)
@@ -167,6 +172,56 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertEqual(loaded["status"], "FAIL")
         self.assertGreater(markdown.count(chr(10)), 2)
         self.assertNotIn(chr(92) + "n", markdown.splitlines()[0])
+
+    def test_source_use_eligibility_blocks_unverified_rights_and_provenance(self):
+        for spec in multi.SOURCES:
+            eligibility = multi.source_use_eligibility(spec)
+            self.assertEqual(eligibility["technical_benchmark"], "DIAGNOSTIC_ONLY")
+            self.assertEqual(eligibility["source_rights_review"], "BLOCKED_PENDING_REVIEW")
+            self.assertFalse(eligibility["commercial_use_approved"])
+            self.assertEqual(
+                eligibility["model_training_for_commercial_service"],
+                "BLOCKED_PENDING_WRITTEN_RIGHTS_CLEARANCE",
+            )
+            self.assertEqual(
+                eligibility["production_feed_approved"],
+                "BLOCKED_PENDING_PROVENANCE_AND_RIGHTS",
+            )
+
+    def test_pipeline_pass_remains_separate_from_readiness_blockers(self):
+        fake_results = []
+        row_counts = [50000, 30000, 60000]
+        for spec, rows in zip(multi.SOURCES, row_counts):
+            fake_results.append({
+                "status": "PASS",
+                "source": {
+                    "id": spec["id"],
+                    "underlying_data_rights_verified": False,
+                    "commercial_use_approved": False,
+                    "broker_provenance_verified": False,
+                    "timezone_semantics_verified": False,
+                },
+                "dataset": {"rows": rows},
+                "real_data_benchmark": {"rule_comparisons": 250},
+                "scenarios": {"market_paths": 720, "software_scenarios": 240},
+            })
+        overlap = {
+            "status": "PASS",
+            "close_relative_delta": {"compatibility_status": "DIVERGENT"},
+            "source_independence_verified": False,
+        }
+        report = multi.build_report(fake_results, overlap, min_total_rows=100000)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["readiness_gates"]["diagnostic_benchmark_status"], "PASS")
+        self.assertEqual(report["readiness_gates"]["source_comparability_gate"], "BLOCKED")
+        self.assertEqual(report["readiness_gates"]["cross_source_confirmation_gate"], "BLOCKED")
+        self.assertEqual(report["readiness_gates"]["commercial_product_use"], "BLOCKED")
+        self.assertEqual(report["readiness_gates"]["production_readiness"], "BLOCKED")
+        self.assertFalse(report["production_ready"])
+        self.assertFalse(report["cross_source_confirmation_allowed"])
+        self.assertIn("UNDERLYING_DATA_RIGHTS_OR_COMMERCIAL_USE_UNVERIFIED",
+                      report["readiness_gates"]["reason_codes"])
+        self.assertEqual(report["decision_output"], "NO_TRADE")
 
     def test_report_semantics_distinguish_pipeline_success_from_model_success(self):
         # Fail-closed aggregate contract; empty evidence is never labeled PASS.
