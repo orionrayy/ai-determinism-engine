@@ -88,6 +88,10 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertIn("UNVERIFIED", result["independence_status"])
         self.assertAlmostEqual(result["close_abs_delta_price_units"]["median"], 0.2, places=6)
         self.assertEqual(result["close_relative_delta"]["compatibility_status"], "COMPARABLE")
+        probe = result["temporal_alignment_probe"]
+        self.assertIn(0, probe["tested_offsets_seconds"])
+        self.assertFalse(probe["automatic_timestamp_shifting"])
+        self.assertGreaterEqual(len(probe["results"]), 10)
         self.assertIsNotNone(result["close_to_close_direction_agreement"])
 
     def test_large_price_level_divergence_is_flagged_even_when_direction_matches(self):
@@ -101,6 +105,10 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertGreater(result["close_relative_delta"]["median_fraction"], 0.0025)
         self.assertFalse(result["cross_source_confirmation_allowed"])
         self.assertFalse(result["datasets_merged"])
+        self.assertEqual(
+            result["temporal_alignment_probe"]["diagnosis"],
+            "NO_OBVIOUS_BOUNDED_SHIFT_FIX",
+        )
 
     def test_overlap_fails_closed_when_independent_match_count_is_too_small(self):
         spec_a = {"id": "a", "interval_seconds": 300}
