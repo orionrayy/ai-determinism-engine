@@ -157,3 +157,25 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Verify upstream data lineage, quote-side, UTC bar-label semantics, volume semantics and usage rights. The GetData README describes bar-open UTC/tick volume; Sai describes mid-quote and stores timestamps without explicit timezone, interpreted as UTC from its README. These descriptions do not establish equivalent or independent pricing feeds.
 - [ ] Compare samples and source hashes with a licensed broker Bid/Ask/tick feed, then rerun per-regime execution-aware benchmarks and exact TP-before-SL calibration on an untouched holdout.
 - [ ] Retain NO_TRADE, no cross-source confirmation, no deployment calibration, and no live order execution until the previous data-validity phase is resolved and the later research/security gates pass.
+
+
+## Final source-eligibility gate — hosted run #39016857786 (2026-10-17)
+
+### Verified in CI
+- [x] Pipeline runs on three public dataset files and keeps all series separate.
+- [x] 8 temporal calibration tests and 25 Python unit/regression tests pass; source downloads, benchmark counts, report JSON/Markdown, scenario contracts and artifact upload pass.
+- [x] Readiness model explicitly differentiates pipeline PASS from data/rights/research/production eligibility.
+- [x] Regression test proves quote-side uncertainty alone blocks both cross-source confirmation and production readiness even when a synthetic fixture labels other gates compatible.
+- [x] Final evidence artifact #12095247324; 38,308 bytes, SHA-256 eadd77b94dffa51408c34b6aa8da63406070b6ac01da0056ba6fee6cb283503a.
+
+### Still blocked
+- [ ] M5 source compatibility: 11,509 exact overlap timestamps; median absolute close-price difference 63.515 price units; median relative 1.3580%, P95 2.0576%; status DIVERGENT. Signed monthly difference changes from -94.105 (March) to -68.200 (April) to -56.710 (May). The best observed time offset improves median relative delta only 6.3458%, so no time-shift candidate is accepted.
+- [ ] Feed provenance: the Sai M1/M5 Q1-Q2 files appear in initial commit 01a9d1c1544eeea9632a29c1b3cde7ea0d13afe6 (2026-06-30) without an inspected file-specific monthly provenance/checksum trail. This is weak auditability, not evidence of fabrication.
+- [ ] Data rights: GetData's GitHub sample claims MIT but the provider's standard data terms are more restrictive for embedding raw datasets in paid/commercial products. Exact sample/provider terms relationship needs written clarification. Sai's underlying broker lineage/use rights are not verified.
+- [ ] Alternative BID/ASK candidate: a public Dukascopy mirror was found, but the repository has no clear license and must not be treated as approved production data.
+- [ ] Broker-execution evidence: acquire a licensed broker Bid/Ask/tick history and measure actual spread, commission, slippage, swaps and fills.
+- [ ] Forecast validation: test exact TP-before-SL target on mature outcomes, independent chronological regimes, untouched final holdout and uncertainty intervals.
+- [ ] Operations: end-to-end Telegram/OANDA integration, paper trading, production security/risk review and incident/rollback tests.
+- [ ] Maintain NO_TRADE, commercial training/serving blocked, source confirmation blocked and live order execution disabled until all prior evidence gates pass.
+
+Do not treat successful CI as strategy success, source rights clearance or production readiness. PR #165 remains a draft candidate and is not merged.
