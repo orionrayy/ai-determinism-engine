@@ -200,9 +200,25 @@ jobs:
                       assert raw_metrics['log_loss'] >= 0.0, raw_metrics
                       outcomes = side_report['holdout']['outcome_classes']
                       assert sum(outcomes.values()) == side_report['holdout']['rows'], side_report
+                      assert len(side_report['model_training']['model_parameter_sha256']) == 64, side_report
                       if side_report['calibration']['calibrator_fit'].get('fitted'):
                           calibrated_metrics = side_report['calibrated_holdout_metrics']
                           assert 0.0 <= calibrated_metrics['brier_score'] <= 1.0, calibrated_metrics
+                          paired = side_report.get('paired_calibration_improvement_block_bootstrap_ci')
+                          assert paired is not None, side_report
+                          assert paired['method'] == 'paired_moving_block_bootstrap_raw_minus_calibrated', paired
+                          assert paired['n'] == side_report['holdout']['rows'], paired
+                          assert paired['replicates'] == 250, paired
+                          assert paired['positive_improvement_favors_calibration'] is True, paired
+                          for metric in ('brier_score', 'log_loss'):
+                              bounds = paired['metrics'][metric]
+                              assert bounds['replicates'] == 250, bounds
+                              assert bounds['lower_95'] <= bounds['upper_95'], bounds
+                              assert 0.0 <= bounds['fraction_positive_bootstrap_improvements'] <= 1.0, bounds
+                          raw_brier = side_report['raw_holdout_metrics']['brier_score']
+                          cal_brier = calibrated_metrics['brier_score']
+                          point_brier = paired['metrics']['brier_score']['point_estimate_raw_minus_calibrated']
+                          assert abs(point_brier - (raw_brier - cal_brier)) < 1e-9, paired
           print(json.dumps({
               'status': result['status'],
               'source_count': result['source_count'],
