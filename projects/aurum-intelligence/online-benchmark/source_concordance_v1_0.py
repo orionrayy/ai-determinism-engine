@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 import statistics
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
 PRICE_FIELDS = ("open", "high", "low", "close")
@@ -49,6 +49,60 @@ def _correlation(left: Sequence[float], right: Sequence[float]) -> float | None:
     return covariance / math.sqrt(sum_left * sum_right)
 
 
+def _timestamp_offset_sensitivity(
+    primary_map: Mapping[datetime, Mapping[str, Any]],
+    secondary_map: Mapping[datetime, Mapping[str, Any]],
+    *,
+    expected_interval_seconds: int,
+    minimum_overlap_rows: int,
+    max_abs_lag_bars: int,
+) -> dict[str, Any]:
+    """Scan a fixed small timestamp-offset window for diagnosis only; never alters source rows."""
+    results = []
+    for offset_bars in range(-max_abs_lag_bars, max_abs_lag_bars + 1):
+        delta = timedelta(seconds=offset_bars * expected_interval_seconds)
+        shifted_map = {timestamp + delta: row for timestamp, row in secondary_map.items()}
+        overlap = sorted(primary_map.keys() & shifted_map.keys())
+        close_bps = []
+        exact_ohlc = 0
+        for ts in overlap:
+            left, right = primary_map[ts], shifted_map[ts]
+            left_close, right_close = float(left["close"]), float(right["close"])
+            close_bps.append(abs(left_close - right_close) / abs(left_close) * 10000 if left_close else math.inf)
+            exact_ohlc += int(all(float(left[field]) == float(right[field]) for field in PRICE_FIELDS))
+        eligible = len(overlap) >= minimum_overlap_rows
+        results.append({
+            "secondary_timestamp_offset_bars_for_diagnostic_only": offset_bars,
+            "secondary_timestamp_offset_seconds_for_diagnostic_only": offset_bars * expected_interval_seconds,
+            "overlap_rows": len(overlap),
+            "eligible_for_comparison": eligible,
+            "median_absolute_close_difference_bps": statistics.median(close_bps) if close_bps else None,
+            "p95_absolute_close_difference_bps": _percentile(close_bps, 0.95),
+            "exact_ohlc_match_count": exact_ohlc,
+        })
+    eligible_results = [r for r in results if r["eligible_for_comparison"] and r["median_absolute_close_difference_bps"] is not None]
+    best = min(eligible_results, key=lambda r: (
+        r["median_absolute_close_difference_bps"],
+        r["p95_absolute_close_difference_bps"],
+        abs(r["secondary_timestamp_offset_bars_for_diagnostic_only"]),
+    )) if eligible_results else None
+    return {
+        "method": "sensitivity scan only; original timestamps and the primary exact-time report are unchanged",
+        "max_abs_offset_bars": max_abs_lag_bars,
+        "expected_interval_seconds": expected_interval_seconds,
+        "offsets_tested_bars": list(range(-max_abs_lag_bars, max_abs_lag_bars + 1)),
+        "results": results,
+        "best_candidate_offset": best,
+        "automatically_shifted_source_timestamps": False,
+        "automatically_promoted_source": False,
+        "limitations": [
+            "Small offset scans cannot prove intended candle-label semantics.",
+            "Selecting the minimum discrepancy across offsets is exploratory multiple testing, not a source-correction rule.",
+            "A better offset does not establish which feed is correct or executable.",
+        ],
+    }
+
+
 def compare_source_datasets(
     primary_rows: Sequence[Mapping[str, Any]],
     secondary_rows: Sequence[Mapping[str, Any]],
@@ -58,6 +112,7 @@ def compare_source_datasets(
     sample_limit: int = 250,
     max_median_close_difference_bps: float = DEFAULT_MAX_MEDIAN_CLOSE_DIFFERENCE_BPS,
     max_p95_close_difference_bps: float = DEFAULT_MAX_P95_CLOSE_DIFFERENCE_BPS,
+    max_abs_timestamp_lag_bars: int = 3,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not primary_rows or not secondary_rows:
         raise ValueError("both_source_datasets_must_be_nonempty")
@@ -66,6 +121,8 @@ def compare_source_datasets(
     for name, value in (("max_median_close_difference_bps", max_median_close_difference_bps), ("max_p95_close_difference_bps", max_p95_close_difference_bps)):
         if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) < 0:
             raise ValueError(name + "_must_be_finite_nonnegative")
+    if isinstance(max_abs_timestamp_lag_bars, bool) or not isinstance(max_abs_timestamp_lag_bars, int) or not 0 <= max_abs_timestamp_lag_bars <= 24:
+        raise ValueError("max_abs_timestamp_lag_bars_must_be_integer_between_0_and_24")
 
     secondary_map: dict[datetime, Mapping[str, Any]] = {}
     for row in secondary_rows:
@@ -81,6 +138,10 @@ def compare_source_datasets(
         primary_map[ts] = row
 
     common_times = sorted(primary_map.keys() & secondary_map.keys())
+    lag_sensitivity = _timestamp_offset_sensitivity(
+        primary_map, secondary_map, expected_interval_seconds=expected_interval_seconds,
+        minimum_overlap_rows=minimum_overlap_rows, max_abs_lag_bars=max_abs_timestamp_lag_bars,
+    )
     primary_times, secondary_times = set(primary_map), set(secondary_map)
     close_abs_diffs, close_diff_bps, close_signed_diffs = [], [], []
     field_diffs: dict[str, list[float]] = {field: [] for field in PRICE_FIELDS}
@@ -136,6 +197,7 @@ def compare_source_datasets(
     report = {
         "status": status,
         "comparison_mode": "exact_timestamp_overlap_only_no_dataset_concatenation",
+        "timestamp_offset_sensitivity": lag_sensitivity,
         "primary_source": {
             "rows": len(primary_rows),
             "start_utc_assumed": min(primary_map).isoformat(),
