@@ -80,5 +80,23 @@ class SourceConcordanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_median_close_difference_bps"):
             compare_source_datasets(source_rows(30), source_rows(30), max_median_close_difference_bps=float("nan"))
 
+    def test_timestamp_offset_scan_finds_small_shift_without_changing_exact_time_status(self):
+        primary = source_rows(1200, aware=True)
+        secondary = source_rows(1200, aware=True)
+        for row in secondary:
+            row["timestamp"] = row["timestamp"] + timedelta(minutes=5)
+        report, sample = compare_source_datasets(primary, secondary)
+        sensitivity = report["timestamp_offset_sensitivity"]
+        self.assertEqual(sensitivity["best_candidate_offset"]["secondary_timestamp_offset_bars_for_diagnostic_only"], -1)
+        self.assertEqual(sensitivity["best_candidate_offset"]["median_absolute_close_difference_bps"], 0.0)
+        self.assertFalse(sensitivity["automatically_shifted_source_timestamps"])
+        self.assertFalse(sensitivity["automatically_promoted_source"])
+        self.assertEqual(report["comparison_mode"], "exact_timestamp_overlap_only_no_dataset_concatenation")
+        self.assertEqual(len(sample), 250)
+
+    def test_timestamp_offset_search_limits_fail_closed(self):
+        with self.assertRaisesRegex(ValueError, "max_abs_timestamp_lag_bars"):
+            compare_source_datasets(source_rows(40), source_rows(40), max_abs_timestamp_lag_bars=25)
+
 if __name__ == "__main__":
     unittest.main()
