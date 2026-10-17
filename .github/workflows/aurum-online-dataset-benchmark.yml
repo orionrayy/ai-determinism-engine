@@ -155,6 +155,7 @@ jobs:
           e = r['prequential_probability_evaluation']
           assert d['dataset_rows'] >= 700000, d
           assert d['paired_valid_bid_ask_candles'] >= 700000, d
+          assert d['data_quality']['rows_mon_fri_utc'] >= 700000, d
           assert d['minimum_candles_required'] >= 700000, d
           assert d['minimum_dataset_rows_required'] >= 20000, d
           assert d['months_requested'] >= 24 and len(d['monthly_manifest']) >= 24, d
