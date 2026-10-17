@@ -45,5 +45,27 @@ class TickBidAskBenchmarkTests(unittest.TestCase):
         self.assertEqual(len(rows), 1001)
 
 
+    def test_near_exact_bid_match_flags_possible_shared_lineage_not_independence(self):
+        result = tick.classify_lineage_overlap(4391, 4392)
+        self.assertEqual(result["status"], "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED")
+        self.assertAlmostEqual(result["exact_ohlc_match_fraction"], 4391 / 4392)
+        self.assertFalse(result["source_independence_verified"])
+        self.assertFalse(result["independent_source_confirmation"])
+        self.assertFalse(result["automatic_source_promotion"])
+
+    def test_lineage_diagnostic_does_not_call_nonmatching_sources_independent(self):
+        result = tick.classify_lineage_overlap(1, 1001)
+        self.assertEqual(result["status"], "NO_NEAR_EXACT_OHLC_MATCH_EVIDENCE_NOT_PROOF_OF_INDEPENDENCE")
+        self.assertFalse(result["source_independence_verified"])
+
+    def test_lineage_diagnostic_rejects_invalid_counts_and_small_overlap(self):
+        self.assertEqual(
+            tick.classify_lineage_overlap(1, 10)["status"],
+            "INSUFFICIENT_OVERLAP_FOR_LINEAGE_DIAGNOSTIC",
+        )
+        with self.assertRaisesRegex(tick.TickDatasetError, "invalid_lineage_overlap_counts"):
+            tick.classify_lineage_overlap(3, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
