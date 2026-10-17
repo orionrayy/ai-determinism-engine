@@ -1,0 +1,143 @@
+{
+  "schema_version": "1.0.0",
+  "status": "CI_PASS_READ_ONLY_TICK_SAMPLE",
+  "run": {
+    "id": 39021204557,
+    "url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39021204557",
+    "conclusion": "success",
+    "source_commit": "f2706642ed8da7c7727b53881ec7e045473ae06c",
+    "steps_passed": 13,
+    "artifact_id": 12096921783,
+    "artifact_bytes": 55004,
+    "artifact_sha256": "cca5e4e8c735b24261bfafc336a749a5422d97c3cd7472196dd4bc8dcd22ab27",
+    "created_at": "2026-10-17T09:30:31Z",
+    "multi_source_runtime_ms": 135372.536
+  },
+  "dataset": {
+    "id": "CarlosSilva1/xauusd-ticks",
+    "url": "https://huggingface.co/datasets/CarlosSilva1/xauusd-ticks",
+    "reported_rows": 286823542,
+    "card_claimed_license": "CC-BY-4.0",
+    "declared_period": "2021-05-24 through 2026-05-24",
+    "granularity": "millisecond tick quote snapshots with bid/ask prices and volumes",
+    "upstream_rights_verified": false,
+    "broker_lineage_verified": false,
+    "timezone_verified": false,
+    "commercial_training_approved": false,
+    "production_feed_approved": false
+  },
+  "sample_design": {
+    "windows": 3,
+    "rows_per_window": 1000,
+    "total_sampled_rows": 3000,
+    "requests": 30,
+    "response_bytes": 614982,
+    "windows_disjoint": true,
+    "windows_concatenated": false,
+    "infer_continuity_between_windows": false,
+    "raw_tick_rows_persisted": false
+  },
+  "windows": [
+    {
+      "name": "head",
+      "offset_start": 0,
+      "offset_end_exclusive": 1000,
+      "rows": 1000,
+      "start_utc_assumed": "2021-05-24T00:00:00.256000+00:00",
+      "end_utc_assumed": "2021-05-24T00:08:50.766000+00:00",
+      "timestamp_order_violations": 0,
+      "adjacent_duplicates": 0,
+      "crossed_quotes": 0,
+      "locked_zero_spread": 0,
+      "positive_spread": 1000,
+      "spread_price_units": {
+        "median": 0.4169999999999163,
+        "p95": 0.44699999999988904,
+        "p99": 0.45701000000010705,
+        "max": 0.49099999999998545
+      },
+      "spread_bps": {
+        "median": 2.2146218148293135,
+        "p95": 2.3739792754181606,
+        "p99": 2.4277067843538123,
+        "max": 2.608219183903545
+      },
+      "sample_sha256": "43ec1d9b4441db7984e04aceb1391c83f6897289b51e6d7c7d2bca3c58daf0a3",
+      "quality_flags": []
+    },
+    {
+      "name": "middle",
+      "offset_start": 143411700,
+      "offset_end_exclusive": 143412700,
+      "rows": 1000,
+      "start_utc_assumed": "2024-07-10T13:23:26.657000+00:00",
+      "end_utc_assumed": "2024-07-10T13:26:34.937000+00:00",
+      "timestamp_order_violations": 0,
+      "adjacent_duplicates": 0,
+      "crossed_quotes": 0,
+      "locked_zero_spread": 0,
+      "positive_spread": 1000,
+      "spread_price_units": {
+        "median": 0.3769999999999527,
+        "p95": 0.4141500000001996,
+        "p99": 0.4470300000001134,
+        "max": 0.5140000000001237
+      },
+      "spread_bps": {
+        "median": 1.5846285149485857,
+        "p95": 1.7406576604026334,
+        "p99": 1.878899807088145,
+        "max": 2.160285628427189
+      },
+      "sample_sha256": "6708dfd3c96e12f5935d07370411931c47b4313ba9569dc1e8c88651d49f664a",
+      "quality_flags": []
+    },
+    {
+      "name": "tail",
+      "offset_start": 286822500,
+      "offset_end_exclusive": 286823500,
+      "rows": 1000,
+      "start_utc_assumed": "2026-05-22T20:50:01.172000+00:00",
+      "end_utc_assumed": "2026-05-22T20:59:37.043000+00:00",
+      "timestamp_order_violations": 0,
+      "adjacent_duplicates": 0,
+      "crossed_quotes": 0,
+      "locked_zero_spread": 0,
+      "positive_spread": 1000,
+      "spread_price_units": {
+        "median": 1.0399999999999636,
+        "p95": 1.5039999999999054,
+        "p99": 1.677169999999687,
+        "max": 2.1039999999993597
+      },
+      "spread_bps": {
+        "median": 2.3069074131837035,
+        "p95": 3.3347375889667754,
+        "p99": 3.7189510115997524,
+        "max": 4.666740601085415
+      },
+      "sample_sha256": "e26223d5cb9efa272abac02915855f16c9fb5abcf110545ec7a029ecd79770f1",
+      "quality_flags": []
+    }
+  ],
+  "structural_quality": {
+    "status": "PASS",
+    "sampled_rows": 3000,
+    "positive_spread_rows": 3000,
+    "crossed_bid_ask_rows": 0,
+    "locked_zero_spread_rows": 0,
+    "timestamp_order_violations": 0,
+    "quality_flags": []
+  },
+  "eligibility": {
+    "spread_statistics_descriptive_only": true,
+    "actual_fills_or_slippage_observed": false,
+    "broker_quote_semantics_verified": false,
+    "upstream_rights_verified": false,
+    "eligible_for_production_cost_calibration": false,
+    "eligible_for_commercial_training": false,
+    "live_signal_enabled": false,
+    "live_order_execution_enabled": false,
+    "decision_gate": "NO_TRADE"
+  }
+}
