@@ -31,3 +31,8 @@ Outputs:
 ## Stop-distance versus entry-spread guard (P0 correction)
 
 The candidate sampler now excludes an anchor if the observed entry spread is greater than or equal to the 1-ATR stop distance. At such an entry snapshot, a long's Bid is already at/below its Ask-anchored stop or a short's Ask is already at/above its Bid-anchored stop. A pre-crossed barrier is an invalid trade setup, not a conventional post-entry stop-out. The data audit reports the fraction of contiguous ATR-valid candidate windows rejected by this geometry rule. The quote-path primitive also checks this invariant independently for callers outside the guarded sampler.
+
+
+## Barrier arithmetic parity
+
+Barrier thresholds use the same floating-point evaluation order as the pre-existing price-path evaluator. Price and PnL values remain Decimal-based after the thresholds have been fixed. This prevents a float-versus-Decimal rounding difference at a threshold equality from silently changing a binary TP/SL label.

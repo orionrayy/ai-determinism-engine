@@ -33,3 +33,8 @@ Decision gate: NO_TRADE; live order routing disabled.
 - Review of the entry-side logic revealed that the outcome loop checked the entry candle's opposite quote against an ATR-anchored stop at the same entry timestamp. Where entry spread >= stop distance, the barrier is already crossed at the quote snapshot; counting it as an ordinary later stop-out mixes invalid bracket geometry into strategy outcomes.
 - Corrective change: exclude such anchors before sampling, add an explicit entry-spread/ATR population audit, and make the path primitive fail closed with invalid_stop_geometry_at_entry. Valid paths continue to require exact label agreement with the legacy evaluator; legacy false-valid immediate-stop labels are counted separately.
 - This is a methodological correction, not a strategy improvement claim. The economic replay must be rerun on the changed eligible-anchor sample. No live order routing or profitability claim.
+
+
+## 2026-10-18 — barrier arithmetic parity fix
+
+The first replay after stop-geometry filtering stopped on a single label disagreement. The new path evaluator had formed ATR barrier prices using Decimal arithmetic while the reference evaluator used floating-point arithmetic. At exact OHLC threshold equality, those different arithmetic paths can create different binary labels. Barrier-price formation now follows the reference evaluator's float operation order; reported PnL remains Decimal-based. Mismatch diagnostics now print the new and reference status/label plus target/stop values. Hosted full-data validation is required before considering the correction accepted.

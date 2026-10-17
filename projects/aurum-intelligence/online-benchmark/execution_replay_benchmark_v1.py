@@ -124,7 +124,11 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
                 }
                 continue
             if result["outcome_label_tp_before_sl"] != legacy["label"]:
-                raise ValueError("path_label_disagreement_anchor_{}_side_{}".format(anchor, direction))
+                raise ValueError(
+                    "path_label_disagreement_anchor_{}_side_{}_new_status_{}_new_label_{}_legacy_status_{}_legacy_label_{}_target_{}_stop_{}".format(
+                        anchor, direction, result["status"], result["outcome_label_tp_before_sl"],
+                        legacy.get("status"), legacy.get("label"), result.get("target_price"), result.get("stop_price")))
+
             label_crosschecks += 1
             if result["status"] == "incomplete_path_gap":
                 raise ValueError("eligible_anchor_has_path_gap_" + str(anchor))

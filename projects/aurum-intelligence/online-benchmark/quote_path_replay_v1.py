@@ -107,10 +107,19 @@ def simulate_bracket_trade(
     entry_bar = rows[entry_index]
     direction = 1 if side == "long" else -1
     entry = entry_bar["ask_open"] if direction == 1 else entry_bar["bid_open"]
-    target = entry + Decimal(direction) * tp_mult * atr_value
-    stop = entry - Decimal(direction) * sl_mult * atr_value
-    risk_distance = sl_mult * atr_value
-    entry_spread = entry_bar["ask_open"] - entry_bar["bid_open"]
+
+    # Preserve the reference evaluator's floating-point barrier arithmetic so equality at
+    # price thresholds cannot produce divergent labels from Decimal-vs-float rounding.
+    # Fill/PnL arithmetic below remains Decimal-based after the threshold prices are fixed.
+    entry_float, atr_float = float(entry), float(atr_value)
+    tp_float, sl_float = float(tp_mult), float(sl_mult)
+    target_float = (entry_float + tp_float * atr_float if direction == 1
+                    else entry_float - tp_float * atr_float)
+    stop_float = (entry_float - sl_float * atr_float if direction == 1
+                  else entry_float + sl_float * atr_float)
+    target, stop = Decimal(str(target_float)), Decimal(str(stop_float))
+    risk_distance = Decimal(str(sl_float * atr_float))
+    entry_spread = Decimal(str(float(entry_bar["ask_open"]) - float(entry_bar["bid_open"])))
 
     def finish(status: str, exit_index: int | None, exit_price: Decimal | None,
                label: int | None, fill_assumption: str, *,
