@@ -25,6 +25,7 @@ jobs:
           python -m pip install --upgrade pip pillow
       - name: Expand versioned source bundle
         run: |
+          base64 -d projects/ffmpeg-motion-studio-v5/source_bundle.b64 > projects/ffmpeg-motion-studio-v5/source_bundle.zip
           unzip -t projects/ffmpeg-motion-studio-v5/source_bundle.zip
           unzip -o projects/ffmpeg-motion-studio-v5/source_bundle.zip -d projects/
       - name: Run unit and pipeline-contract tests
