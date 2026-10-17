@@ -144,7 +144,7 @@ def acquire_fred(config: Mapping[str, object]) -> AcquisitionResult:
             "limit": str(limit), "offset": str(offset),
         })
         request = urllib.request.Request(f"{FRED_ENDPOINT}?{query}",
-            headers={"User-Agent":"AurumResearch/1.0 bounded FRED adapter"})
+            headers={"User-Agent":"SerevexResearch/1.0 bounded FRED adapter"})
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
                 final = urllib.parse.urlparse(response.geturl())

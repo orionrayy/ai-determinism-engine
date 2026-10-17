@@ -92,7 +92,7 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [x] Report five disjoint chronological folds, with fold 5 exactly the final 20% tail.
 - [x] Add causal prequential probability baselines and proper scoring/reliability metrics plus approximate block-bootstrap uncertainty.
 - [x] 1,200/1,200 market-path contracts and 240/240 software robustness cases pass.
-- [x] Persist full metrics as Markdown and JSON under projects/aurum-intelligence/benchmarks/.
+- [x] Persist full metrics as Markdown and JSON under projects/serevex-quant/benchmarks/.
 - [ ] Confirm intended-use rights, provenance and timezone semantics for the online source.
 - [ ] Acquire licensed broker Bid/Ask/tick data and measured costs/fill semantics.
 - [ ] Validate across independent chronological regimes and an untouched external holdout.

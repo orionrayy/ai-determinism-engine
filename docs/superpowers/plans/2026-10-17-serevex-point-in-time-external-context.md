@@ -1,14 +1,14 @@
-# Aurum Point-in-Time External Context Implementation Plan
+# Serevex Point-in-Time External Context Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Add a reproducible point-in-time context layer and real-data ablation benchmark for CFTC gold positioning, GDELT news archives, BLS macro releases, and optional FRED/ALFRED vintages—without weakening Aurum’s data gates or claiming unproven trading skill.
+**Goal:** Add a reproducible point-in-time context layer and real-data ablation benchmark for CFTC gold positioning, GDELT news archives, BLS macro releases, and optional FRED/ALFRED vintages—without weakening Serevex’s data gates or claiming unproven trading skill.
 
 **Architecture:** Define a canonical schema/audit contract first. Isolated read-only provider adapters emit observations into that contract; a deterministic as-of feature builder joins only historically available observations to existing price/label anchors. The benchmark compares same-row ablations against causal price-only baselines, reports coverage and uncertainty, and remains separate from trading/deployment state.
 
 **Tech Stack:** Python 3.12; standard library unless a bounded-format reader is necessary; unittest; existing evaluation_protocol_v1_4.py; GitHub Actions.
 
-**Spec:** docs/superpowers/specs/2026-10-17-aurum-point-in-time-external-context-design.md
+**Spec:** docs/superpowers/specs/2026-10-17-serevex-point-in-time-external-context-design.md
 
 ## Global Constraints
 
@@ -31,7 +31,7 @@
 
 ## File Map and Frozen Interfaces
 
-Create under projects/aurum-intelligence/online-benchmark/:
+Create under projects/serevex-quant/online-benchmark/:
 - external_context_schema_v1.py / test_external_context_schema_v1.py: schema, source manifest, result statuses and audit.
 - cftc_cot_adapter_v1.py / test_cftc_cot_adapter_v1.py: official COT download/parsing and release availability.
 - gdelt_gkg_adapter_v1.py / test_gdelt_gkg_adapter_v1.py: bounded historical GKG archive parsing, first-seen time and de-duplication.
@@ -40,7 +40,7 @@ Create under projects/aurum-intelligence/online-benchmark/:
 - point_in_time_features_v1.py / test_point_in_time_features_v1.py: causal as-of features and coverage.
 - external_context_benchmark_v1.py / test_external_context_benchmark_v1.py: same-row ablations and report.
 
-Modify only after tests require integration: .github/workflows/aurum-online-dataset-benchmark.yml, projects/aurum-intelligence/PROGRESS_LOG.md, IMPLEMENTATION_STATUS.json, V1_4_1_IMPLEMENTATION_CHECKPOINT.md, and BENCHMARKS_AND_EVIDENCE.md. Keep existing evaluation_protocol_v1_4.py, source_concordance_v1_0.py, tick_bidask_benchmark_v1_0.py and large_scale_bidask_benchmark_v1_0.py behavior unchanged unless a contract-level issue requires a minimal tested change.
+Modify only after tests require integration: .github/workflows/serevex-research-benchmark.yml, projects/serevex-quant/PROGRESS_LOG.md, IMPLEMENTATION_STATUS.json, V1_4_1_IMPLEMENTATION_CHECKPOINT.md, and BENCHMARKS_AND_EVIDENCE.md. Keep existing evaluation_protocol_v1_4.py, source_concordance_v1_0.py, tick_bidask_benchmark_v1_0.py and large_scale_bidask_benchmark_v1_0.py behavior unchanged unless a contract-level issue requires a minimal tested change.
 
 Schema module interfaces:
 - ExternalObservation: frozen dataclass with source_id, source_record_id, dataset_or_series_id, schema_version, event_time, published_at, available_at, availability_quality, retrieved_at, source_url, payload_sha256, source_revision, value, unit, attributes, rights_status, provenance_status, quality_flags.
@@ -70,7 +70,7 @@ Benchmark interface:
 - [ ] Step 2 — Run RED: from the online-benchmark directory, run python -m unittest -v test_external_context_schema_v1.py. Expected: missing-module/function failures.
 - [ ] Step 3 — Implement frozen dataclasses, validated statuses and stable audits. Do not mutate inputs or silently assume naive timestamps are UTC.
 - [ ] Step 4 — Run focused test and python -m unittest -v for all existing/new tests in the directory; expected all pass.
-- [ ] Step 5 — Commit: feat(aurum): add point-in-time observation contracts.
+- [ ] Step 5 — Commit: feat(serevex): add point-in-time observation contracts.
 
 ### Task 2: CFTC Gold COT adapter
 
@@ -82,7 +82,7 @@ Benchmark interface:
 - [ ] Step 2 — Run python -m unittest -v test_cftc_cot_adapter_v1.py; expected RED.
 - [ ] Step 3 — Implement bounded acquisition from official CFTC Disaggregated Futures Only archives, strict official HTTPS host/path, byte/retry/timeout limits, source hashes, exact field/report-date preservation and Gold-only filtering. Declare years and coverage; one-year smoke does not count as complete historical coverage.
 - [ ] Step 4 — Run focused tests and complete online-benchmark unittest suite; expected GREEN independent of network.
-- [ ] Step 5 — Commit: feat(aurum): add causal CFTC gold positioning adapter.
+- [ ] Step 5 — Commit: feat(serevex): add causal CFTC gold positioning adapter.
 
 ### Task 3: GDELT historical GKG archive adapter
 
@@ -94,7 +94,7 @@ Benchmark interface:
 - [ ] Step 2 — Run python -m unittest -v test_gdelt_gkg_adapter_v1.py; expected RED.
 - [ ] Step 3 — Implement allow-listed bounded acquisition using official GDELT archive/master lists and a preregistered multi-year event-window schedule. DOC rolling search is recent-window smoke only. Archive/batch timestamp is the availability evidence; never substitute a backdated publication timestamp. Cap file and aggregate bytes; preserve only permitted metadata, URL/domain hashes and selected GKG themes/tone; never retain article body.
 - [ ] Step 4 — Run focused tests and full unittest suite. If real data scale is below 100,000, record scale_status=NOT_MET and actual counts; never duplicate rows.
-- [ ] Step 5 — Commit: feat(aurum): add bounded historical GDELT context adapter.
+- [ ] Step 5 — Commit: feat(serevex): add bounded historical GDELT context adapter.
 
 ### Task 4: BLS observation and publication-time adapter
 
@@ -106,7 +106,7 @@ Benchmark interface:
 - [ ] Step 2 — Run python -m unittest -v test_bls_release_adapter_v1.py; expected RED.
 - [ ] Step 3 — Implement bounded public API v1 request path and release association; enforce 25 queries/day, at most 25 series/request and 10 years/request. Observation period is not publication time. Use authoritative release time or a later safe proxy; omit “surprise” features without an independent consensus snapshot.
 - [ ] Step 4 — Run focused and whole suite; typed rate/partial/error states must not become successful empty datasets.
-- [ ] Step 5 — Commit: feat(aurum): add point-in-time BLS macro release adapter.
+- [ ] Step 5 — Commit: feat(serevex): add point-in-time BLS macro release adapter.
 
 ### Task 5: Optional FRED/ALFRED vintage adapter
 
@@ -118,7 +118,7 @@ Benchmark interface:
 - [ ] Step 2 — Run python -m unittest -v test_fred_alfred_adapter_v1.py; expected RED.
 - [ ] Step 3 — Implement official-host-only parsing/acquisition, explicit vintage/real-time parameters and bounded pagination. Key is runtime environment only; absent key returns SKIPPED_CREDENTIAL_REQUIRED. No key is assumed to exist in GitHub secrets.
 - [ ] Step 4 — Run focused + whole test suite; no-credential CI reports a skip, not fake acquisition success.
-- [ ] Step 5 — Commit: feat(aurum): add optional FRED ALFRED vintage source.
+- [ ] Step 5 — Commit: feat(serevex): add optional FRED ALFRED vintage source.
 
 ### Task 6: Deterministic as-of features and leakage tests
 
@@ -128,7 +128,7 @@ Benchmark interface:
 - [ ] Step 2 — Run python -m unittest -v test_point_in_time_features_v1.py; expected RED.
 - [ ] Step 3 — Implement visible_as_of and build_asof_features. Build lagged/normalized COT, macro level/change, fixed-window news event-count/theme/tone features, family coverage and compact lineage. Retain decision rows with absent feature families; distinguish zero events from data unavailable.
 - [ ] Step 4 — Run mutation tests plus full suite; adding/changing observations where available_at > decision_time must leave past feature rows unchanged.
-- [ ] Step 5 — Commit: feat(aurum): add deterministic point-in-time feature builder.
+- [ ] Step 5 — Commit: feat(serevex): add deterministic point-in-time feature builder.
 
 ### Task 7: Same-row ablation benchmark
 
@@ -138,18 +138,18 @@ Benchmark interface:
 - [ ] Step 2 — Run python -m unittest -v test_external_context_benchmark_v1.py; expected RED.
 - [ ] Step 3 — Implement deterministic L2 logistic regression for each ablation: zero initialization, stable sigmoid, full-batch gradient descent with lambda=1.0, learning rate=0.05 and max 200 steps. Fit normalization and model only on development rows; fit Platt calibration using only mature calibration-slice labels by reusing temporal-calibration-v1.3/calibration_diagnostics.py (minimum 100 calibration samples). Purge split-boundary examples whose labels are not mature at the next segment start. The final 20% tail is scoring-only and never used for feature, normalization, model or calibrator selection. Compare price-only to price+COT, price+macro, price+news and eligible combined context on identical timestamps/labels. Report causal base-rate/prequential baseline, Brier/log loss/ECE/MCE/reliability, moving-block CI, coverage/attrition, regimes, provider states and source caveats.
 - [ ] Step 4 — Run bounded real historical acquisition/benchmark; produce compact JSON/Markdown and manifest hashes only, retain existing 700k/20k gates, and report failure/partial/NOT_MET honestly.
-- [ ] Step 5 — Run focused and complete tests; commit: feat(aurum): benchmark external context ablations.
+- [ ] Step 5 — Run focused and complete tests; commit: feat(serevex): benchmark external context ablations.
 
 ### Task 8: CI integration, evidence checkpoint and final review
 
-**Files:** Modify .github/workflows/aurum-online-dataset-benchmark.yml, PROGRESS_LOG.md, IMPLEMENTATION_STATUS.json, V1_4_1_IMPLEMENTATION_CHECKPOINT.md and BENCHMARKS_AND_EVIDENCE.md.
+**Files:** Modify .github/workflows/serevex-research-benchmark.yml, PROGRESS_LOG.md, IMPLEMENTATION_STATUS.json, V1_4_1_IMPLEMENTATION_CHECKPOINT.md and BENCHMARKS_AND_EVIDENCE.md.
 
 - [ ] Step 1 — Add static workflow contract tests before edits: new paths trigger CI, credentials remain optional/secret-only, NO_TRADE and price benchmark gates remain, and NOT_MET cannot be displayed as scale-pass.
 - [ ] Step 2 — Confirm RED, then update workflow to run all schema/adapter tests before bounded acquisition, cap all downloads, allow FRED skip, and exclude raw datasets/secrets from artifacts.
 - [ ] Step 3 — Run hosted CI and inspect job logs/artifacts. Existing large price benchmark must still clear gates. Each source status is separately reported PASS/PARTIAL/SKIPPED_CREDENTIAL_REQUIRED/NOT_MET/FAILED. Pipeline may pass while reporting missing scale, but the scale gate itself cannot be marked passed.
 - [ ] Step 4 — Update status and project memory only from observed evidence: tested source SHA, run ID, artifact SHA-256/expiry, exact counts, URLs/versions, skips, tests, metrics and blockers. No “accuracy #1” or validated-alpha assertion.
 - [ ] Step 5 — Review full diff/status; verify no raw dataset/key, auto-correction/merge, target-semantic changes, altered trade gate, or claim that an untested head passed. Keep PR #164 draft/unmerged absent a separate merge authorization.
-- [ ] Step 6 — Commit verified checkpoint: docs(aurum): checkpoint external context benchmark; record deferred minors and NOT_MET scales.
+- [ ] Step 6 — Commit verified checkpoint: docs(serevex): checkpoint external context benchmark; record deferred minors and NOT_MET scales.
 
 ## Acceptance Checklist
 

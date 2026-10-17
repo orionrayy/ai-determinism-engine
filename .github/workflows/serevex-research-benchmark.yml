@@ -1,19 +1,19 @@
-name: Aurum Online Dataset Benchmark
+name: Serevex Research Data & Calibration Gate
 
 on:
   pull_request:
     paths:
-      - "projects/aurum-intelligence/online-benchmark/**"
-      - "projects/aurum-intelligence/temporal-calibration-v1.3/**"
-      - "projects/aurum-intelligence/V1_3_1_IMPLEMENTATION_CHECKPOINT.md"
-      - ".github/workflows/aurum-online-dataset-benchmark.yml"
+      - "projects/serevex-quant/online-benchmark/**"
+      - "projects/serevex-quant/temporal-calibration-v1.3/**"
+      - "projects/serevex-quant/V1_3_1_IMPLEMENTATION_CHECKPOINT.md"
+      - ".github/workflows/serevex-research-benchmark.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: aurum-online-dataset-benchmark-${{ github.event.pull_request.number || github.ref }}
+  group: serevex-online-dataset-benchmark-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,14 +32,14 @@ jobs:
           python -m pip install --disable-pip-version-check --no-warn-script-location
           "pandas==2.2.3" "pyarrow==21.0.0"
       - name: Test temporal calibration component and validate 240 scenarios
-        working-directory: projects/aurum-intelligence/temporal-calibration-v1.3
+        working-directory: projects/serevex-quant/temporal-calibration-v1.3
         run: |
           python -m unittest -v
-          python run_calibration_contracts.py > /tmp/aurum-calibration-contracts.json
+          python run_calibration_contracts.py > /tmp/serevex-calibration-contracts.json
           python - <<'PY'
           import json
           from pathlib import Path
-          result = json.loads(Path('/tmp/aurum-calibration-contracts.json').read_text(encoding='utf-8'))
+          result = json.loads(Path('/tmp/serevex-calibration-contracts.json').read_text(encoding='utf-8'))
           assert result['status'] == 'PASS', result
           assert result['scenario_count'] == 240 and result['passed'] == 240 and result['failed'] == 0, result
           assert result['synthetic_only'] is True, result
@@ -47,23 +47,23 @@ jobs:
           print(json.dumps(result, indent=2))
           PY
       - name: Unit-test parser, baselines and scenario contracts
-        working-directory: projects/aurum-intelligence/online-benchmark
+        working-directory: projects/serevex-quant/online-benchmark
         run: python -m unittest -v
       - name: Acquire current community dataset and benchmark
         run: >-
-          python projects/aurum-intelligence/online-benchmark/ci_benchmark.py
-          --output-dir /tmp/aurum-online-benchmark
+          python projects/serevex-quant/online-benchmark/ci_benchmark.py
+          --output-dir /tmp/serevex-online-benchmark
           --cases 50 --scenario-anchors 5 --min-rows 1000
       - name: Audit third-source public Bid/Ask tick dataset
         run: >-
-          python projects/aurum-intelligence/online-benchmark/tick_bidask_benchmark_v1_0.py
-          --output-dir /tmp/aurum-online-benchmark
+          python projects/serevex-quant/online-benchmark/tick_bidask_benchmark_v1_0.py
+          --output-dir /tmp/serevex-online-benchmark
       - name: Enforce live data and test-count requirements
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          p = Path('/tmp/aurum-online-benchmark/online_dataset_benchmark.json')
+          p = Path('/tmp/serevex-online-benchmark/online_dataset_benchmark.json')
           r = json.loads(p.read_text(encoding='utf-8'))
           assert r['status'] == 'PASS', r
           assert r['dataset']['rows'] >= 1000, r['dataset']
@@ -140,14 +140,14 @@ jobs:
           PY
       - name: Run 700k M1 candles and 20k distinct real timestamp scenarios
         run: >-
-          python projects/aurum-intelligence/online-benchmark/large_scale_bidask_benchmark_v1_0.py
-          --output-dir /tmp/aurum-online-benchmark/large-scale
+          python projects/serevex-quant/online-benchmark/large_scale_bidask_benchmark_v1_0.py
+          --output-dir /tmp/serevex-online-benchmark/large-scale
       - name: Enforce 700k-candle and 20k-real-scenario minimums
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
-          p = Path('/tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.json')
+          p = Path('/tmp/serevex-online-benchmark/large-scale/large_scale_bidask_benchmark.json')
           r = json.loads(p.read_text(encoding='utf-8'))
           assert r['status'] == 'PASS', r
           d = r['dataset']
@@ -210,7 +210,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          path = Path('/tmp/aurum-online-benchmark/tick_bidask_benchmark.json')
+          path = Path('/tmp/serevex-online-benchmark/tick_bidask_benchmark.json')
           r = json.loads(path.read_text(encoding='utf-8'))
           assert r['status'] == 'PASS', r
           assert r['dataset']['license'] == 'CC-BY-4.0', r['dataset']
@@ -277,12 +277,12 @@ jobs:
         env:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: |
-          python projects/aurum-intelligence/online-benchmark/run_external_context_benchmark_v1.py \
-            --output /tmp/aurum-online-benchmark/external-context/external_context_benchmark.json
+          python projects/serevex-quant/online-benchmark/run_external_context_benchmark_v1.py \
+            --output /tmp/serevex-online-benchmark/external-context/external_context_benchmark.json
           python - <<'PY'
           import json
           from pathlib import Path
-          p = Path('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.json')
+          p = Path('/tmp/serevex-online-benchmark/external-context/external_context_benchmark.json')
           r = json.loads(p.read_text(encoding='utf-8'))
           assert r['decision_gate'] == 'NO_TRADE', r
           assert r['deployment_calibrated'] is False and r['validated'] is False, r
@@ -319,8 +319,8 @@ jobs:
                   'brier_ci_vs_baseline': v.get('paired_moving_block_ci_vs_causal_baseline')}
                   for k, v in b['ablations'].items()}
           }, indent=2))
-          with open('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.md', 'w', encoding='utf-8') as f:
-              f.write('# Aurum external-context point-in-time benchmark\n\n')
+          with open('/tmp/serevex-online-benchmark/external-context/external_context_benchmark.md', 'w', encoding='utf-8') as f:
+              f.write('# Serevex external-context point-in-time benchmark\n\n')
               f.write(f"- Decision gate: {r['decision_gate']}\n")
               f.write(f"- Real unique GDELT records: {g['observations']} / {g['target']} (scale: {g['status']})\n")
               f.write(f"- Price rows: {d['paired_valid_bid_ask_candles']}; mature unambiguous labels: {r['price_label_audit']['matured_binary_labels']}\n")
@@ -335,29 +335,29 @@ jobs:
       - name: Add benchmark report to job summary
         if: always()
         run: |
-          if [ -f /tmp/aurum-calibration-contracts.json ]; then
+          if [ -f /tmp/serevex-calibration-contracts.json ]; then
             echo "## Temporal calibration contract benchmark (synthetic only)" >> "$GITHUB_STEP_SUMMARY"
-            cat /tmp/aurum-calibration-contracts.json >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/serevex-calibration-contracts.json >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ -f /tmp/aurum-online-benchmark/online_dataset_benchmark.md ]; then
-            cat /tmp/aurum-online-benchmark/online_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/serevex-online-benchmark/online_dataset_benchmark.md ]; then
+            cat /tmp/serevex-online-benchmark/online_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ -f /tmp/aurum-online-benchmark/tick_bidask_benchmark.md ]; then
-            cat /tmp/aurum-online-benchmark/tick_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/serevex-online-benchmark/tick_bidask_benchmark.md ]; then
+            cat /tmp/serevex-online-benchmark/tick_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ -f /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md ]; then
-            cat /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/serevex-online-benchmark/large-scale/large_scale_bidask_benchmark.md ]; then
+            cat /tmp/serevex-online-benchmark/large-scale/large_scale_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
-          if [ -f /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md ]; then
-            cat /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f /tmp/serevex-online-benchmark/external-context/external_context_benchmark.md ]; then
+            cat /tmp/serevex-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: aurum-online-dataset-benchmark-${{ github.run_id }}
+          name: serevex-online-dataset-benchmark-${{ github.run_id }}
           path: |
-            /tmp/aurum-online-benchmark/
-            /tmp/aurum-calibration-contracts.json
+            /tmp/serevex-online-benchmark/
+            /tmp/serevex-calibration-contracts.json
           if-no-files-found: warn
           retention-days: 14

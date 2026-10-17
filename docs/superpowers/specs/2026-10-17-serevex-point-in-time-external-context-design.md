@@ -1,10 +1,10 @@
-# Aurum Point-in-Time External Context Research — Design Specification
+# Serevex Point-in-Time External Context Research — Design Specification
 
 **Date:** 2026-10-17 (Asia/Jakarta)  
 **Status:** Proposed design; awaiting user review  
 **Repository:** `orionrayy/ai-determinism-engine`  
-**Implementation branch:** `feature/aurum-online-dataset-benchmark`  
-**Related work:** Draft PR #164, Aurum online multi-source/large-scale benchmark  
+**Implementation branch:** `feature/serevex-online-dataset-benchmark`  
+**Related work:** Draft PR #164, Serevex online multi-source/large-scale benchmark  
 **Decision gate:** `NO_TRADE`
 
 ## 1. Purpose and success definition
@@ -33,7 +33,7 @@ All dataset licences, redistribution rights, original provenance, provider seman
 
 ## 3. Architecture and module boundaries
 
-New modules stay under `projects/aurum-intelligence/online-benchmark/`; existing price/cross-source/tick modules remain separate and are consumed through reports/contracts rather than merged into one large script.
+New modules stay under `projects/serevex-quant/online-benchmark/`; existing price/cross-source/tick modules remain separate and are consumed through reports/contracts rather than merged into one large script.
 
 - `external_context_schema_v1.py`: canonical typed event, source manifest, and data-quality status contract; UTC-aware timestamps and schema validation.
 - `cftc_cot_adapter_v1.py`: bounded annual COT acquisition/parsing, gold contract filtering, stable record IDs, report date vs availability, positioning fields and source hashes.
@@ -63,7 +63,7 @@ All timestamps are UTC ISO-8601 internally; original timezone and raw timestamp 
 
 At decision time (t), a feature builder may only use observations satisfying `available_at <= t` and the feature's required availability quality. Unknown-timing source rows may appear in descriptive reports but must not be included in causal scored features. Conservatively lagged rows may be separately evaluated and clearly labeled; do not combine them invisibly with verified-timing results.
 
-GDELT de-duplication must be stable across repeated snapshots. Count an item no earlier than the earliest archive in which the record appears. Store hashed canonical URL (not article text) plus publication/source metadata where permitted. Do not use a backdated published timestamp alone to imply the article was available to Aurum at that time.
+GDELT de-duplication must be stable across repeated snapshots. Count an item no earlier than the earliest archive in which the record appears. Store hashed canonical URL (not article text) plus publication/source metadata where permitted. Do not use a backdated published timestamp alone to imply the article was available to Serevex at that time.
 
 ## 5. Feature families and preregistered ablations
 

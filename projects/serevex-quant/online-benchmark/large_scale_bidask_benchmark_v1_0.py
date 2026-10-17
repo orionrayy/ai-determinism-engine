@@ -74,7 +74,7 @@ def month_bounds_ms(year, month):
 
 
 def _request_bytes(url, cap, label, timeout=FETCH_TIMEOUT_SECONDS):
-    req = Request(url, headers={"User-Agent": "Aurum-Intelligence/1.5-large-scale-research"})
+    req = Request(url, headers={"User-Agent": "Serevex-Intelligence/1.5-large-scale-research"})
     last_error = None
     for attempt in range(3):
         try:
@@ -784,7 +784,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         raise BenchmarkError(f"scenario_matrix_below_gate:{scenario_count}")
     report = {
         "status": "PASS",
-        "benchmark_id": "AURUM-LARGE-SCALE-BIDASK-M1-v1.0",
+        "benchmark_id": "SEREVEX-LARGE-SCALE-BIDASK-M1-v1.0",
         "benchmark_kind": "real historical M1 Bid/Ask candles with causal TP-before-SL scenario scoring; not a live execution or profitability claim",
         "decision_output": "NO_TRADE",
         "dataset": {
@@ -848,7 +848,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
             PROVIDER_NOTE,
             "Public repository access is not proof of redistribution or commercial-use permission; raw monthly data are not included in artifacts.",
             "This benchmark samples 20,000 evenly spaced, contiguous real timestamp windows across the selected period; windows are timestamp-distinct but not statistically independent by construction.",
-            "The strategy rules are simple fixed baselines, not a tuned Aurum production model.",
+            "The strategy rules are simple fixed baselines, not a tuned Serevex production model.",
             "The probability baseline is a Laplace-smoothed rule-side historical prevalence using only labels matured before each decision; it does not prove predictive edge.",
             "Bid/Ask OHLC touch labels cannot reconstruct tick order inside the same minute. Same-bar TP/SL collisions are excluded rather than resolving the order optimistically.",
             "The public source's quote provenance, tradeability at the user's intended venue, historical spread representativeness, and exact data-use rights remain unverified.",
@@ -866,7 +866,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
     report_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     sample_count = _write_signal_sample(output_dir / "large_scale_scenario_sample.csv", dataset, prediction_rows)
     md = [
-        "# Aurum large-scale XAUUSD Bid/Ask benchmark v1.0",
+        "# Serevex large-scale XAUUSD Bid/Ask benchmark v1.0",
         "",
         "Result: PASS for the acquisition, data-contract and benchmark-run gates only. Trading decision: NO_TRADE.",
         "",
@@ -922,7 +922,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         "",
         "- PASS certifies only that the declared minimum rows/scenarios, parser, contracts, metrics and artifact generation succeeded.",
         "- Source metadata says Dukascopy via dukascopy-node; upstream provenance and data-use rights are not independently verified. Use for research only pending review.",
-        "- The development/calibration predictor uses only earlier, fully matured TP/SL outcomes. At the final-test boundary, prior counts are frozen and no final-test label is used to update predictions; this is a fixed prequential prevalence baseline, not a trained or deployment-calibrated Aurum model.",
+        "- The development/calibration predictor uses only earlier, fully matured TP/SL outcomes. At the final-test boundary, prior counts are frozen and no final-test label is used to update predictions; this is a fixed prequential prevalence baseline, not a trained or deployment-calibrated Serevex model.",
         "- Any model-vs-0.5 Brier skill and bootstrap interval are descriptive; they do not establish alpha, profitability or world-leading accuracy.",
         "- Same-bar TP/SL collisions are excluded; missing minute bars are not interpolated for scenario windows.",
         "- Execution cost stats reflect this public Bid/Ask feed, not the user's intended broker's measured spread, commissions, swaps, slippage, or fills.",

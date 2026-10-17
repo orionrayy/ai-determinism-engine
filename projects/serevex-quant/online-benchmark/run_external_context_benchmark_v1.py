@@ -260,7 +260,7 @@ def run(output_path: Path) -> dict[str, Any]:
         else "PARTIAL" if gdelt_coverage else "NOT_MET"
     )
     report = {
-        "benchmark_id": "AURUM-POINT-IN-TIME-EXTERNAL-CONTEXT-v1",
+        "benchmark_id": "SEREVEX-POINT-IN-TIME-EXTERNAL-CONTEXT-v1",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         # PASS is a pipeline/scale-gate state only; source completeness and usable
         # feature coverage are reported independently and can remain PARTIAL/NOT_MET.

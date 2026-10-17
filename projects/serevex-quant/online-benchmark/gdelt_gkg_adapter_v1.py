@@ -176,7 +176,7 @@ def deduplicate_snapshots(observations: list[ExternalObservation]) -> list[Exter
 
 def _bounded_get(url: str, cap: int) -> bytes:
     _validate_official_url(url)
-    request = urllib.request.Request(url, headers={"User-Agent": "AurumResearch/1.0 bounded metadata audit"})
+    request = urllib.request.Request(url, headers={"User-Agent": "SerevexResearch/1.0 bounded metadata audit"})
     last_error = "download_failed"
     for attempt in range(MAX_RETRIES + 1):
         try:

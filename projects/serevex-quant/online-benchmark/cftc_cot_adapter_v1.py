@@ -184,7 +184,7 @@ def acquire_cot_year(year: int, *, max_bytes: int = MAX_DOWNLOAD_BYTES) -> Acqui
     if not 1 <= max_bytes <= MAX_DOWNLOAD_BYTES:
         return AcquisitionResult("FAILED", error_code="invalid_byte_limit")
     url = f"{BASE_URL}fut_disagg_txt_{year}.zip"
-    request = urllib.request.Request(url, headers={"User-Agent": "AurumResearch/1.0 (bounded public-data audit)"})
+    request = urllib.request.Request(url, headers={"User-Agent": "SerevexResearch/1.0 (bounded public-data audit)"})
     payload = None
     last_error = "download_failed"
     for attempt in range(MAX_RETRIES + 1):

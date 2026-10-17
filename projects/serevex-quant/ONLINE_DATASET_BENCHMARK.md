@@ -1,4 +1,4 @@
-# Aurum v1.1.0 online dataset benchmark
+# Serevex v1.1.0 online dataset benchmark
 
 **Goal.** Obtain fresh public community OHLCV data from a fixed upstream endpoint on a hosted runner, validate its structure, chronology and provenance, and run reproducible diagnostics without storing raw upstream data in Git. This is a research gate, not a trading recommendation.
 
@@ -22,7 +22,7 @@
 
 ## Run locally with a CSV
 
-From projects/aurum-intelligence/online-benchmark:
+From projects/serevex-quant/online-benchmark:
 
     python -m unittest -v
     python ci_benchmark.py --input path/to/xauusd.csv --min-rows 1000 --cases 50 --scenario-anchors 5 --output-dir benchmark-output
@@ -31,7 +31,7 @@ Omitting --input downloads the allow-listed current CSV. Direct online access fr
 
 ## Hosted CI
 
-Workflow: .github/workflows/aurum-online-dataset-benchmark.yml
+Workflow: .github/workflows/serevex-online-dataset-benchmark.yml
 
 It unit-tests parser and scenario contracts, downloads current upstream data, enforces minimum row/case/evaluation/simulation counts and the NO_TRADE safety gate, writes a job summary, and uploads JSON/CSV/Markdown artifacts with 14-day retention. No repository write permission is required and raw online data is not committed.
 
@@ -64,5 +64,5 @@ Latest hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-eng
 
 Under assumed 0.50 price-unit round-trip costs, all active baselines lose in full history and tail. The older selected-case breakout +2.37 on seven trades is contradicted by full-history -2,290.29 on 4,035 trades. Prequential Brier scores are 0.250000 for constant 0.5, 0.250019 for expanding base-rate and 0.250749 for rolling-288 base-rate; expanding Brier improvement interval crosses zero. No trained/calibrated TP-before-SL model is validated. Keep NO_TRADE.
 
-Full report: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and JSON companion.
+Full report: projects/serevex-quant/benchmarks/full_history_replay_2026-10-16.md and JSON companion.
 

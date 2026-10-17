@@ -198,7 +198,7 @@ def classify_lineage_overlap(exact_ohlc_matches, overlap_bars, threshold=0.95, m
 
 
 def _request_bytes(url, cap, label, timeout=60):
-    req = Request(url, headers={"User-Agent": "Aurum-Intelligence/1.4.1 research-benchmark"})
+    req = Request(url, headers={"User-Agent": "Serevex-Intelligence/1.4.1 research-benchmark"})
     last = None
     for attempt in range(3):
         try:
@@ -444,7 +444,7 @@ def run(output_dir):
         output_dir / "tick_m5_comparison_sample_secondary.csv", secondary_sample_rows, limit=250,
     )
     md = [
-        "# Aurum third-source tick Bid/Ask benchmark",
+        "# Serevex third-source tick Bid/Ask benchmark",
         "",
         "Status: {}; decision gate: NO_TRADE.".format(report["status"]),
         "",

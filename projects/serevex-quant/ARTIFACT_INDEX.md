@@ -4,7 +4,7 @@ This page separates what is committed to GitHub from the portable artifacts atta
 
 ## Committed in this repository
 
-Directory: `projects/aurum-intelligence/`
+Directory: `projects/serevex-quant/`
 
 - `README.md` — entry point and current caveats.
 - `PROJECT_MEMORY.md` — architecture, source modules, provider boundaries, data status and safety rules.
@@ -20,7 +20,7 @@ Directory: `projects/aurum-intelligence/`
 1. `aurum-intelligence-v0.9.0.zip`
    - Exact source snapshot; 85 entries including source, tests, data, benchmarks, scripts, docs and Mini App.
    - SHA-256: `ce35237ae32f0edafdc8288ae14edfab9d5c3df09f61d73a458e61ce782bda3f`
-2. `aurum-intelligence-project-memory-v1.0.0.zip`
+2. `serevex-intelligence-project-memory-v1.0.0.zip`
    - Expanded snapshot with v0.9.0 source tree, four long-form research files and project memory/checkpoint docs.
    - SHA-256: `3e57249d26d69fc5739edc5cb5a45cc18f5a22c3162a688bdae4ad01753673d9`
 
@@ -35,8 +35,8 @@ The latest complete code snapshot is v0.9.0. Notes about v1.0.0 timestamp-valida
 
 - `aurum-intelligence-v1.1.0.zip` — 223,353 bytes, SHA-256 `4f3aafa682d1777a1dc6d220ad65b4b931b76760dafa8700818f8d1c0c18e623`; built by the release script from reconciled v1.0.0 source and verified through fresh ZIP extraction.
 - Base release verification: pytest 153 passed, unittest 92 passed, compileall PASS, release checks PASS, extracted archive pytest PASS. Later extra portable-runner tests are documented in the progress log.
-- Portable hosted benchmark source: `online-benchmark/ci_benchmark.py` and `test_ci_benchmark.py`, committed under `projects/aurum-intelligence/online-benchmark/` on branch `feature/aurum-online-dataset-benchmark`.
-- CI: `.github/workflows/aurum-online-dataset-benchmark.yml`; it acquires the allow-listed public CSV at runtime, does not push or persist raw data in Git, emits the SHA-256 and report, and uploads result artifacts for 14 days.
+- Portable hosted benchmark source: `online-benchmark/ci_benchmark.py` and `test_ci_benchmark.py`, committed under `projects/serevex-quant/online-benchmark/` on branch `feature/serevex-online-dataset-benchmark`.
+- CI: `.github/workflows/serevex-online-dataset-benchmark.yml`; it acquires the allow-listed public CSV at runtime, does not push or persist raw data in Git, emits the SHA-256 and report, and uploads result artifacts for 14 days.
 - Live upstream data: pending the first hosted workflow result. An offline smoke result is not a substitute for that verification.
 - The ZIP is available as a conversation artifact and is not a committed binary file under this repository.
 
@@ -68,7 +68,7 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 
 - Current local release: aurum-intelligence-v1.3.0.zip, 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67; 107 ZIP entries. Tests: 181 pytest, 109 unittest, 11 online benchmark tests, compileall, browser syntax/HTML checks and clean extraction all pass.
 - Hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520): 35,954 public community rows, 35,893 all-bar decision opportunities per fixed rule, five disjoint chronological folds, 1,200 market-path and 240 robustness checks pass.
-- Permanent summaries: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and .json. No raw 35,954-row CSV is redistributed.
+- Permanent summaries: projects/serevex-quant/benchmarks/full_history_replay_2026-10-16.md and .json. No raw 35,954-row CSV is redistributed.
 - All four active fixed-rule baselines are net-negative under assumed costs in full history and final tail. No calibrated trading model exists; NO_TRADE remains active.
 
 ## v1.3.1 hosted CI artifact

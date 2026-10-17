@@ -1,4 +1,4 @@
-# Aurum Intelligence — Risk-Weighted Gap Audit and Competitive Positioning
+# Serevex Quant Research — Risk-Weighted Gap Audit and Competitive Positioning
 
 **Date:** 2026-10-17 (Asia/Jakarta)  
 **Status:** Assessment and roadmap artifact on the existing draft PR branch. This document does not change application behavior, enable live signals, authorize order execution, or assert production readiness.
@@ -7,11 +7,11 @@
 
 The user-supplied inventory of 100 weaknesses and 100 comparisons is useful as a broad hypothesis register, but it is not yet a verified 200-point audit. It mixes confirmed implementation gaps, historical checkpoints, inferred competitor features, platform-category differences, and advanced capabilities that may not create measurable user value. Several items repeat the same underlying problem (for example, spread/commission/slippage/gap handling; data quality and chronology; authentication/session/RBAC controls; and broad asset coverage).
 
-Aurum's best next step is not to maximize the number of features or models. It is to build a **verifiable XAUUSD decision-support pipeline** where every output is traceable to its data, timestamp, decision rule/model version, net-of-cost assumptions, calibration evidence and abstention reason. Its initial defensible differentiation should be evidence quality, honest uncertainty, safe defaults and frictionless Telegram UX—not an unsubstantiated claim of global predictive superiority.
+Serevex's best next step is not to maximize the number of features or models. It is to build a **verifiable XAUUSD decision-support pipeline** where every output is traceable to its data, timestamp, decision rule/model version, net-of-cost assumptions, calibration evidence and abstention reason. Its initial defensible differentiation should be evidence quality, honest uncertainty, safe defaults and frictionless Telegram UX—not an unsubstantiated claim of global predictive superiority.
 
 ## 2. Verified current baseline and important distinctions
 
-The current project checkpoint is v1.3.1 on draft PR #164, `feature/aurum-online-dataset-benchmark`. It is not merged into `main` and is not a production release. The PR records 185 pytest tests, 109 unittest tests, compilation, Mini App syntax/HTML checks and clean-archive retesting as passing at the recorded checkpoint. These are source/package and contract-test results, not evidence that a strategy is profitable.
+The current project checkpoint is v1.3.1 on draft PR #164, `feature/serevex-online-dataset-benchmark`. It is not merged into `main` and is not a production release. The PR records 185 pytest tests, 109 unittest tests, compilation, Mini App syntax/HTML checks and clean-archive retesting as passing at the recorded checkpoint. These are source/package and contract-test results, not evidence that a strategy is profitable.
 
 There are two distinct data realities that must not be conflated:
 
@@ -118,11 +118,11 @@ Possible later work includes MT5/cTrader/TradingView workflow connectors, more t
 
 ## 5. Competitor benchmark map
 
-| Comparator | Correct benchmark category | Measure against Aurum | Do not infer |
+| Comparator | Correct benchmark category | Measure against Serevex | Do not infer |
 |---|---|---|---|
-| Bloomberg Terminal | Financial data, news, analytics and professional workflows | Data lineage, source authority, cross-asset context, search, collaboration and explainability concepts | That Aurum can reproduce proprietary/global content at $0 |
+| Bloomberg Terminal | Financial data, news, analytics and professional workflows | Data lineage, source authority, cross-asset context, search, collaboration and explainability concepts | That Serevex can reproduce proprietary/global content at $0 |
 | LSEG Workspace / Refinitiv lineage | Financial data, news, market analysis and trading workflows | Provenance, point-in-time context, data coverage disclosure and workflow integration | That every paid dataset or feature is available without contract or license |
-| QuantConnect / LEAN | Algorithm research and trading engine | Event/time frontier, chronological replay, broker/cost models, reproducible strategy experiments, paper/live boundary | That Aurum must rebuild an entire execution platform before a research assistant is useful |
+| QuantConnect / LEAN | Algorithm research and trading engine | Event/time frontier, chronological replay, broker/cost models, reproducible strategy experiments, paper/live boundary | That Serevex must rebuild an entire execution platform before a research assistant is useful |
 | TradingView | Charts, scripting, alerts and trader-facing UX | Chart usability, alert reliability, script/notification workflow and clear data timestamps | That a charting/alert feature proves signal quality or grants broker-account access |
 | MetaTrader 5 / TradeStation | Trading software and brokerage/execution ecosystem | Indicator/script interface, realistic tester assumptions, order lifecycle, broker compatibility and user workflow | That all brokerage features/markets/fees are available identically in every region or account |
 
@@ -149,6 +149,6 @@ Any gate failure returns to the earliest failed gate; later phases do not procee
 
 ## 7. Definition of progress
 
-Aurum moves forward when uncertainty is reduced with reproducible evidence—not merely when code volume, model complexity, feature count or marketing language grows. The first meaningful milestone is not “beat Bloomberg” or “be #1”; it is a trustworthy, affordable XAUUSD decision-support workflow whose data rights, evaluation, calibration limits, operational behavior and abstention decisions can be independently checked.
+Serevex moves forward when uncertainty is reduced with reproducible evidence—not merely when code volume, model complexity, feature count or marketing language grows. The first meaningful milestone is not “beat Bloomberg” or “be #1”; it is a trustworthy, affordable XAUUSD decision-support workflow whose data rights, evaluation, calibration limits, operational behavior and abstention decisions can be independently checked.
 
 **Current decision remains:** `NO_TRADE`. No live order execution, validated trading edge, or global superiority claim is authorized by this audit.

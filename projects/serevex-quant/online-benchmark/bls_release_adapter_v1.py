@@ -162,7 +162,7 @@ def acquire_bls_series(
     if len(body) > MAX_REQUEST_BYTES:
         return AcquisitionResult("FAILED", error_code="bls_request_body_too_large")
     request = urllib.request.Request(BLS_API_URL, data=body, method="POST",
-        headers={"Content-Type":"application/json", "User-Agent":"AurumResearch/1.0 bounded BLS adapter"})
+        headers={"Content-Type":"application/json", "User-Agent":"SerevexResearch/1.0 bounded BLS adapter"})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
             if response.geturl() != BLS_API_URL:

@@ -3,15 +3,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[3]
-WORKFLOW = ROOT / ".github" / "workflows" / "aurum-online-dataset-benchmark.yml"
-RUNNER = ROOT / "projects" / "aurum-intelligence" / "online-benchmark" / "run_external_context_benchmark_v1.py"
-FRED_ADAPTER = ROOT / "projects" / "aurum-intelligence" / "online-benchmark" / "fred_alfred_adapter_v1.py"
+WORKFLOW = ROOT / ".github" / "workflows" / "serevex-online-dataset-benchmark.yml"
+RUNNER = ROOT / "projects" / "serevex-intelligence" / "online-benchmark" / "run_external_context_benchmark_v1.py"
+FRED_ADAPTER = ROOT / "projects" / "serevex-intelligence" / "online-benchmark" / "fred_alfred_adapter_v1.py"
 
 
 class ExternalContextWorkflowContractTests(unittest.TestCase):
     def test_new_paths_trigger_the_existing_benchmark_workflow(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn('projects/aurum-intelligence/online-benchmark/**', workflow)
+        self.assertIn('projects/serevex-quant/online-benchmark/**', workflow)
         self.assertIn('python -m unittest -v', workflow)
 
     def test_live_and_price_benchmark_gates_remain_no_trade(self):
@@ -53,7 +53,7 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
 
 
     def test_price_source_benchmark_emits_evidence_backed_qualification_gates(self):
-        benchmark = (ROOT / "projects" / "aurum-intelligence" / "online-benchmark" / "ci_benchmark.py").read_text(encoding="utf-8")
+        benchmark = (ROOT / "projects" / "serevex-intelligence" / "online-benchmark" / "ci_benchmark.py").read_text(encoding="utf-8")
         self.assertIn("from source_qualification_gate_v1 import evaluate_source_qualification", benchmark)
         self.assertIn('"source_qualification_gates":source_qualification_gates', benchmark)
         self.assertIn('"execution_costs_measured"', benchmark)

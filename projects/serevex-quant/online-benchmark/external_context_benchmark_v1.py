@@ -19,7 +19,7 @@ from calibration_diagnostics import apply_platt_scaler, fit_platt_scaler, probab
 
 from point_in_time_features_v1 import THEME_WHITELIST
 
-PROTOCOL_VERSION = "aurum-external-context-ablation-v1"
+PROTOCOL_VERSION = "serevex-external-context-ablation-v1"
 DEV_FRACTION = 0.70
 CALIBRATION_FRACTION = 0.80
 HOLDOUT_FRACTION = 0.20

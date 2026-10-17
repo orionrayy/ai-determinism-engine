@@ -1,11 +1,11 @@
-# Aurum Intelligence — persistent project memory
+# Serevex Quant Research — persistent project memory
 
 This directory is the durable working notebook for the XAUUSD/gold analysis and Telegram-assistant project. It records architecture, progress, benchmarking, source provenance, current blockers, and a prioritized roadmap.
 
 Start with **PROJECT_MEMORY.md**, then **PROGRESS_LOG.md**, **BENCHMARKS_AND_EVIDENCE.md**, **RESEARCH_SUMMARY.md**, **ROADMAP.md**, and **SOURCE_SNAPSHOT.md**.
 
 ## Current state (2026-10-16; latest checkpoint v1.2.0)
-- Latest source artifact: aurum-intelligence-v1.2.0.zip (260,781 bytes; SHA-256 19912b690e74af802a7170316703d40048a67731a1eb26d806c9929f048d2db3). It remains a downloadable artifact, not a binary tracked in this folder.
+- Latest source artifact: serevex-intelligence-v1.2.0.zip (260,781 bytes; SHA-256 19912b690e74af802a7170316703d40048a67731a1eb26d806c9929f048d2db3). It remains a downloadable artifact, not a binary tracked in this folder.
 - Clean release validation: 176 pytest passed; 109 unittest passed; compileall, inline JS syntax and HTML-ID audit pass; clean ZIP extraction reruns 176 tests.
 - UX increment: persistent-accessible Sederhana/Tingkat lanjut mode in the Mini App; Telegram mode preference backed by SQLite with backward-compatible migration. Mini App mode is browser-local, not server-synchronized. Both modes preserve the NO_TRADE decision gate.
 - Local reproducible dataset remains 60 public community XAUUSD M5 bars, with unknown timezone/broker provenance. Release smoke has 50 observed cases / 250 comparisons, 1,200/1,200 market-path contracts and 240/240 software robustness cases.
@@ -28,7 +28,7 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 
 ## Latest checkpoint — v1.3.0 (hosted full-history benchmark verified)
 
-- Source package aurum-intelligence-v1.3.0.zip: 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67; 107 ZIP entries. Clean checks: 181 pytest, 109 unittest, 11 online benchmark tests; compileall, JS/HTML and extracted archive pass.
+- Source package serevex-intelligence-v1.3.0.zip: 278,402 bytes, SHA-256 53dabb5e86c8ce74691790e4c865d2624667cf531e572818bc571527bd4c2b67; 107 ZIP entries. Clean checks: 181 pytest, 109 unittest, 11 online benchmark tests; compileall, JS/HTML and extracted archive pass.
 - Hosted run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5: 35,954 OHLCV rows; 35,893 sequential opportunities per fixed rule; five disjoint folds 7,175 / 7,176 / 7,176 / 7,176 / 7,190; 1,200 market path and 240 robustness cases passed.
 - All active fixed-rule baselines lose with assumed costs in full replay and tail. Expanding-rate Brier 0.250019 vs 0.250000 for constant 0.5, interval crosses zero; rolling base rate is worse. These are diagnostics, not calibrated forecasts.
 - Decision remains NO_TRADE. Data rights, timezone, broker execution semantics, real costs, independent regimes and paper trading remain unverified.
