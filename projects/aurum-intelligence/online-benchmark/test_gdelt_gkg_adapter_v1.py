@@ -106,6 +106,17 @@ class GdeltGkgTests(unittest.TestCase):
                     remaining_bytes=100, prior_observation_count=0,
                 )
 
+    def test_aggregate_budget_is_large_enough_for_real_scale_target(self):
+        self.assertGreaterEqual(gdelt.MAX_AGGREGATE_BYTES, 800 * 1024 * 1024)
+
+    def test_same_gkg_record_from_different_archive_hash_is_not_false_conflict(self):
+        raw = row("20260301120000-1")
+        first = gdelt.parse_gkg_tsv(raw, manifest(b"archive-one"))[0]
+        second = gdelt.parse_gkg_tsv(raw, manifest(b"archive-two"))[0]
+        result = gdelt.deduplicate_snapshots([first, second])
+        self.assertEqual(len(result), 1)
+        self.assertFalse(any("conflicting_snapshot" in flag for flag in result[0].quality_flags))
+
     def test_no_article_body_is_persisted(self):
         raw=row("20260301120000-1")
         result=gdelt.parse_gkg_tsv(raw,manifest(raw))
