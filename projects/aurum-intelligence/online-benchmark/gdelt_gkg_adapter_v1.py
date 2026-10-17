@@ -188,6 +188,27 @@ def _bounded_get(url: str, cap: int) -> bytes:
     raise RuntimeError(f"gdelt_download_failed:{last_error}")
 
 
+def _download_archive_with_budget(
+    url: str,
+    *,
+    remaining_bytes: int,
+    prior_observation_count: int,
+) -> tuple[bytes | None, str | None]:
+    """Download one archive without throwing away earlier records on budget exhaustion."""
+    if isinstance(remaining_bytes, bool) or not isinstance(remaining_bytes, int) or remaining_bytes < 1:
+        if prior_observation_count > 0:
+            return None, "aggregate_byte_cap_reached_before_next_archive"
+        raise ValueError("aggregate_byte_cap_exceeded_before_first_archive")
+    cap = min(MAX_ARCHIVE_BYTES, remaining_bytes)
+    try:
+        return _bounded_get(url, cap), None
+    except ValueError as exc:
+        code = str(exc)
+        if code in {"content_length_exceeds_limit", "download_exceeds_limit"} and prior_observation_count > 0:
+            return None, "aggregate_byte_cap_reached_before_next_archive"
+        raise
+
+
 def select_historical_gkg_archives(
     master_listing: str,
     start: datetime,
@@ -257,37 +278,53 @@ def acquire_historical_gkg(
         )
         observations = []
         manifests = []
-        total_bytes = len(listing)
+        acquisition_warnings: list[str] = []
+        total_bytes = len(listing.encode("utf-8"))
         for _, url in candidates:
-            if total_bytes >= aggregate_cap:
+            remaining = aggregate_cap - total_bytes
+            archive, stop_warning = _download_archive_with_budget(
+                url, remaining_bytes=remaining, prior_observation_count=len(observations)
+            )
+            if stop_warning:
+                acquisition_warnings.append(stop_warning)
                 break
-            archive = _bounded_get(url, min(MAX_ARCHIVE_BYTES, aggregate_cap-total_bytes))
+            if archive is None:
+                acquisition_warnings.append("archive_download_returned_no_payload")
+                break
             total_bytes += len(archive)
             digest = manifest_sha256(archive)
             try:
                 with zipfile.ZipFile(BytesIO(archive)) as zf:
                     files = [i for i in zf.infolist() if not i.is_dir() and i.filename.endswith(".csv")]
                     if len(files) != 1 or files[0].file_size > MAX_PAYLOAD_BYTES:
+                        acquisition_warnings.append("archive_skipped_invalid_csv_file_count_or_size")
                         continue
                     payload = zf.read(files[0])
             except (zipfile.BadZipFile, OSError, RuntimeError):
+                acquisition_warnings.append("archive_skipped_invalid_zip")
                 continue
             retrieved = datetime.now(timezone.utc)
-            manifest = SourceManifest("gdelt-gkg", "historical-gkg", url, retrieved, digest,
+            source_manifest = SourceManifest("gdelt-gkg", "historical-gkg", url, retrieved, digest,
                 len(archive), 0, 0, "GKG v2 archive", "review-required",
                 "official-host;independent-rights-review-required")
-            parsed = parse_gkg_tsv(payload, manifest)
-            manifests.append(SourceManifest(manifest.source_id, manifest.dataset_or_series_id,
-                manifest.source_url, manifest.retrieved_at, manifest.payload_sha256,
-                manifest.payload_bytes, len(parsed), len(parsed), manifest.provider_version,
-                manifest.rights_status, manifest.provenance_status))
+            try:
+                parsed = parse_gkg_tsv(payload, source_manifest)
+            except (ValueError, UnicodeError):
+                acquisition_warnings.append("archive_skipped_parser_rejection")
+                continue
+            manifests.append(SourceManifest(source_manifest.source_id, source_manifest.dataset_or_series_id,
+                source_manifest.source_url, source_manifest.retrieved_at, source_manifest.payload_sha256,
+                source_manifest.payload_bytes, len(parsed), len(parsed), source_manifest.provider_version,
+                source_manifest.rights_status, source_manifest.provenance_status))
             observations.extend(parsed)
             if len(observations) >= target_records:
                 break
         deduped = deduplicate_snapshots(observations)
-        archive_window_complete = len(candidates) == discovered_archive_count
+        archive_window_complete = len(candidates) == discovered_archive_count and not acquisition_warnings
         if len(deduped) >= target_records and archive_window_complete:
             status = "PASS"
+        elif len(deduped) >= target_records:
+            status = "PARTIAL"
         elif len(deduped) > 0:
             status = "PARTIAL"
         else:
@@ -299,6 +336,6 @@ def acquire_historical_gkg(
                       f"sampled_archives={len(candidates)}",
                       f"archive_window_complete={str(archive_window_complete).lower()}",
                       "sampling_design=deterministic_evenly_spaced_archive_sample",
-                      "no_article_body_retained"))
+                      "no_article_body_retained", *acquisition_warnings))
     except (ValueError, RuntimeError, UnicodeError) as exc:
         return AcquisitionResult("FAILED", error_code=str(exc))
