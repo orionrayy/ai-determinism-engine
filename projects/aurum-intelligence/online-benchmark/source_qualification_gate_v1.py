@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
 
 RESEARCH_EVIDENCE_FIELDS = (
     "provenance_verified",
@@ -30,11 +31,15 @@ def _nonempty_reference(value: object) -> bool:
     if not isinstance(value, str):
         return False
     reference = value.strip()
-    return bool(reference) and len(reference) <= 2048 and (
-        reference.startswith("https://")
-        or reference.startswith("evidence://")
-        or reference.startswith("repo://")
-    )
+    if not reference or len(reference) > 2048:
+        return False
+    if reference.startswith("https://"):
+        parsed = urlparse(reference)
+        return bool(parsed.hostname) and parsed.username is None and parsed.password is None
+    if reference.startswith(("evidence://", "repo://")):
+        _, identifier = reference.split("://", 1)
+        return bool(identifier.strip("/")) and not any(ch.isspace() for ch in identifier)
+    return False
 
 
 def evaluate_source_qualification(
@@ -101,7 +106,8 @@ def evaluate_source_qualification(
         "research_missing_evidence": research_missing,
         "execution_missing_evidence": execution_missing,
         "checks": checks,
-        "source_promotion_allowed": research_qualified,
+        "source_promotion_allowed": False,
+        "manual_promotion_review_required": research_qualified,
         "live_execution_authorized": False,
         "decision_output": "NO_TRADE",
         "blockers": blockers,
