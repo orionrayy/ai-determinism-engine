@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T14:48:43+07:00",
+  "checkpoint": "2026-10-17T14:57:33+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -244,18 +244,21 @@
       "state": "open",
       "draft": true,
       "merged": false,
-      "head_sha": "707f563c7b4382e5a35a18197d1a0ec4100fc305",
+      "head_sha": "e9f73719bc9acfbd0f9e85c777a97d856b76e1b5",
       "base_branch": "feature/aurum-online-dataset-benchmark"
     },
     "hosted_ci": {
-      "run_id": 39014942332,
-      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39014942332",
+      "run_id": 39015468873,
+      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015468873",
       "status": "success",
-      "artifact_id": 12094680550,
-      "artifact_bytes": 32870,
-      "artifact_sha256": "2cd809365080a3adb564ebd8c73fe8a3a48f635349aa18bec602e5ca9f3d8350",
-      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39014942332/artifacts/12094680550",
-      "artifact_expires_at": "2026-10-31T07:48:40Z"
+      "head_sha": "e9f73719bc9acfbd0f9e85c777a97d856b76e1b5",
+      "temporal_calibration_tests_passed": 8,
+      "python_unit_and_regression_tests_passed": 22,
+      "artifact_id": 12094870433,
+      "artifact_bytes": 33975,
+      "artifact_sha256": "8a23015c04bcd27821d41be4abebcf408e1f57df40a9fd399e406b98bad26bb3",
+      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015468873/artifacts/12094870433",
+      "artifact_expires_at": "2026-10-31T07:57:28Z"
     },
     "measured_coverage": {
       "source_files": 3,
@@ -264,8 +267,7 @@
       "fixed_rule_comparisons": 750,
       "synthetic_market_path_contracts": 2160,
       "synthetic_software_contracts": 720,
-      "test_files_passed": 22,
-      "temporal_calibration_unit_tests_passed": 8,
+      "runtime_ms": 53549.711,
       "decision_output": "NO_TRADE",
       "predictive_model_validated": false,
       "deployment_calibrated": false,
@@ -327,7 +329,32 @@
       "p95_relative_limit": 0.005,
       "compatibility_status": "DIVERGENT",
       "source_independence": "UNVERIFIED",
-      "cross_source_confirmation_allowed": false
+      "cross_source_confirmation_allowed": false,
+      "temporal_alignment_probe": {
+        "tested_offsets_seconds": [
+          -25200,
+          -10800,
+          -7200,
+          -3600,
+          -600,
+          -300,
+          0,
+          300,
+          600,
+          3600,
+          7200,
+          10800,
+          25200
+        ],
+        "best_observed_offset_seconds_diagnostic_only": -25200,
+        "best_offset_seconds_diagnostic_only": null,
+        "exact_timestamp_median_relative_delta": 0.013580126354403586,
+        "best_observed_median_relative_delta": 0.012718360660069487,
+        "relative_median_improvement_fraction": 0.06345785538693881,
+        "material_shift_candidate": false,
+        "diagnosis": "NO_OBVIOUS_BOUNDED_SHIFT_FIX",
+        "automatic_timestamp_shifting": false
+      }
     },
     "benchmark_interpretation": {
       "all_active_fixed_rule_baselines_net_negative_under_assumed_costs": true,
@@ -337,7 +364,7 @@
       "note": "PASS means acquisition/schema/benchmark/scenario contracts succeeded; it does not mean strategy profitability or model validation."
     },
     "blockers": [
-      "Investigate the divergent M5 price levels and verify source timestamps, bars and data lineage before using cross-source confirmation.",
+      "Investigate divergent M5 price levels; a bounded timestamp-offset probe found no material alignment candidate.",
       "Audit source rights and original provider/broker provenance.",
       "Acquire licensed broker Bid/Ask/tick data and measured spreads, fees, slippage and fill semantics.",
       "Validate exact TP-before-SL probabilities across independent chronological regimes and an untouched final holdout.",
