@@ -392,6 +392,7 @@ def render_markdown(report):
     })
     relative = overlap.get("close_relative_delta", {})
     agreement = overlap.get("close_to_close_direction_agreement")
+    alignment = overlap.get("temporal_alignment_probe", {})
     lines.extend([
         "", "## Cross-source M5 overlap and price compatibility", "",
         "Exact shared timestamps: {}.".format(overlap["exact_timestamp_matches"]),
@@ -405,6 +406,10 @@ def render_markdown(report):
             relative.get("p95_limit_fraction", 0.005)),
         "Consecutive close-to-close direction agreement: {}. Source independence remains UNVERIFIED.".format(
             "n/a" if agreement is None else format(agreement, ".4f")),
+        "Bounded timestamp-alignment probe: best offset B−A = {} seconds; relative median {:.4%}; diagnosis {}. No automatic shift applied.".format(
+            alignment.get("best_offset_seconds_diagnostic_only", "unknown"),
+            alignment.get("best_median_relative_delta_fraction", 0.0),
+            alignment.get("diagnosis", "NOT_RECORDED")),
         "Cross-source confirmation enabled: no. High direction agreement does not cure divergent price levels or prove independent provenance.",
         "", "## Full-history fixed-rule results", "",
     ])
