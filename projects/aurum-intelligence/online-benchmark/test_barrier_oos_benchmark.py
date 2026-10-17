@@ -125,6 +125,65 @@ class BarrierOOSBenchmarkTests(unittest.TestCase):
             self.assertFalse(item["deployment_calibrated"])
             self.assertFalse(item["live_signal_enabled"])
 
+    def test_paired_bootstrap_uses_paired_rows_and_is_deterministic(self):
+        raw = [0.8, 0.2, 0.7, 0.3, 0.75, 0.25, 0.65, 0.35]
+        labels = [0, 1, 0, 1, 0, 1, 0, 1]
+        same = barrier.paired_block_bootstrap_improvements(
+            raw, raw, labels, block_size=2, replicates=40, seed=7
+        )
+        for metric in ("brier_score", "log_loss"):
+            result = same["metrics"][metric]
+            self.assertEqual(result["point_estimate_raw_minus_calibrated"], 0.0)
+            self.assertEqual(result["lower_95"], 0.0)
+            self.assertEqual(result["upper_95"], 0.0)
+            self.assertEqual(result["fraction_positive_bootstrap_improvements"], 0.0)
+        first = barrier.paired_block_bootstrap_improvements(
+            raw, [0.55, 0.45, 0.55, 0.45, 0.55, 0.45, 0.55, 0.45],
+            labels, block_size=2, replicates=40, seed=7
+        )
+        second = barrier.paired_block_bootstrap_improvements(
+            raw, [0.55, 0.45, 0.55, 0.45, 0.55, 0.45, 0.55, 0.45],
+            labels, block_size=2, replicates=40, seed=7
+        )
+        self.assertEqual(first, second)
+        self.assertTrue(first["positive_improvement_favors_calibration"])
+
+    def test_paired_bootstrap_rejects_misaligned_or_invalid_inputs(self):
+        with self.assertRaisesRegex(ValueError, "length_mismatch"):
+            barrier.paired_block_bootstrap_improvements([0.4, 0.6], [0.4], [0, 1])
+        with self.assertRaisesRegex(ValueError, "probability_out_of_range"):
+            barrier.paired_block_bootstrap_improvements([1.4], [0.4], [0], replicates=20)
+        with self.assertRaisesRegex(ValueError, "outcome_must_be_binary"):
+            barrier.paired_block_bootstrap_improvements([0.4], [0.5], [2], replicates=20)
+
+    def test_holdout_mutation_cannot_change_training_or_calibration_fit(self):
+        original = make_market_rows(1500, seed=91)
+        changed = [dict(row) for row in original]
+        holdout_start = int(len(changed) * 0.8)
+        for row in changed[holdout_start:]:
+            for key in ("open", "high", "low", "close"):
+                row[key] += 1000.0
+        first = barrier.run_barrier_oos(original, source_id="mutation_original", bootstrap_replicates=20)
+        second = barrier.run_barrier_oos(changed, source_id="mutation_changed", bootstrap_replicates=20)
+        self.assertEqual(first["status"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(second["status"], "DIAGNOSTIC_ONLY")
+        for side in ("long", "short"):
+            a = first["sides"][side]
+            b = second["sides"][side]
+            self.assertEqual(
+                a["model_training"]["model_parameter_sha256"],
+                b["model_training"]["model_parameter_sha256"],
+            )
+            self.assertEqual(a["calibration"]["calibrator_fit"], b["calibration"]["calibrator_fit"])
+            self.assertEqual(
+                a["calibration"]["max_target_exit_index"] < a["holdout"]["first_decision_index"],
+                True,
+            )
+            self.assertEqual(
+                b["calibration"]["max_target_exit_index"] < b["holdout"]["first_decision_index"],
+                True,
+            )
+
     def test_insufficient_history_fails_closed(self):
         result = barrier.run_barrier_oos(make_market_rows(100), source_id="tiny_fixture")
         self.assertEqual(result["status"], "INSUFFICIENT_HISTORY")
