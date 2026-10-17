@@ -36,7 +36,7 @@ def archive_zip(payload: bytes) -> bytes:
 
 
 def archive_listing(*timestamps: str) -> bytes:
-    return "\\n".join(
+    return "\n".join(
         f"6800000 fixture http://data.gdeltproject.org/gdeltv2/{stamp}.gkg.csv.zip"
         for stamp in timestamps
     ).encode("utf-8")
