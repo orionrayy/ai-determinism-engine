@@ -265,6 +265,65 @@ jobs:
             'decision_output': r['decision_output']
           }, indent=2))
           PY
+      - name: Run real-data point-in-time external-context benchmark
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          python projects/aurum-intelligence/online-benchmark/run_external_context_benchmark_v1.py \
+            --output /tmp/aurum-online-benchmark/external-context/external_context_benchmark.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          assert r['decision_gate'] == 'NO_TRADE', r
+          assert r['deployment_calibrated'] is False and r['validated'] is False, r
+          assert r['live_signal_enabled'] is False, r
+          g = r['scale_gate']
+          assert g['observations'] >= 0 and g['target'] == 100000, g
+          assert g['passed'] is (g['observations'] >= g['target']), g
+          if g['status'] == 'NOT_MET':
+              assert g['passed'] is False, g
+          if g['passed']:
+              assert g['observations'] >= 100000, g
+          assert g['synthetic_or_duplicated_observations_added'] == 0, g
+          b = r['ablation_benchmark']
+          assert b['protocol']['holdout_used_for_selection'] is False, b['protocol']
+          assert b['protocol']['holdout_used_for_calibration'] is False, b['protocol']
+          assert b['protocol']['final_holdout_fraction'] == 0.20, b['protocol']
+          d = r['source_details']['price_dataset']
+          assert d['paired_valid_bid_ask_candles'] >= 700000, d
+          assert d['weekday_active_nonflat_rows'] >= 700000, d
+          assert r['price_label_audit']['candidate_anchors'] >= 20000, r['price_label_audit']
+          assert r['price_label_audit']['matured_binary_labels'] >= 1000, r['price_label_audit']
+          print(json.dumps({
+              'status': r['status'],
+              'decision_gate': r['decision_gate'],
+              'real_unique_gdelt_observations': g['observations'],
+              'context_scale_gate': g['status'],
+              'price_rows': d['paired_valid_bid_ask_candles'],
+              'valid_atr_anchors': r['price_label_audit']['candidate_anchors'],
+              'matured_unambiguous_labels': r['price_label_audit']['matured_binary_labels'],
+              'source_states': r['source_states_for_features'],
+              'ablations': {k: {'status': v.get('status'),
+                  'calibration_status': v.get('calibration_status'),
+                  'brier': v.get('metrics', {}).get('brier_score'),
+                  'brier_ci_vs_baseline': v.get('paired_moving_block_ci_vs_causal_baseline')}
+                  for k, v in b['ablations'].items()}
+          }, indent=2))
+          with open('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.md', 'w', encoding='utf-8') as f:
+              f.write('# Aurum external-context point-in-time benchmark\\n\\n')
+              f.write(f"- Decision gate: {r['decision_gate']}\\n")
+              f.write(f"- Real unique GDELT records: {g['observations']} / {g['target']} (scale: {g['status']})\\n")
+              f.write(f"- Price rows: {d['paired_valid_bid_ask_candles']}; mature unambiguous labels: {r['price_label_audit']['matured_binary_labels']}\\n")
+              f.write('\\n| Ablation | Status | Calibration | Holdout Brier | Paired Brier improvement 95% interval |\\n|---|---|---|---:|---|\\n')
+              for name, a in b['ablations'].items():
+                  metric = a.get('metrics', {})
+                  ci = a.get('paired_moving_block_ci_vs_causal_baseline', {})
+                  interval = f"[{ci.get('lower_95')}, {ci.get('upper_95')}]" if ci else 'n/a'
+                  f.write(f"| {name} | {a.get('status')} | {a.get('calibration_status', 'n/a')} | {metric.get('brier_score', 'n/a')} | {interval} |\\n")
+              f.write('\\nPipeline success is not proof of data scale, calibrated edge, profitability, or deployment readiness.\\n')
+          PY
       - name: Add benchmark report to job summary
         if: always()
         run: |
@@ -280,6 +339,9 @@ jobs:
           fi
           if [ -f /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
