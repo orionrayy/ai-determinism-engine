@@ -91,3 +91,45 @@ This section supersedes older version-specific statements above where they diffe
 - Hosted run [#38897894594](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38897894594) passed on code commit `6017eec3141fb803907583abeca006a230e90be4`. The Platt calibration unit tests and 240/240 synthetic contract cases passed; online dataset acquisition, full-history counts, 1,200 market paths, 240 software robustness scenarios and evidence upload also passed.
 - New artifact #12044756186, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`. Full dataset remains 35,954 community rows ending 2026-09-25. Active fixed-rule baselines remain net-negative under assumed costs; no production-calibrated forecast exists.
 - Synthetic 720-row calibration illustration is strictly a code/metrics check, not financial accuracy evidence. Actual bundled market sample still yields zero OOS TP-before-SL predictions; decision stays `NO_TRADE`.
+
+
+## Latest implementation checkpoint — multi-source benchmark and eligibility gates (2026-10-17)
+
+### Source branches and release boundaries
+- Canonical implementation remains this repository and the Aurum working branch feature/aurum-multi-source-benchmark.
+- Draft PR #165: https://github.com/orionrayy/ai-determinism-engine/pull/165 (base feature/aurum-online-dataset-benchmark). It is open, intentionally draft, and unmerged.
+- Tested code head: 8db8bd90830b78b0007a6904a104a80c851f3464. Latest hosted CI run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/39016857786.
+- Final CI artifact #12095247324 is 38,308 bytes, SHA-256 eadd77b94dffa51408c34b6aa8da63406070b6ac01da0056ba6fee6cb283503a, expires 2026-10-31 08:19:17 UTC. Local snapshot is /mnt/data/aurum-readiness-gates-final.zip. It includes derived JSON/Markdown evidence and test reports, never raw source CSVs.
+- Test evidence on the tested head: 8 temporal-calibration unit tests; 25 Python unit/regression tests; single-source and multi-source online benchmark downloads, report validation, scenario assertions and artifact upload all pass.
+- Coverage on the multi-source run: three data files; 140,164 sum of rows, explicitly not deduplicated/independent; 750 actual-dataset fixed-rule comparisons; 2,160 synthetic market-path contracts; 720 synthetic software robustness contracts; about 37.52 s runtime.
+
+### Current architecture increment
+- Added projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py as a separate runner, not a replacement for the older v1.3.1 benchmark entry point.
+- Added source-level SHA-256, row counts, time ranges, median/P95/max interval/gap indicators, timezone-policy disclosure, quote-side/provenance/rights claims and a source-eligibility object.
+- Added exact-UTC timestamp M5 overlap, absolute and relative price differences, signed OHLC bias, monthly buckets, five paired-candle examples and a bounded timestamp-offset probe. It never shifts timestamps, fills gaps, or pools source bars automatically.
+- Added explicit readiness gates that separate diagnostic pipeline PASS from data-use and production approval. The code requires source-price compatibility, independent lineage, verified broker/timezone/quote-side semantics, underlying-data rights and commercial-use approval before it could mark downstream gates eligible. Live order execution remains hard-blocked.
+- Regression tests prove unverified quote-side blocks cross-source confirmation and production readiness even if other hypothetical fixture gates are green.
+
+### Results from three public community data files
+1. GetData XAUUSD M5: 35,954 rows, SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db, observed 2026-03-26 02:30 UTC through 2026-09-25 20:40 UTC.
+2. Sai community XAUUSD M5: 17,371 rows, SHA-256 ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d, observed 2026-02-25 through 2026-05-26 UTC. Timestamps are naive in CSV and assumed UTC from the README; not independently verified.
+3. Sai community XAUUSD M1: 86,839 rows, SHA-256 de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13, observed 2026-02-25 through 2026-05-26 UTC. Also timestamp-naive and assumed UTC from README.
+
+### Blocking M5 disagreement
+- The two M5 files share 11,509 exact UTC timestamps and close-to-close direction agrees for 97.933% of eligible sequential pairs, but price levels are not interchangeable: median absolute close delta 63.515 price units, P95 94.445, median relative delta 1.3580% and P95 2.0576%. Thresholds for a basic comparable status are median relative delta <=0.25% and P95 <=0.50%; status is DIVERGENT.
+- Signed B−A close delta median is -63.515 and mean is about -57.864; B closes below A in 95.10% of matched timestamps. Monthly median signed delta varies significantly: March -94.105, April -68.200, May -56.710 price units. At the end overlap sample 2026-05-26 00:00 UTC the paired close delta is only -0.235. This pattern is not a stable additive offset, but the source's root cause is not proven.
+- Bounded offsets tested: -25,200, -10,800, -7,200, -3,600, -600, -300, 0, +300, +600, +3,600, +7,200, +10,800, +25,200 seconds. The best observed offset is -7h, but improves median relative delta by only 6.3458%, below the configured 20% material-candidate criterion. Diagnosis NO_OBVIOUS_BOUNDED_SHIFT_FIX. No timestamp shift is approved or applied.
+- As a result: source comparability BLOCKED; cross-source confirmation BLOCKED; no source-level inference should combine these series as if equivalent independent feeds.
+
+### Rights and lineage decision
+- GetData's GitHub sample advertises MIT; GetData provider documentation describes purchaser-only standard data terms and restricts embedding raw CSV/ZIP files in paid/commercial services absent separate written permission. The relationship of the GitHub sample MIT declaration to those provider terms is not resolved. Do not interpret this as a blanket finding that derived signals are banned; the exact rights scope for this dataset and intended paid model-output service needs written clarification.
+- Sai's GitHub repository advertises MIT and says the Q1-Q2 bars are aggregated from public broker mid-quote feeds; exact upstream feed identities, quote construction, underlying data rights and original timezone are not independently verified. File-specific history inspected for the M1/M5 CSVs shows them present in initial commit 01a9d1c1544eeea9632a29c1b3cde7ea0d13afe6 (2026-06-30 UTC) without a visible per-month source checksum/provenance trail. Weak auditability is a caveat, not proof of fabricated data.
+- A public GitHub mirror of Dukascopy XAUUSD M1 BID/ASK files was identified as a diagnostic candidate. It lacks a clear repository license; it was therefore not incorporated into CI or production and its data was not redistributed. Only revisit after rights and provenance are established or a licensed direct feed is acquired.
+- Machine-readable gates in IMPLEMENTATION_STATUS.json now report pipeline and test success separately from blocked comparability, commercial rights, commercial model training, and production readiness. Current values: NO_TRADE; predictive_model_validated=false; deployment_calibrated=false; cross_source_confirmation_allowed=false; live_signal_enabled=false; live_order_execution_enabled=false; production_ready=false.
+
+### Next required sequence
+1. Obtain written clarification for GetData's public GitHub sample and its relationship to provider terms; verify Sai feed lineage and quote calculation.
+2. Obtain a licensed, provenance-documented broker/provider source with Bid/Ask/tick semantics, timestamps/timezone and commercial rights appropriate to the intended service.
+3. Cross-check exact M1/M5 candles/price sides against that licensed feed; retain independent series rather than normalizing away the current discrepancy.
+4. Implement execution-aware costs/fill handling and evaluate exact TP-before-SL target on matured outcomes, independent chronological regimes and an untouched final holdout.
+5. Only after evidence gates pass, proceed to paper trading, end-to-end Telegram/provider acceptance, security/risk review and a separate decision on production order capability.
