@@ -61,3 +61,17 @@ Public accessibility and a repository-level license badge do not automatically v
 ## Still blocked after this increment
 
 Licensed broker-specific Bid/Ask/tick history; independently verified source lineage and intended-use rights; measured execution costs/fills; additional independent market regimes; exact TP-before-SL calibration with adequate mature labels; paper trading; security review; and live Telegram/OANDA validation. These require separate evidence and are not solved by multi-source CI alone.
+
+
+## TP-before-SL target-specific OOS diagnostic — 2026-10-17
+
+A modular diagnostic candidate now evaluates the actual research target separately from the existing next-candle direction baseline. The new module is `online-benchmark/barrier_oos_benchmark.py`; the multi-source runner calls it after each CSV is validated and timezone-normalized. This increment has not yet passed its fresh hosted CI run at the time of this note.
+
+- Target: whether TP is touched before SL within 12 forward bars, for long and short separately. ATR(14) is computed only through the decision close; entry is the next bar open; TP = 1.5×ATR and SL = 1.0×ATR.
+- Feature contract: return over 1/3/12 bars, EMA5−EMA10, candle body, candle range and 5/20 range ratio; features and scaling use only bars available by the decision close. The first 60% is training, the middle 20% is OOS calibration, and the final 20% is the untouched chronological holdout. Samples with barrier outcomes not matured by the next split boundary are purged.
+- A simple stdlib-only L2 logistic model is an explicitly fixed-protocol research baseline, not a claim of alpha. Platt calibration uses only OOS predictions/outcomes in the middle period whose labels matured before the final holdout. Holdout reports Brier score, log loss, reliability/ECE/MCE, reference-rate comparisons and moving-block-bootstrap intervals.
+- OHLC ambiguity is resolved conservatively: stop-first when both barriers are hit within a bar; open-gap checks occur before intrabar high/low checks; timeout outcomes remain separately counted. Because OHLC does not expose tick sequence, these are research labels, not actual fill outcomes. Spread, commissions, swaps, slippage and liquidity are not measured by this dataset.
+- Automated checks cover feature causality, matured-label purging, stop-first collision policy, gap-through-barrier handling, chronological holdout sizes, calibration output shape and permanent NO_TRADE/no-live-execution invariants.
+- The benchmark may report DIAGNOSTIC_ONLY, but the report intentionally hard-codes model validation, deployment calibration, production approval and live order execution to false/blocked. Any calibration improvement on this one final holdout is evidence for further research only; it must not be reused for model selection or advertised as world-leading accuracy.
+
+Acceptance after implementation: fresh hosted workflow must parse every current allowlisted dataset; pass all existing source/overlap gates and new unit tests; report matured train/calibration/holdout counts for long and short; preserve all execution/data-rights caveats; and maintain `NO_TRADE`. Any failing invariant blocks promotion and requires correction before further feature expansion.
