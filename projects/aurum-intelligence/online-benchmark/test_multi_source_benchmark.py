@@ -1,5 +1,7 @@
 import csv
 import io
+import json
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -117,6 +119,23 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertFalse(result["predictive_model_validated"])
         self.assertFalse(result["live_signal_enabled"])
         self.assertEqual(len(rows), 160)
+
+    def test_report_writer_produces_valid_json_and_real_markdown_newlines(self):
+        overlap = {
+            "status": "FAIL", "source_a": "a", "source_b": "b",
+            "exact_timestamp_matches": 0, "close_abs_delta_median": 0.0,
+            "close_abs_delta_p95": 0.0, "close_abs_delta_max": 0.0,
+            "close_to_close_direction_agreement": None,
+            "datasets_merged": False, "independence_status": "UNVERIFIED",
+        }
+        report = multi.build_report([], overlap, min_total_rows=100000)
+        with tempfile.TemporaryDirectory() as temporary:
+            paths = multi.write_report_files(report, __import__("pathlib").Path(temporary))
+            loaded = json.loads(paths["json"].read_text(encoding="utf-8"))
+            markdown = paths["markdown"].read_text(encoding="utf-8")
+        self.assertEqual(loaded["status"], "FAIL")
+        self.assertGreater(markdown.count("\\n"), 2)
+        self.assertNotIn("\\n", markdown.splitlines()[0])
 
     def test_report_semantics_distinguish_pipeline_success_from_model_success(self):
         # Fail-closed aggregate contract; empty evidence is never labeled PASS.
