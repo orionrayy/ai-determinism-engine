@@ -345,13 +345,13 @@ def render_markdown(report: Mapping[str, Any]) -> str:
     ])
     for item in report["windows"]:
         lines.append("- {}: SHA-256 {}".format(item["window"], item["normalized_sample_sha256"]))
-    return "\\n".join(lines) + "\\n"
+    return "\n".join(lines) + "\n"
 
 
 def write_reports(report: Mapping[str, Any], output_dir: Path) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path, markdown_path = output_dir / "tick_quote_probe.json", output_dir / "tick_quote_probe.md"
-    json_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\\n", encoding="utf-8")
+    json_path.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     markdown_path.write_text(render_markdown(report), encoding="utf-8")
     return {"json": json_path, "markdown": markdown_path}
 

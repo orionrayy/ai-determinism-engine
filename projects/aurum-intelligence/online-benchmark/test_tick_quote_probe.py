@@ -139,6 +139,38 @@ class TickQuoteProbeTests(unittest.TestCase):
         with self.assertRaisesRegex(probe.ProbeError, "redirect_outside_allowlist"):
             probe.fetch_json_page(0, 1, opener=opener, sleep=lambda _: None)
 
+    def test_write_reports_roundtrips_json_and_emits_real_markdown_newlines(self):
+        summary = probe.summarize_window(
+            [tick(0, "2024-01-01T00:00:00.001000")],
+            window="fixture", start_offset=0, payload_sha256="1" * 64,
+        )
+        report = {
+            "source": {
+                "dataset_id": probe.DATASET_ID,
+                "dataset_url": "https://huggingface.co/datasets/" + probe.DATASET_ID,
+                "dataset_card_claimed_license": "CC-BY-4.0",
+                "attribution": "required",
+            },
+            "status": "PASS",
+            "dataset_rows_reported_by_huggingface": 1,
+            "sample_design": {
+                "sampled_rows_total": 1, "window_count": 1,
+                "request_count_including_retries": 1, "total_response_bytes": 123,
+            },
+            "windows": [summary],
+        }
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as folder:
+            files = probe.write_reports(report, Path(folder))
+            payload = files["json"].read_text(encoding="utf-8")
+            self.assertTrue(payload.endswith("\n"))
+            parsed = json.loads(payload)
+            self.assertEqual(parsed["status"], "PASS")
+            markdown = files["markdown"].read_text(encoding="utf-8")
+            self.assertIn("\n## Interpretation boundary\n", markdown)
+            self.assertNotIn("\\n", markdown)
+
     def test_report_never_claims_production_or_persists_raw_ticks(self):
         summary = probe.summarize_window([tick(0, "2024-01-01T00:00:00.001000")],
             window="fixture", start_offset=0, payload_sha256="f" * 64)
