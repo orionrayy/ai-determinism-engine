@@ -169,6 +169,15 @@ jobs:
           assert sc['automatic_price_rescale'] is False, sc
           assert sc['automatic_source_promotion'] is False, sc
           assert set(sc['basis_comparisons']) == {'bid', 'mid', 'ask'}, sc
+          lineage = r['data_lineage_diagnostic']
+          assert lineage['source_independence_verified'] is False, lineage
+          assert lineage['independent_source_confirmation'] is False, lineage
+          assert lineage['automatic_source_promotion'] is False, lineage
+          assert lineage['status'] in {
+            'INSUFFICIENT_OVERLAP_FOR_LINEAGE_DIAGNOSTIC',
+            'POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED',
+            'NO_NEAR_EXACT_OHLC_MATCH_EVIDENCE_NOT_PROOF_OF_INDEPENDENCE'
+          }, lineage
           assert r['decision_output'] == 'NO_TRADE', r
           assert not r['validated_model'] and not r['calibrated_model'] and not r['live_signal_enabled'], r
           print(json.dumps({
@@ -180,6 +189,9 @@ jobs:
             'primary_overlap_bars': c['shared_timestamps'],
             'secondary_overlap_bars': sc['shared_timestamps'],
             'secondary_mid_close_difference_p95_bps': sc['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
+            'source_lineage_diagnostic': lineage['status'],
+            'secondary_exact_bid_ohlc_match_fraction': lineage['exact_ohlc_match_fraction'],
+            'source_independence_verified': lineage['source_independence_verified'],
             'spread_median_price_units': r['spread']['spread_price_units']['median'],
             'spread_p95_price_units': r['spread']['spread_price_units']['p95'],
             'mid_close_difference_p95_bps': c['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
