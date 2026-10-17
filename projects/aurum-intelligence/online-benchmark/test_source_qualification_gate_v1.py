@@ -50,7 +50,8 @@ class SourceQualificationGateTests(unittest.TestCase):
             report["research_qualification_status"], "QUALIFIED_FOR_RESEARCH_REVIEW"
         )
         self.assertEqual(report["execution_qualification_status"], "BLOCKED")
-        self.assertTrue(report["source_promotion_allowed"])
+        self.assertFalse(report["source_promotion_allowed"])
+        self.assertTrue(report["manual_promotion_review_required"])
         self.assertFalse(report["live_execution_authorized"])
         self.assertEqual(len(report["execution_missing_evidence"]), 3)
 
@@ -64,6 +65,8 @@ class SourceQualificationGateTests(unittest.TestCase):
         self.assertEqual(
             report["execution_qualification_status"], "ELIGIBLE_FOR_SEPARATE_EXECUTION_REVIEW"
         )
+        self.assertFalse(report["source_promotion_allowed"])
+        self.assertTrue(report["manual_promotion_review_required"])
         self.assertFalse(report["live_execution_authorized"])
         self.assertEqual(report["decision_output"], "NO_TRADE")
 
@@ -76,7 +79,7 @@ class SourceQualificationGateTests(unittest.TestCase):
                     )
 
     def test_unreferenced_or_non_https_reference_does_not_qualify(self):
-        for reference in ("", "source-name", "http://insecure.example", 123, None):
+        for reference in ("", "source-name", "http://insecure.example", "https://", 123, None):
             with self.subTest(reference=reference):
                 evidence = complete_evidence()
                 refs = complete_refs()
