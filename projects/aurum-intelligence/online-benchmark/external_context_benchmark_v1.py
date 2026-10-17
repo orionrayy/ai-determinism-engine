@@ -484,6 +484,7 @@ def run_context_ablation_benchmark(
         ],
     }
 
+    price_only_holdout_probabilities: list[float] | None = None
     for ablation_name, context_families in ABLATIONS.items():
         requested = list(candidate_price_keys)
         for family in context_families:
@@ -518,6 +519,26 @@ def run_context_ablation_benchmark(
             # Report raw holdout diagnostics but label them uncalibrated; never claim calibrated quality.
             scored_probabilities = list(raw_hold)
         metrics = _metric_bundle(scored_probabilities, hold_labels, baseline_holdout)
+        if ablation_name == "price_only":
+            price_only_holdout_probabilities = list(scored_probabilities)
+            incremental_ci = None
+        elif price_only_holdout_probabilities is not None:
+            incremental_ci = paired_moving_block_brier_ci(
+                scored_probabilities, hold_labels,
+                price_only_holdout_probabilities, hold_labels,
+                block_size=block_size, replicates=bootstrap_replicates,
+                seed=seed + 100 + list(ABLATIONS).index(ablation_name),
+            )
+            incremental_ci["comparison_reference"] = "price_only"
+            incremental_ci["brier_improvement_price_only_minus_model"] = incremental_ci[
+                "brier_improvement_baseline_minus_model"
+            ]
+            incremental_ci["interpretation"] = (
+                "Positive favors the context ablation over price-only on identical holdout rows and labels; "
+                "interval crossing zero is inconclusive."
+            )
+        else:
+            incremental_ci = None
         block_ci = paired_moving_block_brier_ci(
             scored_probabilities, hold_labels, baseline_holdout, hold_labels,
             block_size=block_size, replicates=bootstrap_replicates,
@@ -568,6 +589,7 @@ def run_context_ablation_benchmark(
             "calibration_sample_count": calibration_fit.get("n", len(cal_rows)),
             "metrics": metrics,
             "paired_moving_block_ci_vs_causal_baseline": block_ci,
+            "paired_moving_block_ci_vs_price_only": incremental_ci,
             "regimes": regime_summary,
             "holdout_selection_or_tuning": False,
         }
