@@ -403,6 +403,7 @@ def paired_block_bootstrap_improvements(
         "n": n,
         "block_size": size,
         "seed": seed,
+        "replicates": replicates,
         "metrics": metrics,
         "positive_improvement_favors_calibration": True,
         "interpretation": "If an interval includes zero, this run does not establish that calibration improves the corresponding proper score. This is a sensitivity interval, not production validation.",
