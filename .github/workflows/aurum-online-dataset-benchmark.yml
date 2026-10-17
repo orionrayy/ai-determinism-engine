@@ -81,8 +81,12 @@ jobs:
           assert r['scenarios']['software_failed'] == 0, r['scenarios']
           assert r['decision_output'] == 'NO_TRADE', r['decision_output']
           cross = r['secondary_source_crosscheck']
-          assert cross['status'] == 'CROSS_SOURCE_DIAGNOSTIC_ONLY', cross
+          assert cross['status'] in {'CROSS_SOURCE_DIAGNOSTIC_ONLY', 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED'}, cross
           assert cross['common_timestamps'] >= 1000, cross
+          if cross['status'] == 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED':
+              assert cross['source_disagreement_screen']['material_disagreement_flag'] is True, cross
+          else:
+              assert cross['source_disagreement_screen']['material_disagreement_flag'] is False, cross
           assert cross['reference_only'] is True and cross['provider_provenance_independently_verified'] is False, cross
           tp = r['tp_sl_evaluation_protocol']
           assert tp['protocol_version'] == '1.4.0', tp
