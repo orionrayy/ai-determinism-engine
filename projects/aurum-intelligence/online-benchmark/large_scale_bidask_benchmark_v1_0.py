@@ -584,7 +584,7 @@ def _moving_block_ci(improvements, replicates=BOOTSTRAP_REPLICATES, block_length
     }
 
 
-def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side):
+def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, minimum_scored_events=MIN_SCENARIO_ANCHORS):
     counts = {(rule, side): [0, 0] for rule in STRATEGIES for side in (-1, 1)}
     pending = []
     pending_cursor = 0
