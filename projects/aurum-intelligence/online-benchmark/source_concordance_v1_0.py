@@ -49,6 +49,123 @@ def _correlation(left: Sequence[float], right: Sequence[float]) -> float | None:
     return covariance / math.sqrt(sum_left * sum_right)
 
 
+
+def _numeric_summary(values: Sequence[float]) -> dict[str, float | None]:
+    """Compact deterministic distribution summary; no source normalization is applied."""
+    return {
+        "median": statistics.median(values) if values else None,
+        "p05": _percentile(values, 0.05),
+        "p95": _percentile(values, 0.95),
+        "p99": _percentile(values, 0.99),
+        "min": min(values) if values else None,
+        "max": max(values) if values else None,
+    }
+
+
+def _price_basis_diagnostics(
+    common_times: Sequence[datetime],
+    primary_map: Mapping[datetime, Mapping[str, Any]],
+    secondary_map: Mapping[datetime, Mapping[str, Any]],
+    *,
+    expected_interval_seconds: int,
+) -> dict[str, Any]:
+    """Describe possible level/scale discrepancies without proposing a source correction."""
+    primary_closes = [float(primary_map[ts]["close"]) for ts in common_times]
+    secondary_closes = [float(secondary_map[ts]["close"]) for ts in common_times]
+    signed_differences = [p - s for p, s in zip(primary_closes, secondary_closes)]
+    level_correlation = _correlation(primary_closes, secondary_closes)
+    fit: dict[str, Any] = {"status": "INSUFFICIENT_OVERLAP_OR_VARIANCE"}
+    residual_abs_bps: list[float] = []
+    residual_abs_units: list[float] = []
+
+    if len(common_times) >= 30:
+        x_mean = statistics.fmean(secondary_closes)
+        y_mean = statistics.fmean(primary_closes)
+        x_variance = sum((x - x_mean) ** 2 for x in secondary_closes)
+        if x_variance > 0:
+            slope = sum((x - x_mean) * (y - y_mean) for x, y in zip(secondary_closes, primary_closes)) / x_variance
+            intercept = y_mean - slope * x_mean
+            residuals = [y - (intercept + slope * x) for x, y in zip(secondary_closes, primary_closes)]
+            residual_abs_units = [abs(value) for value in residuals]
+            residual_abs_bps = [abs(value) / abs(y) * 10000.0 for value, y in zip(residuals, primary_closes) if y]
+            fit = {
+                "status": "DIAGNOSTIC_ONLY",
+                "mapping": "primary_close ~= intercept + slope * secondary_close",
+                "intercept_price_units": intercept,
+                "slope": slope,
+                "level_correlation": level_correlation,
+                "r_squared_from_level_correlation": level_correlation ** 2 if level_correlation is not None else None,
+                "absolute_residual_price_units": _numeric_summary(residual_abs_units),
+                "absolute_residual_basis_points_of_primary_close": _numeric_summary(residual_abs_bps),
+                "interpretation": "descriptive fit only; not a calibrated price conversion, quote-side adjustment, or source selection",
+            }
+
+    quartiles = []
+    n = len(common_times)
+    for quartile in range(4):
+        start = quartile * n // 4
+        end = (quartile + 1) * n // 4
+        values = signed_differences[start:end]
+        quartiles.append({
+            "chronological_quartile": quartile + 1,
+            "rows": len(values),
+            "signed_primary_minus_secondary_close_difference_units": _numeric_summary(values),
+        })
+
+    return_difference_bps: list[float] = []
+    paired_rows = 0
+    paired_primary_returns: list[float] = []
+    paired_secondary_returns: list[float] = []
+    for previous, current in zip(common_times, common_times[1:]):
+        if (current - previous).total_seconds() != expected_interval_seconds:
+            continue
+        p0, p1 = float(primary_map[previous]["close"]), float(primary_map[current]["close"])
+        s0, s1 = float(secondary_map[previous]["close"]), float(secondary_map[current]["close"])
+        if p0 <= 0 or s0 <= 0:
+            continue
+        p_return, s_return = p1 / p0 - 1.0, s1 / s0 - 1.0
+        paired_primary_returns.append(p_return)
+        paired_secondary_returns.append(s_return)
+        return_difference_bps.append(abs(p_return - s_return) * 10000.0)
+        paired_rows += 1
+
+    fit_metrics = fit.get("absolute_residual_basis_points_of_primary_close", {})
+    residual_p95 = fit_metrics.get("p95")
+    fit_r2 = fit.get("r_squared_from_level_correlation")
+    abs_level_diffs_bps = [
+        abs(value) / abs(close) * 10000.0
+        for value, close in zip(signed_differences, primary_closes) if close
+    ]
+    material_level_difference = bool(
+        len(common_times) >= 30
+        and fit_r2 is not None and fit_r2 >= 0.995
+        and residual_p95 is not None and residual_p95 <= 5.0
+        and abs_level_diffs_bps
+        and statistics.median(abs_level_diffs_bps) > 5.0
+    )
+    return {
+        "sample_size": len(common_times),
+        "signed_primary_minus_secondary_close_difference_units": _numeric_summary(signed_differences),
+        "level_correlation": level_correlation,
+        "ols_level_relationship": fit,
+        "signed_level_difference_by_chronological_quartile": quartiles,
+        "paired_return_difference": {
+            "consecutive_five_minute_pairs": paired_rows,
+            "absolute_return_difference_basis_points": _numeric_summary(return_difference_bps),
+            "correlation": _correlation(paired_primary_returns, paired_secondary_returns),
+            "interpretation": "return differences are measured directly; price-level correlation is not a substitute for return correlation",
+        },
+        "near_affine_level_difference_candidate": material_level_difference,
+        "candidate_rule": "diagnostic flag only when level-fit R-squared >= 0.995, residual p95 <= 5 bps, and median absolute level difference > 5 bps",
+        "source_correction_applied": False,
+        "source_promoted": False,
+        "limitations": [
+            "A linear relationship cannot establish quote-side, provider, timezone, rollover or licensing correctness.",
+            "The fitted coefficients must not be used to rescale historical prices or backtest results.",
+            "Timestamp alignment and source identity need independent verification before interpreting this diagnostic.",
+        ],
+    }
+
 def _timestamp_offset_sensitivity(
     primary_map: Mapping[datetime, Mapping[str, Any]],
     secondary_map: Mapping[datetime, Mapping[str, Any]],
@@ -169,6 +286,7 @@ def compare_source_datasets(
     primary_times, secondary_times = set(primary_map), set(secondary_map)
     close_abs_diffs, close_diff_bps, close_signed_diffs = [], [], []
     field_diffs: dict[str, list[float]] = {field: [] for field in PRICE_FIELDS}
+    field_signed_diffs: dict[str, list[float]] = {field: [] for field in PRICE_FIELDS}
     exact_rows = 0
     sample: list[dict[str, Any]] = []
     paired_primary_returns, paired_secondary_returns = [], []
@@ -178,6 +296,7 @@ def compare_source_datasets(
         diffs = {field: abs(float(left[field]) - float(right[field])) for field in PRICE_FIELDS}
         for field, diff in diffs.items():
             field_diffs[field].append(diff)
+            field_signed_diffs[field].append(float(left[field]) - float(right[field]))
         left_close = float(left["close"])
         close_diff = diffs["close"]
         close_abs_diffs.append(close_diff)
@@ -257,6 +376,9 @@ def compare_source_datasets(
             "thresholds_are_heuristics_not_execution_price_truth": True,
             "interpretation": "material difference requires source/time convention review; never auto-shift, rescale or merge prices",
         },
+        "signed_price_difference_units_primary_minus_secondary": {
+            field: _numeric_summary(values) for field, values in field_signed_diffs.items()
+        },
         "absolute_price_difference_units": {
             field: {
                 "median": statistics.median(values) if values else None,
@@ -274,6 +396,9 @@ def compare_source_datasets(
         },
         "paired_one_bar_returns": len(paired_primary_returns),
         "one_bar_return_correlation": _correlation(paired_primary_returns, paired_secondary_returns),
+        "price_basis_diagnostics": _price_basis_diagnostics(
+            common_times, primary_map, secondary_map, expected_interval_seconds=expected_interval_seconds,
+        ),
         "provider_provenance_independently_verified": False,
         "upstream_data_rights_independently_verified": False,
         "reference_only": True,
