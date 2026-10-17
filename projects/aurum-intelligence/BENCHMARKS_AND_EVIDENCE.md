@@ -129,3 +129,14 @@ Hosted end-to-end run [#39035732248](https://github.com/orionrayy/ai-determinism
 ### Failure retained and corrected
 
 - Run [#39035356832](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035356832) failed at the external-context runner after earlier test and price gates passed. The report used an acquisition-local `gdelt_archive_window_complete` variable outside its scope. The runner now reads the value from `source_details["gdelt_gkg"]["archive_window_complete"]`, with a contract test. The failed run remains in the audit trail and is not treated as successful evidence.
+
+
+## 2026-10-17 — evidence-backed source qualification CI
+
+- Hosted run [#39038107206](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39038107206) **success** on code/test head `d2621fcda08456984ec3adef9015f91d3d432ddd`; unit/regression suite 125/125, temporal-calibration contracts 240/240. Community-source acquisition, Bid/Ask audit, large M1 scenario gates, point-in-time context evaluation, and artifact upload all succeeded.
+- Reproducible artifact: [#12102563009](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39038107206), 2,626,545 bytes, SHA-256 `993c27155e00c7d57d87aba5c475c1751d7026fcbfce4345b784996215bc065c`. Local downloaded ZIP matched the published digest.
+- New source qualification helper separates research evidence (provenance, rights, timestamp semantics, bar convention, quote basis) from execution evidence (broker authorization, measured costs, fill semantics). The CI asserts no source can be promoted automatically and that every source without evidence stays `REFERENCE_ONLY`/`BLOCKED`.
+- Data scale: 1,313,280 paired M1 Bid/Ask candles (30 months), 20,000 valid ATR anchors, 875,611 eligible contiguous windows, and 120,000 TP/SL scenarios. The output is still a research diagnostic, not a profitability claim.
+- Price-data discrepancy remains material: primary/secondary M5 feeds have 11,509 overlapping timestamps but no exact OHLC matches; absolute close difference median/P95 134.885/203.661 bps. Tick audit identifies 4,391 exact Bid-OHLC matches out of 4,392 bars against the secondary source whose README claims mid-quote; likely lineage/basis review is required before any independence claim.
+- Context benchmark: 141,020 unique GDELT observations reached the numeric count target, but 100 selected archives cover only 0.114218% of the historical window. COT supports 19,739/19,937 rows; macro/news are ineligible. Incremental COT-vs-price-only Brier change +0.00008494; paired 95% interval [-0.00014777,+0.00032012] crosses zero.
+- Decision remains `NO_TRADE`; deployment/model validation/live signal flags remain false. The draft PR is not merged.
