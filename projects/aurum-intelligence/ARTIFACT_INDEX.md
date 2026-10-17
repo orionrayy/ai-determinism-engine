@@ -97,3 +97,11 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - `benchmarks/tp_before_sl_oos_2026-10-17_baseline.md` and `.json` — summarized real-data result from hosted run #39019576117. The source CSVs are not included.
 - The paired 250-replicate bootstrap and holdout-mutation invariance implementation are newer changes; a fresh hosted run/artifact review is required before calling them green.
 - Current safety decision remains `NO_TRADE`, with deployment calibration/model validation false and all live signals/orders disabled.
+
+
+## Verified tick quote probe — 2026-10-17
+
+- `benchmarks/tick_quote_probe_2026-10-17.md/.json`: hosted probe sampled 3,000 actual bid/ask records from three disjoint windows in `CarlosSilva1/xauusd-ticks`; hash per window, spread statistics, timestamp order and quote anomaly checks are stored without raw tick rows.
+- `benchmarks/tp_before_sl_oos_2026-10-17_paired_ci.md/.json`: source/side exact-target OOS metrics and paired bootstrap; every paired 95% interval for Brier/log-loss gains includes zero. Reliable calibration gain is not established.
+- Verified run #39021204557 passed all 13 CI steps; artifact #12096921783; SHA-256 `cca5e4e8c735b24261bfafc336a749a5422d97c3cd7472196dd4bc8dcd22ab27`.
+- Commercial data rights, source/broker provenance, quote semantics and actual fills remain unverified. Keep production approval blocked and `NO_TRADE` active.
