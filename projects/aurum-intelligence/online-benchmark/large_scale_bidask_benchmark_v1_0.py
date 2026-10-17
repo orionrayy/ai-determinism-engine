@@ -666,8 +666,10 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
             "parameter_fitting_on_partition": False,
             "final_test_priors_frozen": partition == "final_holdout",
         }
-    if output["binary_scored_strategy_events"] < MIN_SCENARIO_ANCHORS:
-        raise BenchmarkError(f"binary_scored_strategy_events_below_20000_gate:{output['binary_scored_strategy_events']}")
+    if output["binary_scored_strategy_events"] < minimum_scored_events:
+        raise BenchmarkError(
+            f"binary_scored_strategy_events_below_gate:{output['binary_scored_strategy_events']}<{minimum_scored_events}"
+        )
     if output["chronological_partitions"]["final_holdout"]["n"] < 1000:
         raise BenchmarkError("final_holdout_scored_events_below_1000_gate")
     return output, prediction_rows
