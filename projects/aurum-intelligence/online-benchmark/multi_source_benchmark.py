@@ -135,7 +135,7 @@ def build_readiness_gates(results, overlap, pipeline_status):
         "pipeline_status": pipeline_status,
         "diagnostic_benchmark_status": "PASS" if pipeline_status == "PASS" else "FAIL",
         "source_comparability_gate": "PASS" if compatibility == "COMPARABLE" else "BLOCKED",
-        "cross_source_confirmation_gate": "PASS" if compatibility == "COMPARABLE" and independent else "BLOCKED",
+        "cross_source_confirmation_gate": "PASS" if compatibility == "COMPARABLE" and independent and provenance_verified else "BLOCKED",
         "model_training_for_commercial_service": "PASS" if rights_verified and provenance_verified else "BLOCKED",
         "commercial_product_use": "PASS" if rights_verified and provenance_verified else "BLOCKED",
         "production_readiness": "PASS" if rights_verified and provenance_verified and compatibility == "COMPARABLE" and independent else "BLOCKED",
