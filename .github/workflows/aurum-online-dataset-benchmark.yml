@@ -124,6 +124,11 @@ jobs:
           assert overlap['exact_timestamp_matches'] >= 1000, overlap
           assert overlap['datasets_merged'] is False, overlap
           assert overlap['independence_status'].startswith('UNVERIFIED'), overlap
+          alignment = overlap['temporal_alignment_probe']
+          assert alignment['automatic_timestamp_shifting'] is False, alignment
+          assert 0 in alignment['tested_offsets_seconds'], alignment
+          assert len(alignment['results']) == len(alignment['tested_offsets_seconds']), alignment
+          assert alignment['diagnosis'] in {'POSSIBLE_TIMESTAMP_LABEL_OR_TIMEZONE_SHIFT', 'NO_OBVIOUS_BOUNDED_SHIFT_FIX'}, alignment
           compatibility = overlap['close_relative_delta']['compatibility_status']
           assert compatibility in {'COMPARABLE', 'DIVERGENT'}, overlap
           assert result['cross_source_compatibility_status'] == compatibility, result
@@ -148,6 +153,9 @@ jobs:
               'cross_source_price_compatibility': compatibility,
               'median_relative_close_delta': overlap['close_relative_delta']['median_fraction'],
               'p95_relative_close_delta': overlap['close_relative_delta']['p95_fraction'],
+              'alignment_diagnosis': alignment['diagnosis'],
+              'best_timestamp_offset_seconds_diagnostic_only': alignment['best_offset_seconds_diagnostic_only'],
+              'best_relative_close_delta_median': alignment['best_median_relative_delta_fraction'],
               'cross_source_confirmation_allowed': result['cross_source_confirmation_allowed'],
               'decision_output': result['decision_output'],
               'runtime_ms': result['runtime_ms'],
