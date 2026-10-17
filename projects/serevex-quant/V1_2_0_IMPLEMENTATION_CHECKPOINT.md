@@ -1,4 +1,6 @@
-# Aurum Intelligence v1.2.0 — implementation checkpoint
+> **Identity migration note (2026-10-17):** The current project identity is **Serevex Quant Research**, with canonical path `projects/serevex-quant/`. This file preserves historical experiment descriptions, source claims, CI run IDs, checksums, and provider-issued artifact names where changing them would damage auditability. Any prior branding in historical entries is archived metadata, not active branding.
+
+# Serevex Quant Research — historical v1.2.0 implementation checkpoint
 
 **Checkpoint:** 2026-10-16, Asia/Jakarta. **Release state:** research/UX prototype; not production-ready. The source ZIP is a downloadable artifact attached to the project work, not a binary committed to this repository.
 
@@ -41,7 +43,7 @@ GitHub Actions run [#38851629049](https://github.com/orionrayy/ai-determinism-en
 - Repository publishes an MIT license. Data rights/provenance, broker/quote-side semantics, actual fills and intended redistribution scope still require review. The raw CSV is intentionally not redistributed here.
 - Example: prior20_range_breakout posted +2.37 price units on only seven trades under assumed costs; that small observation is not sufficient evidence of alpha. Other active baselines were net negative. No forecast model is validated.
 
-See the preserved report under projects/aurum-intelligence/benchmarks/live_dataset_benchmark_2026-10-16.md and the machine-readable JSON artifact in this project folder.
+See the preserved report under projects/serevex-quant/benchmarks/live_dataset_benchmark_2026-10-16.md and the machine-readable JSON artifact in this project folder.
 
 ## Remaining gates
 

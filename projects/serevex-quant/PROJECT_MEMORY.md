@@ -1,6 +1,8 @@
+> **Identity migration note (2026-10-17):** The current project identity is **Serevex Quant Research**, with canonical path `projects/serevex-quant/`. This file preserves historical experiment descriptions, source claims, CI run IDs, checksums, and provider-issued artifact names where changing them would damage auditability. Any prior branding in historical entries is archived metadata, not active branding.
+
 # Project memory
 
-**Product:** Aurum Intelligence, a modular XAUUSD research, analysis, charting, risk-gating and Telegram/Mini App assistant. **Checkpoint date:** 2026-10-16, Asia/Jakarta. **Goal:** a rigorous decision-support product—not merely confident-sounding BUY/SELL messages.
+**Product:** Serevex Quant Research, a modular XAUUSD research, analysis, charting, risk-gating and Telegram/Mini App assistant. **Checkpoint date:** 2026-10-16, Asia/Jakarta. **Goal:** a rigorous decision-support product—not merely confident-sounding BUY/SELL messages.
 
 ## Product principles
 1. Abstain as `NO_TRADE` when source quality, history length, calibration, execution cost, regime applicability, or model evidence is insufficient.
@@ -82,7 +84,7 @@ This section supersedes older version-specific statements above where they diffe
 - Full replay is 35,893 sequential opportunities per fixed rule; five disjoint folds contain 7,175 / 7,176 / 7,176 / 7,176 / 7,190 observations, final fold equals last 20%.
 - All active fixed baselines are net negative in full and tail under assumed costs. The selected-case breakout positive does not survive complete replay.
 - Prequential direction baselines do not establish Brier improvement over constant 0.5; no calibrated TP-before-SL model is validated. Decision remains NO_TRADE.
-- Machine-readable evidence and detailed report are under projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.json/.md. Raw OHLCV is not redistributed.
+- Machine-readable evidence and detailed report are under projects/serevex-quant/benchmarks/full_history_replay_2026-10-16.json/.md. Raw OHLCV is not redistributed.
 - Next: review rights/provenance/timezone, acquire licensed broker Bid/Ask/tick data and measured costs, validate independent chronological regimes and external holdout, calibrate exact target, and paper trade before production.
 
 ## Latest v1.3.1 hosted CI checkpoint — 2026-10-16

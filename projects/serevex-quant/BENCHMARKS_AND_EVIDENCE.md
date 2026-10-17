@@ -1,3 +1,5 @@
+> **Identity migration note (2026-10-17):** The current project identity is **Serevex Quant Research**, with canonical path `projects/serevex-quant/`. This file preserves historical experiment descriptions, source claims, CI run IDs, checksums, and provider-issued artifact names where changing them would damage auditability. Any prior branding in historical entries is archived metadata, not active branding.
+
 # Benchmarks and evidence ledger
 
 **Source snapshot:** v0.9.0. **Dataset:** `data/xauusd_5m_public_sample.csv`, 60 rows. **SHA-256:** `dae535a16e13cf49f123231b1ee72e19787259e7a5f943b017a013346f36a93b`. Source mirror: `ZombitX64/xauusd-gold-price-historical-data-2004-2025` on Hugging Face, attributed by the mirror to a Kaggle source. Independent original provenance, broker, licensing for all intended uses, timezone, Bid/Ask and fills remain unverified.
@@ -83,7 +85,7 @@ The v1.2.0 interface offers Sederhana/Tingkat lanjut modes; mode selection is pr
 
 ## v1.3.0 full-history hosted benchmark — 2026-10-16
 
-Run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5. Detailed Markdown and JSON reports: projects/aurum-intelligence/benchmarks/full_history_replay_2026-10-16.md and .json.
+Run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38888666520) passed on source commit d790435b9f09d623a795aa6ab7ee4d1732515aa5. Detailed Markdown and JSON reports: projects/serevex-quant/benchmarks/full_history_replay_2026-10-16.md and .json.
 
 - Dataset: 35,954 rows, SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db, dates 2026-03-26 through 2026-09-25.
 - Full replay after 60-bar warm-up: 35,893 opportunities per rule. Five disjoint fold sizes 7,175 / 7,176 / 7,176 / 7,176 / 7,190; fold 5 is exactly the final 20% tail.

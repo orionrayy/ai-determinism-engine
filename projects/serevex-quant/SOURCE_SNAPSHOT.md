@@ -1,6 +1,8 @@
+> **Identity migration note (2026-10-17):** The current project identity is **Serevex Quant Research**, with canonical path `projects/serevex-quant/`. This file preserves historical experiment descriptions, source claims, CI run IDs, checksums, and provider-issued artifact names where changing them would damage auditability. Any prior branding in historical entries is archived metadata, not active branding.
+
 # Source snapshot and version boundary
 
-The latest complete source artifact available during checkpoint creation was **Aurum Intelligence v0.9.0**. Its original ZIP contains 85 archive entries: application, tests, data sample, benchmark outputs, source register, scripts, Docker configuration, Mini App and documentation.
+The latest complete source artifact available during checkpoint creation was **v0.9.0**, released under the project's prior identity. Its original ZIP contains 85 archive entries: application, tests, data sample, benchmark outputs, source register, scripts, Docker configuration, Mini App and documentation.
 
 - Original source ZIP SHA-256: `ce35237ae32f0edafdc8288ae14edfab9d5c3df09f61d73a458e61ce782bda3f`
 - Canonical dataset SHA-256: `dae535a16e13cf49f123231b1ee72e19787259e7a5f943b017a013346f36a93b`
@@ -55,7 +57,7 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Hosted run #38888666520 passed on the tested benchmark source commit; 35,954 community bars were replayed over 35,893 eligible next-candle decisions per rule.
 - Five disjoint folds have 7,175 / 7,176 / 7,176 / 7,176 / 7,190 opportunities; fold 5 is the final 20% tail.
 - All active baselines lose in full history and tail under an assumed 0.50 price-unit round-trip cost. Prequential expanding base-rate Brier does not significantly improve upon constant 0.5 under the approximate block-bootstrap interval; rolling base-rate is worse.
-- Machine-readable evidence and summary are persisted under projects/aurum-intelligence/benchmarks/. Current app package remains a downloadable artifact rather than a tracked GitHub binary.
+- Machine-readable evidence and summary are persisted under projects/serevex-quant/benchmarks/. Current app package remains a downloadable artifact rather than a tracked GitHub binary.
 
 ## v1.3.1 hosted calibration verified
 

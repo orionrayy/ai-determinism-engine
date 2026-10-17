@@ -1,4 +1,6 @@
-# Aurum v1.3.1 — temporal calibration checkpoint
+> **Identity migration note (2026-10-17):** The current project identity is **Serevex Quant Research**, with canonical path `projects/serevex-quant/`. This file preserves historical experiment descriptions, source claims, CI run IDs, checksums, and provider-issued artifact names where changing them would damage auditability. Any prior branding in historical entries is archived metadata, not active branding.
+
+# Serevex Quant Research — historical v1.3.1 temporal calibration checkpoint
 
 Local release v1.3.1: 276,128 bytes; SHA-256 b63af5ab3412e7cb0bac14deffdb0d8cf07e024b0e46364d6fe5e1329d831d5. Local clean checks: 185 pytest, 109 unittest, compileall, Mini App JS/HTML and ZIP extraction/retest pass.
 

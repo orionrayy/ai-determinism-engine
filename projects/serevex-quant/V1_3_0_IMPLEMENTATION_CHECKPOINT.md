@@ -1,4 +1,6 @@
-# Aurum Intelligence v1.3.0 — implementation checkpoint
+> **Identity migration note (2026-10-17):** The current project identity is **Serevex Quant Research**, with canonical path `projects/serevex-quant/`. This file preserves historical experiment descriptions, source claims, CI run IDs, checksums, and provider-issued artifact names where changing them would damage auditability. Any prior branding in historical entries is archived metadata, not active branding.
+
+# Serevex Quant Research — historical v1.3.0 implementation checkpoint
 
 **Checkpoint:** 2026-10-16, Asia/Jakarta. Status: research/UX prototype, not production trading software. Decision gate remains NO_TRADE.
 
