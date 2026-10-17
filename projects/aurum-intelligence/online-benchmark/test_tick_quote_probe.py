@@ -55,7 +55,7 @@ class TickQuoteProbeTests(unittest.TestCase):
         self.assertEqual([w["start_offset"] for w in windows], [0, 143_411_700, 286_822_500])
         self.assertTrue(all(w["start_offset"] + 1000 <= total for w in windows))
         self.assertTrue(all(a["start_offset"] + 1000 <= b["start_offset"] for a, b in zip(windows, windows[1:])))
-        with self.assertRaisesRegex(probe.ProbeError, "sample_windows_overlap"):
+        with self.assertRaisesRegex(probe.ProbeError, "dataset_too_small_for_three_disjoint_windows"):
             probe.plan_window_offsets(4000, 2000)
 
     def test_summary_profiles_bid_ask_spread_in_price_units_and_bps(self):
