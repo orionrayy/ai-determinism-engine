@@ -208,6 +208,26 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
     if len(common) < minimum_matches:
         raise SourceError("insufficient_exact_timestamp_overlap:" + str(len(common)))
     differences = [abs(by_a[stamp]["close"] - by_b[stamp]["close"]) for stamp in common]
+    reference_prices = [
+        (abs(by_a[stamp]["close"]) + abs(by_b[stamp]["close"])) / 2.0
+        for stamp in common
+    ]
+    relative_differences = [
+        delta / reference if reference > 0 else math.inf
+        for delta, reference in zip(differences, reference_prices)
+    ]
+    median_relative_delta = statistics.median(relative_differences)
+    p95_relative_delta = percentile(relative_differences, 0.95)
+    # Price-level compatibility gate, not a trading-accuracy target:
+    # median delta <= 0.25% and P95 <= 0.50% of each matched price level.
+    median_relative_limit = 0.0025
+    p95_relative_limit = 0.005
+    compatibility_status = (
+        "COMPARABLE"
+        if median_relative_delta <= median_relative_limit
+        and p95_relative_delta <= p95_relative_limit
+        else "DIVERGENT"
+    )
     signs_agree = []
     for stamp in common:
         next_stamp = stamp + timedelta(seconds=300)
@@ -218,21 +238,34 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
         sign_a, sign_b = (move_a > 0) - (move_a < 0), (move_b > 0) - (move_b < 0)
         signs_agree.append(sign_a == sign_b)
     return {
-        "status": "PASS", "source_a": spec_a["id"], "source_b": spec_b["id"],
-        "timeframe_seconds": 300, "exact_timestamp_matches": len(common),
+        "status": "PASS",
+        "source_a": spec_a["id"],
+        "source_b": spec_b["id"],
+        "timeframe_seconds": 300,
+        "exact_timestamp_matches": len(common),
         "overlap_fraction_a": len(common) / len(by_a),
         "overlap_fraction_b": len(common) / len(by_b),
-        "overlap_start_utc": common[0].isoformat(), "overlap_end_utc": common[-1].isoformat(),
-        "close_abs_delta_median": statistics.median(differences),
-        "close_abs_delta_p95": percentile(differences, 0.95),
-        "close_abs_delta_max": max(differences),
-        "fraction_close_within_0_50": sum(value <= 0.5 for value in differences) / len(differences),
+        "overlap_start_utc": common[0].isoformat(),
+        "overlap_end_utc": common[-1].isoformat(),
+        "close_abs_delta_price_units": {
+            "median": statistics.median(differences),
+            "p95": percentile(differences, 0.95),
+            "maximum": max(differences),
+        },
+        "close_relative_delta": {
+            "median_fraction": median_relative_delta,
+            "p95_fraction": p95_relative_delta,
+            "median_limit_fraction": median_relative_limit,
+            "p95_limit_fraction": p95_relative_limit,
+            "compatibility_status": compatibility_status,
+            "meaning": "diagnostic price-level compatibility threshold; not a performance or execution-cost measure",
+        },
         "close_to_close_direction_pairs": len(signs_agree),
         "close_to_close_direction_agreement": sum(signs_agree) / len(signs_agree) if signs_agree else None,
         "independence_status": "UNVERIFIED: community sources may share upstream data",
         "datasets_merged": False,
+        "cross_source_confirmation_allowed": False,
     }
-
 
 def build_report(results, overlap, min_total_rows):
     rows_total = sum(item["dataset"]["rows"] for item in results)
