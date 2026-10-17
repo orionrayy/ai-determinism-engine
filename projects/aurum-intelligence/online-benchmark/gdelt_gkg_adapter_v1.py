@@ -19,14 +19,28 @@ from external_context_schema_v1 import AcquisitionResult, ExternalObservation, S
 OFFICIAL_HOST = "data.gdeltproject.org"
 MASTER_URL = "https://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
 MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
-MAX_MASTER_BYTES = 12 * 1024 * 1024
+# The official GDELT 2.0 master list is currently >120 MB. Keep it bounded,
+# but large enough to select historical 15-minute GKG archives.
+MAX_MASTER_BYTES = 160 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 24 * 1024 * 1024
-MAX_AGGREGATE_BYTES = 256 * 1024 * 1024
+MAX_AGGREGATE_BYTES = 320 * 1024 * 1024
 MAX_RECORDS_PER_ARCHIVE = 500_000
 MAX_ARCHIVES_PER_RUN = 100
 TIMEOUT_SECONDS = 20
 MAX_RETRIES = 2
 BATCH_INTERVAL = timedelta(minutes=15)
+
+
+def normalize_archive_url(url: str) -> str:
+    """Upgrade only public GDELT master-list links on the exact official host to HTTPS."""
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or parsed.hostname != OFFICIAL_HOST:
+        raise ValueError("gdelt_url_outside_official_allowlist")
+    if parsed.username is not None or parsed.password is not None or parsed.port not in (None, 80, 443):
+        raise ValueError("gdelt_url_has_unsafe_authority")
+    if not parsed.path.startswith("/gdeltv2/") or parsed.query or parsed.fragment:
+        raise ValueError("gdelt_path_not_allowlisted")
+    return f"https://{OFFICIAL_HOST}{parsed.path}"
 
 
 def _validate_official_url(url: str) -> None:
