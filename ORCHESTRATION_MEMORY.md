@@ -913,3 +913,38 @@ Aurum remains an independent research/UX product stored under `projects/aurum-in
 - Primary dataset quality profile: median/p95 interval 300 seconds, 136 intervals >2× expected M5, including 132 intervals >1 hour, 97 robust price-jump flags, zero flat bars and zero zero-volume bars after strict parsing. Source-index continuity and intended timezone semantics cannot be proved from this schema.
 - Calibration on the exact TP-before-SL target is mixed: some rule/side holdout slices improve after Platt scaling and others degrade. This does not demonstrate predictive alpha or a validated model. No live trading, no world-leading-accuracy claim. `deployment_calibrated=false`, `validated=false`, `live_signal_enabled=false`, `NO_TRADE`.
 - Next P0 work: determine whether timestamp/bar labels, price basis, provider methodology or another source issue explains the material cross-source discrepancy; review upstream data-use rights; obtain broker-authorized Bid/Ask/tick data with measured spread/commission/swap/slippage/fill semantics; rerun independent regime and untouched holdout tests. Do not progress to model complexity or order routing until these gates are addressed.
+
+
+## Aurum Intelligence — P0 cross-source price-basis diagnostics continuation (2026-10-17 17:28 WIB)
+
+Canonical project: `projects/aurum-intelligence`. Application remains v1.3.1 research/UX prototype; evaluator protocol remains v1.4.0 P0. PR [#164](https://github.com/orionrayy/ai-determinism-engine/pull/164) remains open/draft/unmerged. Keep `NO_TRADE`; do not claim global #1 accuracy, validated calibration, profitability or live readiness.
+
+### Code change and test evidence
+
+- Implemented non-mutating cross-source price-basis diagnostics in `projects/aurum-intelligence/online-benchmark/source_concordance_v1_0.py`: signed OHLC differences, OLS level relationship, residual quantiles in price units and bps, signed difference by chronological quartile, and direct consecutive five-minute return differences. The output explicitly records `source_correction_applied=false` and `source_promoted=false`.
+- Added regression tests for a controlled additive level offset and multiplicative price scaling. Tests verify diagnostic detection without auto-correction, timestamp shift, merge or source promotion.
+- Source implementation commit: `5ec99e2fe4e478ddda60a8ebbef264226c47a076`.
+- Code/test head verified by hosted CI: `6b5b2f04a674c81deee84f1a2cdaf5ca442663d5`.
+- GitHub Actions [run #39024803960](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39024803960): success. Temporal calibration contracts, parser/baseline/source-concordance unit tests, live online acquisition, full benchmark, count/assertion gates and artifact upload completed. Artifact #12097644871, 2,563,258 bytes, SHA-256 `b2bc267bda4d067ed6baec07d196540f903e84545cf342f9938b17371f607415`, retention through 2026-10-31.
+- Documentation updates subsequently committed to the PR branch: progress log `7166b0518febc9b2e7562eda669ab8e63b648569`, status `1cf2c486b315bad80ae683ee3854146931644942`, checkpoint `67a09a6892f80e2fd7bb21408cacbccb75a2cef9`. They do not alter evaluator code; nevertheless, recheck the latest CI before claiming the new branch tip passed.
+
+### Live data diagnostic results
+
+- Primary GetData community XAUUSD M5: 35,954 rows; SHA-256 `acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db`.
+- Secondary Sai310421 community XAUUSD M5: 17,371 rows; SHA-256 `ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d`.
+- Exact common timestamps: 11,509; exact OHLC matches: 0; median/p95 absolute close difference: 134.885 / 203.661 bps; signed primary-minus-secondary close difference median: +63.515 price units; one-bar return correlation: 0.9984495.
+- OLS descriptive fit (primary close ~= intercept + slope * secondary close): intercept +130.350817 price units; slope 0.984434; level R² 0.940465; residual absolute p95 128.847931 bps. It does not justify an affine correction.
+- Median signed close difference across chronological overlap quartiles: +28.55, +72.535, +55.945 and +60.5135 price units, so the difference is not a stable additive offset.
+- Consecutive five-minute return absolute difference median/p95: 0.263933 / 0.981664 bps. Return correlation is not proof of executable quote-price equivalence.
+- Timestamp offset scan: best candidate +12 bars (+60 minutes) at the configured search boundary; median discrepancy falls by only 2.37%, and return correlation at that candidate is -0.01456. Treat as boundary warning, not an alignment fix.
+- Live source state stays `SOURCE_DISAGREEMENT_REVIEW_REQUIRED`. Sources are not merged, normalized, rescaled, time-shifted or promoted.
+
+### Remaining P0 gates / next work
+
+1. Investigate upstream timestamp/bar-label, provider price-basis and candle-construction semantics, and historical revisions; use independent evidence rather than fitting one source to another.
+2. Verify intended-use data rights and original provenance for both community sources; repo license labels are not sufficient.
+3. Obtain broker-authorized Bid/Ask or tick records plus measured spread, commission, swap, slippage and fill semantics.
+4. Keep source-specific replay separate; after the data gate, validate independent regimes and an untouched final holdout, then calibration for the exact matured-label TP-before-SL target with uncertainty intervals.
+5. Only after these pass: authorized paper trading, security/risk review, and separate approval for any live execution.
+
+The successful CI proves the acquisition/evaluator/assertion pipeline works and correctly reports disagreement; it does not establish which source is correct, predictive alpha, a calibrated model or profitability. No additional model complexity or order-routing work should proceed while P0 data-quality/provenance gates are open.
