@@ -99,3 +99,12 @@ Run [#38888666520](https://github.com/orionrayy/ai-determinism-engine/actions/ru
 Run [#38897894594](https://github.com/orionrayy/ai-determinism-engine/actions/runs/38897894594) PASS on commit `6017eec3141fb803907583abeca006a230e90be4`. Artifact #12044756186, SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`.
 
 The artifact confirms 35,954 public XAUUSD M5 rows, 35,893 sequential opportunities per baseline over five chronological folds, 50 point-case inputs / 250 baseline comparisons, 1,200/1,200 market-path scenarios, 240/240 software robustness cases, and 240/240 temporal-calibration synthetic contracts. All hosted validation/count gates passed. Calibration scenario data are synthetic and not forecast-skill evidence. The source CSV period ends 2026-09-25 and source-rights/broker/timezone semantics remain unverified. The current decision remains `NO_TRADE`.
+
+
+## v1.4.0 P0 evaluator and cross-source disagreement — 2026-10-17
+
+Hosted run [#39022220573](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39022220573) passed on branch head `fe6ed83b0ec242e2d8e81317c2c798dac00f93bb`. Artifact #12096704482: 2,556,935 bytes, SHA-256 `94d432018fa313db265bc01dbeba1e37df5efc0a3c90f65eaec432259877f7de`.
+
+Primary community XAUUSD M5 source: 35,954 rows, SHA-256 `acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db`. Secondary `Sai310421/xauusd-data`: 17,371 rows, SHA-256 `ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d`. Across 11,509 exact timestamp overlaps, exact OHLC match count is zero; absolute close difference median/p95/p99/max is 134.885/203.661/217.617/220.412 bps. Signed primary-minus-secondary close difference median is +63.515 price units (p05 +0.295, p95 +94.445). One-bar return correlation is 0.99845. Classification: `SOURCE_DISAGREEMENT_REVIEW_REQUIRED`; this is not a clean source-consistency result. Both sources remain reference-only and must not be merged/shifted automatically.
+
+The evaluator produced 94,604 candidate signal events, 94,084 binary-scored outcomes and 520 same-bar ambiguous collisions (excluded). It reports 70/10/20 chronological segments and keeps the final 20% holdout scoring-only for the Platt calibrator. Raw vs calibrated holdout metrics vary by rule/side; calibration is not uniformly better. P0 is still blocked on source/time/data rights and broker-specific execution evidence. `NO_TRADE` remains active.
