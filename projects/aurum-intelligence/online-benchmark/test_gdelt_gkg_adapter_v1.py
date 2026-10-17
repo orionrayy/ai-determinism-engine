@@ -1,4 +1,6 @@
 import unittest
+import io
+import zipfile
 from datetime import datetime, timezone
 
 import gdelt_gkg_adapter_v1 as gdelt
@@ -25,6 +27,19 @@ def row(record_id, doc_url="https://example.com/story/1", datefield="20260301120
     fields[9]=""
     fields[10]="-1.2,2.3,0.4,1"
     return "\t".join(fields).encode()
+
+def archive_zip(payload: bytes) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("fixture.csv", payload)
+    return buffer.getvalue()
+
+
+def archive_listing(*timestamps: str) -> bytes:
+    return "\\n".join(
+        f"6800000 fixture http://data.gdeltproject.org/gdeltv2/{stamp}.gkg.csv.zip"
+        for stamp in timestamps
+    ).encode("utf-8")
 
 
 class GdeltGkgTests(unittest.TestCase):
@@ -96,6 +111,73 @@ class GdeltGkgTests(unittest.TestCase):
             )
         self.assertIsNone(payload)
         self.assertEqual(warning, "aggregate_byte_cap_reached_before_next_archive")
+
+    def test_single_archive_size_limit_is_not_misreported_as_aggregate_exhaustion(self):
+        from unittest.mock import patch
+        with patch.object(gdelt, "_bounded_get", side_effect=ValueError("content_length_exceeds_limit")):
+            payload, warning = gdelt._download_archive_with_budget(
+                "https://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
+                remaining_bytes=gdelt.MAX_ARCHIVE_BYTES * 2, prior_observation_count=500,
+            )
+        self.assertIsNone(payload)
+        self.assertEqual(warning, "archive_skipped_per_archive_byte_cap")
+
+    def test_oversized_archive_does_not_stop_later_sampled_archives(self):
+        from unittest.mock import patch
+
+        urls = [
+            "https://data.gdeltproject.org/gdeltv2/20240101000000.gkg.csv.zip",
+            "https://data.gdeltproject.org/gdeltv2/20240102000000.gkg.csv.zip",
+            "https://data.gdeltproject.org/gdeltv2/20240103000000.gkg.csv.zip",
+        ]
+        listing = archive_listing("20240101000000", "20240102000000", "20240103000000")
+
+        def fake_get(url, cap):
+            if url == gdelt.MASTER_URL:
+                return listing
+            if url == urls[0]:
+                raise ValueError("content_length_exceeds_limit")
+            if url == urls[1]:
+                return archive_zip(row("20240102000000-1", "https://example.com/a"))
+            if url == urls[2]:
+                return archive_zip(row("20240103000000-1", "https://example.com/b"))
+            raise AssertionError(f"unexpected URL: {url}")
+
+        with patch.object(gdelt, "_bounded_get", side_effect=fake_get):
+            result = gdelt.acquire_historical_gkg(
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 1, 4, tzinfo=timezone.utc),
+                target_records=2, max_archives=3, aggregate_cap=gdelt.MAX_AGGREGATE_BYTES,
+            )
+
+        self.assertEqual(len(result.observations), 2)
+        self.assertEqual(result.status, "PARTIAL")
+        self.assertTrue(any("archive_skipped_per_archive_byte_cap" in w for w in result.warnings))
+        self.assertTrue(any("processed_sampled_archives=2" in w for w in result.warnings))
+
+    def test_bounded_sample_can_pass_scale_gate_without_claiming_full_window_coverage(self):
+        from unittest.mock import patch
+
+        listing = archive_listing("20240101000000", "20240102000000")
+        first_url = "https://data.gdeltproject.org/gdeltv2/20240101000000.gkg.csv.zip"
+
+        def fake_get(url, cap):
+            if url == gdelt.MASTER_URL:
+                return listing
+            if url == first_url:
+                return archive_zip(row("20240101000000-1", "https://example.com/a"))
+            raise AssertionError(f"unexpected URL: {url}")
+
+        with patch.object(gdelt, "_bounded_get", side_effect=fake_get):
+            result = gdelt.acquire_historical_gkg(
+                datetime(2024, 1, 1, tzinfo=timezone.utc),
+                datetime(2024, 1, 3, tzinfo=timezone.utc),
+                target_records=1, max_archives=1, aggregate_cap=gdelt.MAX_AGGREGATE_BYTES,
+            )
+
+        self.assertEqual(result.status, "PASS")
+        self.assertTrue(any("sample_completed=true" in w for w in result.warnings))
+        self.assertTrue(any("archive_window_complete=false" in w for w in result.warnings))
 
     def test_budget_limit_before_any_records_fails_closed(self):
         from unittest.mock import patch
