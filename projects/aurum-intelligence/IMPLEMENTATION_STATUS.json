@@ -115,11 +115,12 @@
     "browser_device_acceptance_tested": false
   },
   "required_next": [
-    "review data rights, original provenance, timezone semantics and broker quote/execution meanings",
-    "acquire licensed broker-specific Bid/Ask/tick data with measured commission, spread, slippage and fill handling",
-    "compare multiple independent sources and non-overlapping chronological regimes using an untouched final holdout and mature-label leakage controls",
-    "validate calibration for exact TP-before-SL outcomes with sufficient out-of-sample observations and uncertainty intervals",
-    "keep NO_TRADE and live order execution disabled until independent validation, paper trading and security/risk gates pass"
+    "verify data-use rights, original provider lineage, timestamp/bar conventions and Bid/Mid/Ask semantics for each market source",
+    "acquire broker-authorized Bid/Ask/tick and actual fill data plus measured spread, commission, swap, slippage, latency and rejected-order semantics",
+    "do not enable news features until the intended historical window is continuously covered or a source-specific missingness model is defined and separately validated",
+    "obtain authoritative macro publication-time calendars and optional FRED/ALFRED vintages before macro feature ablation",
+    "retest fixed model/feature versions on independent regimes and an untouched holdout against causal base-rate baselines with uncertainty; then paper trade and complete separate risk/security reviews",
+    "keep NO_TRADE and live order/signal flags disabled"
   ],
   "release": {
     "version": "1.3.1",
@@ -445,11 +446,119 @@
         "live_signal_enabled": false,
         "decision_output": "NO_TRADE"
       }
+    },
+    "external_context_benchmark": {
+      "application_version": "1.3.1",
+      "evaluation_protocol": "1.4.0 P0",
+      "status": "HOSTED_CI_PASS_DIAGNOSTIC_ONLY",
+      "workflow_run_id": 39035732248,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248",
+      "tested_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69",
+      "artifact_id": 12102745058,
+      "artifact_bytes": 2624921,
+      "artifact_sha256": "b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0",
+      "unit_tests_passed": 115,
+      "temporal_calibration_scenarios": {
+        "passed": 240,
+        "failed": 0
+      },
+      "price_benchmark": {
+        "paired_m1_bid_ask_candles": 1313280,
+        "valid_atr_anchors": 20000,
+        "matured_unambiguous_labels": 19937,
+        "decision_gate": "NO_TRADE"
+      },
+      "gdelt": {
+        "unique_real_observations": 141020,
+        "target": 100000,
+        "scale_gate": "PASS",
+        "raw_data_synthesized_or_duplicated": 0,
+        "archives_processed": 100,
+        "archives_discovered": 85809,
+        "sampled_archive_processing": "complete",
+        "archive_window_complete": false,
+        "source_acquisition_status": "PASS",
+        "source_completeness_status": "PARTIAL",
+        "bytes_acquired": 701820752,
+        "observed_minutes": 1500,
+        "requested_window_minutes": 1313279,
+        "temporal_coverage_fraction": 0.001142179,
+        "temporal_coverage_percent": 0.114218,
+        "news_feature_eligible_rows": 0,
+        "total_evaluation_rows": 19937,
+        "news_feature_status": "NOT_MET"
+      },
+      "feature_coverage": {
+        "cot": {
+          "eligible_rows": 19739,
+          "total_rows": 19937,
+          "coverage_fraction": 0.990068716456839,
+          "status": "PARTIAL"
+        },
+        "macro": {
+          "eligible_rows": 0,
+          "total_rows": 19937,
+          "coverage_fraction": 0,
+          "status": "NOT_MET"
+        },
+        "news": {
+          "eligible_rows": 0,
+          "total_rows": 19937,
+          "coverage_fraction": 0,
+          "status": "NOT_MET"
+        }
+      },
+      "source_gates": {
+        "cot": "PASS; rights and upstream independence require review",
+        "bls": "observations are descriptive only because publication calendar was not supplied",
+        "fred_alfred": "SKIPPED_CREDENTIAL_REQUIRED; FRED_API_KEY_NOT_CONFIGURED",
+        "gdelt": "selected archive sample complete but full historical window is only 0.114218% covered"
+      },
+      "ablations": {
+        "price_only": {
+          "status": "SCORED",
+          "n": 3987,
+          "brier": 0.160989295248147,
+          "log_loss": 0.4935151974370673,
+          "ece_descriptive": 0.03880881535775387
+        },
+        "price_cot": {
+          "status": "SCORED",
+          "n": 3987,
+          "brier": 0.16090435459678282,
+          "log_loss": 0.4931088650790775,
+          "ece_descriptive": 0.0413617709538213
+        },
+        "price_combined": {
+          "status": "SCORED",
+          "n": 3987,
+          "brier": 0.16090435459678282
+        },
+        "price_news": {
+          "status": "NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT"
+        },
+        "price_macro": {
+          "status": "NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT"
+        },
+        "cot_incremental_brier_improvement_vs_price_only": 0.00008494065136418093,
+        "cot_incremental_brier_improvement_ci95": [
+          -0.00014777036162551426,
+          0.00032011661071850155
+        ],
+        "interpretation": "COT's incremental Brier interval crosses zero; the benchmark does not establish robust incremental predictive value. No best model/alpha claim is made."
+      },
+      "inference_policy": {
+        "deployment_calibrated": false,
+        "validated_model": false,
+        "validated_for_profitability": false,
+        "live_signal_enabled": false,
+        "decision_output": "NO_TRADE"
+      }
     }
   },
   "external_context_research_spec": {
     "path": "docs/superpowers/specs/2026-10-17-aurum-point-in-time-external-context-design.md",
-    "status": "DESIGN_APPROVED_PLAN_READY_AWAITING_REVIEW",
+    "status": "IMPLEMENTED_ON_PR_BRANCH_HOSTED_CI_PASS_DIAGNOSTIC_ONLY",
     "latest_spec_commit": "5dd1fbb96f6c1c1965c3558964ed6047e75a2ce0",
     "plan_path": "docs/superpowers/plans/2026-10-17-aurum-point-in-time-external-context.md",
     "latest_plan_commit": "65ac5c1888390c6010102bb66da2e398daec4e7f",
@@ -464,15 +573,15 @@
       "same_row_ablation_benchmark",
       "hosted_CI_and_evidence_checkpoint"
     ],
-    "implementation_started": false,
+    "implementation_started": true,
     "cftc_availability_policy": "verified historical release timestamp when authoritative; otherwise Wednesday 00:00 America/New_York in the following calendar week (report date + 8 calendar days for usual Tuesday report); quarantine ambiguous holiday schedule",
     "external_context_scale_target": 100000,
     "external_context_scale_semantics": "target/acceptance gate; explicitly report NOT_MET with true counts if provider/runtime caps prevent it; never synthesize records",
     "model_protocol": "fixed L2 logistic baseline, scaler fit on development only, Platt calibration on mature calibration labels only, purged temporal boundaries, final 20 percent untouched holdout",
     "last_full_price_benchmark_run": {
-      "id": 39028110673,
+      "id": 39035732248,
       "conclusion": "success",
-      "tested_head": "375aa2e3c225394943f177a5243d5c18ccd04fd9"
+      "tested_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69"
     },
     "latest_known_pr_head_startup_failure": {
       "id": 39028331604,
@@ -480,6 +589,39 @@
       "conclusion": "startup_failure",
       "jobs_created": 0
     },
-    "decision_gate": "NO_TRADE"
+    "decision_gate": "NO_TRADE",
+    "implemented_tasks": [
+      "point_in_time_schema",
+      "CFTC_COT_adapter",
+      "GDELT_GKG_historical_archived_metadata_adapter",
+      "BLS_observation_adapter_with_publication_time_ineligibility_guard",
+      "optional_FRED_ALFRED_vintage_adapter",
+      "as_of_feature_builder_with_matured_availability_and_archive_coverage",
+      "same_row_ablation_and_bootstrap_comparison",
+      "hosted_CI_and_artifact_checkpoint"
+    ],
+    "latest_code_test_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69",
+    "latest_successful_workflow_run": {
+      "id": 39035732248,
+      "url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248",
+      "conclusion": "success",
+      "tested_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69",
+      "unit_and_regression_tests": 115,
+      "temporal_calibration_scenarios": {
+        "passed": 240,
+        "failed": 0
+      },
+      "artifact_id": 12102745058,
+      "artifact_bytes": 2624921,
+      "artifact_sha256": "b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0"
+    },
+    "last_failed_retry_retained": {
+      "id": 39035356832,
+      "conclusion": "failure",
+      "error_code": "NameError",
+      "root_cause": "run_external_context_benchmark_v1.py referenced gdelt_archive_window_complete outside _acquire_sources scope",
+      "fix_commit": "8f8eb140e580baa85a23d3b27be5b6300e1d8ebb",
+      "status": "preserved as failed diagnostic run; not counted as success"
+    }
   }
 }
