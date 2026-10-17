@@ -74,7 +74,7 @@ def month_bounds_ms(year, month):
 
 
 def _request_bytes(url, cap, label, timeout=FETCH_TIMEOUT_SECONDS):
-    req = Request(url, headers={"User-Agent": "Serevex-Intelligence/1.5-large-scale-research"})
+    req = Request(url, headers={"User-Agent": "Serevex-Quant-Research/1.5-large-scale-research"})
     last_error = None
     for attempt in range(3):
         try:
