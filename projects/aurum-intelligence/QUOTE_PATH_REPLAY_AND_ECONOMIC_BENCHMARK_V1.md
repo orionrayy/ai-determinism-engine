@@ -1,6 +1,6 @@
 # Quote-side TP/SL replay and economic benchmark v1
 
-Status: candidate research increment; hosted validation is required. Trading gate remains NO_TRADE.
+Status: hosted CI validated as a research diagnostic in run #39057955872 on 2026-10-18; no profitability validation. Trading gate remains NO_TRADE.
 
 ## Accounting and path rules
 
@@ -36,3 +36,12 @@ The candidate sampler now excludes an anchor if the observed entry spread is gre
 ## Barrier arithmetic parity
 
 Barrier thresholds use the same floating-point evaluation order as the pre-existing price-path evaluator. Price and PnL values remain Decimal-based after the thresholds have been fixed. This prevents a float-versus-Decimal rounding difference at a threshold equality from silently changing a binary TP/SL label.
+
+
+## Latest hosted result — 2026-10-18
+
+Run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/39057955872  
+Commit: `2cb6c3dc1eb1d48a2bcdbf8e0792f6e80bdec151`  
+Artifact: `12110540720`, 2,635,151 bytes, SHA-256 `7e192a620b75bf61c32d4d9daa4d3528dcdb8264b9c8e0b4a23a7ad05f10a7fe`.
+
+The 20,000-anchor / 40,000-path replay passed exact label agreement with the reference evaluator. With the entry-spread geometry correction, all four fixed strategies were negative in mean gross R on the final chronological holdout: momentum -0.5094 to -0.5003R; EMA10/30 -0.4922 to -0.4812R; mean-reversion z20 -0.5296 to -0.5203R; range-breakout 20 -0.4723 to -0.4523R. These are per-event quote-side diagnostics before unmeasured broker costs and without portfolio-level exposure. Do not promote these baselines.

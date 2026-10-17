@@ -38,3 +38,17 @@ Decision gate: NO_TRADE; live order routing disabled.
 ## 2026-10-18 — barrier arithmetic parity fix
 
 The first replay after stop-geometry filtering stopped on a single label disagreement. The new path evaluator had formed ATR barrier prices using Decimal arithmetic while the reference evaluator used floating-point arithmetic. At exact OHLC threshold equality, those different arithmetic paths can create different binary labels. Barrier-price formation now follows the reference evaluator's float operation order; reported PnL remains Decimal-based. Mismatch diagnostics now print the new and reference status/label plus target/stop values. Hosted full-data validation is required before considering the correction accepted.
+
+
+## 2026-10-18 — full hosted replay verification
+
+Latest corrected head `2cb6c3dc1eb1d48a2bcdbf8e0792f6e80bdec151` passed [hosted run #39057955872](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39057955872). The run passed 153 unit/regression tests, 8 temporal-calibration tests and 240/240 synthetic contracts, then acquired the real public data and uploaded artifact #12110540720 (2,635,151 bytes; SHA-256 `7e192a620b75bf61c32d4d9daa4d3528dcdb8264b9c8e0b4a23a7ad05f10a7fe`).
+
+Post-correction replay results:
+- 1,313,280 Bid/Ask M1 candles over 30 months; 20,000 distinct anchors; 40,000 direction paths; 40,000 label cross-checks and zero mismatches.
+- Entry geometry audit rejected 217,544 of 875,611 contiguous ATR-valid candidate windows (24.8448%) where spread was >= the 1-ATR stop distance.
+- 53,129 fixed-rule signals; 10,637 in the final chronological holdout. All four fixed baselines have negative mean gross R and profit factor < 1 in the final holdout, before unmeasured execution costs. Full per-rule metrics and assumptions are in `P0_EXECUTION_REPLAY_RESULTS_2026-10-18.md`.
+- Large-scale probability Brier skill versus the global matured-label baseline remains negative in aggregate (-0.000802); final-holdout skill is only +0.000315.
+- External-context acquisition passed its bounded observation gate (141,020 records) but source-window completeness is PARTIAL; macro/news were ineligible, and the incremental COT score difference versus price-only has a paired 95% interval crossing zero.
+
+The result rejects the four tested fixed-rule baselines; it does not establish that every potential model fails. Continue NO_TRADE. The holdout metrics have been inspected and must not be reused to tune a model while still calling that holdout untouched.

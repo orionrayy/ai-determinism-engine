@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17",
+  "checkpoint": "2026-10-18T01:28:41+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -119,7 +119,10 @@
     "Acquire broker-authorized quotes/fills and measured spread, commission, swap, slippage, latency/rejection and fill semantics.",
     "Keep GDELT news features ineligible until source windows have sufficient historical temporal coverage; supply authoritative publication-time and vintage data before macro feature ablations.",
     "Evaluate against causal base-rate comparators on independent regimes and an untouched holdout with uncertainty intervals; prove net-of-cost edge before paper trading.",
-    "Keep NO_TRADE; never enable live signals or order routing until data, calibration, execution, risk and security gates pass."
+    "Keep NO_TRADE; never enable live signals or order routing until data, calibration, execution, risk and security gates pass.",
+    "Retire or reject the four fixed-rule baselines in this replay; their final-holdout gross mean R and profit factors are negative/under 1.",
+    "The final holdout in execution replay results has been inspected; reserve a new lockbox period or independent source/regime for further model selection.",
+    "Implement venue-specific portfolio replay with measured commissions, swap, slippage, latency/fill semantics and exposure/margin accounting before any net-profitability claim."
   ],
   "release": {
     "version": "1.3.1",
@@ -688,5 +691,119 @@
       "fix_commit": "8f8eb140e580baa85a23d3b27be5b6300e1d8ebb",
       "status": "preserved as failed diagnostic run; not counted as success"
     }
+  },
+  "execution_replay": {
+    "protocol_version": "aurum-quote-side-economic-replay-v1",
+    "implementation_commit": "2cb6c3dc1eb1d48a2bcdbf8e0792f6e80bdec151",
+    "workflow_run_id": 39057955872,
+    "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39057955872",
+    "conclusion": "success",
+    "artifact_id": 12110540720,
+    "artifact_bytes": 2635151,
+    "artifact_sha256": "7e192a620b75bf61c32d4d9daa4d3528dcdb8264b9c8e0b4a23a7ad05f10a7fe",
+    "artifact_expires_at": "2026-10-31T18:28:37Z",
+    "dataset": {
+      "dataset_id": "XAUUSD-DUKASCOPY-M1-BID-ASK",
+      "rows": 1313280,
+      "months": 30,
+      "period_start": "2023-01",
+      "period_end": "2025-06",
+      "weekday_active_nonflat_rows": 870500,
+      "provider_provenance_independently_verified": false,
+      "intended_use_rights_verified": false
+    },
+    "entry_geometry": {
+      "candidate_contiguous_atr_valid_windows": 875611,
+      "windows_rejected_spread_ge_stop": 217544,
+      "rejected_fraction": 0.24844822643845269,
+      "entry_spread_median": 0.36000000000012733,
+      "entry_spread_p95": 0.6799999999998363,
+      "entry_spread_to_atr_median": 0.6886925198399639,
+      "entry_spread_to_atr_p95": 2.0255319148930115
+    },
+    "replay": {
+      "unique_anchors": 20000,
+      "path_outcomes": 40000,
+      "legacy_label_crosschecks": 40000,
+      "label_mismatches": 0,
+      "status_counts": {
+        "stop_loss": 30721,
+        "take_profit": 8891,
+        "ambiguous_same_bar": 207,
+        "stop_loss_at_open": 124,
+        "take_profit_at_open": 48,
+        "horizon_timeout": 9
+      },
+      "signal_events": 53129,
+      "final_holdout_signal_events": 10637
+    },
+    "strategy_final_holdout_gross_r": {
+      "momentum_5": {
+        "events": 3995,
+        "mean_lower": -0.5093560536422047,
+        "mean_upper": -0.5003447895621046,
+        "profit_factor_lower": 0.3251050374183856,
+        "profit_factor_upper": 0.3330633542652623
+      },
+      "ema10_vs_ema30": {
+        "events": 4000,
+        "mean_lower": -0.49224807952737615,
+        "mean_upper": -0.48124807952737547,
+        "profit_factor_lower": 0.3404134044255015,
+        "profit_factor_upper": 0.35036520625921697
+      },
+      "mean_reversion_z20": {
+        "events": 2141,
+        "mean_lower": -0.5296317698878868,
+        "mean_upper": -0.5202903406492132,
+        "profit_factor_lower": 0.30770921935503326,
+        "profit_factor_upper": 0.31574204992889404
+      },
+      "range_breakout_20": {
+        "events": 501,
+        "mean_lower": -0.47230154987360534,
+        "mean_upper": -0.4523414700332856,
+        "profit_factor_lower": 0.358089355821358,
+        "profit_factor_upper": 0.37676376682056173
+      }
+    },
+    "probability_validation": {
+      "aggregate_brier": 0.17471862478506064,
+      "global_matured_label_baseline_brier": 0.17457859740846512,
+      "aggregate_skill_vs_baseline": -0.0008020878771748396,
+      "final_holdout_brier": 0.18766522791483475,
+      "final_holdout_baseline_brier": 0.18772443220034554,
+      "final_holdout_skill": 0.0003153786900130795
+    },
+    "external_context": {
+      "unique_observations": 141020,
+      "scale_gate_passed": true,
+      "source_completeness": "PARTIAL",
+      "cot_eligible_rows": 19688,
+      "context_cohort_rows": 19894,
+      "cot_eligible_fraction": 0.9896451191313964,
+      "macro_eligible_rows": 0,
+      "news_eligible_rows": 0,
+      "price_only_brier": 0.18628728829461583,
+      "price_cot_brier": 0.1861687167375888,
+      "paired_brier_improvement_ci95": [
+        -0.00038097671607924423,
+        0.0006748424824090249
+      ],
+      "incremental_value_established": false
+    },
+    "testing": {
+      "unittest_regression_tests_passed": 153,
+      "temporal_calibration_tests_passed": 8,
+      "temporal_calibration_scenarios_passed": 240,
+      "temporal_calibration_scenarios_failed": 0
+    },
+    "decision_output": "NO_TRADE",
+    "validated_model": false,
+    "calibrated_model": false,
+    "validated_for_profitability": false,
+    "live_signal_enabled": false,
+    "live_execution_authorized": false,
+    "interpretation": "Workflow and replay contracts passed, but source provenance/rights and execution costs remain unverified. All four fixed-rule strategies have negative gross mean R in final holdout."
   }
 }
