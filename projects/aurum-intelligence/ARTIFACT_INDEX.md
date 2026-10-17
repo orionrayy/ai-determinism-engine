@@ -90,3 +90,10 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 ## Competitive gap audit — 2026-10-17
 
 - `GAP_AUDIT_AND_COMPETITIVE_POSITION_2026-10-17.md` — evidence-led gap register, risk-weighted implementation phases, competitor category distinctions and free-first guardrails.
+
+
+## Verified TP-before-SL baseline and paired uncertainty — 2026-10-17
+
+- `benchmarks/tp_before_sl_oos_2026-10-17_baseline.md` and `.json` — summarized real-data result from hosted run #39019576117. The source CSVs are not included.
+- The paired 250-replicate bootstrap and holdout-mutation invariance implementation are newer changes; a fresh hosted run/artifact review is required before calling them green.
+- Current safety decision remains `NO_TRADE`, with deployment calibration/model validation false and all live signals/orders disabled.
