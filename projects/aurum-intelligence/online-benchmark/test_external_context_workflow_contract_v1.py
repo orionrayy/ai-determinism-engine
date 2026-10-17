@@ -45,9 +45,10 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
         self.assertIn('"data_acceptance_status": scale["status"]', runner)
         self.assertIn('"source_acquisition_status": source_details["gdelt_gkg"]["status"]', runner)
         self.assertIn('"source_completeness_status": source_completeness_status', runner)
+        self.assertIn('source_details["gdelt_gkg"]["archive_window_complete"]', runner)
         self.assertIn('"temporal_feature_coverage": temporal_feature_coverage', runner)
         self.assertIn('"status_semantics"', runner)
-        self.assertIn('"PASS" if gdelt_archive_window_complete', runner)
+        self.assertIn('"PASS" if source_details["gdelt_gkg"]["archive_window_complete"]', runner)
         self.assertIn('"PARTIAL" if gdelt_coverage else "NOT_MET"', runner)
 
 
