@@ -106,3 +106,14 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Data rights/provenance/timezone review, licensed Bid/Ask/tick data and measured costs.
 - [ ] Independent market-regime holdout and exact-target calibration with sufficient real OOS observations.
 - [ ] Paper trading, security/risk review and approval before any live execution.
+
+
+## v1.4.0 P0 evaluation and source-concordance checkpoint — 2026-10-17
+
+- [x] Implement time-ordered TP-before-SL label protocol with next-bar-open entry, ATR barrier contract, fixed horizon and conservative same-bar collision handling.
+- [x] Add development/calibration/final-holdout partitions (70/10/20), matured-label prequential baseline, calibration on earlier matured outcomes only, holdout metrics, and a descriptive data-quality profile.
+- [x] Add a second public community OHLCV feed and exact-timestamp source-concordance diagnostics; preserve each dataset separately and flag material price disagreement.
+- [x] Hosted CI [#39022220573](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39022220573) passed and artifact #12096704482 was uploaded.
+- [ ] **P0 remains open:** explain the 134.885 bps median / 203.661 bps p95 close-price disagreement (0 identical OHLC rows across 11,509 exact matched timestamps), including candle labeling, source provenance, timezone and quote conventions. Do not align by arbitrary price shifting or concatenate sources.
+- [ ] Review upstream data-use rights and licensing scope, obtain broker-specific Bid/Ask/tick observations and measured costs, and run independent chronological regimes/holdout before considering P0 acceptance.
+- [ ] Keep `NO_TRADE`, `deployment_calibrated=false`, `validated=false` and live execution disabled. Passing software tests is not proof of predictive skill.
