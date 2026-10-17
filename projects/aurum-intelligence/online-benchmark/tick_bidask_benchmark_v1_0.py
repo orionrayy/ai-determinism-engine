@@ -98,7 +98,7 @@ def utc_timestamp(value):
     return value.astimezone(timezone.utc)
 
 
-def compare_price_bars(primary_rows, quote_bars):
+def compare_price_bars(primary_rows, quote_bars, *, source_label="community OHLCV"):
     """Compare exact bar-open timestamp overlap for bid/mid/ask bars; do not choose a winner."""
     primary_map = {}
     for row in primary_rows:
@@ -148,6 +148,7 @@ def compare_price_bars(primary_rows, quote_bars):
     )
     return {
         "status": status,
+        "compared_source": source_label,
         "comparison_mode": "exact UTC five-minute bucket starts only; sources remain separate",
         "primary_rows": len(primary_rows),
         "tick_derived_m5_bars": len(quote_bars.get("mid", {})),
@@ -314,15 +315,27 @@ def run(output_dir):
     primary_payload = base.fetch()
     primary_rows = base.parse_csv(primary_payload, min_rows=1000)
     primary_hash = hashlib.sha256(primary_payload).hexdigest()
+    secondary_payload = base.fetch_secondary()
+    secondary_rows = base.parse_csv(secondary_payload, min_rows=1000)
+    secondary_hash = hashlib.sha256(secondary_payload).hexdigest()
     parts = discover_monthly_parts()
     downloaded_files, payloads = fetch_tick_parts(parts)
     tick_frame = parquet_parts_to_frame(payloads)
     quote_bars = aggregate_tick_frame(tick_frame)
-    comparison, sample_rows = compare_price_bars(primary_rows, quote_bars)
+    comparison, sample_rows = compare_price_bars(
+        primary_rows, quote_bars, source_label=base.SOURCE_REPO,
+    )
+    secondary_comparison, secondary_sample_rows = compare_price_bars(
+        secondary_rows, quote_bars, source_label=base.SECONDARY_SOURCE_REPO,
+    )
     spread = spread_diagnostics(tick_frame["bid_price"].to_numpy(), tick_frame["ask_price"].to_numpy())
     stamp_min, stamp_max = tick_frame["timestamp"].min(), tick_frame["timestamp"].max()
     report = {
-        "status": "PASS" if comparison["status"] == "THIRD_SOURCE_DIAGNOSTIC_ONLY" and len(tick_frame) >= 1000 else "FAIL",
+        "status": "PASS" if (
+            comparison["status"] == "THIRD_SOURCE_DIAGNOSTIC_ONLY"
+            and secondary_comparison["status"] == "THIRD_SOURCE_DIAGNOSTIC_ONLY"
+            and len(tick_frame) >= 1000
+        ) else "FAIL",
         "benchmark_kind": "real tick bid/ask source integrity and M5 concordance diagnostic; not a strategy-performance benchmark",
         "dataset": {
             "id": DATASET_ID,
@@ -347,6 +360,16 @@ def run(output_dir):
             "sha256": primary_hash,
             "timestamp_semantics_independently_verified": False,
         },
+        "secondary_dataset": {
+            "repository": base.SECONDARY_SOURCE_REPO,
+            "source_url": base.SECONDARY_SOURCE,
+            "rows": len(secondary_rows),
+            "sha256": secondary_hash,
+            "license_reference": base.SECONDARY_LICENSE,
+            "quote_basis_reported_by_repository": "mid-quote OHLCV",
+            "data_rights_independently_verified": False,
+            "timestamp_semantics_independently_verified": False,
+        },
         "tick_quality": {
             "non_finite_or_missing_rows": 0,
             "non_positive_quote_count": 0,
@@ -358,6 +381,7 @@ def run(output_dir):
         },
         "spread": spread,
         "cross_source_comparison": comparison,
+        "secondary_community_comparison": secondary_comparison,
         "runtime_ms": round((time.perf_counter() - started) * 1000, 3),
         "decision_output": "NO_TRADE",
         "reference_only": True,
@@ -369,7 +393,10 @@ def run(output_dir):
         "live_signal_enabled": False,
     }
     (output_dir / "tick_bidask_benchmark.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    sample_count = write_sample_csv(output_dir / "tick_m5_comparison_sample.csv", sample_rows, limit=250)
+    sample_count = write_sample_csv(output_dir / "tick_m5_comparison_sample_primary.csv", sample_rows, limit=250)
+    secondary_sample_count = write_sample_csv(
+        output_dir / "tick_m5_comparison_sample_secondary.csv", secondary_sample_rows, limit=250,
+    )
     md = [
         "# Aurum third-source tick Bid/Ask benchmark",
         "",
@@ -380,7 +407,9 @@ def run(output_dir):
         "- Attribution: " + ATTRIBUTION,
         "- Tick rows acquired: {}; Parquet parts: {}; downloaded bytes: {}.".format(len(tick_frame), len(downloaded_files), report["dataset"]["bytes_downloaded"]),
         "- Tick period observed: {} to {}.".format(stamp_min.isoformat(), stamp_max.isoformat()),
-        "- Aggregated M5 quote bars: {}; exact overlap with primary public M5: {}.".format(len(quote_bars["mid"]), comparison["shared_timestamps"]),
+        "- Aggregated M5 quote bars: {}; exact overlap with primary M5: {}; secondary M5: {}.".format(
+            len(quote_bars["mid"]), comparison["shared_timestamps"], secondary_comparison["shared_timestamps"],
+        ),
         "- Invalid bid/ask rows fail closed instead of being silently discarded; same-millisecond timestamps are counted and retained.",
         "",
         "## Observed spread (this dataset only)",
@@ -395,23 +424,26 @@ def run(output_dir):
         "",
         "## Exact-timestamp M5 comparison",
         "",
-        "| Tick basis | Shared bars | Exact OHLC matches | Close-difference median (bps) | Close-difference P95 (bps) |",
-        "|---|---:|---:|---:|---:|",
+        "| Community source | Tick basis | Shared bars | Exact OHLC matches | Close-difference median (bps) | Close-difference P95 (bps) |",
+        "|---|---|---:|---:|---:|---:|",
     ]
-    for basis in ("bid", "mid", "ask"):
-        details = comparison["basis_comparisons"][basis]
-        close_stats = details["absolute_close_difference_bps"]
-        md.append("| {} | {} | {} | {} | {} |".format(
-            basis, details["exact_timestamp_overlap_bars"], details["exact_ohlc_match_count"],
-            "n/a" if close_stats["median"] is None else "{:.4f}".format(close_stats["median"]),
-            "n/a" if close_stats["p95"] is None else "{:.4f}".format(close_stats["p95"]),
-        ))
+    for label, result in ((base.SOURCE_REPO, comparison), (base.SECONDARY_SOURCE_REPO, secondary_comparison)):
+        for basis in ("bid", "mid", "ask"):
+            details = result["basis_comparisons"][basis]
+            close_stats = details["absolute_close_difference_bps"]
+            md.append("| {} | {} | {} | {} | {} | {} |".format(
+                label, basis, details["exact_timestamp_overlap_bars"], details["exact_ohlc_match_count"],
+                "n/a" if close_stats["median"] is None else "{:.4f}".format(close_stats["median"]),
+                "n/a" if close_stats["p95"] is None else "{:.4f}".format(close_stats["p95"]),
+            ))
     md += [
         "",
         "Timestamp matching uses exact UTC five-minute bucket starts. No offsets, rescaling, interpolation, synthetic continuity, or source promotion are applied.",
         "Source comparison is diagnostic only. The community feed's candle timestamp convention and executable price basis have not been independently proved; the third feed also discloses reconstructed broker provenance.",
         "",
-        "A bounded sample of {} exact-overlap timestamps is saved to tick_m5_comparison_sample.csv; raw tick files are not included in the artifact.".format(sample_count),
+        "Bounded overlap samples: {} primary and {} secondary timestamps; raw tick files are not included in the artifact.".format(
+            sample_count, secondary_sample_count,
+        ),
         "",
         "Machine-readable report: tick_bidask_benchmark.json.",
         "",
@@ -430,6 +462,8 @@ def run(output_dir):
         "parquet_parts": len(downloaded_files),
         "distinct_m5_bars": len(quote_bars["mid"]),
         "primary_overlap_bars": comparison["shared_timestamps"],
+        "secondary_overlap_bars": secondary_comparison["shared_timestamps"],
+        "secondary_mid_close_difference_p95_bps": secondary_comparison["basis_comparisons"]["mid"]["absolute_close_difference_bps"]["p95"],
         "spread_median_price_units": spread["spread_price_units"]["median"],
         "spread_p95_price_units": spread["spread_price_units"]["p95"],
         "cross_source_status": comparison["status"],
