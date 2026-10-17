@@ -231,6 +231,40 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
                       report["readiness_gates"]["reason_codes"])
         self.assertEqual(report["decision_output"], "NO_TRADE")
 
+    def test_unverified_quote_side_blocks_cross_source_confirmation_and_production(self):
+        fake_results = []
+        row_counts = [50000, 30000, 60000]
+        for spec, rows in zip(multi.SOURCES, row_counts):
+            fake_results.append({
+                "status": "PASS",
+                "source": {
+                    "id": spec["id"],
+                    "underlying_data_rights_verified": True,
+                    "commercial_use_approved": True,
+                    "broker_provenance_verified": True,
+                    "timezone_semantics_verified": True,
+                    "quote_side_verified": False,
+                },
+                "dataset": {"rows": rows},
+                "real_data_benchmark": {"rule_comparisons": 250},
+                "scenarios": {"market_paths": 720, "software_scenarios": 240},
+            })
+        overlap = {
+            "status": "PASS",
+            "close_relative_delta": {"compatibility_status": "COMPARABLE"},
+            "source_independence_verified": True,
+        }
+        report = multi.build_report(fake_results, overlap, min_total_rows=100000)
+        self.assertEqual(report["status"], "PASS")
+        self.assertEqual(report["readiness_gates"]["source_comparability_gate"], "PASS")
+        self.assertEqual(report["readiness_gates"]["cross_source_confirmation_gate"], "BLOCKED")
+        self.assertEqual(report["readiness_gates"]["commercial_product_use"], "BLOCKED")
+        self.assertEqual(report["readiness_gates"]["production_readiness"], "BLOCKED")
+        self.assertIn(
+            "SOURCE_PROVENANCE_TIMEZONE_OR_QUOTE_SIDE_UNVERIFIED",
+            report["readiness_gates"]["reason_codes"],
+        )
+
     def test_report_semantics_distinguish_pipeline_success_from_model_success(self):
         # Fail-closed aggregate contract; empty evidence is never labeled PASS.
         result = multi.build_report([], {
