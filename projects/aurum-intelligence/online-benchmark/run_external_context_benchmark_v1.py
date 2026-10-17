@@ -76,7 +76,7 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int]:
 
     gdelt_result = acquire_historical_gkg(
         PREREGISTERED_GDELT_START, PREREGISTERED_GDELT_END,
-        target_records=CONTEXT_TARGET, max_archives=100, aggregate_cap=320 * 1024 * 1024,
+        target_records=CONTEXT_TARGET, max_archives=100, aggregate_cap=800 * 1024 * 1024,
     )
     gdelt_obs = list(gdelt_result.observations)
     observations.extend(gdelt_obs)
@@ -232,7 +232,10 @@ def run(output_path: Path) -> dict[str, Any]:
     report = {
         "benchmark_id": "AURUM-POINT-IN-TIME-EXTERNAL-CONTEXT-v1",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "status": "PASS" if benchmark["ablations"]["price_only"].get("status") == "SCORED" else "PARTIAL",
+        "status": "PASS" if scale["passed"] and source_details["gdelt_gkg"]["status"] == "PASS" else "PARTIAL",
+        "software_execution_status": "PASS",
+        "data_acceptance_status": scale["status"],
+        "source_completeness_status": source_details["gdelt_gkg"]["status"],
         "research_only": True, "decision_gate": "NO_TRADE",
         "deployment_calibrated": False, "validated": False, "live_signal_enabled": False,
         "scale_gate": scale,

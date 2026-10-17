@@ -41,7 +41,7 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
     def test_report_status_cannot_call_price_only_success_full_data_pass(self):
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn('"software_execution_status": "PASS"', runner)
-        self.assertIn('"status": "PASS" if scale["passed"] and gdelt_result.status == "PASS" else "PARTIAL"', runner)
+        self.assertIn('"status": "PASS" if scale["passed"] and source_details["gdelt_gkg"]["status"] == "PASS" else "PARTIAL"', runner)
         self.assertIn('"data_acceptance_status": scale["status"]', runner)
 
 

@@ -23,7 +23,7 @@ MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
 # but large enough to select historical 15-minute GKG archives.
 MAX_MASTER_BYTES = 160 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 24 * 1024 * 1024
-MAX_AGGREGATE_BYTES = 320 * 1024 * 1024
+MAX_AGGREGATE_BYTES = 800 * 1024 * 1024
 MAX_RECORDS_PER_ARCHIVE = 500_000
 MAX_ARCHIVES_PER_RUN = 100
 TIMEOUT_SECONDS = 20
@@ -142,7 +142,16 @@ def deduplicate_snapshots(observations: list[ExternalObservation]) -> list[Exter
         record_key = (item.source_id, item.source_record_id)
         previous = by_record.get(record_key)
         if previous is not None:
-            if previous.payload_sha256 != item.payload_sha256 or previous.attributes != item.attributes:
+            row_content_conflicts = (
+                previous.event_time != item.event_time
+                or previous.published_at != item.published_at
+                or previous.available_at != item.available_at
+                or previous.value != item.value
+                or previous.unit != item.unit
+                or previous.attributes != item.attributes
+            )
+            # payload_sha256 is the enclosing archive hash, not a per-record hash.
+            if row_content_conflicts:
                 flags = tuple(sorted(set(previous.quality_flags) | {"conflicting_snapshot_record_id"}))
                 revised = replace(previous, quality_flags=flags)
                 by_record[record_key] = revised
