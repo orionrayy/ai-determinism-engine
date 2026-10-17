@@ -1,0 +1,97 @@
+name: Aurum Multi-Source Dataset Benchmark
+
+on:
+  pull_request:
+    paths:
+      - "projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py"
+      - "projects/aurum-intelligence/online-benchmark/test_multi_source_benchmark.py"
+      - "projects/aurum-intelligence/online-benchmark/ci_benchmark.py"
+      - "projects/aurum-intelligence/ONLINE_MULTI_SOURCE_BENCHMARK.md"
+      - ".github/workflows/aurum-multi-source-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurum-multisource-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  multi-source-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Unit and regression tests
+        working-directory: projects/aurum-intelligence/online-benchmark
+        run: python -m unittest discover -p 'test*.py' -v
+      - name: Fetch and benchmark public real datasets independently
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py
+          --output-dir /tmp/aurum-multi-source-benchmark
+          --cases 50 --min-total-rows 100000
+      - name: Enforce evidence and safety contracts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.json')
+          result = json.loads(path.read_text(encoding='utf-8'))
+          assert result['status'] == 'PASS', result
+          assert result['source_count'] == 3, result
+          assert result['dataset_rows_sum_not_deduplicated'] >= 100000, result
+          assert result['real_data_rule_comparisons'] >= 750, result
+          assert result['synthetic_market_path_contracts'] >= 2000, result
+          assert result['synthetic_software_contracts'] >= 600, result
+          assert result['decision_output'] == 'NO_TRADE', result
+          assert result['predictive_model_validated'] is False, result
+          assert result['model_calibrated_for_deployment'] is False, result
+          assert result['live_signal_enabled'] is False, result
+          assert result['live_order_execution_enabled'] is False, result
+          assert len(result['overlap_concordance']) == 1, result
+          overlap = result['overlap_concordance'][0]
+          assert overlap['exact_timestamp_matches'] >= 1000, overlap
+          assert overlap['datasets_merged'] is False, overlap
+          assert overlap['independence_status'].startswith('UNVERIFIED'), overlap
+          for source in result['sources']:
+              assert source['status'] == 'PASS', source
+              assert len(source['source']['sha256']) == 64, source
+              assert source['real_data_benchmark']['rule_comparisons'] >= 150, source
+              assert source['source']['source_timezone_verified'] is False, source
+              assert source['source']['broker_provenance_verified'] is False, source
+              assert source['predictive_model_validated'] is False, source
+              assert source['decision_output'] == 'NO_TRADE', source
+          print(json.dumps({
+              'status': result['status'],
+              'source_count': result['source_count'],
+              'dataset_rows_sum_not_deduplicated': result['dataset_rows_sum_not_deduplicated'],
+              'real_data_rule_comparisons': result['real_data_rule_comparisons'],
+              'synthetic_market_path_contracts': result['synthetic_market_path_contracts'],
+              'synthetic_software_contracts': result['synthetic_software_contracts'],
+              'cross_source_exact_timestamp_matches': overlap['exact_timestamp_matches'],
+              'decision_output': result['decision_output'],
+              'runtime_ms': result['runtime_ms'],
+          }, indent=2))
+          PY
+      - name: Add summarized benchmark evidence
+        if: always()
+        run: |
+          if [ -f /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md ]; then
+            cat /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload summarized evidence (no raw datasets)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurum-multi-source-benchmark-${{ github.run_id }}
+          path: |
+            /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.json
+            /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md
+          if-no-files-found: warn
+          retention-days: 14
