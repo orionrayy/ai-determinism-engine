@@ -77,3 +77,11 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - Artifact #12044756186, 14,966 bytes; SHA-256 `a2561de0161e79dbaac794988b5545cd8f32fe2cf55d38c875e8aed91e99d9b3`.
 - Includes full-history diagnostics, direct-case outcomes, 1,200 market scenarios, 240 software scenarios and the 240/240 temporal-calibration contract report.
 - The app release ZIP is downloadable, not committed as a binary. No raw public CSV is redistributed.
+
+
+## Target-specific TP-before-SL OOS diagnostic candidate — 2026-10-17
+
+- `online-benchmark/barrier_oos_benchmark.py` — fixed-protocol long/short TP-before-SL diagnostic with causal features, matured-label purging, calibration-period Platt fit, untouched chronological holdout and proper-score/reliability metrics.
+- `online-benchmark/test_barrier_oos_benchmark.py` — feature-causality, barrier-collision, gap-open, maturation-boundary and no-live-execution regression tests.
+- `ONLINE_MULTI_SOURCE_BENCHMARK.md` — protocol and caveats. New hosted CI is pending; no result may be described as validated until its run/artifact is inspected.
+- The benchmark consumes the already-downloaded public-source rows in CI and does not commit raw market CSVs. It is not yet a rebuilt/released Aurum application ZIP and it does not alter the Telegram/Mini App production path.
