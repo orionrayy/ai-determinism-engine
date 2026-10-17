@@ -134,7 +134,7 @@ def validate_observations(observations: Sequence[ExternalObservation]) -> Source
             raise ValueError(f"available_at_after_retrieved_at_at_{index}")
         if item.available_at is None and item.availability_quality != "unknown":
             raise ValueError(f"availability_timestamp_missing_without_unknown_quality_at_{index}")
-        if item.available_at is not None and item.availability_quality == "unknown":
+        if item.available_at is None or item.availability_quality == "unknown":
             unknown_count += 1
         if item.availability_quality == "conservative_proxy":
             proxy_count += 1
