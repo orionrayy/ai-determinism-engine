@@ -140,7 +140,7 @@ jobs:
           PY
       - name: Run 700k M1 candles and 20k distinct real timestamp scenarios
         run: >-
-          python projects/aurum-intelligence/online-benchmark/large_scale_bidask_benchmark_v1_0.py
+          python projects/aurum-intelligence/online-benchmark/execution_replay_benchmark_v1.py
           --output-dir /tmp/aurum-online-benchmark/large-scale
       - name: Enforce 700k-candle and 20k-real-scenario minimums
         run: |
@@ -203,6 +203,48 @@ jobs:
             'final_test_events': e['chronological_partitions']['final_holdout']['n'],
             'final_test_priors_frozen': e['chronological_partitions']['final_holdout']['final_test_priors_frozen'],
             'decision_output': r['decision_output']
+          }, indent=2))
+          PY
+      - name: Enforce quote-side execution replay contracts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/large-scale/execution_replay_report.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          c = r['coverage']
+          assert r['status'] == 'DIAGNOSTIC_ONLY', r
+          assert r['decision_output'] == 'NO_TRADE', r
+          assert r['live_execution_authorized'] is False, r
+          assert r['validated_for_profitability'] is False and r['deployment_calibrated'] is False, r
+          assert r['dataset']['row_count'] >= 700000, r['dataset']
+          assert r['dataset']['provider_provenance_independently_verified'] is False, r['dataset']
+          assert r['dataset']['upstream_data_rights_verified'] is False, r['dataset']
+          assert c['unique_real_anchors'] >= 20000, c
+          assert c['path_outcomes_evaluated'] == c['unique_real_anchors'] * 2, c
+          assert c['legacy_label_crosschecks'] == c['path_outcomes_evaluated'] and c['legacy_label_mismatches'] == 0, c
+          assert c['signal_events'] >= 5000, c
+          assert c['final_holdout_signal_events'] >= 1000, c
+          assert sum(c['path_status_counts_by_anchor_side'].values()) == c['path_outcomes_evaluated'], c
+          assert set(r['metrics_by_strategy']) == {'momentum_5', 'ema10_vs_ema30', 'mean_reversion_z20', 'range_breakout_20'}, r
+          cost = r['cost_sensitivity']
+          assert cost['broker_observed_cost'] is False and cost['net_account_currency_pnl_produced'] is False, cost
+          assert cost['additional_cost_grid_r'] == [0.0, 0.025, 0.05, 0.1], cost
+          for name, metric in r['metrics_by_strategy'].items():
+              for split in ('development', 'calibration', 'final_holdout'):
+                  assert split in metric, (name, metric)
+                  assert metric[split]['pessimistic_gross']['n'] == metric[split]['events'], (name, split, metric[split])
+                  assert metric[split]['optimistic_gross']['n'] == metric[split]['events'], (name, split, metric[split])
+          print(json.dumps({
+              'status': r['status'], 'decision_output': r['decision_output'],
+              'dataset_rows': c['dataset_rows'], 'unique_real_anchors': c['unique_real_anchors'],
+              'path_outcomes_evaluated': c['path_outcomes_evaluated'],
+              'legacy_label_crosschecks': c['legacy_label_crosschecks'],
+              'legacy_label_mismatches': c['legacy_label_mismatches'],
+              'signal_events': c['signal_events'], 'final_holdout_signal_events': c['final_holdout_signal_events'],
+              'path_status_counts': c['path_status_counts_by_anchor_side'],
+              'cost_is_broker_observed': cost['broker_observed_cost'],
+              'net_account_currency_pnl_produced': cost['net_account_currency_pnl_produced']
           }, indent=2))
           PY
       - name: Enforce third-source tick-data contract

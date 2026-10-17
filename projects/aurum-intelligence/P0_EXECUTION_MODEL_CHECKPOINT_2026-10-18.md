@@ -1,33 +1,27 @@
 # P0 execution-accounting checkpoint — 2026-10-18
 
-Status: candidate increment on the existing research PR branch; hosted CI pending.
-Target: Aurum Intelligence research pipeline in orionrayy/ai-determinism-engine.
-Decision gate: NO_TRADE; live execution disabled.
+Status: research-only changes on PR #164 branch; not merged to main.
+Decision gate: NO_TRADE; live order routing disabled.
 
-## Delivered
+## Accounting increment
+- Added deterministic closed-trade accounting using entry/exit Bid/Ask snapshots.
+- Long uses Ask/Bid; short uses Bid/Ask. Spread is exposed for reconciliation and not charged twice.
+- Slippage, commission and signed swap are separate. Unknown material costs suppress net-PnL output; assumed costs remain estimates.
+- Currency conversion fails closed. Evidence refs are syntax-checked only and cannot independently establish broker authorization.
+- First hosted run exposed one assertion-format mismatch (-100 vs -100.0); assertion normalized on a new commit.
 
-- Dependency-free deterministic closed-trade accounting using entry/exit Bid/Ask snapshots.
-- Correct long Ask/Bid and short Bid/Ask quote-side accounting; spread is not charged twice.
-- Separate adverse slippage, per-side commission, signed swap PnL and optional net R.
-- UTC-aware timestamp, positive non-crossed quote, chronology, nonnegative cost/contract-size, lot, rollover and currency checks.
-- Unknown material costs suppress net PnL; declared assumptions remain explicit estimates.
-- Evidence references are syntax-checked only. Manual-review eligibility at most; live execution authorization is invariantly false.
-- Standard-library regression suite for accounting and fail-closed behavior.
+## Quote-side replay increment
+- Added bracket-path replay for TP/SL outcomes using executable-side Bid/Ask OHLC.
+- Same-bar TP/SL collisions retain pessimistic/optimistic PnL bounds rather than deleting ambiguous outcomes.
+- Gap-through stops use the observed executable-side open; timeout exits use the executable-side close.
+- A missing bar inside the horizon fails closed. The replay does not invent tick order.
+- Added a large-scale runner that reuses a single acquired dataset snapshot, retains the prior benchmark report, cross-checks each directional outcome against the existing evaluator, and summarizes per-signal gross-R bounds across development/calibration/final chronology.
+- Local accounting plus quote-path suites: 27 tests passed; staged modules compile.
+- Hosted validation for this continuation is pending; no real-data replay result is yet claimed.
 
-## Local validation
-
-- unittest: 16 tests passed on staged candidate files.
-- py_compile: passed.
-- Hosted PR CI is still required and may reveal integration failures.
-
-## Known limitations
-
-This is accounting logic, not a fill simulator. It does not handle partial fills, rejection, queue position, limit-order fill probability, market impact, latency distributions, gaps/stop execution, margin/liquidation, instrument-specific triple-swap calendars or currency conversion. No real data or observed broker costs were introduced by this change.
-
-## Next gates
-
-1. Hosted CI passes the existing online-benchmark suite plus these tests.
-2. Add broker/instrument-specific profiles from authoritative specifications and authorized historical execution evidence.
-3. Implement chronological quote replay with actual Bid/Ask, conservative path ambiguity and fill rules.
-4. Report gross, spread, slippage, commission, swap and net PnL independently.
-5. Compare OOS net expectancy and probability scores to preregistered causal baselines with dependence-aware intervals. Unit tests do not promote a model.
+## Boundaries and next gates
+- Hosted CI must pass on this commit, including the large real-data acquisition and 20,000 distinct timestamp path checks.
+- Public-source provenance and intended-use rights remain unverified.
+- Added-cost values in R are hypothetical; broker-specific commission, swap, slippage, latency and fill behavior remain absent.
+- This is not a portfolio backtest. Overlapping rule events are not simulated as simultaneous capital-aware positions.
+- No live signals, order routing, or profitability claims have been enabled.
