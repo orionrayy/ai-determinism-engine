@@ -102,6 +102,59 @@ jobs:
           python projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py
           --output-dir /tmp/aurum-multi-source-benchmark
           --cases 50 --min-total-rows 100000
+      - name: Probe public bid/ask tick windows separately
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/tick_quote_probe.py
+          --output-dir /tmp/aurum-tick-quote-probe
+          --rows-per-window 1000
+      - name: Enforce bounded tick probe evidence and safety contracts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/aurum-tick-quote-probe/tick_quote_probe.json')
+          result = json.loads(path.read_text(encoding='utf-8'))
+          assert result['status'] == 'PASS', result
+          assert result['benchmark_kind'] == 'bounded_real_bid_ask_tick_quote_microstructure_probe', result
+          assert result['dataset_rows_reported_by_huggingface'] >= 100_000_000, result
+          assert result['source']['dataset_id'] == 'CarlosSilva1/xauusd-ticks', result
+          assert result['source']['dataset_card_claimed_license'] == 'CC-BY-4.0', result
+          assert result['source']['upstream_data_rights_verified'] is False, result
+          assert result['source']['commercial_use_approved'] is False, result
+          assert result['source']['model_training_for_commercial_service'] == 'BLOCKED_PENDING_UPSTREAM_RIGHTS_REVIEW', result
+          design = result['sample_design']
+          assert design['window_count'] == 3 and design['rows_per_window'] == 1000, design
+          assert design['sampled_rows_total'] == 3000, design
+          assert design['windows_concatenated'] is False and design['infer_continuous_time_between_windows'] is False, design
+          assert design['raw_tick_rows_persisted'] is False, design
+          assert 30 <= design['request_count_including_retries'] <= 90, design
+          assert result['structural_quality']['status'] == 'PASS', result['structural_quality']
+          assert result['structural_quality']['timestamp_order_violations'] == 0, result['structural_quality']
+          assert result['execution_calibration_eligibility']['eligible_for_production_cost_calibration'] is False, result
+          assert result['execution_calibration_eligibility']['eligible_for_commercial_model_training'] is False, result
+          assert result['execution_calibration_eligibility']['live_signal_enabled'] is False, result
+          assert result['execution_calibration_eligibility']['live_order_execution_enabled'] is False, result
+          assert result['execution_calibration_eligibility']['decision_gate'] == 'NO_TRADE', result
+          assert [window['window'] for window in result['windows']] == ['head', 'middle', 'tail'], result
+          for window in result['windows']:
+              assert window['rows'] == 1000, window
+              assert window['row_index_contiguous'] and window['timestamp_ordered'], window
+              assert window['timestamp_order_violations'] == 0, window
+              assert window['bid_ask_prices_positive'] and window['volume_nonnegative'], window
+              assert len(window['normalized_sample_sha256']) == 64, window
+              assert window['positive_spread_rows'] + window['locked_or_zero_spread_rows'] + window['crossed_bid_ask_rows'] == window['rows'], window
+          print(json.dumps({
+              'status': result['status'],
+              'dataset_id': result['source']['dataset_id'],
+              'dataset_rows_reported': result['dataset_rows_reported_by_huggingface'],
+              'sampled_rows': design['sampled_rows_total'],
+              'window_timestamps': [{'window': w['window'], 'start': w['timestamp_start_utc_assumed'], 'end': w['timestamp_end_utc_assumed']} for w in result['windows']],
+              'median_spreads': [{'window': w['window'], 'price_units': w['spread_price_units']['median'], 'basis_points': w['spread_basis_points']['median']} for w in result['windows']],
+              'quality_flags': result['structural_quality']['quality_flags'],
+              'commercial_use_approved': result['source']['commercial_use_approved'],
+              'decision_gate': result['execution_calibration_eligibility']['decision_gate'],
+          }, indent=2))
+          PY
       - name: Enforce multi-source evidence and safety contracts
         run: |
           python - <<'PY'
@@ -262,6 +315,9 @@ jobs:
           if [ -f /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md ]; then
             cat /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
+          if [ -f /tmp/aurum-tick-quote-probe/tick_quote_probe.md ]; then
+            cat /tmp/aurum-tick-quote-probe/tick_quote_probe.md >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Upload audit and replay artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -272,5 +328,7 @@ jobs:
             /tmp/aurum-calibration-contracts.json
             /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.json
             /tmp/aurum-multi-source-benchmark/multi_source_dataset_benchmark.md
+            /tmp/aurum-tick-quote-probe/tick_quote_probe.json
+            /tmp/aurum-tick-quote-probe/tick_quote_probe.md
           if-no-files-found: warn
           retention-days: 14
