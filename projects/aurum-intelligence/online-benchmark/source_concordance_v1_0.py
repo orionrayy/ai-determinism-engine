@@ -11,6 +11,9 @@ from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 PRICE_FIELDS = ("open", "high", "low", "close")
+# Screening heuristics, not an executable-price truth standard.
+DEFAULT_MAX_MEDIAN_CLOSE_DIFFERENCE_BPS = 5.0
+DEFAULT_MAX_P95_CLOSE_DIFFERENCE_BPS = 20.0
 
 
 def _utc_timestamp(value: Any) -> datetime:
@@ -53,11 +56,16 @@ def compare_source_datasets(
     expected_interval_seconds: int = 300,
     minimum_overlap_rows: int = 1000,
     sample_limit: int = 250,
+    max_median_close_difference_bps: float = DEFAULT_MAX_MEDIAN_CLOSE_DIFFERENCE_BPS,
+    max_p95_close_difference_bps: float = DEFAULT_MAX_P95_CLOSE_DIFFERENCE_BPS,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not primary_rows or not secondary_rows:
         raise ValueError("both_source_datasets_must_be_nonempty")
     if expected_interval_seconds < 1 or minimum_overlap_rows < 1 or sample_limit < 1:
         raise ValueError("comparison_limits_must_be_positive")
+    for name, value in (("max_median_close_difference_bps", max_median_close_difference_bps), ("max_p95_close_difference_bps", max_p95_close_difference_bps)):
+        if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) < 0:
+            raise ValueError(name + "_must_be_finite_nonnegative")
 
     secondary_map: dict[datetime, Mapping[str, Any]] = {}
     for row in secondary_rows:
@@ -74,7 +82,7 @@ def compare_source_datasets(
 
     common_times = sorted(primary_map.keys() & secondary_map.keys())
     primary_times, secondary_times = set(primary_map), set(secondary_map)
-    close_abs_diffs, close_diff_bps = [], []
+    close_abs_diffs, close_diff_bps, close_signed_diffs = [], [], []
     field_diffs: dict[str, list[float]] = {field: [] for field in PRICE_FIELDS}
     exact_rows = 0
     sample: list[dict[str, Any]] = []
@@ -88,6 +96,8 @@ def compare_source_datasets(
         left_close = float(left["close"])
         close_diff = diffs["close"]
         close_abs_diffs.append(close_diff)
+        signed_diff = left_close - float(right["close"])
+        close_signed_diffs.append(signed_diff)
         close_diff_bps.append(close_diff / abs(left_close) * 10000 if left_close else math.inf)
         exact_rows += int(all(float(left[field]) == float(right[field]) for field in PRICE_FIELDS))
         sample.append({
@@ -115,7 +125,14 @@ def compare_source_datasets(
         sample = [sample[index] for index in positions]
 
     n_common = len(common_times)
-    status = "CROSS_SOURCE_DIAGNOSTIC_ONLY" if n_common >= minimum_overlap_rows else "INSUFFICIENT_OVERLAP"
+    median_close_bps = statistics.median(close_diff_bps) if close_diff_bps else None
+    p95_close_bps = _percentile(close_diff_bps, 0.95)
+    if n_common < minimum_overlap_rows:
+        status = "INSUFFICIENT_OVERLAP"
+    elif (median_close_bps is not None and median_close_bps > float(max_median_close_difference_bps)) or (p95_close_bps is not None and p95_close_bps > float(max_p95_close_difference_bps)):
+        status = "SOURCE_DISAGREEMENT_REVIEW_REQUIRED"
+    else:
+        status = "CROSS_SOURCE_DIAGNOSTIC_ONLY"
     report = {
         "status": status,
         "comparison_mode": "exact_timestamp_overlap_only_no_dataset_concatenation",
@@ -138,6 +155,22 @@ def compare_source_datasets(
         "volume_comparison": "omitted because volume semantics differ or are unverified across providers",
         "exact_ohlc_match_count": exact_rows,
         "exact_ohlc_match_fraction": exact_rows / n_common if n_common else None,
+        "signed_close_difference_units_primary_minus_secondary": {
+            "median": statistics.median(close_signed_diffs) if close_signed_diffs else None,
+            "p05": _percentile(close_signed_diffs, 0.05),
+            "p95": _percentile(close_signed_diffs, 0.95),
+            "min": min(close_signed_diffs) if close_signed_diffs else None,
+            "max": max(close_signed_diffs) if close_signed_diffs else None,
+        },
+        "source_disagreement_screen": {
+            "max_median_close_difference_bps": float(max_median_close_difference_bps),
+            "max_p95_close_difference_bps": float(max_p95_close_difference_bps),
+            "observed_median_close_difference_bps": median_close_bps,
+            "observed_p95_close_difference_bps": p95_close_bps,
+            "material_disagreement_flag": status == "SOURCE_DISAGREEMENT_REVIEW_REQUIRED",
+            "thresholds_are_heuristics_not_execution_price_truth": True,
+            "interpretation": "material difference requires source/time convention review; never auto-shift, rescale or merge prices",
+        },
         "absolute_price_difference_units": {
             field: {
                 "median": statistics.median(values) if values else None,
