@@ -191,7 +191,7 @@ jobs:
             'weekday_active_nonflat_candles': d['data_quality']['weekday_active_nonflat_rows'],
             'months': d['months_requested'],
             'distinct_real_scenario_timestamps': c['selected_unique_anchor_timestamps'],
-            'eligible_real_windows': c['eligible_real_contiguous_windows'],
+            'eligible_real_windows': c['eligible_real_contiguous_windows_with_valid_atr'],
             'tp_sl_path_scenarios': c['tp_sl_path_scenarios'],
             'strategy_signal_events_scored': e['binary_scored_strategy_events'],
             'ambiguous_same_bar_events_excluded': e['ambiguous_same_bar_events_excluded'],
