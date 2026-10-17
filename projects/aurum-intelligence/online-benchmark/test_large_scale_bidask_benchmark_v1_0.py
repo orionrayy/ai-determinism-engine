@@ -119,14 +119,14 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
         self.assertIsNone(result["label"])
 
     def test_prequential_final_test_priors_are_frozen(self):
-        n = 120
+        n = 150
         anchors = np.arange(100, 100 + 90 * n, 90, dtype=np.int64)
         signals = {name: np.ones(n, dtype=np.int8) for name in b.STRATEGIES}
         labels = np.empty((n, 2), dtype=np.int8)
         for i in range(n):
             labels[i, 0] = i % 2
             labels[i, 1] = (i // 2) % 2
-        evaluation, rows = b.prequential_evaluation(fixture(11000), anchors, signals, labels, minimum_scored_events=100)
+        evaluation, rows = b.prequential_evaluation(fixture(14000), anchors, signals, labels, minimum_scored_events=100, minimum_final_test_events=20)
         final_rows = [row for row in rows if row["split"] == "final_holdout"]
         self.assertGreater(len(final_rows), 100)
         for rule in b.STRATEGIES:
