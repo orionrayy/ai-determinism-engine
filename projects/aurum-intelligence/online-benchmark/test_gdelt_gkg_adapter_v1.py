@@ -68,7 +68,7 @@ class GdeltGkgTests(unittest.TestCase):
             gdelt.normalize_archive_url("http://example.com/gdeltv2/20230101120000.gkg.csv.zip")
 
     def test_master_list_selector_uses_url_column_and_keeps_historical_gkg_rows(self):
-        listing = "\\n".join([
+        listing = "\n".join([
             "6800000 abc http://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip",
             "6800000 def http://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
             "150000 ghi http://data.gdeltproject.org/gdeltv2/20240101120000.export.CSV.zip",
