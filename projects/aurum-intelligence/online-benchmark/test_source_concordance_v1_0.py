@@ -103,10 +103,20 @@ class SourceConcordanceTests(unittest.TestCase):
             compare_source_datasets(source_rows(40), source_rows(40), max_abs_timestamp_lag_bars=25)
 
     def test_scan_reports_boundary_hit_without_promoting_a_timestamp_correction(self):
-        primary = source_rows(1200, aware=True)
-        secondary = source_rows(1200, aware=True)
-        for row in secondary:
-            row["timestamp"] = row["timestamp"] + timedelta(minutes=80)
+        primary, secondary = [], []
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        for i in range(1200):
+            stamp = start + timedelta(minutes=5 * i)
+            price = 3000.0 + i * 0.1
+            candle = {
+                "open": price,
+                "high": price + 0.08,
+                "low": price - 0.02,
+                "close": price + 0.05,
+                "volume": 100.0
+            }
+            primary.append({"timestamp": stamp, **candle})
+            secondary.append({"timestamp": stamp + timedelta(minutes=80), **candle})
         report, _ = compare_source_datasets(primary, secondary)
         sensitivity = report["timestamp_offset_sensitivity"]
         self.assertTrue(sensitivity["best_candidate_at_scan_boundary"])
