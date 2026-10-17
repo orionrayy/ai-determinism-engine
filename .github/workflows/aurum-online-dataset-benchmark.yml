@@ -162,6 +162,13 @@ jobs:
           assert c['automatic_price_rescale'] is False, c
           assert c['automatic_source_promotion'] is False, c
           assert set(c['basis_comparisons']) == {'bid', 'mid', 'ask'}, c
+          sc = r['secondary_community_comparison']
+          assert sc['status'] == 'THIRD_SOURCE_DIAGNOSTIC_ONLY', sc
+          assert sc['shared_timestamps'] >= 1000, sc
+          assert sc['automatic_timestamp_shift'] is False, sc
+          assert sc['automatic_price_rescale'] is False, sc
+          assert sc['automatic_source_promotion'] is False, sc
+          assert set(sc['basis_comparisons']) == {'bid', 'mid', 'ask'}, sc
           assert r['decision_output'] == 'NO_TRADE', r
           assert not r['validated_model'] and not r['calibrated_model'] and not r['live_signal_enabled'], r
           print(json.dumps({
@@ -171,6 +178,8 @@ jobs:
             'downloaded_bytes': r['dataset']['bytes_downloaded'],
             'tick_m5_bars': c['tick_derived_m5_bars'],
             'primary_overlap_bars': c['shared_timestamps'],
+            'secondary_overlap_bars': sc['shared_timestamps'],
+            'secondary_mid_close_difference_p95_bps': sc['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
             'spread_median_price_units': r['spread']['spread_price_units']['median'],
             'spread_p95_price_units': r['spread']['spread_price_units']['p95'],
             'mid_close_difference_p95_bps': c['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
