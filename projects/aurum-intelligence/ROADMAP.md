@@ -146,3 +146,14 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Acquire independently documented broker Bid/Ask/tick history with real spreads, commissions, slippage, swap, and fill semantics.
 - [ ] Re-run execution-aware strategy replay, exact TP-before-SL calibration, mature-label leakage controls, independent chronological regimes and untouched final holdout.
 - [ ] Keep NO_TRADE, cross-source confirmation disabled, production readiness false, and live execution disabled until evidence gates and paper-trading/security approval pass.
+
+
+## Signed/monthly M5 discrepancy findings — final run #39015804227 (2026-10-17)
+
+- [x] Add source-B-minus-A signed price bias, close price quantiles, signed OHLC deltas, percent above/below, UTC-month discrepancy buckets and five deterministic paired-candle snapshots.
+- [x] Validate the additions with 22 Python unit/regression tests and hosted multi-source CI; preserve the summary and raw-source-free evidence artifact #12094359744.
+- [x] Verify exact report JSON and aggregate/monthly coverage contracts: monthly timestamp buckets sum to the exact overlap count; five sample candles are returned; source bars remain separate.
+- [ ] Investigate time-varying price discrepancy. Across 11,509 matched M5 timestamps, the median signed B−A delta is -63.515 price units; source B is below source A in 95.10% of matched timestamps. Median signed delta varies from -94.105 in March to -68.200 in April and -56.710 in May; one endpoint paired sample is almost equal (-0.235). Do not treat the difference as a stable additive offset or normalize it away.
+- [ ] Verify upstream data lineage, quote-side, UTC bar-label semantics, volume semantics and usage rights. The GetData README describes bar-open UTC/tick volume; Sai describes mid-quote and stores timestamps without explicit timezone, interpreted as UTC from its README. These descriptions do not establish equivalent or independent pricing feeds.
+- [ ] Compare samples and source hashes with a licensed broker Bid/Ask/tick feed, then rerun per-regime execution-aware benchmarks and exact TP-before-SL calibration on an untouched holdout.
+- [ ] Retain NO_TRADE, no cross-source confirmation, no deployment calibration, and no live order execution until the previous data-validity phase is resolved and the later research/security gates pass.
