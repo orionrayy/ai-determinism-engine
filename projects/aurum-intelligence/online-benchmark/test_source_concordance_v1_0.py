@@ -75,6 +75,7 @@ class SourceConcordanceTests(unittest.TestCase):
         self.assertGreater(report["absolute_close_difference_basis_points"]["p95"], 20.0)
         self.assertIn("signed_close_difference_units_primary_minus_secondary", report)
         self.assertTrue(report["source_disagreement_screen"]["thresholds_are_heuristics_not_execution_price_truth"])
+        self.assertFalse(report["timestamp_offset_sensitivity"]["potential_timestamp_alignment_mismatch"])
 
     def test_invalid_disagreement_threshold_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "max_median_close_difference_bps"):
@@ -84,11 +85,14 @@ class SourceConcordanceTests(unittest.TestCase):
         primary = source_rows(1200, aware=True)
         secondary = source_rows(1200, aware=True)
         for row in secondary:
-            row["timestamp"] = row["timestamp"] + timedelta(minutes=5)
+            row["timestamp"] = row["timestamp"] + timedelta(minutes=10)
         report, sample = compare_source_datasets(primary, secondary)
         sensitivity = report["timestamp_offset_sensitivity"]
-        self.assertEqual(sensitivity["best_candidate_offset"]["secondary_timestamp_offset_bars_for_diagnostic_only"], -1)
+        self.assertEqual(sensitivity["max_abs_offset_bars"], 12)
+        self.assertEqual(len(sensitivity["results"]), 25)
+        self.assertEqual(sensitivity["best_candidate_offset"]["secondary_timestamp_offset_bars_for_diagnostic_only"], -2)
         self.assertEqual(sensitivity["best_candidate_offset"]["median_absolute_close_difference_bps"], 0.0)
+        self.assertTrue(sensitivity["potential_timestamp_alignment_mismatch"])
         self.assertFalse(sensitivity["automatically_shifted_source_timestamps"])
         self.assertFalse(sensitivity["automatically_promoted_source"])
         self.assertEqual(report["comparison_mode"], "exact_timestamp_overlap_only_no_dataset_concatenation")

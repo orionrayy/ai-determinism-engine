@@ -65,11 +65,20 @@ def _timestamp_offset_sensitivity(
         overlap = sorted(primary_map.keys() & shifted_map.keys())
         close_bps = []
         exact_ohlc = 0
+        primary_returns, secondary_returns = [], []
         for ts in overlap:
             left, right = primary_map[ts], shifted_map[ts]
             left_close, right_close = float(left["close"]), float(right["close"])
             close_bps.append(abs(left_close - right_close) / abs(left_close) * 10000 if left_close else math.inf)
             exact_ohlc += int(all(float(left[field]) == float(right[field]) for field in PRICE_FIELDS))
+        for previous, current in zip(overlap, overlap[1:]):
+            if (current - previous).total_seconds() != expected_interval_seconds:
+                continue
+            p0, p1 = float(primary_map[previous]["close"]), float(primary_map[current]["close"])
+            s0, s1 = float(shifted_map[previous]["close"]), float(shifted_map[current]["close"])
+            if p0 > 0 and s0 > 0:
+                primary_returns.append(p1 / p0 - 1.0)
+                secondary_returns.append(s1 / s0 - 1.0)
         eligible = len(overlap) >= minimum_overlap_rows
         results.append({
             "secondary_timestamp_offset_bars_for_diagnostic_only": offset_bars,
@@ -78,6 +87,7 @@ def _timestamp_offset_sensitivity(
             "eligible_for_comparison": eligible,
             "median_absolute_close_difference_bps": statistics.median(close_bps) if close_bps else None,
             "p95_absolute_close_difference_bps": _percentile(close_bps, 0.95),
+            "one_bar_return_correlation": _correlation(primary_returns, secondary_returns),
             "exact_ohlc_match_count": exact_ohlc,
         })
     eligible_results = [r for r in results if r["eligible_for_comparison"] and r["median_absolute_close_difference_bps"] is not None]
@@ -86,8 +96,19 @@ def _timestamp_offset_sensitivity(
         r["p95_absolute_close_difference_bps"],
         abs(r["secondary_timestamp_offset_bars_for_diagnostic_only"]),
     )) if eligible_results else None
+    zero = next((r for r in eligible_results if r["secondary_timestamp_offset_bars_for_diagnostic_only"] == 0), None)
+    zero_median = zero["median_absolute_close_difference_bps"] if zero else None
+    best_median = best["median_absolute_close_difference_bps"] if best else None
+    reduction = (zero_median - best_median) / zero_median if zero_median and best_median is not None else 0.0
+    p95_materially_reduced = bool(zero and best and zero.get("p95_absolute_close_difference_bps") and best.get("p95_absolute_close_difference_bps") <= 0.8 * zero["p95_absolute_close_difference_bps"])
+    potential_offset = bool(best and zero and best["secondary_timestamp_offset_bars_for_diagnostic_only"] != 0 and reduction >= 0.5 and p95_materially_reduced)
     return {
         "method": "sensitivity scan only; original timestamps and the primary exact-time report are unchanged",
+        "zero_offset_median_absolute_close_difference_bps": zero_median,
+        "best_candidate_median_absolute_close_difference_bps": best_median,
+        "relative_median_discrepancy_reduction_vs_zero_offset": reduction,
+        "potential_timestamp_alignment_mismatch": potential_offset,
+        "potential_timestamp_alignment_mismatch_rule": "non-zero offset reduces median absolute close discrepancy by >=50% and p95 by >=20%; exploratory only",
         "max_abs_offset_bars": max_abs_lag_bars,
         "expected_interval_seconds": expected_interval_seconds,
         "offsets_tested_bars": list(range(-max_abs_lag_bars, max_abs_lag_bars + 1)),
@@ -112,7 +133,7 @@ def compare_source_datasets(
     sample_limit: int = 250,
     max_median_close_difference_bps: float = DEFAULT_MAX_MEDIAN_CLOSE_DIFFERENCE_BPS,
     max_p95_close_difference_bps: float = DEFAULT_MAX_P95_CLOSE_DIFFERENCE_BPS,
-    max_abs_timestamp_lag_bars: int = 3,
+    max_abs_timestamp_lag_bars: int = 12,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not primary_rows or not secondary_rows:
         raise ValueError("both_source_datasets_must_be_nonempty")
