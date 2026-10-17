@@ -93,9 +93,79 @@ This section supersedes older version-specific statements above where they diffe
 - Synthetic 720-row calibration illustration is strictly a code/metrics check, not financial accuracy evidence. Actual bundled market sample still yields zero OOS TP-before-SL predictions; decision stays `NO_TRADE`.
 
 
+## Latest implementation checkpoint — multi-source benchmark and eligibility gates (2026-10-17)
+
+### Source branches and release boundaries
+- Canonical implementation remains this repository and the Aurum working branch feature/aurum-multi-source-benchmark.
+- Draft PR #165: https://github.com/orionrayy/ai-determinism-engine/pull/165 (base feature/aurum-online-dataset-benchmark). It is open, intentionally draft, and unmerged.
+- Tested code head: 8db8bd90830b78b0007a6904a104a80c851f3464. Latest hosted CI run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/39016857786.
+- Final CI artifact #12095247324 is 38,308 bytes, SHA-256 eadd77b94dffa51408c34b6aa8da63406070b6ac01da0056ba6fee6cb283503a, expires 2026-10-31 08:19:17 UTC. Local snapshot is /mnt/data/aurum-readiness-gates-final.zip. It includes derived JSON/Markdown evidence and test reports, never raw source CSVs.
+- Test evidence on the tested head: 8 temporal-calibration unit tests; 25 Python unit/regression tests; single-source and multi-source online benchmark downloads, report validation, scenario assertions and artifact upload all pass.
+- Coverage on the multi-source run: three data files; 140,164 sum of rows, explicitly not deduplicated/independent; 750 actual-dataset fixed-rule comparisons; 2,160 synthetic market-path contracts; 720 synthetic software robustness contracts; about 37.52 s runtime.
+
+### Current architecture increment
+- Added projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py as a separate runner, not a replacement for the older v1.3.1 benchmark entry point.
+- Added source-level SHA-256, row counts, time ranges, median/P95/max interval/gap indicators, timezone-policy disclosure, quote-side/provenance/rights claims and a source-eligibility object.
+- Added exact-UTC timestamp M5 overlap, absolute and relative price differences, signed OHLC bias, monthly buckets, five paired-candle examples and a bounded timestamp-offset probe. It never shifts timestamps, fills gaps, or pools source bars automatically.
+- Added explicit readiness gates that separate diagnostic pipeline PASS from data-use and production approval. The code requires source-price compatibility, independent lineage, verified broker/timezone/quote-side semantics, underlying-data rights and commercial-use approval before it could mark downstream gates eligible. Live order execution remains hard-blocked.
+- Regression tests prove unverified quote-side blocks cross-source confirmation and production readiness even if other hypothetical fixture gates are green.
+
+### Results from three public community data files
+1. GetData XAUUSD M5: 35,954 rows, SHA-256 acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db, observed 2026-03-26 02:30 UTC through 2026-09-25 20:40 UTC.
+2. Sai community XAUUSD M5: 17,371 rows, SHA-256 ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d, observed 2026-02-25 through 2026-05-26 UTC. Timestamps are naive in CSV and assumed UTC from the README; not independently verified.
+3. Sai community XAUUSD M1: 86,839 rows, SHA-256 de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13, observed 2026-02-25 through 2026-05-26 UTC. Also timestamp-naive and assumed UTC from README.
+
+### Blocking M5 disagreement
+- The two M5 files share 11,509 exact UTC timestamps and close-to-close direction agrees for 97.933% of eligible sequential pairs, but price levels are not interchangeable: median absolute close delta 63.515 price units, P95 94.445, median relative delta 1.3580% and P95 2.0576%. Thresholds for a basic comparable status are median relative delta <=0.25% and P95 <=0.50%; status is DIVERGENT.
+- Signed B−A close delta median is -63.515 and mean is about -57.864; B closes below A in 95.10% of matched timestamps. Monthly median signed delta varies significantly: March -94.105, April -68.200, May -56.710 price units. At the end overlap sample 2026-05-26 00:00 UTC the paired close delta is only -0.235. This pattern is not a stable additive offset, but the source's root cause is not proven.
+- Bounded offsets tested: -25,200, -10,800, -7,200, -3,600, -600, -300, 0, +300, +600, +3,600, +7,200, +10,800, +25,200 seconds. The best observed offset is -7h, but improves median relative delta by only 6.3458%, below the configured 20% material-candidate criterion. Diagnosis NO_OBVIOUS_BOUNDED_SHIFT_FIX. No timestamp shift is approved or applied.
+- As a result: source comparability BLOCKED; cross-source confirmation BLOCKED; no source-level inference should combine these series as if equivalent independent feeds.
+
+### Rights and lineage decision
+- GetData's GitHub sample advertises MIT; GetData provider documentation describes purchaser-only standard data terms and restricts embedding raw CSV/ZIP files in paid/commercial services absent separate written permission. The relationship of the GitHub sample MIT declaration to those provider terms is not resolved. Do not interpret this as a blanket finding that derived signals are banned; the exact rights scope for this dataset and intended paid model-output service needs written clarification.
+- Sai's GitHub repository advertises MIT and says the Q1-Q2 bars are aggregated from public broker mid-quote feeds; exact upstream feed identities, quote construction, underlying data rights and original timezone are not independently verified. File-specific history inspected for the M1/M5 CSVs shows them present in initial commit 01a9d1c1544eeea9632a29c1b3cde7ea0d13afe6 (2026-06-30 UTC) without a visible per-month source checksum/provenance trail. Weak auditability is a caveat, not proof of fabricated data.
+- A public GitHub mirror of Dukascopy XAUUSD M1 BID/ASK files was identified as a diagnostic candidate. It lacks a clear repository license; it was therefore not incorporated into CI or production and its data was not redistributed. Only revisit after rights and provenance are established or a licensed direct feed is acquired.
+- Machine-readable gates in IMPLEMENTATION_STATUS.json now report pipeline and test success separately from blocked comparability, commercial rights, commercial model training, and production readiness. Current values: NO_TRADE; predictive_model_validated=false; deployment_calibrated=false; cross_source_confirmation_allowed=false; live_signal_enabled=false; live_order_execution_enabled=false; production_ready=false.
+
+### Next required sequence
+1. Obtain written clarification for GetData's public GitHub sample and its relationship to provider terms; verify Sai feed lineage and quote calculation.
+2. Obtain a licensed, provenance-documented broker/provider source with Bid/Ask/tick semantics, timestamps/timezone and commercial rights appropriate to the intended service.
+3. Cross-check exact M1/M5 candles/price sides against that licensed feed; retain independent series rather than normalizing away the current discrepancy.
+4. Implement execution-aware costs/fill handling and evaluate exact TP-before-SL target on matured outcomes, independent chronological regimes and an untouched final holdout.
+5. Only after evidence gates pass, proceed to paper trading, end-to-end Telegram/provider acceptance, security/risk review and a separate decision on production order capability.
+
+
+## Target-specific TP-before-SL OOS benchmark — 2026-10-17
+
+- New candidate implementation is on stacked draft PR #165 branch `feature/aurum-multi-source-benchmark`: `online-benchmark/barrier_oos_benchmark.py`, tests, runner integration, report and CI assertions.
+- The diagnostic target is TP before SL within 12 bars with ATR(14), TP=1.5 ATR, SL=1 ATR, next-bar-open entry, conservative stop-first same-bar ambiguity, gap-open checks, and timeout failure labels. Long and short are separate targets.
+- Chronology contract: train/calibration/final holdout = 60/20/20; scaler/model fit on training only; training labels must mature before calibration starts; calibrator fit uses middle-period OOS forecasts whose outcomes mature before final holdout; no final-holdout model selection. Platt helper and proper-score/reliability/block-bootstrap diagnostics are reused from `temporal-calibration-v1.3`.
+- This remains diagnostic only. Data source rows have community OHLCV semantics; provenance, rights, broker quote side and actual fills are not verified. Do not promote or claim calibrated trading skill from it; maintain `NO_TRADE`, `deployment_calibrated=false`, `validated=false`, `live_signal_enabled=false`, and `live_order_execution_enabled=false`.
+- New tests and CI acceptance rules were committed, but a fresh hosted run and artifact review are still required before this checkpoint may be marked green. See `ONLINE_MULTI_SOURCE_BENCHMARK.md` and the dated entry in `PROGRESS_LOG.md`.
+
+
 ## Gap audit and prioritization — 2026-10-17
 
-- Added `GAP_AUDIT_AND_COMPETITIVE_POSITION_2026-10-17.md` on the existing draft PR branch. It consolidates the supplied 100-weakness/100-comparison inventory into evidence classes, risk-weighted remediation priorities, acceptance gates, category-appropriate competitor benchmarking, and free-first constraints.
-- Correct distinction: the bundled TP-before-SL candidate still has 60 bars and zero OOS predictions; a separate hosted historical replay used 35,954 community XAUUSD M5 rows. Both facts can be true. The online dataset remains historical, not a live feed; licensing/intended-use rights, independent provenance, intended timezone, broker/quote-side semantics and actual fills remain unresolved.
-- The current full-history replay does not establish predictive edge: active fixed-rule baselines lost under assumed costs and direction-only baselines did not show meaningful Brier skill over a constant reference. Synthetic scenario contracts remain software/stress evidence, not market observations.
-- Keep `NO_TRADE`; no live execution or claim of validated/calibrated trading performance is authorized. The audit is documentary and does not modify application behavior.
+- Added `GAP_AUDIT_AND_COMPETITIVE_POSITION_2026-10-17.md` to the project’s audit trail. It converts the broad 100-weakness / 100-comparison inventory into risk-weighted priorities, acceptance criteria, evidence classes and free-first trade-offs.
+- Correct distinction: the bundled TP-before-SL candidate has 60 bars and zero OOS forecasts; a separate hosted historical replay consumed 35,954 community XAUUSD M5 rows. The online dataset is not live and its rights, independent provenance, timezone, quote side and actual fills remain unverified.
+- The full-history replay did not establish an edge under assumed costs; calibration diagnostics are not deployment validation. Keep `NO_TRADE`; do not claim global superiority without reproducible, independently validated OOS evidence.
+
+
+## Verified TP-before-SL baseline and paired uncertainty — 2026-10-17
+
+- Verified hosted run #39019576117 passed on `8e1dabf70e0dd1df816424717c4d0efe56c90a0d`. Artifact #12096301869, SHA-256 `69ac2c75a670fd033d43d0f242bb585a00996135cbc71e425f549e5e548b0727`, 49,841 bytes; pipeline runtime 141,795.762 ms. Persisted summary: `benchmarks/tp_before_sl_oos_2026-10-17_baseline.md/.json`.
+- In that artifact's exact TP-before-SL holdout, calibration point estimates are mixed; e.g. GetData M5 long Brier improved by 0.000543 while GetData M5 short worsened by 0.000193. Other results are near zero or negative. Raw skill vs event-rate reference is small and sometimes negative. Marginal CIs in that old artifact use 40 replicates and do not quantify paired calibration gain.
+- New unverified candidate adds paired 250-replicate moving-block bootstrap for raw-minus-calibrated Brier/log-loss gains. Positives mean the calibrator reduced proper-score loss; if a 95% interval includes zero, do not claim a reliable gain from that comparison. Final holdout remains for evaluation, not model/threshold selection.
+- New regression test mutates only holdout bars and requires identical training parameter hash and calibration fit parameters, directly checking separation of future data from training/calibration. Workflow acceptance also verifies bootstrap count, interval ordering, probability-score consistency and unchanged `NO_TRADE` safety flags.
+- Fresh hosted CI/artifact review is pending. Source rights/provenance/timezone/quote-side, broker costs/fills, source independence, predictive validity, deployment calibration and live order routing remain blocked. Keep `NO_TRADE` and all live-signal/order flags false.
+
+
+## Verified paired OOS and bid/ask tick probe — 2026-10-17
+
+- Latest hosted run [#39021204557](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39021204557) passed all 13 workflow steps on code commit `f2706642ed8da7c7727b53881ec7e045473ae06c`. Artifact #12096921783: 55,004 bytes, SHA-256 `cca5e4e8c735b24261bfafc336a749a5422d97c3cd7472196dd4bc8dcd22ab27`.
+- Multi-source pipeline passed: 3 community/public OHLCV files, 140,164 rows summed without deduplication, 750 fixed-rule comparisons, 2,160 synthetic market-path contracts, 720 software robustness contracts and 55,996 source/side TP-before-SL holdout predictions. These totals do not represent independent market observations. Multi-source runner runtime was 135,372.536 ms.
+- TP-before-SL calibration remains diagnostic: all 12 paired 95% intervals for Brier/log-loss raw-minus-calibrated gains (six source/side pairs; 250 paired moving-block bootstrap replicates) include zero. Calibration is not shown to improve reliably; do not tune or select a model using this final holdout.
+- Bid/ask probe read 3,000 quote records from three disjoint 1,000-row windows in the 286,823,542-row `CarlosSilva1/xauusd-ticks` dataset via 30 API pages and 614,982 response bytes. Within these sampled windows there were zero timestamp-order violations, crossed quotes or locked/zero-spread quotes. Only aggregate statistics and per-window hashes are retained; raw quotes were not committed/artifacted.
+- Sampled median spread in price units was 0.417 (head, 2021-05-24), 0.377 (middle, 2024-07-10) and 1.040 (tail, 2026-05-22); P95 was 0.447, 0.41415 and 1.504 respectively. This is quote data, not measured fills/slippage or a full-period spread model.
+- Dataset card claims CC-BY-4.0, but upstream rights, broker lineage, timestamp/quote semantics and commercial approval are unverified. Production cost calibration and commercial training remain blocked. Detailed reports: `benchmarks/tick_quote_probe_2026-10-17.md/.json` and `benchmarks/tp_before_sl_oos_2026-10-17_paired_ci.md/.json`.
+- No application ZIP was rebuilt; v1.3.1 remains the latest documented app artifact. PR #165 remains draft. Safety remains `NO_TRADE`, with model validation/deployment calibration/live signals/live order execution false.

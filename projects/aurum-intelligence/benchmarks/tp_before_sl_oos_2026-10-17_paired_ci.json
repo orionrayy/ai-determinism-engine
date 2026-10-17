@@ -1,0 +1,312 @@
+{
+  "schema_version": "1.0.0",
+  "kind": "paired_calibration_gain_uncertainty_for_tp_before_sl_oos",
+  "status": "CI_PASS_DIAGNOSTIC_ONLY",
+  "run": {
+    "id": 39020164520,
+    "url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39020164520",
+    "conclusion": "success",
+    "source_commit": "d44f500c629ef80309bbf66da259412691b6925d",
+    "artifact_id": 12095778983,
+    "artifact_bytes": 51437,
+    "artifact_sha256": "0130fc4319c7d6243ca294125baf47343fad0645f22a007a02a1ef95e86fc11a",
+    "runtime_ms": 175729.18,
+    "steps_passed": 13
+  },
+  "dataset_row_sum_not_deduplicated": 140164,
+  "real_data_rule_comparisons": 750,
+  "synthetic_market_path_contracts": 2160,
+  "synthetic_software_contracts": 720,
+  "total_source_side_holdout_label_predictions": 55996,
+  "bootstrap": {
+    "method": "paired_moving_block_bootstrap_raw_minus_calibrated",
+    "replicates": 250,
+    "block_size": 12,
+    "seed": 20261019,
+    "interval": "percentile 95% two-sided",
+    "positive_gain_means": "raw score minus calibrated score > 0; positive favors calibration"
+  },
+  "target": {
+    "name": "tp_before_sl_within_12_bars",
+    "atr_window": 14,
+    "tp_atr_multiple": 1.5,
+    "sl_atr_multiple": 1,
+    "entry": "next-bar open",
+    "features": "7 causal OHLC features",
+    "split": "60/20/20 chronological train/calibration/untouched holdout",
+    "label_purging": true,
+    "same_bar_collision": "stop-first",
+    "timeout": "target failure and separately counted"
+  },
+  "sources": [
+    {
+      "id": "getdata_xauusd_m5",
+      "rows": 35954,
+      "sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "claimed_time_span": "2026-03-26 to 2026-09-25"
+    },
+    {
+      "id": "sai_community_xauusd_m5",
+      "rows": 17371,
+      "sha256": "ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d",
+      "claimed_time_span": "2026-02-25 to 2026-05-26"
+    },
+    {
+      "id": "sai_community_xauusd_m1",
+      "rows": 86839,
+      "sha256": "de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13",
+      "claimed_time_span": "2026-02-25 to 2026-05-26"
+    }
+  ],
+  "source_side_metrics": [
+    {
+      "source": "getdata_xauusd_m5",
+      "rows": 35954,
+      "sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "side": "long",
+      "train": 21546,
+      "calibration": 7190,
+      "holdout": 7179,
+      "event_rate": 0.35631703579885776,
+      "raw_brier": 0.2300242122823272,
+      "cal_brier": 0.2294812660742058,
+      "brier_gain": 0.0005429462081212693,
+      "brier_ci": [
+        -0.0007100141117355943,
+        0.001658019575589835
+      ],
+      "brier_positive": 0.816,
+      "raw_log_loss": 0.6527674387805017,
+      "cal_log_loss": 0.6515263705614242,
+      "log_gain": 0.0012410682190821852,
+      "log_ci": [
+        -0.0015232648782364168,
+        0.0037086425910307624
+      ],
+      "log_positive": 0.824,
+      "brier_95_ci": [
+        -0.0007100141117355943,
+        0.001658019575589835
+      ],
+      "log_loss_95_ci": [
+        -0.0015232648782364168,
+        0.0037086425910307624
+      ],
+      "brier_interval_includes_zero": true,
+      "log_loss_interval_includes_zero": true
+    },
+    {
+      "source": "getdata_xauusd_m5",
+      "rows": 35954,
+      "sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "side": "short",
+      "train": 21546,
+      "calibration": 7190,
+      "holdout": 7179,
+      "event_rate": 0.37595765426939687,
+      "raw_brier": 0.2346658280641655,
+      "cal_brier": 0.23485889980445918,
+      "brier_gain": -0.00019307174029395118,
+      "brier_ci": [
+        -0.0010575060741371543,
+        0.0005996522516300014
+      ],
+      "brier_positive": 0.34,
+      "raw_log_loss": 0.6621548990367276,
+      "cal_log_loss": 0.6625748313905068,
+      "log_gain": -0.00041993235378073407,
+      "log_ci": [
+        -0.002280616653772005,
+        0.0012857388636724407
+      ],
+      "log_positive": 0.34,
+      "brier_95_ci": [
+        -0.0010575060741371543,
+        0.0005996522516300014
+      ],
+      "log_loss_95_ci": [
+        -0.002280616653772005,
+        0.0012857388636724407
+      ],
+      "brier_interval_includes_zero": true,
+      "log_loss_interval_includes_zero": true
+    },
+    {
+      "source": "sai_community_xauusd_m5",
+      "rows": 17371,
+      "sha256": "ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d",
+      "side": "long",
+      "train": 10392,
+      "calibration": 3471,
+      "holdout": 3463,
+      "event_rate": 0.3341033785734912,
+      "raw_brier": 0.22211129955380507,
+      "cal_brier": 0.2221102219787395,
+      "brier_gain": 0.000001077575066390118,
+      "brier_ci": [
+        -0.0000735774141849,
+        0.000078697226922075
+      ],
+      "brier_positive": 0.496,
+      "raw_log_loss": 0.6362228211038559,
+      "cal_log_loss": 0.6362214815027145,
+      "log_gain": 0.0000013396011423816772,
+      "log_ci": [
+        -0.0001679660416517439,
+        0.00017523065276852073
+      ],
+      "log_positive": 0.488,
+      "brier_95_ci": [
+        -0.0000735774141849,
+        0.000078697226922075
+      ],
+      "log_loss_95_ci": [
+        -0.0001679660416517439,
+        0.00017523065276852073
+      ],
+      "brier_interval_includes_zero": true,
+      "log_loss_interval_includes_zero": true
+    },
+    {
+      "source": "sai_community_xauusd_m5",
+      "rows": 17371,
+      "sha256": "ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d",
+      "side": "short",
+      "train": 10391,
+      "calibration": 3471,
+      "holdout": 3463,
+      "event_rate": 0.37222061796130523,
+      "raw_brier": 0.23399887802890457,
+      "cal_brier": 0.23417980608275984,
+      "brier_gain": -0.00018092805385564289,
+      "brier_ci": [
+        -0.0004693864403718089,
+        0.00011954983258266833
+      ],
+      "brier_positive": 0.18,
+      "raw_log_loss": 0.6608112419790755,
+      "cal_log_loss": 0.6611906980761542,
+      "log_gain": -0.00037945609707725104,
+      "log_ci": [
+        -0.0009864418530288969,
+        0.00025328952367809445
+      ],
+      "log_positive": 0.18,
+      "brier_95_ci": [
+        -0.0004693864403718089,
+        0.00011954983258266833
+      ],
+      "log_loss_95_ci": [
+        -0.0009864418530288969,
+        0.00025328952367809445
+      ],
+      "brier_interval_includes_zero": true,
+      "log_loss_interval_includes_zero": true
+    },
+    {
+      "source": "sai_community_xauusd_m1",
+      "rows": 86839,
+      "sha256": "de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13",
+      "side": "long",
+      "train": 52078,
+      "calibration": 17357,
+      "holdout": 17356,
+      "event_rate": 0.3538833832680341,
+      "raw_brier": 0.22847154166888217,
+      "cal_brier": 0.2284977882294611,
+      "brier_gain": -0.000026246560892416415,
+      "brier_ci": [
+        -0.00006743216688776775,
+        0.000012245358375601539
+      ],
+      "brier_positive": 0.1,
+      "raw_log_loss": 0.6494308931720768,
+      "cal_log_loss": 0.6494877664006529,
+      "log_gain": -0.00005687322385760596,
+      "log_ci": [
+        -0.0001454892208998114,
+        0.0000267683418345279
+      ],
+      "log_positive": 0.104,
+      "brier_95_ci": [
+        -0.00006743216688776775,
+        0.000012245358375601539
+      ],
+      "log_loss_95_ci": [
+        -0.0001454892208998114,
+        0.0000267683418345279
+      ],
+      "brier_interval_includes_zero": true,
+      "log_loss_interval_includes_zero": true
+    },
+    {
+      "source": "sai_community_xauusd_m1",
+      "rows": 86839,
+      "sha256": "de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13",
+      "side": "short",
+      "train": 52079,
+      "calibration": 17363,
+      "holdout": 17356,
+      "event_rate": 0.3911039410002305,
+      "raw_brier": 0.23813255019652063,
+      "cal_brier": 0.23816136045810285,
+      "brier_gain": -0.000028810261582217482,
+      "brier_ci": [
+        -0.00008979110220006103,
+        0.000022429061585112232
+      ],
+      "brier_positive": 0.152,
+      "raw_log_loss": 0.6692218179124708,
+      "cal_log_loss": 0.6692828506769398,
+      "log_gain": -0.0000610320607667646,
+      "log_ci": [
+        -0.00018955925450454288,
+        0.00004756522956877979
+      ],
+      "log_positive": 0.152,
+      "brier_95_ci": [
+        -0.00008979110220006103,
+        0.000022429061585112232
+      ],
+      "log_loss_95_ci": [
+        -0.00018955925450454288,
+        0.00004756522956877979
+      ],
+      "brier_interval_includes_zero": true,
+      "log_loss_interval_includes_zero": true
+    }
+  ],
+  "overlap": {
+    "timestamp_matches": 11509,
+    "close_direction_agreement": 0.9793301936159079,
+    "median_relative_price_difference": 0.013580126354403586,
+    "p95_relative_price_difference": 0.020575666596235546,
+    "comparability": "DIVERGENT",
+    "cross_source_confirmation_allowed": false
+  },
+  "interpretation": {
+    "all_paired_95_percent_intervals_include_zero": true,
+    "calibration_gain_consistent": false,
+    "validated": false,
+    "deployment_calibrated": false,
+    "live_signal_enabled": false,
+    "live_order_execution_enabled": false,
+    "decision_gate": "NO_TRADE",
+    "notes": [
+      "The intervals include zero in all six source-side pairs for both Brier and log-loss gains.",
+      "Calibration point estimates improve only selected pairs and worsen others; no consistent gain is established.",
+      "The holdout is now inspected and must not be used for model/threshold tuning. Future changes need a newly registered independent holdout.",
+      "Community source lineage/rights/quote semantics and actual broker costs/fills remain unresolved.",
+      "The 3-source summed row count is not deduplicated or an independent sample count."
+    ]
+  },
+  "follow_on_tick_probe": {
+    "component": "online-benchmark/tick_quote_probe.py",
+    "intent": "profile real bid/ask quote spread distributions from three disjoint 1000-row windows at head/middle/tail of the 286,823,542-row Hugging Face dataset",
+    "status": "ADDED_IN_NEXT_COMMIT_CI_PENDING",
+    "sample_rows_planned": 3000,
+    "raw_tick_rows_committed": false,
+    "commercial_use_approved": false,
+    "production_cost_calibration_allowed": false
+  }
+}

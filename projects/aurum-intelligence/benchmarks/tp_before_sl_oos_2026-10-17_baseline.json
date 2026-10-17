@@ -1,0 +1,230 @@
+{
+  "schema_version": "1.0.0",
+  "benchmark_kind": "target_specific_tp_before_sl_chronological_oos_diagnostic",
+  "status": "CI_PASS_DIAGNOSTIC_ONLY",
+  "generated_at": "2026-10-17",
+  "source_commit": "8e1dabf70e0dd1df816424717c4d0efe56c90a0d",
+  "workflow_run": {
+    "id": 39019576117,
+    "url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39019576117",
+    "conclusion": "success",
+    "artifact_id": 12096301869,
+    "artifact_sha256": "69ac2c75a670fd033d43d0f242bb585a00996135cbc71e425f549e5e548b0727",
+    "artifact_size_bytes": 49841,
+    "runtime_ms": 141795.762
+  },
+  "totals": {
+    "sources": 3,
+    "dataset_row_sum_not_deduplicated": 140164,
+    "real_rule_comparisons": 750,
+    "synthetic_market_path_contracts": 2160,
+    "synthetic_software_contracts": 720,
+    "barrier_oos_holdout_labels_across_source_side_pairs": 55996
+  },
+  "protocol": {
+    "target": "TP-before-SL within 12 forward bars, long and short evaluated separately",
+    "atr_window": 14,
+    "tp_atr_multiple": 1.5,
+    "sl_atr_multiple": 1,
+    "entry": "next bar open",
+    "features": "7 fixed causal OHLC-derived features; each decision feature uses bars up to and including the decision close",
+    "split": "chronological 60% train, 20% calibration, 20% untouched final holdout",
+    "purging": "training labels must exit strictly before calibration boundary; calibration labels must exit strictly before final holdout boundary",
+    "model": "fixed-protocol L2 logistic baseline; scaler fitted on training only",
+    "calibration": "regularized monotone Platt scaling fitted only on the middle period's OOS predictions/outcomes whose labels matured before holdout",
+    "ohlc_collision": "stop-first when TP and SL both touch in one OHLC candle",
+    "timeouts": "label 0 within horizon, counted separately",
+    "costs": "not modeled from observed broker costs/fills"
+  },
+  "datasets": [
+    {
+      "source": "getdata_xauusd_m5",
+      "timeframe": "M5",
+      "rows": 35954,
+      "sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "start_utc": "2026-03-26T02:30:00+00:00",
+      "end_utc": "2026-09-25T20:40:00+00:00"
+    },
+    {
+      "source": "sai_community_xauusd_m5",
+      "timeframe": "M5",
+      "rows": 17371,
+      "sha256": "ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d",
+      "start_utc": "2026-02-25T00:00:00+00:00",
+      "end_utc": "2026-05-26T00:00:00+00:00"
+    },
+    {
+      "source": "sai_community_xauusd_m1",
+      "timeframe": "M1",
+      "rows": 86839,
+      "sha256": "de74973a63c06ef43de56b616647eb2e380d50cb0ed22a388f158c0bcc828e13",
+      "start_utc": "2026-02-25T00:00:00+00:00",
+      "end_utc": "2026-05-26T00:00:00+00:00"
+    }
+  ],
+  "scores": [
+    {
+      "source": "getdata_xauusd_m5",
+      "side": "long",
+      "train": 21546,
+      "calibration": 7190,
+      "holdout": 7179,
+      "event_rate": 0.35631703579885776,
+      "raw_brier": 0.2300242122823272,
+      "calibrated_brier": 0.2294812660742058,
+      "reference_brier": 0.22948007796623734,
+      "raw_brier_skill_vs_reference": -0.0023711614572916595,
+      "raw_log_loss": 0.6527674387805017,
+      "calibrated_log_loss": 0.6515263705614242,
+      "reference_log_loss": 0.6515394510311385,
+      "brier_improvement": 0.0005429462081213976,
+      "log_loss_improvement": 0.0012410682190775457,
+      "outcomes": {
+        "tp_first": 2558,
+        "sl_first": 4138,
+        "same_bar_ambiguous_stop_first": 26,
+        "timeout": 457
+      }
+    },
+    {
+      "source": "getdata_xauusd_m5",
+      "side": "short",
+      "train": 21546,
+      "calibration": 7190,
+      "holdout": 7179,
+      "event_rate": 0.37595765426939687,
+      "raw_brier": 0.2346658280641655,
+      "calibrated_brier": 0.23485889980445918,
+      "reference_brier": 0.23494470128888606,
+      "raw_brier_skill_vs_reference": 0.001186973884453213,
+      "raw_log_loss": 0.6621548990367276,
+      "calibrated_log_loss": 0.6625748313905068,
+      "reference_log_loss": 0.6627660314965546,
+      "brier_improvement": -0.00019307174029367657,
+      "log_loss_improvement": -0.00041993235377912885,
+      "outcomes": {
+        "tp_first": 2699,
+        "sl_first": 3909,
+        "same_bar_ambiguous_stop_first": 31,
+        "timeout": 540
+      }
+    },
+    {
+      "source": "sai_community_xauusd_m5",
+      "side": "long",
+      "train": 10392,
+      "calibration": 3471,
+      "holdout": 3463,
+      "event_rate": 0.3341033785734912,
+      "raw_brier": 0.22211129955380507,
+      "calibrated_brier": 0.2221102219787395,
+      "reference_brier": 0.22247853917293364,
+      "raw_brier_skill_vs_reference": 0.0016506743549008496,
+      "raw_log_loss": 0.6362228211038559,
+      "calibrated_log_loss": 0.6362214815027145,
+      "reference_log_loss": 0.6370471018696183,
+      "brier_improvement": 0.000001077575065566716,
+      "log_loss_improvement": 0.0000013396011413480124,
+      "outcomes": {
+        "tp_first": 1157,
+        "sl_first": 2009,
+        "same_bar_ambiguous_stop_first": 17,
+        "timeout": 280
+      }
+    },
+    {
+      "source": "sai_community_xauusd_m5",
+      "side": "short",
+      "train": 10391,
+      "calibration": 3471,
+      "holdout": 3463,
+      "event_rate": 0.37222061796130523,
+      "raw_brier": 0.23399887802890457,
+      "calibrated_brier": 0.23417980608275984,
+      "reference_brier": 0.23416753743428131,
+      "raw_brier_skill_vs_reference": 0.0007202510101301796,
+      "raw_log_loss": 0.6608112419790755,
+      "calibrated_log_loss": 0.6611906980761542,
+      "reference_log_loss": 0.661170570145331,
+      "brier_improvement": -0.00018092805385527821,
+      "log_loss_improvement": -0.00037945609707867867,
+      "outcomes": {
+        "tp_first": 1289,
+        "sl_first": 1920,
+        "same_bar_ambiguous_stop_first": 7,
+        "timeout": 247
+      }
+    },
+    {
+      "source": "sai_community_xauusd_m1",
+      "side": "long",
+      "train": 52078,
+      "calibration": 17357,
+      "holdout": 17356,
+      "event_rate": 0.3538833832680341,
+      "raw_brier": 0.22847154166888217,
+      "calibrated_brier": 0.2284977882294611,
+      "reference_brier": 0.22875033606533535,
+      "raw_brier_skill_vs_reference": 0.0012187715272844457,
+      "raw_log_loss": 0.6494308931720768,
+      "calibrated_log_loss": 0.6494877664006529,
+      "reference_log_loss": 0.6500352613064195,
+      "brier_improvement": -0.000026246560892416415,
+      "log_loss_improvement": -0.00005687322385760596,
+      "outcomes": {
+        "tp_first": 6142,
+        "sl_first": 10066,
+        "same_bar_ambiguous_stop_first": 65,
+        "timeout": 1083
+      }
+    },
+    {
+      "source": "sai_community_xauusd_m1",
+      "side": "short",
+      "train": 52079,
+      "calibration": 17363,
+      "holdout": 17356,
+      "event_rate": 0.3911039410002305,
+      "raw_brier": 0.23813255019652063,
+      "calibrated_brier": 0.23816136045810285,
+      "reference_brier": 0.23821187392674878,
+      "raw_brier_skill_vs_reference": 0.0003329965417783187,
+      "raw_log_loss": 0.6692218179124708,
+      "calibrated_log_loss": 0.6692828506769398,
+      "reference_log_loss": 0.6693875573959739,
+      "brier_improvement": -0.000028810261582217482,
+      "log_loss_improvement": -0.0000610320607667646,
+      "outcomes": {
+        "tp_first": 6788,
+        "sl_first": 9449,
+        "same_bar_ambiguous_stop_first": 71,
+        "timeout": 1048
+      }
+    }
+  ],
+  "cross_source_overlap": {
+    "exact_timestamp_matches": 11509,
+    "close_to_close_direction_agreement": 0.9793301936159079,
+    "median_relative_close_level_delta": 0.013580126354403586,
+    "p95_relative_close_level_delta": 0.020575666596235546,
+    "price_compatibility": "DIVERGENT",
+    "cross_source_confirmation_allowed": false
+  },
+  "interpretation": {
+    "calibration_gain_consistent": false,
+    "significant_edge_established": false,
+    "validated": false,
+    "deployment_calibrated": false,
+    "live_signal_enabled": false,
+    "live_order_execution_enabled": false,
+    "decision_gate": "NO_TRADE",
+    "reasons": [
+      "Calibration improved scores for only selected source-side pairs and worsened them for others; point changes were generally small.",
+      "The artifact used 40-replicate marginal moving-block bootstrap intervals, not a paired confidence interval for the raw-minus-calibrated difference. A separate paired bootstrap with 250 replicates has since been added and is pending a fresh hosted CI/artifact review.",
+      "Raw Brier skill versus calibration-period event-rate reference was small; one direction/source pair scored worse than the reference.",
+      "Community OHLCV is not verified broker Bid/Ask/tick/fill data; real execution costs are not measured.",
+      "Underlying dataset rights, timezone semantics, broker provenance, and independent lineage remain unresolved.",
+      "This is one public historical sample per source with overlapping/source-related observations; source-side folds do not imply independent datasets or different market regimes."
+    ]
+  }
+}

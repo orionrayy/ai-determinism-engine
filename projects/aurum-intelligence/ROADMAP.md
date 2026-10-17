@@ -106,3 +106,113 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Data rights/provenance/timezone review, licensed Bid/Ask/tick data and measured costs.
 - [ ] Independent market-regime holdout and exact-target calibration with sufficient real OOS observations.
 - [ ] Paper trading, security/risk review and approval before any live execution.
+
+
+## Multi-source real-dataset benchmark — PR #165 checkpoint (2026-10-17)
+
+### Completed implementation / evidence
+- [x] Add fixed-host, byte-bounded readers for community XAUUSD M5/M1 files from two public repositories; normalize explicit timestamps to UTC and report naive-timezone assumptions.
+- [x] Validate each file independently, preserve each SHA-256, time range and gap statistics; never concatenate or merge source bars.
+- [x] Run 50 timestamp-spread cases × 5 fixed rules per source, full-history replay, chronological tail diagnostics, and causal direction-probability baselines.
+- [x] Run 720 synthetic market-path and 240 software robustness contracts per dataset; label synthetic cases separately from observed market records.
+- [x] Add exact-timestamp M5 overlap analysis, relative price-difference compatibility thresholds (0.25% median / 0.50% P95), and a hard block on cross-source confirmation/production readiness when series are divergent.
+- [x] CI [run #39014942332](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39014942332) passed on PR #165 head 707f563c7b4382e5a35a18197d1a0ec4100fc305; 8 temporal-calibration tests and 22 source/benchmark unit tests passed; live download/benchmark assertions and report upload passed.
+- [x] Persist report JSON/Markdown and hashes as artifact #12094680550; raw input datasets are not uploaded to the benchmark artifact.
+
+### Findings that prevent a source-level readiness claim
+- Data rows sum to 140,164 across 3 files; this is not a deduplicated/independent sample size.
+- The two M5 sources have 11,509 exact UTC timestamp matches, 97.933% close-to-close direction agreement, but median relative close-price delta 1.3580% and P95 delta 2.0576%, against 0.25% / 0.50% diagnostic limits. Cross-source status is DIVERGENT, independence UNVERIFIED.
+- Every active fixed-rule baseline is net-negative over full history on each dataset under assumed costs. The simple causal direction-rate estimators show no meaningful Brier skill over the constant 0.5 comparator. The benchmark result does not prove alpha or calibrated TP-before-SL probability.
+- Keep NO_TRADE; predictive_model_validated=false, deployment_calibrated=false, production_ready=false, cross_source_confirmation_allowed=false, and live order execution disabled.
+
+### Next engineering gates (still open)
+- [ ] Investigate M5 price-level divergence: compare timestamp semantics, bar label/open-close convention, upstream publisher/feed lineage and sample candles before deciding whether the source can be compared or should be excluded.
+- [ ] Verify original source-data rights and commercial-use scope; repository license alone is insufficient.
+- [ ] Add an independently verified broker/feed source or licensed Bid/Ask/tick data; record source identity and timestamp/quote-side semantics.
+- [ ] Benchmark execution-aware strategies with measured spread, commission, slippage, swap and realistic fill/timeout behavior.
+- [ ] Evaluate exact TP-before-SL labels and calibration on mature, chronological OOS outcomes with an untouched holdout; retain abstention when sample size or evidence is inadequate.
+- [ ] Complete paper-trading, security/risk and live Telegram/provider acceptance before any production signal/order capability.
+
+
+## Final hosted candidate verification — 2026-10-17
+
+- [x] Run final candidate PR head e9f73719bc9acfbd0f9e85c777a97d856b76e1b5 through hosted CI: run #39015468873 PASS; 8 temporal-calibration tests and 22 Python unit/regression tests pass; live data acquisition, benchmark, final contracts and artifact upload pass.
+- [x] Save the report artifact #12094870433 (33,975 bytes; SHA-256 8a23015c04bcd27821d41be4abebcf408e1f57df40a9fd399e406b98bad26bb3; expiration 2026-10-31 07:57:28 UTC). Raw input datasets are not in the artifact.
+- [x] Complete the bounded timestamp-offset probe without applying any shifted timestamps.
+- [x] Persist the final checkpoint in IMPLEMENTATION_STATUS.json and PROGRESS_LOG.md.
+- [ ] Investigate M5 price-level divergence. Exact timestamp overlap is 11,509 bars; direction agreement is 97.933%, yet median absolute close delta is 63.515 price units and median relative delta is 1.3580%. Relative P95 is 2.0576% against 0.50% diagnostic limit; status remains DIVERGENT.
+- [ ] Audit candle timestamp/label conventions and original feed lineage. The best observed offset (-7 hours) improves median relative delta by only 6.3458%; under the 20% material threshold there is no candidate shift. Do not shift or merge the source bars.
+- [ ] Verify the legal rights and intended commercial use of source data, plus its broker/quote-side and timezone provenance.
+- [ ] Acquire independently documented broker Bid/Ask/tick history with real spreads, commissions, slippage, swap, and fill semantics.
+- [ ] Re-run execution-aware strategy replay, exact TP-before-SL calibration, mature-label leakage controls, independent chronological regimes and untouched final holdout.
+- [ ] Keep NO_TRADE, cross-source confirmation disabled, production readiness false, and live execution disabled until evidence gates and paper-trading/security approval pass.
+
+
+## Signed/monthly M5 discrepancy findings — final run #39015804227 (2026-10-17)
+
+- [x] Add source-B-minus-A signed price bias, close price quantiles, signed OHLC deltas, percent above/below, UTC-month discrepancy buckets and five deterministic paired-candle snapshots.
+- [x] Validate the additions with 22 Python unit/regression tests and hosted multi-source CI; preserve the summary and raw-source-free evidence artifact #12094359744.
+- [x] Verify exact report JSON and aggregate/monthly coverage contracts: monthly timestamp buckets sum to the exact overlap count; five sample candles are returned; source bars remain separate.
+- [ ] Investigate time-varying price discrepancy. Across 11,509 matched M5 timestamps, the median signed B−A delta is -63.515 price units; source B is below source A in 95.10% of matched timestamps. Median signed delta varies from -94.105 in March to -68.200 in April and -56.710 in May; one endpoint paired sample is almost equal (-0.235). Do not treat the difference as a stable additive offset or normalize it away.
+- [ ] Verify upstream data lineage, quote-side, UTC bar-label semantics, volume semantics and usage rights. The GetData README describes bar-open UTC/tick volume; Sai describes mid-quote and stores timestamps without explicit timezone, interpreted as UTC from its README. These descriptions do not establish equivalent or independent pricing feeds.
+- [ ] Compare samples and source hashes with a licensed broker Bid/Ask/tick feed, then rerun per-regime execution-aware benchmarks and exact TP-before-SL calibration on an untouched holdout.
+- [ ] Retain NO_TRADE, no cross-source confirmation, no deployment calibration, and no live order execution until the previous data-validity phase is resolved and the later research/security gates pass.
+
+
+## Final source-eligibility gate — hosted run #39016857786 (2026-10-17)
+
+### Verified in CI
+- [x] Pipeline runs on three public dataset files and keeps all series separate.
+- [x] 8 temporal calibration tests and 25 Python unit/regression tests pass; source downloads, benchmark counts, report JSON/Markdown, scenario contracts and artifact upload pass.
+- [x] Readiness model explicitly differentiates pipeline PASS from data/rights/research/production eligibility.
+- [x] Regression test proves quote-side uncertainty alone blocks both cross-source confirmation and production readiness even when a synthetic fixture labels other gates compatible.
+- [x] Final evidence artifact #12095247324; 38,308 bytes, SHA-256 eadd77b94dffa51408c34b6aa8da63406070b6ac01da0056ba6fee6cb283503a.
+
+### Still blocked
+- [ ] M5 source compatibility: 11,509 exact overlap timestamps; median absolute close-price difference 63.515 price units; median relative 1.3580%, P95 2.0576%; status DIVERGENT. Signed monthly difference changes from -94.105 (March) to -68.200 (April) to -56.710 (May). The best observed time offset improves median relative delta only 6.3458%, so no time-shift candidate is accepted.
+- [ ] Feed provenance: the Sai M1/M5 Q1-Q2 files appear in initial commit 01a9d1c1544eeea9632a29c1b3cde7ea0d13afe6 (2026-06-30) without an inspected file-specific monthly provenance/checksum trail. This is weak auditability, not evidence of fabrication.
+- [ ] Data rights: GetData's GitHub sample claims MIT but the provider's standard data terms are more restrictive for embedding raw datasets in paid/commercial products. Exact sample/provider terms relationship needs written clarification. Sai's underlying broker lineage/use rights are not verified.
+- [ ] Alternative BID/ASK candidate: a public Dukascopy mirror was found, but the repository has no clear license and must not be treated as approved production data.
+- [ ] Broker-execution evidence: acquire a licensed broker Bid/Ask/tick history and measure actual spread, commission, slippage, swaps and fills.
+- [ ] Forecast validation: test exact TP-before-SL target on mature outcomes, independent chronological regimes, untouched final holdout and uncertainty intervals.
+- [ ] Operations: end-to-end Telegram/OANDA integration, paper trading, production security/risk review and incident/rollback tests.
+- [ ] Maintain NO_TRADE, commercial training/serving blocked, source confirmation blocked and live order execution disabled until all prior evidence gates pass.
+
+Do not treat successful CI as strategy success, source rights clearance or production readiness. PR #165 remains a draft candidate and is not merged.
+
+
+## 2026-10-17 — exact-target TP-before-SL OOS candidate
+
+- [x] Add a separate, dependency-free research module for long/short TP-before-SL labels rather than treating next-candle direction as the same target.
+- [x] Define next-open entry, ATR(14) barriers, fixed 12-bar horizon, conservative stop-first OHLC collision handling, explicit timeout labels and separate outcome counts.
+- [x] Define chronological 60/20/20 train/calibration/untouched-holdout periods and purge outcomes that have not matured before each split boundary.
+- [x] Reuse the temporal calibration diagnostics for calibration-period-only Platt fitting, holdout Brier/log-loss/reliability reports and block-bootstrap sensitivity intervals.
+- [x] Add regression tests for feature causality, same-bar ambiguity, gap-through-barrier behavior, label maturity and the no-live-trading invariant.
+- [ ] Fresh hosted CI must pass all source, overlap, OOS benchmark and acceptance-contract tests on the current branch head; examine the emitted artifact and real dataset OOS metrics.
+- [ ] Review target event rates, calibrator fit status and holdout uncertainty by source/side without tuning or promoting a holdout winner.
+- [ ] Do not enable production prediction until broker-licensed Bid/Ask/tick/fill data, data rights, independent regimes, exact-target external validation and paper-trading/security gates are satisfied.
+
+The current candidate does not change the application response path or trading gate. Its output is research diagnostics only; `NO_TRADE` remains mandatory.
+
+
+## 2026-10-17 — paired calibration-gain uncertainty
+
+- [x] Preserve the first real historical TP-before-SL OOS result as JSON and Markdown with source hashes, exact split sizes, target definition, source-side metrics and caveats.
+- [x] Add a paired moving-block bootstrap for raw-minus-calibrated Brier and log-loss improvements using identical sampled time blocks; use 250 deterministic replicates for the source benchmark.
+- [x] Add model-parameter hashing and a regression test: mutate only the final holdout bars and require training-model hash and calibration fit parameters to remain unchanged.
+- [x] Extend workflow acceptance contracts to require paired confidence-interval fields and consistency with the point-estimated raw-minus-calibrated Brier difference.
+- [ ] Verify the fresh hosted CI for the new paired-bootstrap and holdout-invariance implementation, then inspect the new source artifact and results.
+- [ ] Keep deployment blocked if the paired uncertainty interval includes zero or the event-rate reference is not consistently beaten across the predeclared source/side tests. Do not pick a best source/side using this final holdout.
+
+The prior exact-target baseline improved after Platt scaling in only some source/side pairs; changes were small and inconsistent. The paired CI is required to assess those gains without mistaking overlapping marginal intervals for a paired test. No trading gate changes are made.
+
+
+## 2026-10-17 — real bid/ask tick probe gate passed
+
+- [x] Add bounded read-only sampler for the public tick feed with allowlisted HTTPS host/path, request/byte limits, retry limits, schema validation, row-index continuity, timestamp order checks and no raw tick persistence.
+- [x] Sample 1,000 quote records at each of three disjoint head/middle/tail offsets; report spread quantiles in price units and basis points with per-window hashes.
+- [x] Verify live hosted CI for serialization, data-quality, source-count and hard safety assertions. Run #39021204557 passed all 13 steps; artifact #12096921783.
+- [x] Persist results in `benchmarks/tick_quote_probe_2026-10-17.md/.json`; 3,000 rows tested, no crossed/locked quotes or timestamp-order violations inside those windows.
+- [ ] Resolve data rights, original broker lineage, timezone and quote semantics before any commercial or production use.
+- [ ] Acquire licensed broker Bid/Ask/tick/fill history and measured costs; public quote spread quantiles are not fill/slippage observations.
+- [ ] Keep deployment blocked: all 12 paired 95% calibration-gain intervals include zero. Prove independent OOS skill and net economic utility before reconsidering `NO_TRADE`.
