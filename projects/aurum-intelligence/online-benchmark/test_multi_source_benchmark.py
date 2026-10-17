@@ -134,8 +134,8 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
             loaded = json.loads(paths["json"].read_text(encoding="utf-8"))
             markdown = paths["markdown"].read_text(encoding="utf-8")
         self.assertEqual(loaded["status"], "FAIL")
-        self.assertGreater(markdown.count("\\n"), 2)
-        self.assertNotIn("\\n", markdown.splitlines()[0])
+        self.assertGreater(markdown.count(chr(10)), 2)
+        self.assertNotIn(chr(92) + "n", markdown.splitlines()[0])
 
     def test_report_semantics_distinguish_pipeline_success_from_model_success(self):
         # Fail-closed aggregate contract; empty evidence is never labeled PASS.
