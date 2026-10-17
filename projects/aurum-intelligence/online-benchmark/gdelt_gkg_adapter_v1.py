@@ -188,6 +188,57 @@ def _bounded_get(url: str, cap: int) -> bytes:
     raise RuntimeError(f"gdelt_download_failed:{last_error}")
 
 
+def select_historical_gkg_archives(
+    master_listing: str,
+    start: datetime,
+    end: datetime,
+    *,
+    max_archives: int,
+) -> tuple[list[tuple[datetime, str]], int]:
+    """Extract historical GKG URLs from the official size/hash/URL master-list rows.
+
+    The manifest format is three whitespace-delimited columns: byte size, checksum,
+    URL. Archive URLs may use legacy HTTP, which is upgraded only for the exact
+    allowlisted official host/path. Return (bounded deterministic sample, total
+    matching archive count) so sampling is never misreported as complete coverage.
+    """
+    if start.tzinfo is None or end.tzinfo is None or start >= end:
+        raise ValueError("invalid_time_window")
+    if isinstance(max_archives, bool) or not isinstance(max_archives, int) or max_archives < 1:
+        raise ValueError("invalid_max_archives")
+    start_utc = start.astimezone(timezone.utc)
+    end_utc = end.astimezone(timezone.utc)
+    candidates: list[tuple[datetime, str]] = []
+    for line in master_listing.splitlines():
+        bits = line.split()
+        if len(bits) < 3:
+            continue
+        try:
+            url = normalize_archive_url(bits[-1])
+            _validate_official_url(url)
+            archive_name = url.rsplit("/", 1)[-1]
+            if not archive_name.endswith(".gkg.csv.zip"):
+                continue
+            timestamp = archive_name[:14]
+            if len(timestamp) != 14 or not timestamp.isdigit():
+                continue
+            archive_time = datetime.strptime(timestamp, "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+            if start_utc <= archive_time <= end_utc:
+                candidates.append((archive_time, url))
+        except (ValueError, OverflowError):
+            continue
+    candidates.sort()
+    discovered_count = len(candidates)
+    if discovered_count > max_archives:
+        # Deterministic evenly spaced sample across the preregistered historical window.
+        indices = sorted({
+            round(i * (discovered_count - 1) / (max_archives - 1))
+            for i in range(max_archives)
+        }) if max_archives > 1 else [0]
+        candidates = [candidates[i] for i in indices]
+    return candidates, discovered_count
+
+
 def acquire_historical_gkg(
     start: datetime, end: datetime, *, target_records: int = 100_000,
     max_archives: int = MAX_ARCHIVES_PER_RUN, aggregate_cap: int = MAX_AGGREGATE_BYTES,
@@ -201,32 +252,9 @@ def acquire_historical_gkg(
         return AcquisitionResult("FAILED", error_code="invalid_aggregate_byte_cap")
     try:
         listing = _bounded_get(MASTER_URL, MAX_MASTER_BYTES).decode("utf-8", errors="replace")
-        candidates = []
-        for line in listing.splitlines():
-            bits = line.split()
-            if len(bits) < 3:
-                continue
-            url = bits[-1]
-            try:
-                _validate_official_url(url)
-                archive_name = url.rsplit("/", 1)[-1]
-                if not archive_name.endswith(".gkg.csv.zip"):
-                    continue
-                digits = "".join(c for c in archive_name[:14] if c.isdigit())
-                if len(digits) < 8:
-                    continue
-                when = datetime.strptime(digits[:8], "%Y%m%d").replace(tzinfo=timezone.utc)
-                if start.astimezone(timezone.utc).date() <= when.date() <= end.astimezone(timezone.utc).date():
-                    candidates.append((when, url))
-            except (ValueError, OverflowError):
-                continue
-        candidates = sorted(candidates)
-        discovered_archive_count = len(candidates)
-        if len(candidates) > max_archives:
-            # Deterministic evenly spaced selection over the preregistered period.
-            indices = sorted({round(i * (len(candidates)-1) / (max_archives-1))
-                              for i in range(max_archives)}) if max_archives > 1 else [0]
-            candidates = [candidates[i] for i in indices]
+        candidates, discovered_archive_count = select_historical_gkg_archives(
+            listing, start, end, max_archives=max_archives
+        )
         observations = []
         manifests = []
         total_bytes = len(listing)
