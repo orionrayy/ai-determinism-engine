@@ -48,7 +48,7 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
         self.assertIn('"temporal_feature_coverage": temporal_feature_coverage', runner)
         self.assertIn('"status_semantics"', runner)
         self.assertIn('"PASS" if gdelt_archive_window_complete', runner)
-        self.assertIn('"NOT_MET" if gdelt_coverage else "NOT_MET"', runner)
+        self.assertIn('"PARTIAL" if gdelt_coverage else "NOT_MET"', runner)
 
 
 if __name__ == "__main__":
