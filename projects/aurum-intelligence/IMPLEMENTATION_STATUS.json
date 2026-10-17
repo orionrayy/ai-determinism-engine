@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T15:03:12+07:00",
+  "checkpoint": "2026-10-17T15:22:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -236,7 +236,7 @@
     "synthetic_only": true
   },
   "multi_source_benchmark": {
-    "status": "HOSTED_CI_PASS_PIPELINE; SOURCE_COMPATIBILITY_BLOCKED",
+    "status": "HOSTED_CI_PASS_PIPELINE; SOURCE_COMPATIBILITY_RIGHTS_PROVENANCE_BLOCKED",
     "candidate_branch": "feature/aurum-multi-source-benchmark",
     "pull_request": {
       "number": 165,
@@ -244,21 +244,21 @@
       "state": "open",
       "draft": true,
       "merged": false,
-      "tested_code_head_sha": "c7043732c18e278ab2956a6599d3e526f15078c0",
+      "tested_code_head_sha": "8db8bd90830b78b0007a6904a104a80c851f3464",
       "base_branch": "feature/aurum-online-dataset-benchmark"
     },
     "hosted_ci": {
-      "run_id": 39015804227,
-      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015804227",
+      "run_id": 39016857786,
+      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39016857786",
       "status": "success",
-      "head_sha": "c7043732c18e278ab2956a6599d3e526f15078c0",
+      "head_sha": "8db8bd90830b78b0007a6904a104a80c851f3464",
       "temporal_calibration_tests_passed": 8,
-      "python_unit_and_regression_tests_passed": 22,
-      "artifact_id": 12094359744,
-      "artifact_bytes": 35532,
-      "artifact_sha256": "64427fa192381284e2bde8e198254f1b948c9faba453b94ebb98a95811301131",
-      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015804227/artifacts/12094359744",
-      "artifact_expires_at": "2026-10-31T08:03:08Z"
+      "python_unit_and_regression_tests_passed": 25,
+      "artifact_id": 12095247324,
+      "artifact_bytes": 38308,
+      "artifact_sha256": "eadd77b94dffa51408c34b6aa8da63406070b6ac01da0056ba6fee6cb283503a",
+      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39016857786/artifacts/12095247324",
+      "artifact_expires_at": "2026-10-31T08:19:17Z"
     },
     "measured_coverage": {
       "source_files": 3,
@@ -267,7 +267,7 @@
       "fixed_rule_comparisons": 750,
       "synthetic_market_path_contracts": 2160,
       "synthetic_software_contracts": 720,
-      "runtime_ms": 69531.304,
+      "multi_source_runtime_ms": 37520.81,
       "decision_output": "NO_TRADE",
       "predictive_model_validated": false,
       "deployment_calibrated": false,
@@ -348,8 +348,6 @@
             "month_utc": "2026-03",
             "matched_timestamps": 1071,
             "signed_close_delta_median_b_minus_a": -94.10499999999956,
-            "absolute_close_delta_median_price_units": 94.10499999999956,
-            "absolute_close_delta_p95_price_units": 95.14999999999964,
             "relative_close_delta_median_fraction": 0.020268635828222126,
             "relative_close_delta_p95_fraction": 0.020902105909126296
           },
@@ -357,8 +355,6 @@
             "month_utc": "2026-04",
             "matched_timestamps": 5787,
             "signed_close_delta_median_b_minus_a": -68.19999999999982,
-            "absolute_close_delta_median_price_units": 68.19999999999982,
-            "absolute_close_delta_p95_price_units": 82.02999999999975,
             "relative_close_delta_median_fraction": 0.014366458339691227,
             "relative_close_delta_p95_fraction": 0.016965574065754756
           },
@@ -366,32 +362,8 @@
             "month_utc": "2026-05",
             "matched_timestamps": 4651,
             "signed_close_delta_median_b_minus_a": -56.70999999999913,
-            "absolute_close_delta_median_price_units": 56.70999999999913,
-            "absolute_close_delta_p95_price_units": 68.13500000000022,
             "relative_close_delta_median_fraction": 0.012494261292646282,
             "relative_close_delta_p95_fraction": 0.014800787003594551
-          }
-        ],
-        "representative_samples_signed_delta": [
-          {
-            "timestamp_utc": "2026-03-26T02:30:00+00:00",
-            "delta_b_minus_a": -89.45499999999902
-          },
-          {
-            "timestamp_utc": "2026-04-10T12:30:00+00:00",
-            "delta_b_minus_a": -28.539999999999964
-          },
-          {
-            "timestamp_utc": "2026-04-27T00:00:00+00:00",
-            "delta_b_minus_a": -64.375
-          },
-          {
-            "timestamp_utc": "2026-05-11T10:15:00+00:00",
-            "delta_b_minus_a": -60.60999999999876
-          },
-          {
-            "timestamp_utc": "2026-05-26T00:00:00+00:00",
-            "delta_b_minus_a": -0.23499999999967258
           }
         ]
       },
@@ -431,9 +403,42 @@
     "blockers": [
       "Investigate time-varying signed M5 price bias; no constant-offset or bounded timestamp shift currently explains the full overlap.",
       "Audit source rights and original provider/broker provenance, including bar labels, timezone semantics, quote side and volume meaning.",
+      "Obtain written rights clarification or a licensed broker/provider contract for commercial model use and production feed.",
       "Acquire licensed broker Bid/Ask/tick data and measured spreads, fees, slippage and fill semantics.",
       "Validate exact TP-before-SL probabilities across independent chronological regimes and an untouched final holdout.",
       "Complete paper trading, security/risk review, and real Telegram/OANDA integration tests before deployment."
-    ]
+    ],
+    "readiness_gates": {
+      "pipeline_status": "PASS",
+      "diagnostic_benchmark_status": "PASS",
+      "source_comparability_gate": "BLOCKED",
+      "cross_source_confirmation_gate": "BLOCKED",
+      "model_training_for_commercial_service": "BLOCKED",
+      "commercial_product_use": "BLOCKED",
+      "production_readiness": "BLOCKED",
+      "live_order_execution": "BLOCKED",
+      "reason_codes": [
+        "CROSS_SOURCE_PRICE_LEVEL_DIVERGENCE",
+        "CROSS_SOURCE_INDEPENDENCE_UNVERIFIED",
+        "SOURCE_PROVENANCE_TIMEZONE_OR_QUOTE_SIDE_UNVERIFIED",
+        "UNDERLYING_DATA_RIGHTS_OR_COMMERCIAL_USE_UNVERIFIED"
+      ],
+      "interpretation": "CI PASS proves diagnostic pipeline execution, not data-use permission, model validity, cross-source confirmation, profitability, or production approval."
+    },
+    "commercial_rights_assessment": {
+      "getdata_repository_license_claim": "MIT",
+      "getdata_provider_terms_relationship_to_public_github_sample": "UNRESOLVED",
+      "sai_repository_license_claim": "MIT",
+      "sai_upstream_feed_rights_and_provenance": "UNVERIFIED",
+      "commercial_use_approved": false,
+      "action": "Obtain written clarification/provider or broker contract before approving commercial model/training/serving with these sample datasets."
+    },
+    "sai_lineage_audit": {
+      "m1_m5_csv_last_and_only_observed_file_commit": "01a9d1c1544eeea9632a29c1b3cde7ea0d13afe6",
+      "initial_commit_date_utc": "2026-06-30T19:18:56Z",
+      "commit_url": "https://github.com/Sai310421/xauusd-data/commit/01a9d1c1544eeea9632a29c1b3cde7ea0d13afe6",
+      "observed_file_history": "The M1/M5 Q1-Q2 files appear in the initial commit; no per-month data provenance/checksum history was found in the inspected file-specific history.",
+      "interpretation": "Weak auditability; not proof of fabricated or incorrect data."
+    }
   }
 }
