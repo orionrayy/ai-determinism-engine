@@ -142,3 +142,10 @@ This section supersedes older version-specific statements above where they diffe
 - Chronology contract: train/calibration/final holdout = 60/20/20; scaler/model fit on training only; training labels must mature before calibration starts; calibrator fit uses middle-period OOS forecasts whose outcomes mature before final holdout; no final-holdout model selection. Platt helper and proper-score/reliability/block-bootstrap diagnostics are reused from `temporal-calibration-v1.3`.
 - This remains diagnostic only. Data source rows have community OHLCV semantics; provenance, rights, broker quote side and actual fills are not verified. Do not promote or claim calibrated trading skill from it; maintain `NO_TRADE`, `deployment_calibrated=false`, `validated=false`, `live_signal_enabled=false`, and `live_order_execution_enabled=false`.
 - New tests and CI acceptance rules were committed, but a fresh hosted run and artifact review are still required before this checkpoint may be marked green. See `ONLINE_MULTI_SOURCE_BENCHMARK.md` and the dated entry in `PROGRESS_LOG.md`.
+
+
+## Gap audit and prioritization — 2026-10-17
+
+- Added `GAP_AUDIT_AND_COMPETITIVE_POSITION_2026-10-17.md` to the project’s audit trail. It converts the broad 100-weakness / 100-comparison inventory into risk-weighted priorities, acceptance criteria, evidence classes and free-first trade-offs.
+- Correct distinction: the bundled TP-before-SL candidate has 60 bars and zero OOS forecasts; a separate hosted historical replay consumed 35,954 community XAUUSD M5 rows. The online dataset is not live and its rights, independent provenance, timezone, quote side and actual fills remain unverified.
+- The full-history replay did not establish an edge under assumed costs; calibration diagnostics are not deployment validation. Keep `NO_TRADE`; do not claim global superiority without reproducible, independently validated OOS evidence.

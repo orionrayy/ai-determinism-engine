@@ -85,3 +85,8 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - `online-benchmark/test_barrier_oos_benchmark.py` — feature-causality, barrier-collision, gap-open, maturation-boundary and no-live-execution regression tests.
 - `ONLINE_MULTI_SOURCE_BENCHMARK.md` — protocol and caveats. New hosted CI is pending; no result may be described as validated until its run/artifact is inspected.
 - The benchmark consumes the already-downloaded public-source rows in CI and does not commit raw market CSVs. It is not yet a rebuilt/released Aurum application ZIP and it does not alter the Telegram/Mini App production path.
+
+
+## Competitive gap audit — 2026-10-17
+
+- `GAP_AUDIT_AND_COMPETITIVE_POSITION_2026-10-17.md` — evidence-led gap register, risk-weighted implementation phases, competitor category distinctions and free-first guardrails.
