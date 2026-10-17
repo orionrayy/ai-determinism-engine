@@ -28,6 +28,16 @@ These are sources published online by community repositories, not three independ
 8. CI enforces a minimum aggregate of 100,000 downloaded rows (reported as a sum, not a deduplicated or independent sample count), a minimum exact-timestamp overlap, and fixed rule/scenario counts.
 9. Reports include data hashes, UTC observation ranges, interval/gap diagnostics, benchmark metrics, licensing/provenance caveats and a hard-coded NO_TRADE decision boundary.
 
+## Data-use and production eligibility
+
+Public accessibility and a repository-level license badge do not automatically verify rights to the original underlying broker data, the right to train/serve a commercial model, or permission to embed data in a paid service.
+
+- The GetData GitHub sample repository advertises MIT, while GetData's own published documentation says the standard purchased-data license is purchaser-only, allows the buyer's own research/backtesting and derived outputs under restrictions, and does not allow raw CSV/ZIP embedding in commercial products or paid services without separate written permission. The exact relationship between those provider terms and this GitHub evaluation sample has not been resolved. See [repository license](https://github.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/blob/main/LICENSE), [provider documentation](https://www.getdata.finance/documentation), and [XAUUSD product page](https://getdata.finance/datasets/xauusd).
+- Sai's repository advertises MIT and describes 2026 Q1–Q2 bars as aggregated from public broker mid-quote feeds, but the individual upstream publisher/feed lineage, upstream data-use terms, and quote construction have not been independently verified. See [repository README](https://github.com/Sai310421/xauusd-data).
+- As a result, CI uses these sources only for diagnostic benchmark execution and does not upload the raw CSVs. This is a technical handling choice, not a legal conclusion or approval for commercial use.
+- Current machine-readable gates intentionally hold model_training_for_commercial_service, commercial_product_use, production_feed_approved, cross-source confirmation, and production readiness at BLOCKED until rights scope and provenance are verified.
+- For the actual production system, prefer a broker/provider relationship whose contract explicitly permits the intended internal model use, paid service, storage, derived output and required redistribution (if any), with documented source identity and quote semantics. A public BID/ASK mirror with no clear license is not a substitute for that approval.
+
 ## Interpretation rules
 
 - PASS means the acquisition, structural validation, benchmark execution and scenario contracts met their software requirements. It does not mean a strategy is profitable.
