@@ -30,7 +30,10 @@ class FredAlfredTests(unittest.TestCase):
 
     def test_key_never_appears_in_report_or_error(self):
         with patch.dict(os.environ,{"FRED_API_KEY":"test-secret-do-not-leak"}):
-            result=fred.acquire_fred({"series_id":"NOT_REAL"})
+            with patch("fred_alfred_adapter_v1.urllib.request.urlopen",
+                       side_effect=OSError("test-secret-do-not-leak")) as mocked:
+                result=fred.acquire_fred({"series_id":"NOT_REAL"})
+                mocked.assert_called_once()
         self.assertNotIn("test-secret-do-not-leak",repr(result))
         self.assertNotIn("test-secret-do-not-leak",result.error_code or "")
 
