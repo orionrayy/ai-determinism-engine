@@ -261,14 +261,74 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
         else "NO_OBVIOUS_BOUNDED_SHIFT_FIX"
     )
 
-    differences = [
-        abs(by_a[stamp]["close"] - by_b[stamp]["close"])
+    # Source-level diagnostics are aggregate-first; only five paired candle samples are emitted.
+    signed_close_deltas = [by_b[stamp]["close"] - by_a[stamp]["close"] for stamp in common]
+    differences = [abs(delta) for delta in signed_close_deltas]
+    reference_prices = [
+        (abs(by_a[stamp]["close"]) + abs(by_b[stamp]["close"])) / 2.0
         for stamp in common
     ]
     relative_differences = [
-        delta / ((abs(by_a[stamp]["close"]) + abs(by_b[stamp]["close"])) / 2.0)
-        for stamp, delta in zip(common, differences)
+        delta / reference if reference > 0 else math.inf
+        for delta, reference in zip(differences, reference_prices)
     ]
+    price_quantiles = {
+        "source_a_close": {
+            "median": statistics.median(by_a[stamp]["close"] for stamp in common),
+            "p05": percentile([by_a[stamp]["close"] for stamp in common], 0.05),
+            "p95": percentile([by_a[stamp]["close"] for stamp in common], 0.95),
+        },
+        "source_b_close": {
+            "median": statistics.median(by_b[stamp]["close"] for stamp in common),
+            "p05": percentile([by_b[stamp]["close"] for stamp in common], 0.05),
+            "p95": percentile([by_b[stamp]["close"] for stamp in common], 0.95),
+        },
+    }
+    ohlc_signed_median = {
+        field: statistics.median(by_b[stamp][field] - by_a[stamp][field] for stamp in common)
+        for field in ("open", "high", "low", "close")
+    }
+    monthly_groups = {}
+    for stamp in common:
+        monthly_groups.setdefault(stamp.strftime("%Y-%m"), []).append(stamp)
+    monthly_diagnostics = []
+    for month, stamps in sorted(monthly_groups.items()):
+        signed = [by_b[stamp]["close"] - by_a[stamp]["close"] for stamp in stamps]
+        absolute = [abs(value) for value in signed]
+        relative = [
+            abs(value) / ((abs(by_a[stamp]["close"]) + abs(by_b[stamp]["close"])) / 2.0)
+            for stamp, value in zip(stamps, signed)
+        ]
+        monthly_diagnostics.append({
+            "month_utc": month,
+            "matched_timestamps": len(stamps),
+            "signed_close_delta_median_b_minus_a": statistics.median(signed),
+            "absolute_close_delta_median_price_units": statistics.median(absolute),
+            "absolute_close_delta_p95_price_units": percentile(absolute, 0.95),
+            "relative_close_delta_median_fraction": statistics.median(relative),
+            "relative_close_delta_p95_fraction": percentile(relative, 0.95),
+        })
+    sample_indexes = sorted(set([
+        0,
+        len(common) // 4,
+        len(common) // 2,
+        (3 * len(common)) // 4,
+        len(common) - 1,
+    ]))
+    paired_candle_samples = []
+    for index in sample_indexes:
+        stamp = common[index]
+        a, b = by_a[stamp], by_b[stamp]
+        delta = b["close"] - a["close"]
+        reference = (abs(a["close"]) + abs(b["close"])) / 2.0
+        paired_candle_samples.append({
+            "timestamp_utc": stamp.isoformat(),
+            "source_a_ohlc": {field: a[field] for field in ("open", "high", "low", "close")},
+            "source_b_ohlc": {field: b[field] for field in ("open", "high", "low", "close")},
+            "signed_close_delta_b_minus_a": delta,
+            "absolute_close_delta_price_units": abs(delta),
+            "relative_absolute_close_delta_fraction": abs(delta) / reference if reference > 0 else None,
+        })
     median_relative_delta = statistics.median(relative_differences)
     p95_relative_delta = percentile(relative_differences, 0.95)
     # Price-level compatibility gate, not a trading-accuracy target:
@@ -304,6 +364,19 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
             "median": statistics.median(differences),
             "p95": percentile(differences, 0.95),
             "maximum": max(differences),
+        },
+        "price_level_diagnostics": {
+            "source_a_close_quantiles": price_quantiles["source_a_close"],
+            "source_b_close_quantiles": price_quantiles["source_b_close"],
+            "signed_close_delta_median_b_minus_a": statistics.median(signed_close_deltas),
+            "signed_close_delta_mean_b_minus_a": statistics.mean(signed_close_deltas),
+            "fraction_source_b_close_above_source_a": sum(delta > 0 for delta in signed_close_deltas) / len(signed_close_deltas),
+            "fraction_source_b_close_below_source_a": sum(delta < 0 for delta in signed_close_deltas) / len(signed_close_deltas),
+            "fraction_equal_close": sum(delta == 0 for delta in signed_close_deltas) / len(signed_close_deltas),
+            "ohlc_signed_delta_median_b_minus_a": ohlc_signed_median,
+            "monthly_diagnostics": monthly_diagnostics,
+            "representative_paired_candles": paired_candle_samples,
+            "sample_policy": "5 deterministic snapshots across exact overlap; not a substitute for full raw data audit",
         },
         "close_relative_delta": {
             "median_fraction": median_relative_delta,
