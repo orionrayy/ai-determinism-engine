@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T15:22:00+07:00",
+  "checkpoint": "2026-10-17T15:23:47+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -244,21 +244,21 @@
       "state": "open",
       "draft": true,
       "merged": false,
-      "tested_code_head_sha": "8db8bd90830b78b0007a6904a104a80c851f3464",
+      "head_sha": "88043ca2d4f056160011c5e72c570e0a7d25628b",
       "base_branch": "feature/aurum-online-dataset-benchmark"
     },
     "hosted_ci": {
-      "run_id": 39016857786,
-      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39016857786",
+      "run_id": 39017079890,
+      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39017079890",
       "status": "success",
-      "head_sha": "8db8bd90830b78b0007a6904a104a80c851f3464",
+      "head_sha": "88043ca2d4f056160011c5e72c570e0a7d25628b",
       "temporal_calibration_tests_passed": 8,
       "python_unit_and_regression_tests_passed": 25,
-      "artifact_id": 12095247324,
-      "artifact_bytes": 38308,
-      "artifact_sha256": "eadd77b94dffa51408c34b6aa8da63406070b6ac01da0056ba6fee6cb283503a",
-      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39016857786/artifacts/12095247324",
-      "artifact_expires_at": "2026-10-31T08:19:17Z"
+      "artifact_id": 12094799173,
+      "artifact_bytes": 38310,
+      "artifact_sha256": "631f52928d2a409101fe6346f80451be9dd58e61f3e433075791b049d2e6fd74",
+      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39017079890/artifacts/12094799173",
+      "artifact_expires_at": "2026-10-31T08:23:43Z"
     },
     "measured_coverage": {
       "source_files": 3,
@@ -267,13 +267,17 @@
       "fixed_rule_comparisons": 750,
       "synthetic_market_path_contracts": 2160,
       "synthetic_software_contracts": 720,
-      "multi_source_runtime_ms": 37520.81,
+      "multi_source_runtime_ms": 68878.328,
       "decision_output": "NO_TRADE",
       "predictive_model_validated": false,
       "deployment_calibrated": false,
       "live_signal_enabled": false,
       "live_order_execution_enabled": false,
-      "production_ready": false
+      "production_ready": false,
+      "pipeline_status": "PASS",
+      "source_comparability_gate": "BLOCKED",
+      "cross_source_confirmation_gate": "BLOCKED",
+      "commercial_product_use": "BLOCKED"
     },
     "sources": [
       {
@@ -402,28 +406,22 @@
     },
     "blockers": [
       "Investigate time-varying signed M5 price bias; no constant-offset or bounded timestamp shift currently explains the full overlap.",
-      "Audit source rights and original provider/broker provenance, including bar labels, timezone semantics, quote side and volume meaning.",
-      "Obtain written rights clarification or a licensed broker/provider contract for commercial model use and production feed.",
-      "Acquire licensed broker Bid/Ask/tick data and measured spreads, fees, slippage and fill semantics.",
+      "Audit original provider/broker provenance, bar labels, timezone semantics, quote side and volume meaning.",
+      "Get written clarification on the public GetData sample's MIT claim versus provider terms for raw-data embedding in paid/commercial products; verify Sai's underlying broker-data rights.",
+      "Acquire licensed broker Bid/Ask/tick history and measured spreads, fees, slippage and fill semantics.",
       "Validate exact TP-before-SL probabilities across independent chronological regimes and an untouched final holdout.",
       "Complete paper trading, security/risk review, and real Telegram/OANDA integration tests before deployment."
     ],
     "readiness_gates": {
-      "pipeline_status": "PASS",
-      "diagnostic_benchmark_status": "PASS",
-      "source_comparability_gate": "BLOCKED",
-      "cross_source_confirmation_gate": "BLOCKED",
+      "pipeline": "PASS",
+      "diagnostic_benchmark": "PASS",
+      "source_comparability": "BLOCKED",
+      "cross_source_confirmation": "BLOCKED",
       "model_training_for_commercial_service": "BLOCKED",
-      "commercial_product_use": "BLOCKED",
+      "commercial_product_use": "BLOCKED_PENDING_DATA_RIGHTS_CLARIFICATION",
       "production_readiness": "BLOCKED",
       "live_order_execution": "BLOCKED",
-      "reason_codes": [
-        "CROSS_SOURCE_PRICE_LEVEL_DIVERGENCE",
-        "CROSS_SOURCE_INDEPENDENCE_UNVERIFIED",
-        "SOURCE_PROVENANCE_TIMEZONE_OR_QUOTE_SIDE_UNVERIFIED",
-        "UNDERLYING_DATA_RIGHTS_OR_COMMERCIAL_USE_UNVERIFIED"
-      ],
-      "interpretation": "CI PASS proves diagnostic pipeline execution, not data-use permission, model validity, cross-source confirmation, profitability, or production approval."
+      "decision_output": "NO_TRADE"
     },
     "commercial_rights_assessment": {
       "getdata_repository_license_claim": "MIT",
