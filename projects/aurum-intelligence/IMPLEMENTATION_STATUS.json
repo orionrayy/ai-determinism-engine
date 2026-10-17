@@ -115,12 +115,11 @@
     "browser_device_acceptance_tested": false
   },
   "required_next": [
-    "verify data-use rights, original provider lineage, timestamp/bar conventions and Bid/Mid/Ask semantics for each market source",
-    "acquire broker-authorized Bid/Ask/tick and actual fill data plus measured spread, commission, swap, slippage, latency and rejected-order semantics",
-    "do not enable news features until the intended historical window is continuously covered or a source-specific missingness model is defined and separately validated",
-    "obtain authoritative macro publication-time calendars and optional FRED/ALFRED vintages before macro feature ablation",
-    "retest fixed model/feature versions on independent regimes and an untouched holdout against causal base-rate baselines with uncertainty; then paper trade and complete separate risk/security reviews",
-    "keep NO_TRADE and live order/signal flags disabled"
+    "Independently verify provenance, intended-use data rights, timestamp and bar convention, and quote basis for each feed; explain Sai310421 mid-quote vs near-exact tick Bid OHLC identity.",
+    "Acquire broker-authorized quotes/fills and measured spread, commission, swap, slippage, latency/rejection and fill semantics.",
+    "Keep GDELT news features ineligible until source windows have sufficient historical temporal coverage; supply authoritative publication-time and vintage data before macro feature ablations.",
+    "Evaluate against causal base-rate comparators on independent regimes and an untouched holdout with uncertainty intervals; prove net-of-cost edge before paper trading.",
+    "Keep NO_TRADE; never enable live signals or order routing until data, calibration, execution, risk and security gates pass."
   ],
   "release": {
     "version": "1.3.1",
@@ -554,6 +553,72 @@
         "live_signal_enabled": false,
         "decision_output": "NO_TRADE"
       }
+    },
+    "source_qualification_gate": {
+      "status": "HOSTED_CI_PASS_DIAGNOSTIC_ONLY",
+      "workflow_run_id": 39038107206,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39038107206",
+      "conclusion": "success",
+      "tested_head": "d2621fcda08456984ec3adef9015f91d3d432ddd",
+      "unit_regression_tests_passed": 125,
+      "temporal_calibration_scenarios": {
+        "passed": 240,
+        "failed": 0
+      },
+      "artifact": {
+        "id": 12102563009,
+        "name": "aurum-online-dataset-benchmark-39038107206.zip",
+        "bytes": 2626545,
+        "sha256": "993c27155e00c7d57d87aba5c475c1751d7026fcbfce4345b784996215bc065c",
+        "local_sha256_verified": true,
+        "retention_expires": "2026-10-31"
+      },
+      "gates": {
+        "sources": [
+          "getdata-finance/xauusd-5m-ohlcv-metals-historical-data",
+          "Sai310421/xauusd-data",
+          "CarlosSilva1/xauusd-ticks"
+        ],
+        "research_qualification_status": "REFERENCE_ONLY",
+        "execution_qualification_status": "BLOCKED",
+        "source_promotion_allowed": false,
+        "live_execution_authorized": false,
+        "provenance_rights_timestamp_bar_quote_basis_verified": false
+      },
+      "diagnostics": {
+        "paired_m1_bid_ask_candles": 1313280,
+        "unique_valid_atr_real_anchors": 20000,
+        "eligible_contiguous_windows": 875611,
+        "tp_sl_path_scenarios": 120000,
+        "primary_community_m5_rows": 35954,
+        "secondary_community_m5_rows": 17371,
+        "exact_timestamp_overlap": 11509,
+        "exact_ohlc_matches": 0,
+        "close_difference_median_bps": 134.8853832699518,
+        "close_difference_p95_bps": 203.66143110984132,
+        "tick_secondary_bid_exact_ohlc_matches": 4391,
+        "tick_secondary_overlap_bars": 4392,
+        "tick_lineage_status": "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED",
+        "gdelt_unique_observations": 141020,
+        "gdelt_sampled_archives": 100,
+        "gdelt_temporal_coverage_fraction": 0.001142179,
+        "news_eligible_rows": 0,
+        "cot_eligible_rows": 19739,
+        "external_context_total_rows": 19937,
+        "price_only_holdout_brier": 0.160989295248147,
+        "price_cot_holdout_brier": 0.16090435459678282,
+        "cot_incremental_brier_improvement": 0.00008494065136418093,
+        "cot_incremental_brier_ci95": [
+          -0.00014777036162551426,
+          0.00032011661071850155
+        ]
+      },
+      "decision_output": "NO_TRADE",
+      "validated_model": false,
+      "calibrated_model": false,
+      "validated_for_profitability": false,
+      "live_signal_enabled": false,
+      "interpretation": "CI validates software and bounded data processing only; it does not verify source rights/independence or predictive edge."
     }
   },
   "external_context_research_spec": {
