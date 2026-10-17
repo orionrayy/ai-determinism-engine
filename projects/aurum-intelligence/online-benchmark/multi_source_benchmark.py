@@ -1,0 +1,374 @@
+#!/usr/bin/env python3
+"""Read-only multi-source XAUUSD data audit and benchmark. PASS is not trading approval."""
+import argparse
+import hashlib
+import json
+import math
+import statistics
+import sys
+import time
+from datetime import timedelta, timezone
+from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+import ci_benchmark as core
+
+USER_AGENT = "Aurum-Intelligence/multi-source-benchmark"
+CASE_COUNT = 50
+SCENARIO_ANCHORS = 3
+SOURCES = (
+    {
+        "id": "getdata_xauusd_m5",
+        "repository": "getdata-finance/xauusd-5m-ohlcv-metals-historical-data",
+        "url": "https://raw.githubusercontent.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/main/XAUUSD_5m.csv",
+        "license_url": "https://github.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/blob/main/LICENSE",
+        "license_status": "repository advertises MIT; underlying data rights not independently verified",
+        "semantics": "community XAUUSD M5 OHLCV; broker origin and quote side unverified",
+        "interval_seconds": 300, "naive_timezone": None, "min_rows": 10000,
+        "max_bytes": 16 * 1024 * 1024, "overlap_group": "m5",
+    },
+    {
+        "id": "sai_community_xauusd_m5",
+        "repository": "Sai310421/xauusd-data",
+        "url": "https://raw.githubusercontent.com/Sai310421/xauusd-data/main/csv/XAUUSD/XAUUSD_M5_2026Q1Q2.csv",
+        "license_url": "https://github.com/Sai310421/xauusd-data/blob/main/LICENSE",
+        "license_status": "repository advertises MIT; underlying data rights not independently verified",
+        "semantics": "community mid-quote OHLCV; README claims aggregation from public broker feeds",
+        "interval_seconds": 300, "naive_timezone": "UTC", "min_rows": 10000,
+        "max_bytes": 2 * 1024 * 1024, "overlap_group": "m5",
+    },
+    {
+        "id": "sai_community_xauusd_m1",
+        "repository": "Sai310421/xauusd-data",
+        "url": "https://raw.githubusercontent.com/Sai310421/xauusd-data/main/csv/XAUUSD/XAUUSD_M1_2026Q1Q2.csv",
+        "license_url": "https://github.com/Sai310421/xauusd-data/blob/main/LICENSE",
+        "license_status": "repository advertises MIT; underlying data rights not independently verified",
+        "semantics": "community mid-quote OHLCV; README claims aggregation from public broker feeds",
+        "interval_seconds": 60, "naive_timezone": "UTC", "min_rows": 50000,
+        "max_bytes": 8 * 1024 * 1024, "overlap_group": None,
+    },
+)
+
+
+class SourceError(ValueError):
+    pass
+
+
+def fetch_source(spec, opener=urlopen):
+    prefix = "https://raw.githubusercontent.com/" + spec["repository"] + "/"
+    if not spec["url"].startswith(prefix):
+        raise SourceError("url_not_allowlisted:" + spec["id"])
+    request = Request(spec["url"], headers={"User-Agent": USER_AGENT})
+    last_error = None
+    for attempt in range(3):
+        try:
+            with opener(request, timeout=60) as response:
+                if not response.geturl().startswith(prefix):
+                    raise SourceError("redirect_outside_allowlist:" + spec["id"])
+                length = response.headers.get("Content-Length")
+                if length:
+                    try:
+                        if int(length) > spec["max_bytes"]:
+                            raise SourceError("content_length_over_limit:" + spec["id"])
+                    except ValueError as exc:
+                        raise SourceError("invalid_content_length:" + spec["id"]) from exc
+                payload = response.read(spec["max_bytes"] + 1)
+                if not payload:
+                    raise SourceError("empty_payload:" + spec["id"])
+                if len(payload) > spec["max_bytes"]:
+                    raise SourceError("payload_over_limit:" + spec["id"])
+                return payload
+        except SourceError:
+            raise
+        except (OSError, URLError, HTTPError, TimeoutError) as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(0.25 * (attempt + 1))
+    raise RuntimeError("fetch_failed:" + spec["id"] + ":" + type(last_error).__name__)
+
+
+def normalize_utc(rows, naive_timezone):
+    for index, row in enumerate(rows):
+        stamp = row["timestamp"]
+        if stamp.tzinfo is None or stamp.utcoffset() is None:
+            if naive_timezone != "UTC":
+                raise SourceError("naive_timestamp_without_explicit_timezone_policy")
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        else:
+            stamp = stamp.astimezone(timezone.utc)
+        row["timestamp"] = stamp
+        if index and stamp <= rows[index - 1]["timestamp"]:
+            raise SourceError("timestamps_not_strictly_increasing_after_normalization")
+    return rows
+
+
+def percentile(values, q):
+    if not values:
+        return None
+    return sorted(values)[min(len(values) - 1, max(0, math.ceil(q * len(values)) - 1))]
+
+
+def audit_quality(rows, expected_interval_seconds):
+    if len(rows) < 2:
+        raise SourceError("insufficient_rows_for_interval_audit")
+    intervals = [
+        (rows[index]["timestamp"] - rows[index - 1]["timestamp"]).total_seconds()
+        for index in range(1, len(rows))
+    ]
+    if any(not math.isfinite(value) or value <= 0 for value in intervals):
+        raise SourceError("invalid_time_interval")
+    return {
+        "rows": len(rows),
+        "start_utc": rows[0]["timestamp"].isoformat(),
+        "end_utc": rows[-1]["timestamp"].isoformat(),
+        "expected_interval_seconds": expected_interval_seconds,
+        "median_interval_seconds": statistics.median(intervals),
+        "p95_interval_seconds": percentile(intervals, 0.95),
+        "max_interval_seconds": max(intervals),
+        "intervals_over_1_5x_expected": sum(value > expected_interval_seconds * 1.5 for value in intervals),
+        "intervals_over_2x_expected": sum(value > expected_interval_seconds * 2 for value in intervals),
+        "strictly_increasing_timestamps": True,
+        "gaps_filled": False,
+    }
+
+
+def run_one(spec, payload, cases=CASE_COUNT, bootstrap_replicates=80):
+    started = time.perf_counter()
+    if len(payload) > spec["max_bytes"]:
+        raise SourceError("payload_over_limit:" + spec["id"])
+    rows = core.parse_csv(payload, min_rows=spec["min_rows"])
+    normalize_utc(rows, spec["naive_timezone"])
+    quality = audit_quality(rows, spec["interval_seconds"])
+    case_rows = core.case_replay(rows, cases)
+    if len(case_rows) != cases * len(core.RULES):
+        raise SourceError("real_case_count_mismatch:" + spec["id"])
+    full = core.run_full_history_replay(rows)
+    probability = core.run_prequential_probability_diagnostics(
+        rows, bootstrap_replicates=bootstrap_replicates
+    )
+    market = core.market_scenarios(rows, anchors=SCENARIO_ANCHORS)
+    software = core.software_scenarios(rows)
+    market_passed = sum(item["passed"] for item in market)
+    software_passed = sum(item["passed"] for item in software)
+    if market_passed != len(market) or software_passed != len(software):
+        raise SourceError("scenario_contract_failure:" + spec["id"])
+    fixed_rules = []
+    for rule in core.RULES:
+        selected = [row for row in case_rows if row["rule"] == rule]
+        trades = [row for row in selected if row["signal"]]
+        correct = sum(row["signal"] == row["next_body_direction"] for row in trades)
+        fixed_rules.append({
+            "rule": rule,
+            "cases": len(selected),
+            "trades": len(trades),
+            "direction_accuracy": correct / len(trades) if trades else None,
+            "net_pnl_units_assumed_costs": round(sum(row["net_pnl_units"] for row in trades), 8),
+        })
+    return {
+        "status": "PASS",
+        "source": {
+            "id": spec["id"], "repository": spec["repository"], "url": spec["url"],
+            "license_url": spec["license_url"], "license_status": spec["license_status"],
+            "semantics": spec["semantics"], "sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes": len(payload), "timeframe_seconds": spec["interval_seconds"],
+            "timestamp_interpretation": (
+                "explicit offsets normalized to UTC" if spec["naive_timezone"] is None
+                else "naive timestamps interpreted as UTC based on source README; not independently verified"
+            ),
+            "source_timezone_verified": False, "broker_provenance_verified": False,
+            "independent_source_verified": False,
+        },
+        "dataset": quality,
+        "real_data_benchmark": {
+            "timestamp_spread_cases": cases,
+            "rule_comparisons": len(case_rows),
+            "fixed_rules": fixed_rules,
+        },
+        "full_history_replay": full,
+        "prequential_probability_diagnostics": probability,
+        "scenarios": {
+            "market_paths": len(market), "market_passed": market_passed,
+            "software_scenarios": len(software), "software_passed": software_passed,
+            "generated_paths_are_synthetic": True,
+        },
+        "runtime_ms": round((time.perf_counter() - started) * 1000, 3),
+        "decision_output": "NO_TRADE", "predictive_model_validated": False,
+        "deployment_calibrated": False, "live_signal_enabled": False,
+    }, rows
+
+
+def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
+    if spec_a["interval_seconds"] != 300 or spec_b["interval_seconds"] != 300:
+        raise SourceError("same_timeframe_m5_required_for_overlap")
+    by_a = {row["timestamp"]: row for row in rows_a}
+    by_b = {row["timestamp"]: row for row in rows_b}
+    common = sorted(set(by_a).intersection(by_b))
+    if len(common) < minimum_matches:
+        raise SourceError("insufficient_exact_timestamp_overlap:" + str(len(common)))
+    differences = [abs(by_a[stamp]["close"] - by_b[stamp]["close"]) for stamp in common]
+    signs_agree = []
+    for stamp in common:
+        next_stamp = stamp + timedelta(seconds=300)
+        if next_stamp not in by_a or next_stamp not in by_b:
+            continue
+        move_a = by_a[next_stamp]["close"] - by_a[stamp]["close"]
+        move_b = by_b[next_stamp]["close"] - by_b[stamp]["close"]
+        sign_a, sign_b = (move_a > 0) - (move_a < 0), (move_b > 0) - (move_b < 0)
+        signs_agree.append(sign_a == sign_b)
+    return {
+        "status": "PASS", "source_a": spec_a["id"], "source_b": spec_b["id"],
+        "timeframe_seconds": 300, "exact_timestamp_matches": len(common),
+        "overlap_fraction_a": len(common) / len(by_a),
+        "overlap_fraction_b": len(common) / len(by_b),
+        "overlap_start_utc": common[0].isoformat(), "overlap_end_utc": common[-1].isoformat(),
+        "close_abs_delta_median": statistics.median(differences),
+        "close_abs_delta_p95": percentile(differences, 0.95),
+        "close_abs_delta_max": max(differences),
+        "fraction_close_within_0_50": sum(value <= 0.5 for value in differences) / len(differences),
+        "close_to_close_direction_pairs": len(signs_agree),
+        "close_to_close_direction_agreement": sum(signs_agree) / len(signs_agree) if signs_agree else None,
+        "independence_status": "UNVERIFIED: community sources may share upstream data",
+        "datasets_merged": False,
+    }
+
+
+def build_report(results, overlap, min_total_rows):
+    rows_total = sum(item["dataset"]["rows"] for item in results)
+    all_cases = sum(item["real_data_benchmark"]["rule_comparisons"] for item in results)
+    market_paths = sum(item["scenarios"]["market_paths"] for item in results)
+    software_scenarios = sum(item["scenarios"]["software_scenarios"] for item in results)
+    passed = (
+        len(results) == len(SOURCES)
+        and all(item["status"] == "PASS" for item in results)
+        and all(item["dataset"]["rows"] >= spec["min_rows"] for item, spec in zip(results, SOURCES))
+        and rows_total >= min_total_rows
+        and overlap["status"] == "PASS"
+    )
+    return {
+        "schema_version": "1.0.0",
+        "benchmark_kind": "multi_source_real_dataset_diagnostics",
+        "status": "PASS" if passed else "FAIL",
+        "status_semantics": "pipeline and test contracts only; not trading approval",
+        "source_count": len(results), "dataset_rows_sum_not_deduplicated": rows_total,
+        "minimum_total_rows": min_total_rows, "real_data_rule_comparisons": all_cases,
+        "synthetic_market_path_contracts": market_paths,
+        "synthetic_software_contracts": software_scenarios,
+        "sources": results, "overlap_concordance": [overlap],
+        "decision_output": "NO_TRADE", "predictive_model_validated": False,
+        "model_calibrated_for_deployment": False, "live_signal_enabled": False,
+        "live_order_execution_enabled": False,
+        "limitations": [
+            "Rows from different sources are not deduplicated or concatenated; the total is not an independent sample count.",
+            "Community-source broker provenance, timezone semantics, data rights and upstream independence remain unverified.",
+            "The M5 and M1 results are separate tasks; their metrics are not directly comparable without a normalized protocol.",
+            "Costs are assumed, not measured broker spread, commission, slippage, swaps or fills.",
+            "Synthetic scenario contracts are code robustness tests, not extra observed market outcomes.",
+            "Next-candle body direction is not TP-before-SL calibration or executable strategy performance.",
+            "PASS means data and test contracts passed, not that a trading strategy has an edge.",
+        ],
+    }
+
+
+def render_markdown(report):
+    lines = [
+        "# Aurum multi-source benchmark", "",
+        "Pipeline result: " + report["status"], "Decision gate: NO_TRADE", "",
+        "PASS means ingestion/audit/replay/scenario contracts ran; it does not approve a trading model.", "",
+        "| Source | Rows | Timeframe | UTC start | UTC end | SHA-256 | Real rule comparisons | Market contracts | Software contracts |",
+        "|---|---:|---:|---|---|---|---:|---:|---:|",
+    ]
+    for item in report["sources"]:
+        source, data = item["source"], item["dataset"]
+        lines.append("| {} | {} | {}s | {} | {} | {} | {} | {} | {} |".format(
+            source["id"], data["rows"], source["timeframe_seconds"], data["start_utc"],
+            data["end_utc"], source["sha256"], item["real_data_benchmark"]["rule_comparisons"],
+            item["scenarios"]["market_passed"], item["scenarios"]["software_passed"]))
+    overlap = report["overlap_concordance"][0]
+    lines.extend([
+        "", "## Cross-source M5 overlap", "",
+        "Exact shared timestamps: {}; close delta median/p95/max: {:.6f}/{:.6f}/{:.6f} price units.".format(
+            overlap["exact_timestamp_matches"], overlap["close_abs_delta_median"],
+            overlap["close_abs_delta_p95"], overlap["close_abs_delta_max"]),
+        "Direction agreement on matched consecutive bars: {}. Source independence remains UNVERIFIED.".format(
+            "n/a" if overlap["close_to_close_direction_agreement"] is None
+            else format(overlap["close_to_close_direction_agreement"], ".4f")),
+        "", "## Full-history fixed-rule results", "",
+    ])
+    for item in report["sources"]:
+        lines.extend(["### " + item["source"]["id"], "",
+                      "| Rule | Full net PnL (assumed costs) | Tail net PnL | Tail trades | Tail PF |",
+                      "|---|---:|---:|---:|---:|"])
+        for rule, segments in item["full_history_replay"]["rules"].items():
+            full, tail = segments["full_history"], segments["chronological_tail_holdout"]
+            pf = tail["profit_factor"]
+            lines.append("| {} | {:.4f} | {:.4f} | {} | {} |".format(
+                rule, full["net_pnl_units"], tail["net_pnl_units"], tail["trades"],
+                "n/a" if pf is None else format(pf, ".4f")))
+        lines.extend(["", "Prequential direction-probability baselines:", "",
+                      "| Baseline | N | Brier | Log loss | Brier skill vs 0.5 |",
+                      "|---|---:|---:|---:|---:|"])
+        for name, metric in item["prequential_probability_diagnostics"].get("methods", {}).items():
+            skill = metric["brier_skill_vs_constant_50pct"]
+            lines.append("| {} | {} | {:.6f} | {:.6f} | {} |".format(
+                name, metric["n"], metric["brier_score"], metric["log_loss"],
+                "n/a" if skill is None else format(skill, ".6f")))
+        lines.append("")
+    lines.extend(["## Non-negotiable caveats", ""])
+    lines.extend("- " + text for text in report["limitations"])
+    lines.extend(["", "Do not enable live signals or order execution from this benchmark."])
+    return "\\n".join(lines) + "\\n"
+
+
+def run_catalog(output_dir, cases=CASE_COUNT, min_total_rows=100000):
+    if cases < 30:
+        raise ValueError("cases_must_be_at_least_30")
+    started = time.perf_counter()
+    loaded, results = [], []
+    for spec in SOURCES:
+        payload = fetch_source(spec)
+        report, rows = run_one(spec, payload, cases=cases)
+        loaded.append((spec, rows))
+        results.append(report)
+    by_id = {spec["id"]: rows for spec, rows in loaded}
+    by_spec = {spec["id"]: spec for spec, rows in loaded}
+    overlap = compare_m5(
+        by_spec["getdata_xauusd_m5"], by_id["getdata_xauusd_m5"],
+        by_spec["sai_community_xauusd_m5"], by_id["sai_community_xauusd_m5"],
+    )
+    report = build_report(results, overlap, min_total_rows)
+    report["runtime_ms"] = round((time.perf_counter() - started) * 1000, 3)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "multi_source_dataset_benchmark.json").write_text(
+        json.dumps(report, indent=2, allow_nan=False) + "\\n", encoding="utf-8")
+    (output_dir / "multi_source_dataset_benchmark.md").write_text(
+        render_markdown(report), encoding="utf-8")
+    return report
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=Path("multi-source-output"))
+    parser.add_argument("--cases", type=int, default=CASE_COUNT)
+    parser.add_argument("--min-total-rows", type=int, default=100000)
+    args = parser.parse_args(argv)
+    try:
+        result = run_catalog(args.output_dir, args.cases, args.min_total_rows)
+        print(json.dumps({
+            "status": result["status"], "source_count": result["source_count"],
+            "dataset_rows_sum_not_deduplicated": result["dataset_rows_sum_not_deduplicated"],
+            "real_data_rule_comparisons": result["real_data_rule_comparisons"],
+            "synthetic_market_path_contracts": result["synthetic_market_path_contracts"],
+            "synthetic_software_contracts": result["synthetic_software_contracts"],
+            "decision_output": result["decision_output"], "runtime_ms": result["runtime_ms"],
+        }, indent=2))
+        return 0 if result["status"] == "PASS" else 2
+    except Exception as exc:
+        print(json.dumps({"status": "FAIL", "error_type": type(exc).__name__,
+                          "error": str(exc)[:500], "decision_output": "NO_TRADE"},
+                         indent=2), file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
