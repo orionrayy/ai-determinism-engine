@@ -79,7 +79,7 @@ def evaluate_research_readiness(
     unknown = sorted(set(refs) - set(_ALLOWED))
     if unknown:
         raise ValueError("unknown_evidence_reference_fields:" + ",".join(unknown))
-    if release_review_status not in {"PENDING", "APPROVED", "REJECTED"}:
+    if not isinstance(release_review_status, str) or release_review_status not in {"PENDING", "APPROVED", "REJECTED"}:
         raise ValueError("release_review_status_invalid")
 
     checks: dict[str, dict[str, object]] = {}
@@ -105,7 +105,7 @@ def evaluate_research_readiness(
     if release_review_status == "APPROVED" and not review_ref_ok:
         blockers.append("release_review_approval_reference_missing_or_invalid")
 
-    if not technical_gates_passed:
+    if blockers:
         promotion_status = "BLOCKED"
     elif release_review_status == "REJECTED":
         promotion_status = "REJECTED_BY_RELEASE_REVIEW"
@@ -117,7 +117,7 @@ def evaluate_research_readiness(
     return {
         "schema_version": SCHEMA_VERSION,
         "kind": "evidence_gated_research_readiness",
-        "status": "PASS" if technical_gates_passed else "BLOCKED",
+        "status": "PASS" if not blockers else "BLOCKED",
         "checks": checks,
         "technical_gates_passed": technical_gates_passed,
         "release_review_status": release_review_status,
