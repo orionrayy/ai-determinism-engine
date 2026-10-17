@@ -23,8 +23,16 @@ SOURCES = (
         "repository": "getdata-finance/xauusd-5m-ohlcv-metals-historical-data",
         "url": "https://raw.githubusercontent.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/main/XAUUSD_5m.csv",
         "license_url": "https://github.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/blob/main/LICENSE",
-        "license_status": "repository advertises MIT; underlying data rights not independently verified",
-        "semantics": "community XAUUSD M5 OHLCV; broker origin and quote side unverified",
+        "terms_url": "https://www.getdata.finance/documentation",
+        "license_status": "GitHub repository advertises MIT; GetData's published standard licence for purchased data is purchaser-only and restricts embedding raw files in paid products; how the terms relate to this public sample is unresolved",
+        "provenance_claim": "GetData documentation describes broker CFD/cash-style mid-quotes from FXCM and Capital.com; linkage to this exact GitHub sample has not been independently verified",
+        "quote_side_claim": "mid_quote_claimed_in_provider_documentation; exact sample quote-side not independently verified",
+        "commercial_use_approved": False,
+        "underlying_data_rights_verified": False,
+        "broker_provenance_verified": False,
+        "quote_side_verified": False,
+        "timezone_semantics_verified": False,
+        "semantics": "community XAUUSD M5 OHLCV; source/quote semantics not independently verified for this exact sample",
         "interval_seconds": 300, "naive_timezone": None, "min_rows": 10000,
         "max_bytes": 16 * 1024 * 1024, "overlap_group": "m5",
     },
@@ -33,8 +41,16 @@ SOURCES = (
         "repository": "Sai310421/xauusd-data",
         "url": "https://raw.githubusercontent.com/Sai310421/xauusd-data/main/csv/XAUUSD/XAUUSD_M5_2026Q1Q2.csv",
         "license_url": "https://github.com/Sai310421/xauusd-data/blob/main/LICENSE",
-        "license_status": "repository advertises MIT; underlying data rights not independently verified",
-        "semantics": "community mid-quote OHLCV; README claims aggregation from public broker feeds",
+        "terms_url": "https://github.com/Sai310421/xauusd-data",
+        "license_status": "Repository advertises MIT; underlying broker-feed terms, redistribution scope and commercial rights not independently verified",
+        "provenance_claim": "README says 2026 Q1-Q2 bars are aggregated from public broker feeds; specific upstream publishers/feed lineage not independently verified",
+        "quote_side_claim": "mid_quote_claimed_in_repository_README; exact source calculations not independently verified",
+        "commercial_use_approved": False,
+        "underlying_data_rights_verified": False,
+        "broker_provenance_verified": False,
+        "quote_side_verified": False,
+        "timezone_semantics_verified": False,
+        "semantics": "community mid-quote OHLCV; timestamp values are naive in CSV and interpreted as UTC based on README claim",
         "interval_seconds": 300, "naive_timezone": "UTC", "min_rows": 10000,
         "max_bytes": 2 * 1024 * 1024, "overlap_group": "m5",
     },
@@ -43,12 +59,89 @@ SOURCES = (
         "repository": "Sai310421/xauusd-data",
         "url": "https://raw.githubusercontent.com/Sai310421/xauusd-data/main/csv/XAUUSD/XAUUSD_M1_2026Q1Q2.csv",
         "license_url": "https://github.com/Sai310421/xauusd-data/blob/main/LICENSE",
-        "license_status": "repository advertises MIT; underlying data rights not independently verified",
-        "semantics": "community mid-quote OHLCV; README claims aggregation from public broker feeds",
+        "terms_url": "https://github.com/Sai310421/xauusd-data",
+        "license_status": "Repository advertises MIT; underlying broker-feed terms, redistribution scope and commercial rights not independently verified",
+        "provenance_claim": "Same community publisher as the M5 sample; specific upstream publishers/feed lineage not independently verified",
+        "quote_side_claim": "mid_quote_claimed_in_repository_README; exact source calculations not independently verified",
+        "commercial_use_approved": False,
+        "underlying_data_rights_verified": False,
+        "broker_provenance_verified": False,
+        "quote_side_verified": False,
+        "timezone_semantics_verified": False,
+        "semantics": "community mid-quote OHLCV; timestamp values are naive in CSV and interpreted as UTC based on README claim",
         "interval_seconds": 60, "naive_timezone": "UTC", "min_rows": 50000,
         "max_bytes": 8 * 1024 * 1024, "overlap_group": None,
     },
 )
+
+
+def source_use_eligibility(spec):
+    """Separate successful diagnostics from data-use, model, and deployment permissions."""
+    return {
+        "technical_benchmark": "DIAGNOSTIC_ONLY",
+        "source_rights_review": (
+            "VERIFIED" if spec.get("underlying_data_rights_verified", False)
+            else "BLOCKED_PENDING_REVIEW"
+        ),
+        "commercial_use_approved": bool(spec.get("commercial_use_approved", False)),
+        "model_training_for_commercial_service": (
+            "APPROVED" if spec.get("commercial_use_approved", False)
+            and spec.get("underlying_data_rights_verified", False)
+            else "BLOCKED_PENDING_WRITTEN_RIGHTS_CLEARANCE"
+        ),
+        "production_feed_approved": (
+            "APPROVED" if spec.get("commercial_use_approved", False)
+            and spec.get("underlying_data_rights_verified", False)
+            and spec.get("broker_provenance_verified", False)
+            and spec.get("quote_side_verified", False)
+            and spec.get("timezone_semantics_verified", False)
+            else "BLOCKED_PENDING_PROVENANCE_AND_RIGHTS"
+        ),
+        "provenance_claim": spec.get("provenance_claim", "UNVERIFIED"),
+        "quote_side_claim": spec.get("quote_side_claim", "UNVERIFIED"),
+        "underlying_data_rights_verified": bool(spec.get("underlying_data_rights_verified", False)),
+        "broker_provenance_verified": bool(spec.get("broker_provenance_verified", False)),
+        "quote_side_verified": bool(spec.get("quote_side_verified", False)),
+        "timezone_semantics_verified": bool(spec.get("timezone_semantics_verified", False)),
+        "caveat": "Repository visibility or a repository-level licence claim does not by itself establish rights to the underlying broker data.",
+    }
+
+
+def build_readiness_gates(results, overlap, pipeline_status):
+    """Return explicit downstream blockers; never infer trading readiness from CI success."""
+    compatibility = overlap.get("close_relative_delta", {}).get("compatibility_status", "UNKNOWN")
+    provenance_verified = bool(results) and all(
+        item["source"].get("broker_provenance_verified", False)
+        and item["source"].get("timezone_semantics_verified", False)
+        for item in results
+    )
+    rights_verified = bool(results) and all(
+        item["source"].get("underlying_data_rights_verified", False)
+        and item["source"].get("commercial_use_approved", False)
+        for item in results
+    )
+    independent = overlap.get("source_independence_verified", False)
+    blockers = []
+    if compatibility != "COMPARABLE":
+        blockers.append("CROSS_SOURCE_PRICE_LEVEL_DIVERGENCE")
+    if not independent:
+        blockers.append("CROSS_SOURCE_INDEPENDENCE_UNVERIFIED")
+    if not provenance_verified:
+        blockers.append("SOURCE_PROVENANCE_OR_TIMEZONE_UNVERIFIED")
+    if not rights_verified:
+        blockers.append("UNDERLYING_DATA_RIGHTS_OR_COMMERCIAL_USE_UNVERIFIED")
+    return {
+        "pipeline_status": pipeline_status,
+        "diagnostic_benchmark_status": "PASS" if pipeline_status == "PASS" else "FAIL",
+        "source_comparability_gate": "PASS" if compatibility == "COMPARABLE" else "BLOCKED",
+        "cross_source_confirmation_gate": "PASS" if compatibility == "COMPARABLE" and independent else "BLOCKED",
+        "model_training_for_commercial_service": "PASS" if rights_verified and provenance_verified else "BLOCKED",
+        "commercial_product_use": "PASS" if rights_verified and provenance_verified else "BLOCKED",
+        "production_readiness": "PASS" if rights_verified and provenance_verified and compatibility == "COMPARABLE" and independent else "BLOCKED",
+        "live_order_execution": "BLOCKED",
+        "reason_codes": blockers,
+        "interpretation": "CI PASS demonstrates execution of diagnostics only; it does not grant data rights or authorize model training, cross-source confirmation, commercial use, or production trading.",
+    }
 
 
 class SourceError(ValueError):
