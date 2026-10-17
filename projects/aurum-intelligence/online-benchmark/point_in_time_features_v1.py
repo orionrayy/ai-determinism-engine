@@ -237,16 +237,17 @@ def build_asof_features(
             "source_unavailable" if macro_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
         out["coverage_news"] = (
-            "available" if news_24h else
-            "available_zero_events" if news_state == "PASS" else
             "partial_coverage" if news_state == "PARTIAL" else
+            "available" if news_24h and news_state == "PASS" else
+            "available_zero_events" if news_state == "PASS" else
             "source_unavailable" if news_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
         out["feature_family_latest_available_at"] = {
             family: family_latest[family] for family in sorted(family_latest)
         }
         out["feature_lineage"] = {
-            source: {"payload_hashes": tuple(sorted(node["payload_hashes"])),
+            source: {"payload_hashes": tuple(sorted(node["payload_hashes"])[-5:]),
+                     "payload_hash_count_total": len(node["payload_hashes"]),
                      "record_count": node["record_count"]}
             for source, node in sorted(lineage.items())
         }
