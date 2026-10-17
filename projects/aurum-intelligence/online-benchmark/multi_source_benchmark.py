@@ -207,14 +207,61 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
     common = sorted(set(by_a).intersection(by_b))
     if len(common) < minimum_matches:
         raise SourceError("insufficient_exact_timestamp_overlap:" + str(len(common)))
-    differences = [abs(by_a[stamp]["close"] - by_b[stamp]["close"]) for stamp in common]
-    reference_prices = [
-        (abs(by_a[stamp]["close"]) + abs(by_b[stamp]["close"])) / 2.0
+
+    def measure_offset(source_b_minus_a_seconds):
+        offset = timedelta(seconds=source_b_minus_a_seconds)
+        pairs = [
+            (stamp, by_a[stamp], by_b[stamp + offset])
+            for stamp in by_a
+            if stamp + offset in by_b
+        ]
+        if len(pairs) < minimum_matches:
+            return {
+                "source_b_minus_source_a_timestamp_seconds": source_b_minus_a_seconds,
+                "status": "INSUFFICIENT_OVERLAP",
+                "matched_timestamps": len(pairs),
+                "minimum_required": minimum_matches,
+            }
+        absolute_deltas = [
+            abs(row_a["close"] - row_b["close"]) for _, row_a, row_b in pairs
+        ]
+        relative_deltas = [
+            delta / ((abs(row_a["close"]) + abs(row_b["close"])) / 2.0)
+            for delta, (_, row_a, row_b) in zip(absolute_deltas, pairs)
+        ]
+        return {
+            "source_b_minus_source_a_timestamp_seconds": source_b_minus_a_seconds,
+            "status": "PASS",
+            "matched_timestamps": len(pairs),
+            "absolute_close_delta_median_price_units": statistics.median(absolute_deltas),
+            "absolute_close_delta_p95_price_units": percentile(absolute_deltas, 0.95),
+            "relative_close_delta_median_fraction": statistics.median(relative_deltas),
+            "relative_close_delta_p95_fraction": percentile(relative_deltas, 0.95),
+        }
+
+    # Probe likely bar-label/timezone offsets for diagnosis only. Never shift or pool source bars.
+    alignment_offsets = [-25200, -10800, -7200, -3600, -600, -300, 0, 300, 600, 3600, 7200, 10800, 25200]
+    alignment_probe = [measure_offset(offset) for offset in alignment_offsets]
+    exact = next(item for item in alignment_probe if item["source_b_minus_source_a_timestamp_seconds"] == 0)
+    eligible = [item for item in alignment_probe if item["status"] == "PASS"]
+    best = min(eligible, key=lambda item: item["relative_close_delta_median_fraction"])
+    exact_median_relative = exact["relative_close_delta_median_fraction"]
+    best_median_relative = best["relative_close_delta_median_fraction"]
+    if (
+        best["source_b_minus_source_a_timestamp_seconds"] != 0
+        and best_median_relative < exact_median_relative * 0.8
+    ):
+        alignment_diagnosis = "POSSIBLE_TIMESTAMP_LABEL_OR_TIMEZONE_SHIFT"
+    else:
+        alignment_diagnosis = "NO_OBVIOUS_BOUNDED_SHIFT_FIX"
+
+    differences = [
+        abs(by_a[stamp]["close"] - by_b[stamp]["close"])
         for stamp in common
     ]
     relative_differences = [
-        delta / reference if reference > 0 else math.inf
-        for delta, reference in zip(differences, reference_prices)
+        delta / ((abs(by_a[stamp]["close"]) + abs(by_b[stamp]["close"])) / 2.0)
+        for stamp, delta in zip(common, differences)
     ]
     median_relative_delta = statistics.median(relative_differences)
     p95_relative_delta = percentile(relative_differences, 0.95)
@@ -259,6 +306,15 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
             "p95_limit_fraction": p95_relative_limit,
             "compatibility_status": compatibility_status,
             "meaning": "diagnostic price-level compatibility threshold; not a performance or execution-cost measure",
+        },
+        "temporal_alignment_probe": {
+            "tested_offsets_seconds": alignment_offsets,
+            "results": alignment_probe,
+            "best_offset_seconds_diagnostic_only": best["source_b_minus_source_a_timestamp_seconds"],
+            "best_median_relative_delta_fraction": best_median_relative,
+            "exact_timestamp_median_relative_delta_fraction": exact_median_relative,
+            "diagnosis": alignment_diagnosis,
+            "automatic_timestamp_shifting": False,
         },
         "close_to_close_direction_pairs": len(signs_agree),
         "close_to_close_direction_agreement": sum(signs_agree) / len(signs_agree) if signs_agree else None,
