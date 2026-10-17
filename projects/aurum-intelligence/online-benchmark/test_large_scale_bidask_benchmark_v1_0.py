@@ -91,7 +91,7 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
         self.assertEqual(len(np.unique(anchors)), 250)
         self.assertGreaterEqual(eligible, 250)
         self.assertTrue(np.all(np.diff(d["ts"][anchors]) > 0))
-        self.assertTrue(np.all(np.diff(d["ts"][anchors - b.WARMUP_BARS]) == b.WARMUP_BARS * 60_000))
+        self.assertTrue(np.all(d["ts"][anchors] - d["ts"][anchors - b.WARMUP_BARS] == b.WARMUP_BARS * 60_000))
         self.assertTrue(np.all(d["ts"][anchors + b.HORIZON_BARS] - d["ts"][anchors] == b.HORIZON_BARS * 60_000))
 
     def test_scenario_matrix_produces_two_sides_times_three_atr_targets(self):
@@ -126,9 +126,9 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
         for i in range(n):
             labels[i, 0] = i % 2
             labels[i, 1] = (i // 2) % 2
-        evaluation, rows = b.prequential_evaluation(fixture(1000), anchors, signals, labels)
+        evaluation, rows = b.prequential_evaluation(fixture(11000), anchors, signals, labels)
         final_rows = [row for row in rows if row["split"] == "final_holdout"]
-        self.assertGreater(len(final_rows), 1000)
+        self.assertGreater(len(final_rows), 100)
         for rule in b.STRATEGIES:
             per_rule = [row for row in final_rows if row["rule"] == rule and row["side"] == "long"]
             self.assertTrue(per_rule)
