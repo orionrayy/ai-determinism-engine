@@ -19,7 +19,7 @@ concurrency:
 jobs:
   online-dataset-benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -27,6 +27,10 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+      - name: Install bounded Parquet reader for CC-BY tick audit
+        run: >-
+          python -m pip install --disable-pip-version-check --no-warn-script-location
+          "pandas==2.2.3" "pyarrow==21.0.0"
       - name: Test temporal calibration component and validate 240 scenarios
         working-directory: projects/aurum-intelligence/temporal-calibration-v1.3
         run: |
@@ -50,6 +54,10 @@ jobs:
           python projects/aurum-intelligence/online-benchmark/ci_benchmark.py
           --output-dir /tmp/aurum-online-benchmark
           --cases 50 --scenario-anchors 5 --min-rows 1000
+      - name: Audit third-source public Bid/Ask tick dataset
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/tick_bidask_benchmark_v1_0.py
+          --output-dir /tmp/aurum-online-benchmark
       - name: Enforce live data and test-count requirements
         run: |
           python - <<'PY'
@@ -130,6 +138,45 @@ jobs:
               'tp_sl_ambiguous_same_bar_events': tp['ambiguous_same_bar_events'],
               'decision_output': r['decision_output']}, indent=2))
           PY
+      - name: Enforce third-source tick-data contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/aurum-online-benchmark/tick_bidask_benchmark.json')
+          r = json.loads(path.read_text(encoding='utf-8'))
+          assert r['status'] == 'PASS', r
+          assert r['dataset']['license'] == 'CC-BY-4.0', r['dataset']
+          assert 'CarlosSilva1/xauusd-ticks' in r['dataset']['attribution'], r['dataset']
+          assert r['dataset']['rows'] >= 1000, r['dataset']
+          assert r['dataset']['bytes_downloaded'] <= 128 * 1024 * 1024, r['dataset']
+          assert r['dataset']['raw_tick_data_redistributed'] is False, r['dataset']
+          assert r['spread']['tick_count'] == r['dataset']['rows'], r['spread']
+          assert r['tick_quality']['non_finite_or_missing_rows'] == 0, r['tick_quality']
+          assert r['tick_quality']['non_positive_quote_count'] == 0, r['tick_quality']
+          assert r['tick_quality']['crossed_quote_count'] == 0, r['tick_quality']
+          c = r['cross_source_comparison']
+          assert c['status'] == 'THIRD_SOURCE_DIAGNOSTIC_ONLY', c
+          assert c['shared_timestamps'] >= 1000, c
+          assert c['automatic_timestamp_shift'] is False, c
+          assert c['automatic_price_rescale'] is False, c
+          assert c['automatic_source_promotion'] is False, c
+          assert set(c['basis_comparisons']) == {'bid', 'mid', 'ask'}, c
+          assert r['decision_output'] == 'NO_TRADE', r
+          assert not r['validated_model'] and not r['calibrated_model'] and not r['live_signal_enabled'], r
+          print(json.dumps({
+            'status': r['status'],
+            'tick_rows': r['dataset']['rows'],
+            'parquet_parts': len(r['dataset']['files']),
+            'downloaded_bytes': r['dataset']['bytes_downloaded'],
+            'tick_m5_bars': c['tick_derived_m5_bars'],
+            'primary_overlap_bars': c['shared_timestamps'],
+            'spread_median_price_units': r['spread']['spread_price_units']['median'],
+            'spread_p95_price_units': r['spread']['spread_price_units']['p95'],
+            'mid_close_difference_p95_bps': c['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
+            'decision_output': r['decision_output']
+          }, indent=2))
+          PY
       - name: Add benchmark report to job summary
         if: always()
         run: |
@@ -139,6 +186,9 @@ jobs:
           fi
           if [ -f /tmp/aurum-online-benchmark/online_dataset_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/online_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/tick_bidask_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/tick_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
