@@ -245,6 +245,14 @@ jobs:
             'POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED',
             'NO_NEAR_EXACT_OHLC_MATCH_EVIDENCE_NOT_PROOF_OF_INDEPENDENCE'
           }, lineage
+          gates = r['source_qualification_gates']
+          assert set(gates) == {'primary_price', 'secondary_price', 'tick_bidask'}, gates
+          for source_id, gate in gates.items():
+            assert gate['research_qualification_status'] == 'REFERENCE_ONLY', (source_id, gate)
+            assert gate['execution_qualification_status'] == 'BLOCKED', (source_id, gate)
+            assert gate['source_promotion_allowed'] is False, (source_id, gate)
+            assert gate['live_execution_authorized'] is False, (source_id, gate)
+            assert len(gate['research_missing_evidence']) == 5, (source_id, gate)
           assert r['decision_output'] == 'NO_TRADE', r
           assert not r['validated_model'] and not r['calibrated_model'] and not r['live_signal_enabled'], r
           print(json.dumps({
