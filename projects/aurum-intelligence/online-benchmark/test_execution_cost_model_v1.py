@@ -176,7 +176,7 @@ class ExecutionCostModelTests(unittest.TestCase):
         )
         self.assertEqual(result["gross_quote_side_pnl"], "-100")
         self.assertEqual(result["pnl_decomposition"]["spread_drag_included_in_quote_side_pnl"], "100")
-        self.assertEqual(result["net_pnl"], "-100")
+        self.assertEqual(result["net_pnl"], "-100.0")
 
 
 if __name__ == "__main__":
