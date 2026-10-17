@@ -275,6 +275,29 @@ def select_historical_gkg_archives(
     return candidates, discovered_count
 
 
+def archive_coverage_intervals(
+    manifests: Sequence[SourceManifest],
+) -> tuple[tuple[datetime, datetime], ...]:
+    """Return observed 15-minute archive batches; gaps are intentionally preserved.
+
+    These intervals represent only archives actually acquired and parsed. A large
+    record count from sparse archives is not evidence of continuous news coverage.
+    """
+    intervals: set[tuple[datetime, datetime]] = set()
+    for manifest in manifests:
+        if manifest.source_id != "gdelt-gkg":
+            continue
+        parsed = urlparse(manifest.source_url)
+        if parsed.scheme != "https" or parsed.hostname != OFFICIAL_HOST:
+            raise ValueError("gdelt_manifest_source_not_allowlisted")
+        name = parsed.path.rsplit("/", 1)[-1]
+        if not name.endswith(".gkg.csv.zip") or len(name) < 14 or not name[:14].isdigit():
+            raise ValueError("invalid_gdelt_archive_manifest_timestamp")
+        start = datetime.strptime(name[:14], "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
+        intervals.add((start, start + BATCH_INTERVAL))
+    return tuple(sorted(intervals))
+
+
 def acquire_historical_gkg(
     start: datetime, end: datetime, *, target_records: int = 100_000,
     max_archives: int = MAX_ARCHIVES_PER_RUN, aggregate_cap: int = MAX_AGGREGATE_BYTES,
