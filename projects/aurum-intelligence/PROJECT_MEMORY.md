@@ -133,3 +133,12 @@ This section supersedes older version-specific statements above where they diffe
 3. Cross-check exact M1/M5 candles/price sides against that licensed feed; retain independent series rather than normalizing away the current discrepancy.
 4. Implement execution-aware costs/fill handling and evaluate exact TP-before-SL target on matured outcomes, independent chronological regimes and an untouched final holdout.
 5. Only after evidence gates pass, proceed to paper trading, end-to-end Telegram/provider acceptance, security/risk review and a separate decision on production order capability.
+
+
+## Target-specific TP-before-SL OOS benchmark — 2026-10-17
+
+- New candidate implementation is on stacked draft PR #165 branch `feature/aurum-multi-source-benchmark`: `online-benchmark/barrier_oos_benchmark.py`, tests, runner integration, report and CI assertions.
+- The diagnostic target is TP before SL within 12 bars with ATR(14), TP=1.5 ATR, SL=1 ATR, next-bar-open entry, conservative stop-first same-bar ambiguity, gap-open checks, and timeout failure labels. Long and short are separate targets.
+- Chronology contract: train/calibration/final holdout = 60/20/20; scaler/model fit on training only; training labels must mature before calibration starts; calibrator fit uses middle-period OOS forecasts whose outcomes mature before final holdout; no final-holdout model selection. Platt helper and proper-score/reliability/block-bootstrap diagnostics are reused from `temporal-calibration-v1.3`.
+- This remains diagnostic only. Data source rows have community OHLCV semantics; provenance, rights, broker quote side and actual fills are not verified. Do not promote or claim calibrated trading skill from it; maintain `NO_TRADE`, `deployment_calibrated=false`, `validated=false`, `live_signal_enabled=false`, and `live_order_execution_enabled=false`.
+- New tests and CI acceptance rules were committed, but a fresh hosted run and artifact review are still required before this checkpoint may be marked green. See `ONLINE_MULTI_SOURCE_BENCHMARK.md` and the dated entry in `PROGRESS_LOG.md`.
