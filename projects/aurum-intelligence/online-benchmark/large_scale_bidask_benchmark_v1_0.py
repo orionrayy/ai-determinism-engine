@@ -359,6 +359,8 @@ def market_quality(dataset):
         "max_chronological_interval_minutes": int(np.max(gaps)) if len(gaps) else 0,
         "zero_range_mid_bars": int(zero_range.sum()),
         "zero_range_fraction": float(zero_range.mean()),
+        "weekday_active_nonflat_rows": int((weekdays & ~zero_range).sum()),
+        "all_active_nonflat_rows": int((~zero_range).sum()),
         "invalid_or_crossed_quote_rows": 0,
         "spread_close_price_units": summarize(dataset["ac"] - dataset["bc"]),
         "spread_close_bps_mid": summarize((dataset["ac"] - dataset["bc"]) / ((dataset["ac"] + dataset["bc"]) / 2.0) * 10_000.0),
@@ -398,7 +400,7 @@ def indicators(dataset):
     }
 
 
-def candidate_anchor_indices(dataset, required_count=MIN_SCENARIO_ANCHORS):
+def candidate_anchor_indices(dataset, required_count=MIN_SCENARIO_ANCHORS, atr_values=None):
     ts = dataset["ts"]
     n = len(ts)
     if n <= WARMUP_BARS + HORIZON_BARS:
@@ -408,6 +410,11 @@ def candidate_anchor_indices(dataset, required_count=MIN_SCENARIO_ANCHORS):
     bad_prefix = np.concatenate((np.asarray([0], dtype=np.int64), np.cumsum(~edge_ok, dtype=np.int64)))
     anchors = np.arange(WARMUP_BARS, n - HORIZON_BARS, dtype=np.int64)
     continuous = (bad_prefix[anchors + HORIZON_BARS] - bad_prefix[anchors - WARMUP_BARS]) == 0
+    if atr_values is not None:
+        atr_values = np.asarray(atr_values, dtype=np.float64)
+        if len(atr_values) != n:
+            raise BenchmarkError("atr_array_length_mismatch")
+        continuous &= np.isfinite(atr_values[anchors]) & (atr_values[anchors] > 0)
     eligible = anchors[continuous]
     if len(eligible) < required_count:
         raise BenchmarkError(f"real_contiguous_windows_below_20000_gate:{len(eligible)}")
@@ -586,6 +593,7 @@ def _moving_block_ci(improvements, replicates=BOOTSTRAP_REPLICATES, block_length
 
 def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, minimum_scored_events=MIN_SCENARIO_ANCHORS, minimum_final_test_events=1000):
     counts = {(rule, side): [0, 0] for rule in STRATEGIES for side in (-1, 1)}
+    global_counts = [0, 0]  # matured event count, matured TP-before-SL wins
     pending = []
     pending_cursor = 0
     prediction_rows = []
@@ -595,6 +603,7 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
     ambiguous_count = 0
     final_test_start = int(len(anchors) * 0.80)
     frozen_final_test_counts = None
+    frozen_final_test_global_counts = None
     for k, anchor in enumerate(anchors):
         anchor = int(anchor)
         # Freeze the probability baseline at the first final-test timestamp.
@@ -604,11 +613,15 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
                 _, rule, side, label = pending[pending_cursor]
                 counts[(rule, side)][0] += 1
                 counts[(rule, side)][1] += int(label)
+                global_counts[0] += 1
+                global_counts[1] += int(label)
                 pending_cursor += 1
             if k == final_test_start:
                 frozen_final_test_counts = {key: list(value) for key, value in counts.items()}
+                frozen_final_test_global_counts = list(global_counts)
         elif frozen_final_test_counts is not None:
             counts = {key: list(value) for key, value in frozen_final_test_counts.items()}
+            global_counts = list(frozen_final_test_global_counts)
         for rule in STRATEGIES:
             direction = int(signals[rule][k])
             if direction == 0:
@@ -622,6 +635,7 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
                 continue
             n, wins = counts[(rule, direction)]
             probability = (wins + 1.0) / (n + 2.0)
+            global_prior_probability = (global_counts[1] + 1.0) / (global_counts[0] + 2.0)
             row = {
                 "anchor_index": anchor,
                 "maturity_index": anchor + HORIZON_BARS,
@@ -629,6 +643,7 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
                 "side": "long" if direction == 1 else "short",
                 "side_index": side_idx,
                 "probability": probability,
+                "global_prior_probability": global_prior_probability,
                 "label": raw_label,
                 "prior_matured_labels": n,
                 "split": "development" if k < int(len(anchors) * 0.70) else (
@@ -641,7 +656,13 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
     # Score all prequential predictions by rule and by chronological partition.
     probs = np.asarray([row["probability"] for row in prediction_rows], dtype=np.float64)
     labels = np.asarray([row["label"] for row in prediction_rows], dtype=np.int8)
+    global_probs = np.asarray([row["global_prior_probability"] for row in prediction_rows], dtype=np.float64)
     improvements = (0.5 - labels) ** 2 - (probs - labels) ** 2
+    global_improvements = (global_probs - labels) ** 2 - (probs - labels) ** 2
+    aggregate_metrics = _metric_pack(probs, labels)
+    global_baseline_metrics = _metric_pack(global_probs, labels)
+    global_baseline_brier = global_baseline_metrics["brier"]
+    model_brier = aggregate_metrics["brier"]
     output = {
         "status": "DIAGNOSTIC_ONLY",
         "matured_label_rule": "Only outcomes whose end index is strictly before the next decision index update development/calibration priors; the final 20% test freezes those priors at its first timestamp and never consumes any final-test labels.",
@@ -651,8 +672,20 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
         "ambiguous_same_bar_events_excluded": ambiguous_count,
         "binary_scored_strategy_events": len(prediction_rows),
         "prediction_event_rows_are_raw_price_free": True,
-        "aggregate": _metric_pack(probs, labels),
+        "aggregate": {
+            **aggregate_metrics,
+            "brier_improvement_vs_global_matured_label_baseline": (
+                float(global_baseline_brier - model_brier)
+                if global_baseline_brier is not None and model_brier is not None else None
+            ),
+            "brier_skill_vs_global_matured_label_baseline": (
+                float(1.0 - model_brier / global_baseline_brier)
+                if global_baseline_brier is not None and global_baseline_brier > 0 and model_brier is not None else None
+            ),
+        },
+        "global_prequential_base_rate_baseline": global_baseline_metrics,
         "moving_block_bootstrap_brier_improvement_vs_constant_0_5": _moving_block_ci(improvements),
+        "moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate": _moving_block_ci(global_improvements, seed=20261018),
         "by_rule": {},
         "chronological_partitions": {},
     }
@@ -660,8 +693,22 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side, min
         output["by_rule"][rule] = _metric_pack([row["probability"] for row in rows], [row["label"] for row in rows])
     for partition in ("development", "calibration", "final_holdout"):
         rows = [row for row in prediction_rows if row["split"] == partition]
+        partition_metrics = _metric_pack([row["probability"] for row in rows], [row["label"] for row in rows])
+        global_partition_metrics = _metric_pack(
+            [row["global_prior_probability"] for row in rows], [row["label"] for row in rows]
+        )
+        p_brier = partition_metrics["brier"]
+        g_brier = global_partition_metrics["brier"]
         output["chronological_partitions"][partition] = {
-            **_metric_pack([row["probability"] for row in rows], [row["label"] for row in rows]),
+            **partition_metrics,
+            "global_matured_label_baseline": global_partition_metrics,
+            "brier_improvement_vs_global_matured_label_baseline": (
+                float(g_brier - p_brier) if g_brier is not None and p_brier is not None else None
+            ),
+            "brier_skill_vs_global_matured_label_baseline": (
+                float(1.0 - p_brier / g_brier)
+                if g_brier is not None and g_brier > 0 and p_brier is not None else None
+            ),
             "endpoints_are_chronological": True,
             "parameter_fitting_on_partition": False,
             "final_test_priors_frozen": partition == "final_holdout",
@@ -690,7 +737,7 @@ def _write_signal_sample(path, dataset, rows, maximum=250):
     if len(rows) > maximum:
         indices = np.linspace(0, len(rows) - 1, maximum).round().astype(int)
         rows = [rows[int(idx)] for idx in indices]
-    fields = ("scenario_id", "timestamp_utc", "rule", "side", "probability", "label", "prior_matured_labels", "split")
+    fields = ("scenario_id", "timestamp_utc", "rule", "side", "probability", "global_prior_probability", "label", "prior_matured_labels", "split")
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -701,6 +748,7 @@ def _write_signal_sample(path, dataset, rows, maximum=250):
                 "rule": row["rule"],
                 "side": row["side"],
                 "probability": f'{row["probability"]:.8f}',
+                "global_prior_probability": f'{row["global_prior_probability"]:.8f}',
                 "label": row["label"],
                 "prior_matured_labels": row["prior_matured_labels"],
                 "split": row["split"],
@@ -719,8 +767,12 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         raise BenchmarkError(
             f"weekday_candle_contract_failed:{quality['rows_mon_fri_utc']}<{required_candles}"
         )
+    if quality["weekday_active_nonflat_rows"] < required_candles:
+        raise BenchmarkError(
+            f"weekday_active_candle_contract_failed:{quality['weekday_active_nonflat_rows']}<{required_candles}"
+        )
     features = indicators(dataset)
-    anchors, eligible_windows = candidate_anchor_indices(dataset, required_scenarios)
+    anchors, eligible_windows = candidate_anchor_indices(dataset, required_scenarios, features["atr14"])
     signals = signals_for_anchors(dataset, anchors, features)
     labels_by_anchor_side, scenario_outcomes, scenario_count, scenario_samples = scenario_matrix(dataset, anchors, features)
     evaluation, prediction_rows = prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side)
@@ -768,7 +820,8 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
             "minimum_unique_real_timestamp_scenarios_required": required_scenarios,
             "minimum_binary_scored_strategy_events_required": required_scenarios,
             "selected_unique_anchor_timestamps": unique_anchor_timestamps,
-            "eligible_real_contiguous_windows": eligible_windows,
+            "selected_anchor_timestamps_with_valid_atr": int(np.sum(np.isfinite(features["atr14"][anchors]) & (features["atr14"][anchors] > 0))),
+            "eligible_real_contiguous_windows_with_valid_atr": eligible_windows,
             "anchor_contexts": anchor_count,
             "lookback_warmup_bars": WARMUP_BARS,
             "entry_convention": "signals evaluated at completed anchor close; entries use next M1 open",
@@ -823,7 +876,8 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         f"- Dataset: {DATASET_ID}; price sides: Bid + Ask; resolution: M1; timezone: UTC.",
         f"- Window: {audit_meta['first_month']} through {audit_meta['last_month']}; {audit_meta['selected_months']} calendar months.",
         f"- Paired valid Bid/Ask candles: {len(dataset):,}; minimum: {required_candles:,}.",
-        f"- Unique real timestamp windows: {unique_anchor_timestamps:,}; minimum: {required_scenarios:,}.",
+        f"- Weekday active non-flat Bid/Ask candles: {quality['weekday_active_nonflat_rows']:,}; minimum: {required_candles:,}.",
+        f"- Unique real timestamp windows with valid ATR: {unique_anchor_timestamps:,}; minimum: {required_scenarios:,}.",
         f"- TP/SL market-path scenarios: {scenario_count:,}; minimum: {required_scenarios:,}.",
         f"- Binary-scored directional strategy events: {evaluation['binary_scored_strategy_events']:,}.",
         f"- Total bounded monthly downloads: {total_bytes:,} bytes; raw prices are not redistributed.",
@@ -841,9 +895,11 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         "",
         f"- Strategy events eligible: {evaluation['strategy_event_candidates']:,}; neutral abstentions: {evaluation['neutral_abstentions']:,}.",
         f"- Binary-scored strategy events: {evaluation['binary_scored_strategy_events']:,}; ambiguous same-bar events excluded: {evaluation['ambiguous_same_bar_events_excluded']:,}.",
-        f"- Prequential Brier: {evaluation['aggregate']['brier']:.6f}; constant-0.5 Brier: {evaluation['aggregate']['constant_0_5_brier']:.6f}; descriptive skill: {evaluation['aggregate']['brier_skill_vs_0_5']:.6f}.",
+        f"- Prequential Brier: {evaluation['aggregate']['brier']:.6f}; constant-0.5 Brier: {evaluation['aggregate']['constant_0_5_brier']:.6f}; skill vs constant-0.5: {evaluation['aggregate']['brier_skill_vs_0_5']:.6f}.",
+        f"- Global matured-label baseline Brier: {evaluation['global_prequential_base_rate_baseline']['brier']:.6f}; model skill vs global baseline: {evaluation['aggregate']['brier_skill_vs_global_matured_label_baseline']:.6f}.",
         f"- ECE/MCE (descriptive): {evaluation['aggregate']['reliability']['ece_descriptive']:.6f} / {evaluation['aggregate']['reliability']['mce_descriptive']:.6f}.",
         f"- Moving-block 95% interval for mean Brier improvement over constant 0.5: {evaluation['moving_block_bootstrap_brier_improvement_vs_constant_0_5']['ci95']}.",
+        f"- Moving-block 95% interval for mean Brier improvement over global matured-label baseline: {evaluation['moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate']['ci95']}.",
         "",
         "### Chronological partitions (not used for tuning)",
         "",
