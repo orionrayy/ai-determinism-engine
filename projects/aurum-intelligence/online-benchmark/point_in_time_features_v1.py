@@ -171,19 +171,19 @@ def build_asof_features(
         news_state = _source_state(statuses, "news")
         out["coverage_cot"] = "available" if latest_cot else (
             "not_yet_available" if cot_state in {"PASS", "PARTIAL"} else
-            "partial_coverage" if cot_state == "NOT_MET" else "source_unavailable" if cot_state in {
-                "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"
+            "source_unavailable" if cot_state in {
+                "NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"
             } else "unknown"
         )
         out["coverage_macro"] = "available" if latest_macro_values else (
             "not_yet_available" if macro_state in {"PASS", "PARTIAL"} else
-            "source_unavailable" if macro_state in {"FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
+            "source_unavailable" if macro_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
         out["coverage_news"] = (
             "available" if news_24h else
             "available_zero_events" if news_state == "PASS" else
-            "partial_coverage" if news_state in {"PARTIAL", "NOT_MET"} else
-            "source_unavailable" if news_state in {"FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
+            "partial_coverage" if news_state == "PARTIAL" else
+            "source_unavailable" if news_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
         lineage: dict[str, dict[str, object]] = {}
         for item in visible:
