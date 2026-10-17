@@ -18,11 +18,11 @@ from external_context_schema_v1 import AcquisitionResult, ExternalObservation, S
 
 OFFICIAL_HOST = "data.gdeltproject.org"
 MASTER_URL = "https://data.gdeltproject.org/gdeltv2/masterfilelist.txt"
-MAX_PAYLOAD_BYTES = 32 * 1024 * 1024
+MAX_PAYLOAD_BYTES = 64 * 1024 * 1024
 # The official GDELT 2.0 master list is currently >120 MB. Keep it bounded,
 # but large enough to select historical 15-minute GKG archives.
 MAX_MASTER_BYTES = 160 * 1024 * 1024
-MAX_ARCHIVE_BYTES = 24 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 48 * 1024 * 1024
 MAX_AGGREGATE_BYTES = 800 * 1024 * 1024
 MAX_RECORDS_PER_ARCHIVE = 500_000
 MAX_ARCHIVES_PER_RUN = 100
@@ -213,8 +213,14 @@ def _download_archive_with_budget(
         return _bounded_get(url, cap), None
     except ValueError as exc:
         code = str(exc)
-        if code in {"content_length_exceeds_limit", "download_exceeds_limit"} and prior_observation_count > 0:
-            return None, "aggregate_byte_cap_reached_before_next_archive"
+        if code in {"content_length_exceeds_limit", "download_exceeds_limit"}:
+            # Distinguish a single archive that exceeds its own bound from exhaustion
+            # of the whole remaining budget. The old branch mislabeled both cases as
+            # aggregate exhaustion and stopped the entire multi-year sample early.
+            if remaining_bytes > MAX_ARCHIVE_BYTES:
+                return None, "archive_skipped_per_archive_byte_cap"
+            if prior_observation_count > 0:
+                return None, "aggregate_byte_cap_reached_before_next_archive"
         raise
 
 
@@ -296,7 +302,10 @@ def acquire_historical_gkg(
             )
             if stop_warning:
                 acquisition_warnings.append(stop_warning)
-                break
+                if stop_warning == "aggregate_byte_cap_reached_before_next_archive":
+                    break
+                # One oversized/corrupt archive must not truncate all later dates.
+                continue
             if archive is None:
                 acquisition_warnings.append("archive_download_returned_no_payload")
                 break
@@ -326,15 +335,27 @@ def acquire_historical_gkg(
                 source_manifest.payload_bytes, len(parsed), len(parsed), source_manifest.provider_version,
                 source_manifest.rights_status, source_manifest.provenance_status))
             observations.extend(parsed)
-            if len(observations) >= target_records:
-                break
+            # Do not stop on raw rows: repeated document snapshots are deduplicated
+            # after acquisition, and an early stop would bias the sample toward the
+            # oldest archives instead of preserving temporal spread.
         deduped = deduplicate_snapshots(observations)
         archive_window_complete = len(candidates) == discovered_archive_count and not acquisition_warnings
-        if len(deduped) >= target_records and archive_window_complete:
+        sampled_archive_count = len(candidates)
+        processed_archive_count = len(manifests)
+        sampled_window_coverage = (
+            processed_archive_count / sampled_archive_count if sampled_archive_count else 0.0
+        )
+        # The candidate set is intentionally a bounded deterministic sample of the
+        # 85k+ archive window. Full-window coverage is not a realistic CI gate; PASS
+        # means the selected sample was acquired without skips and met the real-data
+        # target. Coverage fields remain explicit so this is never called a complete
+        # archive census.
+        sample_completed = (
+            processed_archive_count == sampled_archive_count and not acquisition_warnings
+        )
+        if len(deduped) >= target_records and sample_completed:
             status = "PASS"
-        elif len(deduped) >= target_records:
-            status = "PARTIAL"
-        elif len(deduped) > 0:
+        elif len(deduped) >= target_records or len(deduped) > 0:
             status = "PARTIAL"
         else:
             status = "NOT_MET"
@@ -342,7 +363,10 @@ def acquire_historical_gkg(
             warnings=(f"real_unique_observations={len(deduped)}", f"aggregate_bytes={total_bytes}",
                       f"target_records={target_records}",
                       f"discovered_archives={discovered_archive_count}",
-                      f"sampled_archives={len(candidates)}",
+                      f"sampled_archives={sampled_archive_count}",
+                      f"processed_sampled_archives={processed_archive_count}",
+                      f"sampled_window_coverage={sampled_window_coverage:.6f}",
+                      f"sample_completed={str(sample_completed).lower()}",
                       f"archive_window_complete={str(archive_window_complete).lower()}",
                       "sampling_design=deterministic_evenly_spaced_archive_sample",
                       "no_article_body_retained", *acquisition_warnings))
