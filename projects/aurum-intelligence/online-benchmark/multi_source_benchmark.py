@@ -317,7 +317,7 @@ def render_markdown(report):
     lines.extend(["## Non-negotiable caveats", ""])
     lines.extend("- " + text for text in report["limitations"])
     lines.extend(["", "Do not enable live signals or order execution from this benchmark."])
-    return "\\n".join(lines) + "\\n"
+    return "\n".join(lines) + "\n"
 
 
 def run_catalog(output_dir, cases=CASE_COUNT, min_total_rows=100000):
@@ -340,7 +340,7 @@ def run_catalog(output_dir, cases=CASE_COUNT, min_total_rows=100000):
     report["runtime_ms"] = round((time.perf_counter() - started) * 1000, 3)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "multi_source_dataset_benchmark.json").write_text(
-        json.dumps(report, indent=2, allow_nan=False) + "\\n", encoding="utf-8")
+        json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     (output_dir / "multi_source_dataset_benchmark.md").write_text(
         render_markdown(report), encoding="utf-8")
     return report
