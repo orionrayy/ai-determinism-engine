@@ -80,7 +80,7 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
         q = b.market_quality(d)
         self.assertEqual(q["row_count"], 1000)
         self.assertEqual(q["invalid_or_crossed_quote_rows"], 0)
-        self.assertEqual(q["non_minute_gaps"], 0)
+        self.assertEqual(q["non_minute_intervals_including_closed_sessions"], 0)
         self.assertGreater(q["spread_close_price_units"]["median"], 0)
         self.assertGreater(q["spread_close_bps_mid"]["p95"], 0)
 
@@ -126,7 +126,7 @@ class LargeScaleBidAskBenchmarkTests(unittest.TestCase):
         for i in range(n):
             labels[i, 0] = i % 2
             labels[i, 1] = (i // 2) % 2
-        evaluation, rows = b.prequential_evaluation(fixture(11000), anchors, signals, labels)
+        evaluation, rows = b.prequential_evaluation(fixture(11000), anchors, signals, labels, minimum_scored_events=100)
         final_rows = [row for row in rows if row["split"] == "final_holdout"]
         self.assertGreater(len(final_rows), 100)
         for rule in b.STRATEGIES:
