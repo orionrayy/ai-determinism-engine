@@ -332,6 +332,32 @@ jobs:
                   f.write(f"| {name} | {a.get('status')} | {a.get('calibration_status', 'n/a')} | {metric.get('brier_score', 'n/a')} | {interval} |\n")
               f.write('\nPipeline success is not proof of data scale, calibrated edge, profitability, or deployment readiness.\n')
           PY
+      - name: Emit evidence-gated research readiness report
+        if: always()
+        run: |
+          python projects/serevex-quant/online-benchmark/run_research_readiness_v1.py \
+            --benchmark-dir /tmp/serevex-online-benchmark \
+            --calibration-contracts /tmp/serevex-calibration-contracts.json \
+            --run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --output-dir /tmp/serevex-online-benchmark/research-readiness
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/serevex-online-benchmark/research-readiness/research_readiness.json')
+          report = json.loads(path.read_text(encoding='utf-8'))
+          assert report['status'] in {'PASS', 'BLOCKED'}, report
+          assert report['decision_output'] == 'NO_TRADE', report
+          assert report['live_signal_enabled'] is False, report
+          assert report['live_order_execution_enabled'] is False, report
+          assert report['promotion_status'] != 'RELEASE_REVIEW_APPROVED_DEPLOYMENT_STILL_DISABLED', report
+          print(json.dumps({
+              'readiness_status': report['status'],
+              'promotion_status': report['promotion_status'],
+              'statuses': {k: v['status'] for k, v in report['checks'].items()},
+              'blockers': report['blockers'],
+              'decision_output': report['decision_output']
+          }, indent=2))
+          PY
       - name: Add benchmark report to job summary
         if: always()
         run: |
@@ -350,6 +376,10 @@ jobs:
           fi
           if [ -f /tmp/serevex-online-benchmark/external-context/external_context_benchmark.md ]; then
             cat /tmp/serevex-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/serevex-online-benchmark/research-readiness/research_readiness.md ]; then
+            echo "## Evidence-gated research readiness" >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/serevex-online-benchmark/research-readiness/research_readiness.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
