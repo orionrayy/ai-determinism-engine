@@ -19,7 +19,7 @@ concurrency:
 jobs:
   online-dataset-benchmark:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -138,6 +138,62 @@ jobs:
               'tp_sl_ambiguous_same_bar_events': tp['ambiguous_same_bar_events'],
               'decision_output': r['decision_output']}, indent=2))
           PY
+      - name: Run 700k M1 candles and 20k distinct real timestamp scenarios
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/large_scale_bidask_benchmark_v1_0.py
+          --output-dir /tmp/aurum-online-benchmark/large-scale
+      - name: Enforce 700k-candle and 20k-real-scenario minimums
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          assert r['status'] == 'PASS', r
+          d = r['dataset']
+          c = r['scenario_contract']
+          e = r['prequential_probability_evaluation']
+          assert d['dataset_rows'] >= 700000, d
+          assert d['paired_valid_bid_ask_candles'] >= 700000, d
+          assert d['minimum_candles_required'] >= 700000, d
+          assert d['minimum_dataset_rows_required'] >= 20000, d
+          assert d['months_requested'] >= 24 and len(d['monthly_manifest']) >= 24, d
+          assert d['provider_provenance_independently_verified'] is False, d
+          assert d['upstream_data_rights_verified'] is False, d
+          assert c['selected_unique_anchor_timestamps'] >= 20000, c
+          assert c['anchor_contexts'] >= 20000, c
+          assert c['tp_sl_path_scenarios'] >= 20000, c
+          assert c['strategy_decision_slots'] >= 20000, c
+          assert sum(v['scenarios'] for v in c['scenario_outcome_counts'].values()) == c['tp_sl_path_scenarios'], c
+          assert e['binary_scored_strategy_events'] >= 20000, e
+          assert e['chronological_partitions']['final_holdout']['n'] >= 1000, e
+          assert e['chronological_partitions']['final_holdout']['final_test_priors_frozen'] is True, e
+          assert e['chronological_partitions']['final_holdout']['parameter_fitting_on_partition'] is False, e
+          assert e['aggregate']['reliability']['ece_descriptive'] is not None, e
+          assert e['aggregate']['constant_0_5_brier'] is not None, e
+          assert e['moving_block_bootstrap_brier_improvement_vs_constant_0_5']['replicates'] == 250, e
+          assert r['artifact_policy'].startswith('Raw bid/ask OHLCV candles are never written'), r
+          assert r['raw_data_included_in_artifact'] is False, r
+          assert r['decision_output'] == 'NO_TRADE', r
+          assert r['deployment_calibrated'] is False and r['validated_model'] is False, r
+          assert r['live_signal_enabled'] is False, r
+          print(json.dumps({
+            'status': r['status'],
+            'dataset_rows': d['dataset_rows'],
+            'paired_bid_ask_candles': d['paired_valid_bid_ask_candles'],
+            'months': d['months_requested'],
+            'distinct_real_scenario_timestamps': c['selected_unique_anchor_timestamps'],
+            'eligible_real_windows': c['eligible_real_contiguous_windows'],
+            'tp_sl_path_scenarios': c['tp_sl_path_scenarios'],
+            'strategy_signal_events_scored': e['binary_scored_strategy_events'],
+            'ambiguous_same_bar_events_excluded': e['ambiguous_same_bar_events_excluded'],
+            'prequential_brier': e['aggregate']['brier'],
+            'constant_0_5_brier': e['aggregate']['constant_0_5_brier'],
+            'final_test_events': e['chronological_partitions']['final_holdout']['n'],
+            'final_test_priors_frozen': e['chronological_partitions']['final_holdout']['final_test_priors_frozen'],
+            'decision_output': r['decision_output']
+          }, indent=2))
+          PY
       - name: Enforce third-source tick-data contract
         run: |
           python - <<'PY'
@@ -210,6 +266,9 @@ jobs:
           fi
           if [ -f /tmp/aurum-online-benchmark/tick_bidask_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/tick_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
