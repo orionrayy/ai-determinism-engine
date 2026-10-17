@@ -108,3 +108,24 @@ Hosted run [#39022220573](https://github.com/orionrayy/ai-determinism-engine/act
 Primary community XAUUSD M5 source: 35,954 rows, SHA-256 `acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db`. Secondary `Sai310421/xauusd-data`: 17,371 rows, SHA-256 `ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d`. Across 11,509 exact timestamp overlaps, exact OHLC match count is zero; absolute close difference median/p95/p99/max is 134.885/203.661/217.617/220.412 bps. Signed primary-minus-secondary close difference median is +63.515 price units (p05 +0.295, p95 +94.445). One-bar return correlation is 0.99845. Classification: `SOURCE_DISAGREEMENT_REVIEW_REQUIRED`; this is not a clean source-consistency result. Both sources remain reference-only and must not be merged/shifted automatically.
 
 The evaluator produced 94,604 candidate signal events, 94,084 binary-scored outcomes and 520 same-bar ambiguous collisions (excluded). It reports 70/10/20 chronological segments and keeps the final 20% holdout scoring-only for the Platt calibrator. Raw vs calibrated holdout metrics vary by rule/side; calibration is not uniformly better. P0 is still blocked on source/time/data rights and broker-specific execution evidence. `NO_TRADE` remains active.
+
+## GDELT coverage-integrity correction and external-context rerun — 2026-10-17
+
+Hosted end-to-end run [#39035732248](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248) **PASS** on tested head `f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69`. Artifact #12102745058, 2,624,921 bytes, SHA-256 `b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0`. Unit/regression tests: 115 passed; temporal calibration contract scenarios: 240/240 passed. The same run passed the 1,313,280 paired Bid/Ask M1 candle gate, 20,000 valid ATR anchors and 120,000 TP/SL path scenarios.
+
+### GDELT acquisition versus temporal coverage
+
+- 141,020 unique real GDELT GKG observations from 100 selected archives; 85,809 archive entries were discovered. All 100 selected archives were processed. Total acquired bytes: 701,820,752; no synthetic/duplicated observations were added.
+- Requested historical window: 1,313,279 minutes. Actually covered by acquired archive intervals: 1,500 minutes, **0.114218%**. The 100-archive sample is a bounded time-spread sample, not a full-window archive census.
+- Status fields are intentionally distinct: pipeline/unique-observation scale `PASS`; source acquisition `PASS`; full source completeness `PARTIAL`; temporal news-feature coverage `NOT_MET` (0 eligible of 19,937 mature unambiguous labels). Because required 1h/24h windows are not covered, news values are null/ineligible rather than fabricated zero-news observations.
+- COT temporal feature coverage is 19,739/19,937 rows (99.0069%, `PARTIAL`). BLS yielded 119 descriptive observations but no authoritative publication-time calendar, so they do not count as causal macro features. FRED/ALFRED returned `SKIPPED_CREDENTIAL_REQUIRED` because `FRED_API_KEY_NOT_CONFIGURED`. News and macro ablations remain `NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT`.
+
+### Same-row model comparison (diagnostic only)
+
+- Price-only and price+COT/combined ablations each scored the same 3,987 chronological holdout rows. Price-only Brier: 0.1609893; price+COT/combined Brier: 0.1609044.
+- Incremental Brier improvement for price+COT versus price-only: +0.00008494; paired moving-block 95% interval [-0.00014777, +0.00032012] crosses zero. This is inconclusive evidence about incremental value, not a robust edge. No best-model or alpha claim is made.
+- Decision output remains `NO_TRADE`; model deployment calibration, validation for profitability and live signals remain false. Data provenance/rights, source lineage/quote-basis mismatch, measured broker costs, independent market regimes, untouched holdout and paper-trading gates remain open.
+
+### Failure retained and corrected
+
+- Run [#39035356832](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035356832) failed at the external-context runner after earlier test and price gates passed. The report used an acquisition-local `gdelt_archive_window_complete` variable outside its scope. The runner now reads the value from `source_details["gdelt_gkg"]["archive_window_complete"]`, with a contract test. The failed run remains in the audit trail and is not treated as successful evidence.
