@@ -709,6 +709,10 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
     quality = market_quality(dataset)
     if len(dataset) < required_candles:
         raise BenchmarkError(f"paired_candle_contract_failed:{len(dataset)}<{required_candles}")
+    if quality["rows_mon_fri_utc"] < required_candles:
+        raise BenchmarkError(
+            f"weekday_candle_contract_failed:{quality['rows_mon_fri_utc']}<{required_candles}"
+        )
     features = indicators(dataset)
     anchors, eligible_windows = candidate_anchor_indices(dataset, required_scenarios)
     signals = signals_for_anchors(dataset, anchors, features)
