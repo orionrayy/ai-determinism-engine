@@ -83,6 +83,9 @@ jobs:
           cross = r['secondary_source_crosscheck']
           assert cross['status'] in {'CROSS_SOURCE_DIAGNOSTIC_ONLY', 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED'}, cross
           assert cross['common_timestamps'] >= 1000, cross
+          lag = cross['timestamp_offset_sensitivity']
+          assert lag['automatically_shifted_source_timestamps'] is False and lag['automatically_promoted_source'] is False, lag
+          assert lag['offsets_tested_bars'] == list(range(-3, 4)), lag
           if cross['status'] == 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED':
               assert cross['source_disagreement_screen']['material_disagreement_flag'] is True, cross
           else:
