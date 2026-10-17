@@ -1,0 +1,692 @@
+{
+  "project": "Serevex Quant Research",
+  "checkpoint": "2026-10-17",
+  "repository": "orionrayy/ai-determinism-engine",
+  "project_path": "projects/serevex-quant",
+  "status": "research-ux-prototype",
+  "latest_complete_source_version": "1.3.1",
+  "v1_0_source_reconciled": true,
+  "production_ready": false,
+  "decision_gate": "NO_TRADE",
+  "data": {
+    "dataset": "data/xauusd_5m_public_sample.csv",
+    "rows": 60,
+    "source_register_entries": 51,
+    "sources_sampled": 2,
+    "source_timezone_verified": false,
+    "broker_provenance_verified": false,
+    "primary_dataset_rows": 60,
+    "primary_dataset_sha256": "dae535a16e13cf49f123231b1ee72e19787259e7a5f943b017a013346f36a93b",
+    "DS51": {
+      "name": "GetData Finance XAUUSD M5 community OHLCV",
+      "status": "reference_only",
+      "hosted_ci_benchmark_verified": true,
+      "live_ci_download_verified": true,
+      "live_rows": 35954,
+      "live_bytes": 3070226,
+      "live_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "timestamp_start": "2026-03-26T02:30:00+00:00",
+      "timestamp_end": "2026-09-25T20:40:00+00:00",
+      "latest_observation_is_current_live_data": false,
+      "repository_advertises_MIT_license": true,
+      "data_rights_scope_verified": false,
+      "timezone_semantics_verified": false,
+      "broker_provenance_verified": false,
+      "license_intended_use_verified": false
+    },
+    "locally_bundled_sources_sampled": 1
+  },
+  "benchmarks": {
+    "pytest_passed": 185,
+    "unittest_passed": 109,
+    "next_candle_case_rows": 250,
+    "tp_sl_rows": 90,
+    "software_stress_scenarios": 240,
+    "software_stress_passed": 240,
+    "synthetic_market_scenarios": 240,
+    "synthetic_market_scenarios_passed": 240,
+    "model_oos_predictions": 0,
+    "external_dataset_smoke_market_paths": 1200,
+    "external_dataset_smoke_market_paths_passed": 1200,
+    "external_dataset_smoke_case_rows": 250,
+    "external_dataset_smoke_software_scenarios": 240,
+    "external_dataset_smoke_software_scenarios_passed": 240,
+    "portable_runner_offline_case_rows": 150,
+    "portable_runner_offline_market_paths": 480,
+    "portable_runner_offline_market_passed": 480,
+    "portable_runner_offline_software_scenarios": 240,
+    "portable_runner_offline_software_passed": 240,
+    "online_dataset_cases": 50,
+    "online_dataset_evaluations": 250,
+    "online_dataset_market_scenarios": 1200,
+    "online_dataset_market_passed": 1200,
+    "online_dataset_software_scenarios": 240,
+    "online_dataset_software_passed": 240,
+    "python_compileall": "PASS",
+    "html_ids": 48,
+    "html_duplicate_ids": 0,
+    "mini_app_inline_js_syntax": "PASS",
+    "clean_zip_extraction": "PASS",
+    "model_calibrated": false,
+    "bundled_dataset_rows": 60,
+    "online_benchmark_tests_passed": 11,
+    "full_history_local_synthetic_rows": 35954,
+    "full_history_local_synthetic_decisions_per_rule": 35893,
+    "prequential_probability_predictions_synthetic": 35893,
+    "synthetic_market_paths_passed": 1200,
+    "software_stress_scenarios_passed": 240,
+    "external_live_full_history_status": "completed hosted CI for v1.3.1 application and v1.4.0 P0 evaluator; diagnostic only",
+    "online_dataset_full_history_opportunities_per_rule": 35893,
+    "online_dataset_chronological_folds": [
+      7175,
+      7176,
+      7176,
+      7176,
+      7190
+    ],
+    "online_dataset_tail_holdout_fraction": 0.2,
+    "prequential_probability_predictions": 35893,
+    "prequential_constant_brier": 0.25,
+    "prequential_expanding_brier": 0.2500191120883127,
+    "prequential_expanding_brier_skill": -0.0000764483532507132,
+    "prequential_expanding_brier_improvement_ci_95": [
+      -0.00006390820231564408,
+      0.00004121343219002724
+    ],
+    "prequential_rolling_288_brier": 0.2507488734984891,
+    "prequential_rolling_288_brier_skill": -0.0029954939939564884,
+    "temporal_calibration_scenarios": 240,
+    "temporal_calibration_scenarios_passed": 240,
+    "temporal_calibration_scenarios_failed": 0,
+    "temporal_calibration_tests": 8,
+    "temporal_calibration_demo_rows": 720,
+    "temporal_calibration_demo_fit_rows": 360,
+    "temporal_calibration_demo_holdout_rows": 360,
+    "temporal_calibration_demo_is_synthetic": true,
+    "temporal_calibration_deployment_enabled": false,
+    "decision_output": "NO_TRADE"
+  },
+  "integrations": {
+    "telegram_live_tested": false,
+    "oanda_live_tested": false,
+    "mt5_account_connector": false,
+    "ctrader_account_connector": false,
+    "docker_production_tested": false,
+    "browser_device_acceptance_tested": false
+  },
+  "required_next": [
+    "Independently verify provenance, intended-use data rights, timestamp and bar convention, and quote basis for each feed; explain Sai310421 mid-quote vs near-exact tick Bid OHLC identity.",
+    "Acquire broker-authorized quotes/fills and measured spread, commission, swap, slippage, latency/rejection and fill semantics.",
+    "Keep GDELT news features ineligible until source windows have sufficient historical temporal coverage; supply authoritative publication-time and vintage data before macro feature ablations.",
+    "Evaluate against causal base-rate comparators on independent regimes and an untouched holdout with uncertainty intervals; prove net-of-cost edge before paper trading.",
+    "Keep NO_TRADE; never enable live signals or order routing until data, calibration, execution, risk and security gates pass."
+  ],
+  "release": {
+    "version": "1.3.1",
+    "archive": "serevex-intelligence-v1.3.1.zip",
+    "bytes": 276128,
+    "sha256": "b63af5ab3412e7cb0bac14deffdb0d8cf07e024b0e46364d6fe5e1329d831d5b",
+    "files_in_zip": 110,
+    "manifest_files": 109,
+    "pytest": "185 passed",
+    "unittest": "109 tests passed",
+    "temporal_calibration_tests": "8 tests passed",
+    "temporal_calibration_scenarios": "240/240 passed",
+    "release_checks": "PASS",
+    "zip_extraction_retest": "185 pytest passed",
+    "artifact_storage": "downloadable project artifact; ZIP not tracked as a GitHub binary"
+  },
+  "online_dataset_benchmark": {
+    "workflow": ".github/workflows/serevex-online-dataset-benchmark.yml",
+    "branch": "feature/serevex-online-dataset-benchmark",
+    "status": "PASS",
+    "run_id": 38898121717,
+    "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38898121717",
+    "source_commit": "41722d74ab7cd9118651b1d577b71d2a2fbc94ee",
+    "artifact_id": 12044771562,
+    "artifact_bytes": 14966,
+    "artifact_sha256": "0c4eac0db61562a99f0ae3c2ffc76e4765a8eae54034db5d7ae0a459351d0dbd",
+    "dataset_rows": 35954,
+    "dataset_bytes": 3070226,
+    "dataset_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+    "timestamp_start": "2026-03-26T02:30:00+00:00",
+    "timestamp_end": "2026-09-25T20:40:00+00:00",
+    "median_interval_seconds": 300,
+    "intervals_over_600s": 136,
+    "real_cases": 50,
+    "baseline_evaluations": 250,
+    "full_history_opportunities_per_rule": 35893,
+    "chronological_fold_counts": [
+      7175,
+      7176,
+      7176,
+      7176,
+      7190
+    ],
+    "fold5_is_tail_holdout": true,
+    "market_scenarios": 1200,
+    "market_passed": 1200,
+    "software_scenarios": 240,
+    "software_passed": 240,
+    "probability_target": "next_bar_candle_body_up_vs_not_up",
+    "probability_predictions": 35893,
+    "constant_brier": 0.25,
+    "expanding_brier": 0.2500191120883127,
+    "expanding_brier_improvement_ci_95": [
+      -0.00006390820231564408,
+      0.00004121343219002724
+    ],
+    "rolling_288_brier": 0.2507488734984891,
+    "decision_output": "NO_TRADE",
+    "predictive_model_validated": false,
+    "live_trading_enabled": false,
+    "report_path": "projects/serevex-quant/benchmarks/full_history_replay_2026-10-16.md",
+    "machine_readable_report_path": "projects/serevex-quant/benchmarks/full_history_replay_2026-10-16.json",
+    "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38898121717/artifacts/12044771562",
+    "temporal_calibration_tests": 8,
+    "temporal_calibration_scenarios": 240,
+    "temporal_calibration_passed": 240,
+    "temporal_calibration_synthetic_only": true,
+    "artifact_expires_at": "2026-10-30T12:05:58Z",
+    "calibration_tests": 8,
+    "calibration_scenarios": 240,
+    "calibration_passed": 240,
+    "calibration_synthetic_only": true
+  },
+  "calibration_diagnostics": {
+    "component": "projects/serevex-quant/temporal-calibration-v1.3/",
+    "status": "hosted CI PASS on current PR head",
+    "method": "regularized monotone Platt scaling on matured earlier OOS forecasts; later chronological holdout",
+    "metrics": [
+      "Brier score",
+      "log loss",
+      "equal-width ECE/MCE",
+      "reliability bins",
+      "moving-block bootstrap intervals"
+    ],
+    "scenario_count": 240,
+    "passed": 240,
+    "failed": 0,
+    "tests": 8,
+    "synthetic_demo": {
+      "rows": 720,
+      "calibration_rows": 360,
+      "holdout_rows": 360,
+      "raw_holdout_brier": 0.15274254168269238,
+      "calibrated_holdout_brier": 0.15215911037285726,
+      "raw_holdout_log_loss": 0.4735545015539176,
+      "calibrated_holdout_log_loss": 0.47240764657184975,
+      "raw_holdout_ece": 0.052436675978238485,
+      "calibrated_holdout_ece": 0.04456223599464544,
+      "synthetic_only_not_market_evidence": true
+    },
+    "live_signal_enabled": false,
+    "deployment_calibrated": false,
+    "validated": false,
+    "hosted_run_id": 38898121717,
+    "hosted_run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38898121717",
+    "source_commit": "41722d74ab7cd9118651b1d577b71d2a2fbc94ee",
+    "artifact_id": 12044771562,
+    "artifact_bytes": 14966,
+    "artifact_sha256": "0c4eac0db61562a99f0ae3c2ffc76e4765a8eae54034db5d7ae0a459351d0dbd",
+    "tests_passed": 8,
+    "scenarios": 240,
+    "scenario_passed": 240,
+    "scenario_failed": 0,
+    "synthetic_only": true
+  },
+  "v1_4_p0_evaluation_protocol": {
+    "protocol_version": "1.4.0",
+    "application_version": "1.3.1",
+    "status": "hosted_ci_pass_diagnostic_only",
+    "workflow_run_id": 39022220573,
+    "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39022220573",
+    "artifact_id": 12096704482,
+    "artifact_bytes": 2556935,
+    "artifact_sha256": "94d432018fa313db265bc01dbeba1e37df5efc0a3c90f65eaec432259877f7de",
+    "dataset": {
+      "primary_rows": 35954,
+      "primary_sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+      "secondary_rows": 17371,
+      "secondary_sha256": "ee23e18f0ed77160893936d0312c008261e4f2ac16d82365898aba20ea26de9d",
+      "exact_timestamp_overlap": 11509,
+      "exact_ohlc_match_count": 0,
+      "median_absolute_close_difference_bps": 134.8853832699518,
+      "p95_absolute_close_difference_bps": 203.66143110984132,
+      "median_signed_close_difference_units_primary_minus_secondary": 63.51500000000033,
+      "signed_close_difference_p05_units": 0.29499999999916326,
+      "signed_close_difference_p95_units": 94.44499999999971,
+      "one_bar_return_correlation": 0.9984495095121952,
+      "cross_source_status": "SOURCE_DISAGREEMENT_REVIEW_REQUIRED",
+      "screening_thresholds_bps": {
+        "median": 5,
+        "p95": 20
+      },
+      "source_promotion_allowed": false,
+      "data_rights_verified": false,
+      "provider_timezone_verified": false
+    },
+    "evaluation": {
+      "candidate_signal_events": 94604,
+      "binary_scored_events": 94084,
+      "ambiguous_same_bar_events": 520,
+      "chronological_partition_fractions": [
+        0.7,
+        0.1,
+        0.2
+      ],
+      "same_bar_collisions_excluded": true,
+      "calibration_is_uniformly_better": false,
+      "deployment_calibrated": false,
+      "validated": false,
+      "live_signal_enabled": false,
+      "decision_output": "NO_TRADE"
+    },
+    "primary_data_quality": {
+      "intervals_over_2x_expected": 136,
+      "intervals_over_1h": 132,
+      "robust_price_jump_flags": 97
+    },
+    "next_gates": [
+      "investigate secondary-source price/time-convention disagreement without merging or auto-shifting",
+      "review upstream data rights and original provenance",
+      "obtain broker-specific Bid/Ask/tick data and measured costs",
+      "validate across independent chronological regimes and an untouched holdout",
+      "maintain NO_TRADE and disabled live execution"
+    ],
+    "follow_up": {
+      "commit_with_price_basis_diagnostics": "5ec99e2fe4e478ddda60a8ebbef264226c47a076",
+      "tests_commit": "6b5b2f04a674c81deee84f1a2cdaf5ca442663d5",
+      "hosted_workflow_run_id": 39024803960,
+      "hosted_workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39024803960",
+      "hosted_ci_conclusion": "success",
+      "artifact_id": 12097644871,
+      "artifact_bytes": 2563258,
+      "artifact_sha256": "b2bc267bda4d067ed6baec07d196540f903e84545cf342f9938b17371f607415",
+      "price_basis_diagnostics": {
+        "level_correlation": 0.9697756001442143,
+        "ols_primary_from_secondary_slope": 0.9844344464959125,
+        "ols_intercept_price_units": 130.3508172754864,
+        "ols_r_squared": 0.940464714635071,
+        "ols_residual_p95_bps_of_primary_close": 128.84793085695438,
+        "paired_return_difference_median_bps": 0.2639329806819468,
+        "paired_return_difference_p95_bps": 0.9816636409065715,
+        "best_offset_bars_diagnostic_only": 12,
+        "offset_scan_boundary_hit": true,
+        "median_discrepancy_reduction_at_best_offset": 0.023673591163149054,
+        "automatic_shift_scale_merge_or_source_promotion": false
+      },
+      "caveat": "Successful CI means the discrepancy was measured and reported, not that sources agree or model predictions are validated."
+    }
+  },
+  "external_data_audit": {
+    "updated_at": "2026-10-17T17:42:00+07:00",
+    "workflow_run_id": 39025937658,
+    "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39025937658",
+    "conclusion": "success",
+    "code_test_head": "c6f5062fab2a919b4d3795304c5cbee83b67618a",
+    "artifact_id": 12098756760,
+    "artifact_bytes": 2595322,
+    "artifact_sha256": "54a3905b3fb3a3909070245da80a9089d2051b029dd9f45bab5332ed260d7aa8",
+    "dataset": {
+      "id": "CarlosSilva1/xauusd-ticks",
+      "license": "CC-BY-4.0",
+      "attribution_recorded": true,
+      "partition": "year=2026/month=05",
+      "downloaded_parquet_bytes": 58806458,
+      "parquet_parts": 4,
+      "ticks": 6685266,
+      "timestamp_start_utc": "2026-05-01T00:00:00.086000+00:00",
+      "timestamp_end_utc": "2026-05-22T20:59:59.132000+00:00",
+      "derived_m5_bars": 4392,
+      "invalid_quotes": 0,
+      "missing_or_nonfinite_quotes": 0,
+      "raw_tick_data_redistributed": false
+    },
+    "spread_diagnostics": {
+      "median_price_units": 0.58,
+      "p95_price_units": 0.827,
+      "p99_price_units": 0.96,
+      "median_bps_of_mid": 1.255517669758564,
+      "p95_bps_of_mid": 1.7884268908739243,
+      "user_broker_execution_cost_measured": false
+    },
+    "comparison": {
+      "primary_overlap_bars": 4380,
+      "primary_vs_tick_mid_close_difference_median_bps": 123.22944973177712,
+      "primary_vs_tick_mid_close_difference_p95_bps": 138.3789593448795,
+      "primary_minus_tick_mid_signed_close_difference_median_price_units": 56.324999999998454,
+      "secondary_overlap_bars": 4392,
+      "secondary_vs_tick_bid_exact_ohlc_matches": 4391,
+      "secondary_vs_tick_bid_exact_ohlc_match_fraction": 0.9997723132969034,
+      "secondary_vs_tick_mid_close_difference_median_bps": 0.6471987471690566,
+      "secondary_vs_tick_mid_close_difference_p95_bps": 0.9291538505595731,
+      "lineage_status": "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED",
+      "source_independence_verified": false,
+      "automatic_shift_rescale_merge_or_source_promotion": false
+    },
+    "decision_output": "NO_TRADE",
+    "validated_model": false,
+    "calibrated_model": false,
+    "live_signal_enabled": false,
+    "latest_documentation_head_verification": {
+      "workflow_run_id": 39026245471,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39026245471",
+      "conclusion": "success",
+      "head_sha": "65958a8e68f0c3feed22693996f881b86c9d495f",
+      "artifact_id": 12098043414,
+      "artifact_bytes": 2595322,
+      "artifact_sha256": "184ff507423f4902dd8d9f86647d0e6ca5fe3fd73513de4d604f1b3823bc16aa",
+      "note": "Re-run after status/checkpoint documentation; the audited code/test head and lineage assertions passed again."
+    }
+  },
+  "next_p0": [
+    "Verify source owner provenance, rights and timestamp/quote basis across GetData, Sai310421 and the reconstructed tick source; do not count the latter two as independent.",
+    "Resolve primary-versus-tick price-level discrepancy before using either as truth for strategy selection.",
+    "Acquire broker-authorized Bid/Ask/tick history and measured spread, commission, swap, slippage, latency and fill semantics.",
+    "Improve predictive probabilities only if they beat causal base-rate and other prespecified baselines on independent chronological regimes and locked final holdout, with uncertainty intervals.",
+    "Keep NO_TRADE and live execution disabled unless data, calibration, paper-trading, risk and security gates pass."
+  ],
+  "latest_external_validation": {
+    "large_scale_bidask": {
+      "application_version": "1.3.1",
+      "evaluation_protocol": "1.4.0",
+      "benchmark_id": "SEREVEX-LARGE-SCALE-BIDASK-M1-v1.0",
+      "workflow_run_id": 39028110673,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39028110673",
+      "conclusion": "success",
+      "tested_head": "375aa2e3c225394943f177a5243d5c18ccd04fd9",
+      "artifact_id": 12099177720,
+      "artifact_bytes": 2613340,
+      "artifact_sha256": "5b5129edebd988ca885e0e06f69b8430a9db01ab807fcdb8e11c6d3b0470891b",
+      "dataset": {
+        "repository": "kevingtlin/Market-Data-Lab",
+        "dataset_id": "XAUUSD-DUKASCOPY-M1-BID-ASK",
+        "selected_period": "2023-01 through 2025-06",
+        "months": 30,
+        "paired_m1_bid_ask_candles": 1313280,
+        "total_download_bytes": 131316007,
+        "weekday_rows": 937440,
+        "weekday_active_nonflat_candles": 870500,
+        "zero_range_mid_fraction": 0.327458729288499,
+        "provenance_independently_verified": false,
+        "rights_verified": false
+      },
+      "scenario_benchmark": {
+        "unique_real_timestamp_anchors": 20000,
+        "valid_atr_anchors": 20000,
+        "eligible_contiguous_windows_with_valid_atr": 875611,
+        "tp_sl_path_scenarios": 120000,
+        "direction_rule_events_scored": 52883,
+        "final_holdout_scored_events": 10577,
+        "ambiguous_same_bar_outcomes_excluded": 1218,
+        "trading_gate": "NO_TRADE"
+      },
+      "probability_diagnostics": {
+        "model_brier": 0.1401016412909133,
+        "global_matured_label_baseline_brier": 0.14001544066165955,
+        "label_base_rate": 0.16812586275362593,
+        "brier_skill_vs_constant_0_5": 0.43959343483634683,
+        "brier_skill_vs_global_matured_label_baseline": -0.0006156508799770588,
+        "brier_improvement_vs_global_baseline_moving_block_ci95": [
+          -0.00017370410800070295,
+          -0.000009062720043045605
+        ],
+        "final_holdout_model_brier": 0.16345513860893496,
+        "final_holdout_global_baseline_brier": 0.16354941949326696,
+        "final_holdout_skill_vs_global_baseline": 0.0005764672514528835,
+        "final_holdout_ece": 0.04331258462693602,
+        "interpretation": "aggregate rule/side probability baseline does not outperform a causal global matured-label prevalence baseline; the 0.5-only comparison is misleading for an imbalanced target"
+      },
+      "output": {
+        "deployment_calibrated": false,
+        "validated_model": false,
+        "validated_for_profitability": false,
+        "live_signal_enabled": false,
+        "decision_output": "NO_TRADE"
+      }
+    },
+    "external_context_benchmark": {
+      "application_version": "1.3.1",
+      "evaluation_protocol": "1.4.0 P0",
+      "status": "HOSTED_CI_PASS_DIAGNOSTIC_ONLY",
+      "workflow_run_id": 39035732248,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248",
+      "tested_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69",
+      "artifact_id": 12102745058,
+      "artifact_bytes": 2624921,
+      "artifact_sha256": "b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0",
+      "unit_tests_passed": 115,
+      "temporal_calibration_scenarios": {
+        "passed": 240,
+        "failed": 0
+      },
+      "price_benchmark": {
+        "paired_m1_bid_ask_candles": 1313280,
+        "valid_atr_anchors": 20000,
+        "matured_unambiguous_labels": 19937,
+        "decision_gate": "NO_TRADE"
+      },
+      "gdelt": {
+        "unique_real_observations": 141020,
+        "target": 100000,
+        "scale_gate": "PASS",
+        "raw_data_synthesized_or_duplicated": 0,
+        "archives_processed": 100,
+        "archives_discovered": 85809,
+        "sampled_archive_processing": "complete",
+        "archive_window_complete": false,
+        "source_acquisition_status": "PASS",
+        "source_completeness_status": "PARTIAL",
+        "bytes_acquired": 701820752,
+        "observed_minutes": 1500,
+        "requested_window_minutes": 1313279,
+        "temporal_coverage_fraction": 0.001142179,
+        "temporal_coverage_percent": 0.114218,
+        "news_feature_eligible_rows": 0,
+        "total_evaluation_rows": 19937,
+        "news_feature_status": "NOT_MET"
+      },
+      "feature_coverage": {
+        "cot": {
+          "eligible_rows": 19739,
+          "total_rows": 19937,
+          "coverage_fraction": 0.990068716456839,
+          "status": "PARTIAL"
+        },
+        "macro": {
+          "eligible_rows": 0,
+          "total_rows": 19937,
+          "coverage_fraction": 0,
+          "status": "NOT_MET"
+        },
+        "news": {
+          "eligible_rows": 0,
+          "total_rows": 19937,
+          "coverage_fraction": 0,
+          "status": "NOT_MET"
+        }
+      },
+      "source_gates": {
+        "cot": "PASS; rights and upstream independence require review",
+        "bls": "observations are descriptive only because publication calendar was not supplied",
+        "fred_alfred": "SKIPPED_CREDENTIAL_REQUIRED; FRED_API_KEY_NOT_CONFIGURED",
+        "gdelt": "selected archive sample complete but full historical window is only 0.114218% covered"
+      },
+      "ablations": {
+        "price_only": {
+          "status": "SCORED",
+          "n": 3987,
+          "brier": 0.160989295248147,
+          "log_loss": 0.4935151974370673,
+          "ece_descriptive": 0.03880881535775387
+        },
+        "price_cot": {
+          "status": "SCORED",
+          "n": 3987,
+          "brier": 0.16090435459678282,
+          "log_loss": 0.4931088650790775,
+          "ece_descriptive": 0.0413617709538213
+        },
+        "price_combined": {
+          "status": "SCORED",
+          "n": 3987,
+          "brier": 0.16090435459678282
+        },
+        "price_news": {
+          "status": "NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT"
+        },
+        "price_macro": {
+          "status": "NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT"
+        },
+        "cot_incremental_brier_improvement_vs_price_only": 0.00008494065136418093,
+        "cot_incremental_brier_improvement_ci95": [
+          -0.00014777036162551426,
+          0.00032011661071850155
+        ],
+        "interpretation": "COT's incremental Brier interval crosses zero; the benchmark does not establish robust incremental predictive value. No best model/alpha claim is made."
+      },
+      "inference_policy": {
+        "deployment_calibrated": false,
+        "validated_model": false,
+        "validated_for_profitability": false,
+        "live_signal_enabled": false,
+        "decision_output": "NO_TRADE"
+      }
+    },
+    "source_qualification_gate": {
+      "status": "HOSTED_CI_PASS_DIAGNOSTIC_ONLY",
+      "workflow_run_id": 39038107206,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39038107206",
+      "conclusion": "success",
+      "tested_head": "d2621fcda08456984ec3adef9015f91d3d432ddd",
+      "unit_regression_tests_passed": 125,
+      "temporal_calibration_scenarios": {
+        "passed": 240,
+        "failed": 0
+      },
+      "artifact": {
+        "id": 12102563009,
+        "name": "serevex-online-dataset-benchmark-39038107206.zip",
+        "bytes": 2626545,
+        "sha256": "993c27155e00c7d57d87aba5c475c1751d7026fcbfce4345b784996215bc065c",
+        "local_sha256_verified": true,
+        "retention_expires": "2026-10-31"
+      },
+      "gates": {
+        "sources": [
+          "getdata-finance/xauusd-5m-ohlcv-metals-historical-data",
+          "Sai310421/xauusd-data",
+          "CarlosSilva1/xauusd-ticks"
+        ],
+        "research_qualification_status": "REFERENCE_ONLY",
+        "execution_qualification_status": "BLOCKED",
+        "source_promotion_allowed": false,
+        "live_execution_authorized": false,
+        "provenance_rights_timestamp_bar_quote_basis_verified": false
+      },
+      "diagnostics": {
+        "paired_m1_bid_ask_candles": 1313280,
+        "unique_valid_atr_real_anchors": 20000,
+        "eligible_contiguous_windows": 875611,
+        "tp_sl_path_scenarios": 120000,
+        "primary_community_m5_rows": 35954,
+        "secondary_community_m5_rows": 17371,
+        "exact_timestamp_overlap": 11509,
+        "exact_ohlc_matches": 0,
+        "close_difference_median_bps": 134.8853832699518,
+        "close_difference_p95_bps": 203.66143110984132,
+        "tick_secondary_bid_exact_ohlc_matches": 4391,
+        "tick_secondary_overlap_bars": 4392,
+        "tick_lineage_status": "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED",
+        "gdelt_unique_observations": 141020,
+        "gdelt_sampled_archives": 100,
+        "gdelt_temporal_coverage_fraction": 0.001142179,
+        "news_eligible_rows": 0,
+        "cot_eligible_rows": 19739,
+        "external_context_total_rows": 19937,
+        "price_only_holdout_brier": 0.160989295248147,
+        "price_cot_holdout_brier": 0.16090435459678282,
+        "cot_incremental_brier_improvement": 0.00008494065136418093,
+        "cot_incremental_brier_ci95": [
+          -0.00014777036162551426,
+          0.00032011661071850155
+        ]
+      },
+      "decision_output": "NO_TRADE",
+      "validated_model": false,
+      "calibrated_model": false,
+      "validated_for_profitability": false,
+      "live_signal_enabled": false,
+      "interpretation": "CI validates software and bounded data processing only; it does not verify source rights/independence or predictive edge."
+    }
+  },
+  "external_context_research_spec": {
+    "path": "docs/superpowers/specs/2026-10-17-serevex-point-in-time-external-context-design.md",
+    "status": "IMPLEMENTED_ON_PR_BRANCH_HOSTED_CI_PASS_DIAGNOSTIC_ONLY",
+    "latest_spec_commit": "5dd1fbb96f6c1c1965c3558964ed6047e75a2ce0",
+    "plan_path": "docs/superpowers/plans/2026-10-17-serevex-point-in-time-external-context.md",
+    "latest_plan_commit": "65ac5c1888390c6010102bb66da2e398daec4e7f",
+    "planned_tasks": 8,
+    "planned_scope": [
+      "point_in_time_schema",
+      "CFTC_COT",
+      "GDELT_GKG_archived_news_metadata",
+      "BLS_release_observations",
+      "optional_FRED_ALFRED_vintages",
+      "point_in_time_feature_builder",
+      "same_row_ablation_benchmark",
+      "hosted_CI_and_evidence_checkpoint"
+    ],
+    "implementation_started": true,
+    "cftc_availability_policy": "verified historical release timestamp when authoritative; otherwise Wednesday 00:00 America/New_York in the following calendar week (report date + 8 calendar days for usual Tuesday report); quarantine ambiguous holiday schedule",
+    "external_context_scale_target": 100000,
+    "external_context_scale_semantics": "target/acceptance gate; explicitly report NOT_MET with true counts if provider/runtime caps prevent it; never synthesize records",
+    "model_protocol": "fixed L2 logistic baseline, scaler fit on development only, Platt calibration on mature calibration labels only, purged temporal boundaries, final 20 percent untouched holdout",
+    "last_full_price_benchmark_run": {
+      "id": 39035732248,
+      "conclusion": "success",
+      "tested_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69"
+    },
+    "latest_known_pr_head_startup_failure": {
+      "id": 39028331604,
+      "head": "576c1de66e9a7b91da3ba38782235d03732a87dd",
+      "conclusion": "startup_failure",
+      "jobs_created": 0
+    },
+    "decision_gate": "NO_TRADE",
+    "implemented_tasks": [
+      "point_in_time_schema",
+      "CFTC_COT_adapter",
+      "GDELT_GKG_historical_archived_metadata_adapter",
+      "BLS_observation_adapter_with_publication_time_ineligibility_guard",
+      "optional_FRED_ALFRED_vintage_adapter",
+      "as_of_feature_builder_with_matured_availability_and_archive_coverage",
+      "same_row_ablation_and_bootstrap_comparison",
+      "hosted_CI_and_artifact_checkpoint"
+    ],
+    "latest_code_test_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69",
+    "latest_successful_workflow_run": {
+      "id": 39035732248,
+      "url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248",
+      "conclusion": "success",
+      "tested_head": "f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69",
+      "unit_and_regression_tests": 115,
+      "temporal_calibration_scenarios": {
+        "passed": 240,
+        "failed": 0
+      },
+      "artifact_id": 12102745058,
+      "artifact_bytes": 2624921,
+      "artifact_sha256": "b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0"
+    },
+    "last_failed_retry_retained": {
+      "id": 39035356832,
+      "conclusion": "failure",
+      "error_code": "NameError",
+      "root_cause": "run_external_context_benchmark_v1.py referenced gdelt_archive_window_complete outside _acquire_sources scope",
+      "fix_commit": "8f8eb140e580baa85a23d3b27be5b6300e1d8ebb",
+      "status": "preserved as failed diagnostic run; not counted as success"
+    }
+  }
+}
