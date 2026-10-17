@@ -87,6 +87,7 @@ jobs:
           assert lag['automatically_shifted_source_timestamps'] is False and lag['automatically_promoted_source'] is False, lag
           assert lag['max_abs_offset_bars'] == 12 and lag['offsets_tested_bars'] == list(range(-12, 13)), lag
           assert len(lag['results']) == 25, lag
+          assert isinstance(lag['best_candidate_at_scan_boundary'], bool), lag
           assert 0.0 <= lag['relative_median_discrepancy_reduction_vs_zero_offset'] <= 1.0, lag
           if cross['status'] == 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED':
               assert cross['source_disagreement_screen']['material_disagreement_flag'] is True, cross
@@ -122,6 +123,7 @@ jobs:
               'secondary_best_timestamp_offset_bars': lag['best_candidate_offset']['secondary_timestamp_offset_bars_for_diagnostic_only'],
               'secondary_offset_reduction_fraction': lag['relative_median_discrepancy_reduction_vs_zero_offset'],
               'secondary_potential_timestamp_alignment_mismatch': lag['potential_timestamp_alignment_mismatch'],
+              'secondary_best_offset_at_scan_boundary': lag['best_candidate_at_scan_boundary'],
               'tp_sl_protocol_status': tp['status'],
               'tp_sl_candidate_trade_events': tp['candidate_trade_events'],
               'tp_sl_scored_binary_events': tp['scored_binary_events'],

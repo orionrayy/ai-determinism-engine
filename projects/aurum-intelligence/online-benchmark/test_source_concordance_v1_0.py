@@ -102,5 +102,17 @@ class SourceConcordanceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "max_abs_timestamp_lag_bars"):
             compare_source_datasets(source_rows(40), source_rows(40), max_abs_timestamp_lag_bars=25)
 
+    def test_scan_reports_boundary_hit_without_promoting_a_timestamp_correction(self):
+        primary = source_rows(1200, aware=True)
+        secondary = source_rows(1200, aware=True)
+        for row in secondary:
+            row["timestamp"] = row["timestamp"] + timedelta(minutes=80)
+        report, _ = compare_source_datasets(primary, secondary)
+        sensitivity = report["timestamp_offset_sensitivity"]
+        self.assertTrue(sensitivity["best_candidate_at_scan_boundary"])
+        self.assertIsNotNone(sensitivity["scan_boundary_warning"])
+        self.assertFalse(sensitivity["automatically_shifted_source_timestamps"])
+        self.assertFalse(sensitivity["automatically_promoted_source"])
+
 if __name__ == "__main__":
     unittest.main()

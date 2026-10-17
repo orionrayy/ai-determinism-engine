@@ -102,12 +102,15 @@ def _timestamp_offset_sensitivity(
     reduction = (zero_median - best_median) / zero_median if zero_median and best_median is not None else 0.0
     p95_materially_reduced = bool(zero and best and zero.get("p95_absolute_close_difference_bps") and best.get("p95_absolute_close_difference_bps") <= 0.8 * zero["p95_absolute_close_difference_bps"])
     potential_offset = bool(best and zero and best["secondary_timestamp_offset_bars_for_diagnostic_only"] != 0 and reduction >= 0.5 and p95_materially_reduced)
+    best_at_boundary = bool(best and abs(best["secondary_timestamp_offset_bars_for_diagnostic_only"]) == max_abs_lag_bars)
     return {
         "method": "sensitivity scan only; original timestamps and the primary exact-time report are unchanged",
         "zero_offset_median_absolute_close_difference_bps": zero_median,
         "best_candidate_median_absolute_close_difference_bps": best_median,
         "relative_median_discrepancy_reduction_vs_zero_offset": reduction,
         "potential_timestamp_alignment_mismatch": potential_offset,
+        "best_candidate_at_scan_boundary": best_at_boundary,
+        "scan_boundary_warning": "best candidate is at the configured scan boundary; extend diagnostics or review timestamp semantics before drawing conclusions" if best_at_boundary else None,
         "potential_timestamp_alignment_mismatch_rule": "non-zero offset reduces median absolute close discrepancy by >=50% and p95 by >=20%; exploratory only",
         "max_abs_offset_bars": max_abs_lag_bars,
         "expected_interval_seconds": expected_interval_seconds,
