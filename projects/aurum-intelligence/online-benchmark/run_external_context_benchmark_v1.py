@@ -256,7 +256,7 @@ def run(output_path: Path) -> dict[str, Any]:
             "status": "PASS" if fraction >= 1.0 else "PARTIAL" if fraction > 0.0 else "NOT_MET",
         }
     source_completeness_status = (
-        "PASS" if gdelt_archive_window_complete
+        "PASS" if source_details["gdelt_gkg"]["archive_window_complete"]
         else "PARTIAL" if gdelt_coverage else "NOT_MET"
     )
     report = {
