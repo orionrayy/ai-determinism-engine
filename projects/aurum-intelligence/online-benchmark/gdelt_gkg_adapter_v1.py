@@ -299,6 +299,60 @@ def archive_coverage_intervals(
     return tuple(sorted(intervals))
 
 
+def summarize_archive_coverage(
+    intervals: Sequence[tuple[datetime, datetime]],
+    window_start: datetime,
+    window_end: datetime,
+) -> dict[str, object]:
+    """Measure actual observed time coverage; count density never fills archive gaps."""
+    if (window_start.tzinfo is None or window_start.utcoffset() is None
+            or window_end.tzinfo is None or window_end.utcoffset() is None):
+        raise ValueError("coverage_window_must_be_timezone_aware")
+    start = window_start.astimezone(timezone.utc)
+    end = window_end.astimezone(timezone.utc)
+    if start >= end:
+        raise ValueError("invalid_coverage_window_order")
+    unique_clipped: set[tuple[datetime, datetime]] = set()
+    for index, pair in enumerate(intervals):
+        if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+            raise ValueError(f"invalid_news_coverage_interval_at_{index}")
+        left, right = pair
+        if (left.tzinfo is None or left.utcoffset() is None
+                or right.tzinfo is None or right.utcoffset() is None):
+            raise ValueError(f"coverage_interval_must_be_timezone_aware_at_{index}")
+        left = max(left.astimezone(timezone.utc), start)
+        right = min(right.astimezone(timezone.utc), end)
+        if left >= right:
+            continue
+        unique_clipped.add((left, right))
+    ordered = sorted(unique_clipped)
+    merged: list[tuple[datetime, datetime]] = []
+    for left, right in ordered:
+        if merged and left <= merged[-1][1]:
+            prior_left, prior_right = merged[-1]
+            merged[-1] = (prior_left, max(prior_right, right))
+        else:
+            merged.append((left, right))
+    covered_seconds = sum((right-left).total_seconds() for left, right in merged)
+    requested_seconds = (end-start).total_seconds()
+    fraction = min(1.0, covered_seconds/requested_seconds)
+    if fraction >= 1.0 - 1e-12:
+        status = "PASS"
+    elif covered_seconds > 0:
+        status = "PARTIAL"
+    else:
+        status = "NOT_MET"
+    return {
+        "status": status,
+        "observed_interval_count": len(unique_clipped),
+        "merged_coverage_interval_count": len(merged),
+        "covered_minutes": round(covered_seconds/60.0, 3),
+        "requested_window_minutes": round(requested_seconds/60.0, 3),
+        "coverage_fraction": round(fraction, 9),
+        "coverage_percent": round(100.0*fraction, 6),
+    }
+
+
 def acquire_historical_gkg(
     start: datetime, end: datetime, *, target_records: int = 100_000,
     max_archives: int = MAX_ARCHIVES_PER_RUN, aggregate_cap: int = MAX_AGGREGATE_BYTES,
