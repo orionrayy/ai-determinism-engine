@@ -65,7 +65,7 @@ Benchmark interface:
 
 **Files:** Create external_context_schema_v1.py and test_external_context_schema_v1.py.
 
-- [ ] Step 1 — Write failing tests: test_rejects_naive_datetime, test_rejects_nonfinite_values, test_conflicting_duplicate_id_is_counted_not_silently_overwritten, test_manifest_hash_is_deterministic, test_future_available_at_is_a_quality_error, test_unknown_availability_is_not_causal.
+- [ ] Step 1 — Write failing tests: test_rejects_naive_datetime, test_rejects_nonfinite_values, test_conflicting_duplicate_id_is_counted_not_silently_overwritten, test_manifest_hash_is_deterministic, test_future_available_at_is_a_quality_error, test_unknown_availability_is_flagged_in_audit.
 - [ ] Step 2 — Run RED: from the online-benchmark directory, run python -m unittest -v test_external_context_schema_v1.py. Expected: missing-module/function failures.
 - [ ] Step 3 — Implement frozen dataclasses, validated statuses and stable audits. Do not mutate inputs or silently assume naive timestamps are UTC.
 - [ ] Step 4 — Run focused test and python -m unittest -v for all existing/new tests in the directory; expected all pass.
@@ -75,7 +75,7 @@ Benchmark interface:
 
 **Files:** Create cftc_cot_adapter_v1.py and test_cftc_cot_adapter_v1.py; consumes Task 1.
 
-**Interfaces:** parse_cot_csv(payload: bytes, manifest: SourceManifest) -> list[ExternalObservation]; conservative_cot_available_at(report_date: date) -> datetime; select_gold_futures(observations) -> list[ExternalObservation].
+**Interfaces:** parse_cot_csv(payload: bytes, manifest: SourceManifest) -> list[ExternalObservation]; conservative_cot_available_at(report_date: date) -> datetime; resolve_cot_available_at(report_date: date, verified_release_at: datetime | None = None, ambiguous_calendar: bool = False) -> tuple[datetime | None, str]; select_gold_futures(observations) -> list[ExternalObservation].
 
 - [ ] Step 1 — Write fixture tests: test_tuesday_report_is_not_available_on_tuesday_or_friday, test_conservative_proxy_is_next_week_wednesday, test_verified_release_timestamp_overrides_proxy_only_when_valid, test_gold_filter_excludes_other_contracts_and_options_combined, test_invalid_positions_are_quarantined, test_truncated_or_oversized_zip_fails_closed. Use tiny inline CSV/ZIP fixtures only.
 - [ ] Step 2 — Run python -m unittest -v test_cftc_cot_adapter_v1.py; expected RED.
@@ -135,7 +135,7 @@ Benchmark interface:
 
 - [ ] Step 1 — Write tests: test_all_ablations_use_same_decision_rows_and_labels, test_final_holdout_is_not_used_for_feature_or_threshold_selection, test_matured_labels_only_update_causal_baseline, test_future_feature_mutation_does_not_change_holdout_predictions, test_block_bootstrap_is_deterministic, test_low_count_calibration_is_flagged, test_context_scale_below_100k_is_NOT_MET_not_synthetic_pass, test_report_never_enables_trading.
 - [ ] Step 2 — Run python -m unittest -v test_external_context_benchmark_v1.py; expected RED.
-- [ ] Step 3 — Implement run_context_benchmark with price-only, price+COT, price+macro, price+news and eligible combined context on identical timestamps/labels. Report causal base-rate/prequential baseline, Brier/log loss/ECE/MCE/reliability, moving-block CI, coverage/attrition, regimes, provider states and source caveats. Final 20% tail is scoring-only and never used for feature/threshold selection.
+- [ ] Step 3 — Implement deterministic L2-regularized logistic regression as the augmented probability baseline, with fixed lambda=1.0, maximum 200 iterations and deterministic initialization. Fit feature scaling/model parameters on the development partition only; select no hyperparameters on the final holdout. Compare price-only to price+COT, price+macro, price+news and eligible combined context on identical timestamps/labels. Report causal base-rate/prequential baseline, Brier/log loss/ECE/MCE/reliability, moving-block CI, coverage/attrition, regimes, provider states and source caveats. Final 20% tail is scoring-only and never used for feature/threshold selection.
 - [ ] Step 4 — Run bounded real historical acquisition/benchmark; produce compact JSON/Markdown and manifest hashes only, retain existing 700k/20k gates, and report failure/partial/NOT_MET honestly.
 - [ ] Step 5 — Run focused and complete tests; commit: feat(aurum): benchmark external context ablations.
 
