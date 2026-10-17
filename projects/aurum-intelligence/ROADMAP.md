@@ -193,3 +193,15 @@ Do not treat successful CI as strategy success, source rights clearance or produ
 - [ ] Do not enable production prediction until broker-licensed Bid/Ask/tick/fill data, data rights, independent regimes, exact-target external validation and paper-trading/security gates are satisfied.
 
 The current candidate does not change the application response path or trading gate. Its output is research diagnostics only; `NO_TRADE` remains mandatory.
+
+
+## 2026-10-17 — paired calibration-gain uncertainty
+
+- [x] Preserve the first real historical TP-before-SL OOS result as JSON and Markdown with source hashes, exact split sizes, target definition, source-side metrics and caveats.
+- [x] Add a paired moving-block bootstrap for raw-minus-calibrated Brier and log-loss improvements using identical sampled time blocks; use 250 deterministic replicates for the source benchmark.
+- [x] Add model-parameter hashing and a regression test: mutate only the final holdout bars and require training-model hash and calibration fit parameters to remain unchanged.
+- [x] Extend workflow acceptance contracts to require paired confidence-interval fields and consistency with the point-estimated raw-minus-calibrated Brier difference.
+- [ ] Verify the fresh hosted CI for the new paired-bootstrap and holdout-invariance implementation, then inspect the new source artifact and results.
+- [ ] Keep deployment blocked if the paired uncertainty interval includes zero or the event-rate reference is not consistently beaten across the predeclared source/side tests. Do not pick a best source/side using this final holdout.
+
+The prior exact-target baseline improved after Platt scaling in only some source/side pairs; changes were small and inconsistent. The paired CI is required to assess those gains without mistaking overlapping marginal intervals for a paired test. No trading gate changes are made.
