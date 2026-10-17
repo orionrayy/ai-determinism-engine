@@ -75,3 +75,14 @@ A modular diagnostic candidate now evaluates the actual research target separate
 - The benchmark may report DIAGNOSTIC_ONLY, but the report intentionally hard-codes model validation, deployment calibration, production approval and live order execution to false/blocked. Any calibration improvement on this one final holdout is evidence for further research only; it must not be reused for model selection or advertised as world-leading accuracy.
 
 Acceptance after implementation: fresh hosted workflow must parse every current allowlisted dataset; pass all existing source/overlap gates and new unit tests; report matured train/calibration/holdout counts for long and short; preserve all execution/data-rights caveats; and maintain `NO_TRADE`. Any failing invariant blocks promotion and requires correction before further feature expansion.
+
+
+## Paired calibration-gain uncertainty and verified baseline results — 2026-10-17
+
+Hosted run [#39019576117](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39019576117) passed on commit `8e1dabf70e0dd1df816424717c4d0efe56c90a0d`. Its uploaded artifact was 49,841 bytes, SHA-256 `69ac2c75a670fd033d43d0f242bb585a00996135cbc71e425f549e5e548b0727`; report runtime was 141,795.762 ms. Summarized baseline results are persisted in `benchmarks/tp_before_sl_oos_2026-10-17_baseline.md` and its JSON companion.
+
+The exact TP-before-SL holdout ran on three community OHLCV inputs, for six source/side metric sets and 55,996 reported label predictions across those sets (not independent market observations). Train/calibration/holdout sizes were 21,546/7,190/7,179 (GetData M5, both sides), 10,392/3,471/3,463 (Sai M5 long), 10,391/3,471/3,463 (Sai M5 short), 52,078/17,357/17,356 (Sai M1 long), and 52,079/17,363/17,356 (Sai M1 short). All labels are separate from the earlier next-candle direction target.
+
+Calibration impact was mixed, not a consistent gain: GetData M5 long Brier changed 0.230024→0.229481; GetData M5 short worsened 0.234666→0.234859; Sai M5 long was virtually unchanged 0.222111→0.222110; Sai M5 short worsened 0.233999→0.234180; Sai M1 long changed 0.228472→0.228498; Sai M1 short changed 0.238133→0.238161. Raw Brier skill versus calibration-period event rate was small, and GetData M5 long was negative. These are point estimates only; the previous artifact's marginal 40-replicate intervals were not paired uncertainty intervals for gains.
+
+Follow-on candidate implementation adds a deterministic 250-replicate paired moving-block bootstrap directly on raw-vs-calibrated predictions/outcomes and a holdout-mutation invariance test to prove that modifying only final-period bars cannot alter the fitted training-model parameter hash or calibration parameters. The next hosted run is required before these added assertions and intervals are marked green. The data/rights gate, cross-source comparability block and `NO_TRADE` remain unchanged.
