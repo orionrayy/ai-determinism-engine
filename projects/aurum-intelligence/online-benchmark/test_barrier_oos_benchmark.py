@@ -62,12 +62,19 @@ class BarrierOOSBenchmarkTests(unittest.TestCase):
     def test_gap_through_barrier_is_checked_at_open_before_ohlc_range(self):
         rows = make_market_rows(40)
         index = 8
-        rows[index + 1]["open"] = rows[index]["close"] - 2.0
-        rows[index + 1]["high"] = rows[index + 1]["open"] + 0.3
-        rows[index + 1]["low"] = rows[index + 1]["open"] - 0.3
+        entry = rows[index + 1]["open"]
+        rows[index + 1]["close"] = entry
+        rows[index + 1]["high"] = entry + 0.1
+        rows[index + 1]["low"] = entry - 0.1
+        gap_open = entry - 2.0
+        rows[index + 2]["open"] = gap_open
+        rows[index + 2]["close"] = gap_open
+        rows[index + 2]["high"] = gap_open + 0.1
+        rows[index + 2]["low"] = gap_open - 0.1
         result = barrier.label_barrier(rows, index, 1.0, "long")
         self.assertEqual(result["outcome"], "SL_FIRST")
         self.assertEqual(result["label"], 0)
+        self.assertEqual(result["exit_index"], index + 2)
 
     def test_chronological_split_purges_unmatured_labels_at_each_boundary(self):
         rows = [
