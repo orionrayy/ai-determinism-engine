@@ -263,15 +263,24 @@ def run_one(spec, payload, cases=CASE_COUNT, bootstrap_replicates=80):
         "status": "PASS",
         "source": {
             "id": spec["id"], "repository": spec["repository"], "url": spec["url"],
-            "license_url": spec["license_url"], "license_status": spec["license_status"],
+            "license_url": spec["license_url"], "terms_url": spec["terms_url"],
+            "license_status": spec["license_status"],
+            "provenance_claim": spec["provenance_claim"],
+            "quote_side_claim": spec["quote_side_claim"],
             "semantics": spec["semantics"], "sha256": hashlib.sha256(payload).hexdigest(),
             "bytes": len(payload), "timeframe_seconds": spec["interval_seconds"],
             "timestamp_interpretation": (
                 "explicit offsets normalized to UTC" if spec["naive_timezone"] is None
                 else "naive timestamps interpreted as UTC based on source README; not independently verified"
             ),
-            "source_timezone_verified": False, "broker_provenance_verified": False,
+            "source_timezone_verified": spec["timezone_semantics_verified"],
+            "timezone_semantics_verified": spec["timezone_semantics_verified"],
+            "broker_provenance_verified": spec["broker_provenance_verified"],
+            "quote_side_verified": spec["quote_side_verified"],
+            "underlying_data_rights_verified": spec["underlying_data_rights_verified"],
+            "commercial_use_approved": spec["commercial_use_approved"],
             "independent_source_verified": False,
+            "source_use_eligibility": source_use_eligibility(spec),
         },
         "dataset": quality,
         "real_data_benchmark": {
@@ -513,11 +522,13 @@ def build_report(results, overlap, min_total_rows):
         and rows_total >= min_total_rows
         and overlap["status"] == "PASS"
     )
+    pipeline_status = "PASS" if passed else "FAIL"
+    readiness_gates = build_readiness_gates(results, overlap, pipeline_status)
     return {
-        "schema_version": "1.1.0",
+        "schema_version": "1.2.0",
         "benchmark_kind": "multi_source_real_dataset_diagnostics",
-        "status": "PASS" if passed else "FAIL",
-        "status_semantics": "pipeline and test contracts only; not trading approval",
+        "status": pipeline_status,
+        "status_semantics": "pipeline and test contracts only; not trading or data-use approval",
         "source_count": len(results),
         "dataset_rows_sum_not_deduplicated": rows_total,
         "minimum_total_rows": min_total_rows,
@@ -528,7 +539,8 @@ def build_report(results, overlap, min_total_rows):
         "overlap_concordance": [overlap],
         "cross_source_compatibility_status": price_compatibility,
         "cross_source_confirmation_allowed": False,
-        "production_ready": False,
+        "readiness_gates": readiness_gates,
+        "production_ready": readiness_gates["production_readiness"] == "PASS",
         "decision_output": "NO_TRADE",
         "predictive_model_validated": False,
         "model_calibrated_for_deployment": False,
@@ -537,9 +549,11 @@ def build_report(results, overlap, min_total_rows):
         "limitations": [
             "Rows from different sources are not deduplicated or concatenated; the total is not an independent sample count.",
             "Community-source broker provenance, timezone semantics, data rights and upstream independence remain unverified.",
+            "Repository-level MIT claims do not alone prove rights to upstream broker data or commercial embedding; GetData documentation describes more restrictive purchaser-only terms, so scope must be resolved in writing.",
             "The M5 and M1 results are separate tasks; their metrics are not directly comparable without a normalized protocol.",
             "M5 price-level compatibility is tested separately from direction agreement using explicit relative-delta thresholds.",
             "Cross-source confirmation is disabled while independent source lineage and price-level compatibility are unverified.",
+            "Commercial model use, embedding, and production-feed use stay blocked until source rights/provenance are verified.",
             "Costs are assumed, not measured broker spread, commission, slippage, swaps or fills.",
             "Synthetic scenario contracts are code robustness tests, not extra observed market outcomes.",
             "Next-candle body direction is not TP-before-SL calibration or executable strategy performance.",
