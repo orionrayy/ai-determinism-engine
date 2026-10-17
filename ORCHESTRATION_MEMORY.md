@@ -1007,3 +1007,32 @@ Canonical project remains `projects/aurum-intelligence`; app package v1.3.1, eva
 4. Only after the data gate, validate target-specific calibration on independent chronological regimes and locked untouched holdout with uncertainty, compare against global/constant/prequential baselines, then paper-trade and perform separate security/risk review. Do not enable live execution until then.
 
 Checkpoint files on the PR branch were updated: `projects/aurum-intelligence/PROGRESS_LOG.md` commit `e756edaa52e5cfb97c10dac4852203f58660444e`; `IMPLEMENTATION_STATUS.json` commit `576c1de66e9a7b91da3ba38782235d03732a87dd`; large-scale checkpoint `V1_4_1_IMPLEMENTATION_CHECKPOINT.md` commit `3688a6907f68ae5d80839355e09cf548553785e8`. The connector refused the PR description update because the GitHub account requires a verified email address; repo checkpoint files and this canonical memory are updated.
+
+
+## Aurum Intelligence — GDELT temporal coverage integrity and P0 rerun closure (2026-10-17)
+
+Canonical project: `projects/aurum-intelligence`; application package v1.3.1, research evaluator v1.4.0 P0. PR [#164](https://github.com/orionrayy/ai-determinism-engine/pull/164) is still draft/unmerged. Decision gate remains `NO_TRADE`; no production, validated profitability, or world-leading accuracy claim is supported.
+
+### Implemented fixes
+
+- GDELT size-budget handling distinguishes an oversized archive from exhaustion of the aggregate budget. Oversized archives are skipped with an explicit warning so later sampled archive windows remain eligible; raw row counts no longer stop acquisition before deduplication.
+- GDELT manifests produce UTC 15-minute coverage intervals. A coverage summary merges only truly adjacent/overlapping observed intervals and computes covered minutes/fraction against the requested window. Sample processing completion is separate from full source completeness.
+- Point-in-time feature construction receives the acquired archive intervals. A 1h/24h news feature is numeric only if the required window is fully covered by archive batches that were already observable by the decision time. Sparse gaps are not treated as zero-news; future archive metadata cannot make a historical decision eligible.
+- Runner reporting separates pipeline execution, unique-observation scale gate, source acquisition, full source completeness, and temporal feature coverage. Latest tested head `f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69` includes the scope fix after the preserved failure [#39035356832](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035356832) (`NameError` from referencing an acquisition-local variable in report scope).
+
+### Latest end-to-end evidence
+
+- GitHub Actions [#39035732248](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248): **success** on `f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69`; 115 unit/regression tests and 240/240 temporal calibration contracts passed. Artifact #12102745058, 2,624,921 bytes, SHA-256 `b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0`.
+- Price benchmark in that run: 1,313,280 paired Bid/Ask M1 candles, 20,000 valid ATR anchors, 120,000 TP/SL path scenarios and 19,937 mature unambiguous labels in the context-evaluation cohort. These satisfy engineering scale gates, not trading profitability or independent-market evidence.
+- GDELT: 141,020 unique real observations / 100,000 target, no synthetic/duplicated records; 100 sampled archives processed out of 85,809 discoverable archives; 701,820,752 acquired bytes. Observed coverage is only 1,500 of 1,313,279 requested minutes = **0.114218%**. Correct status: acquisition `PASS`, source completeness `PARTIAL`, archive-window complete `false`.
+- Temporal feature coverage over 19,937 evaluation rows: COT 19,739 rows (99.0069%, `PARTIAL`), macro 0 (`NOT_MET`), news 0 (`NOT_MET`). BLS returned 119 descriptive observations but no source publication-time calendar; FRED/ALFRED was skipped because `FRED_API_KEY_NOT_CONFIGURED`. News ablations remain ineligible despite passing the scale target.
+- Same-row holdout ablations scored 3,987 rows each. Price-only Brier 0.1609893; price+COT/combined Brier 0.1609044. Incremental Brier improvement versus price-only is +0.00008494, with paired moving-block 95% CI [-0.00014777, +0.00032012], which crosses zero. Do not claim robust incremental predictive value; news and macro ablations are `NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT`.
+
+### Remaining P0 gates
+
+1. Verify upstream rights, source owner/lineage, timestamp/bar and quote-basis semantics across public OHLCV/tick sources. The secondary community OHLCV series nearly exactly matches tick Bid in 4,391/4,392 bars despite its documented Mid basis; neither source may be promoted as independent/truth until explained.
+2. Obtain broker-authorized Bid/Ask/tick and actual fill observations with measured spread, commission, swap, slippage, latency/rejection and fill semantics.
+3. Keep news features ineligible until sufficient relevant temporal windows are continuously covered or a missingness policy is explicitly pre-registered and separately validated; supply authoritative BLS publication times and FRED/ALFRED vintages before macro features are eligible.
+4. Revalidate against causal base-rate baselines across genuinely independent chronological regimes and an untouched holdout, report calibration/uncertainty and run authorized paper trading plus separate risk/security review.
+
+Checkpoint artifacts updated on the PR branch: `IMPLEMENTATION_STATUS.json` commit `70520020d31e3c5bdffb06f61b9688042987f9e1`; `PROGRESS_LOG.md` commit `0e83623522f52fea8c18abc4f855a5068d256d0f`; `V1_4_1_IMPLEMENTATION_CHECKPOINT.md` commit `4d5a072ffafbf75d5314ae951aca9a3386d3a435`. These documentation commits do not merge PR #164. Keep `NO_TRADE`, `deployment_calibrated=false`, `validated_model=false`, `validated_for_profitability=false`, `live_signal_enabled=false`.
