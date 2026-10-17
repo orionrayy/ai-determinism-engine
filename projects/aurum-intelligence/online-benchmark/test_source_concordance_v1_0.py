@@ -124,5 +124,43 @@ class SourceConcordanceTests(unittest.TestCase):
         self.assertFalse(sensitivity["automatically_shifted_source_timestamps"])
         self.assertFalse(sensitivity["automatically_promoted_source"])
 
+
+    def test_additive_level_offset_is_reported_without_auto_correction(self):
+        primary = source_rows(1200, aware=True)
+        secondary = source_rows(1200, aware=False, price_shift=10.0)
+        report, _ = compare_source_datasets(primary, secondary)
+        diagnostic = report["price_basis_diagnostics"]
+        fit = diagnostic["ols_level_relationship"]
+        self.assertEqual(fit["status"], "DIAGNOSTIC_ONLY")
+        self.assertAlmostEqual(fit["slope"], 1.0, places=8)
+        self.assertAlmostEqual(fit["intercept_price_units"], -10.0, places=6)
+        self.assertTrue(diagnostic["near_affine_level_difference_candidate"])
+        self.assertFalse(diagnostic["source_correction_applied"])
+        self.assertFalse(diagnostic["source_promoted"])
+        self.assertAlmostEqual(
+            report["signed_price_difference_units_primary_minus_secondary"]["close"]["median"],
+            -10.0,
+            places=6,
+        )
+        self.assertEqual(report["decision_output"], "NO_TRADE")
+
+    def test_multiplicative_price_scale_is_reported_as_diagnostic_only(self):
+        primary = source_rows(1200, aware=True)
+        secondary = []
+        for original in source_rows(1200, aware=False):
+            row = dict(original)
+            for field in ("open", "high", "low", "close"):
+                row[field] *= 2.0
+            secondary.append(row)
+        report, _ = compare_source_datasets(primary, secondary)
+        diagnostic = report["price_basis_diagnostics"]
+        fit = diagnostic["ols_level_relationship"]
+        self.assertAlmostEqual(fit["slope"], 0.5, places=8)
+        self.assertAlmostEqual(fit["intercept_price_units"], 0.0, places=5)
+        self.assertLess(fit["absolute_residual_basis_points_of_primary_close"]["p95"], 1e-8)
+        self.assertFalse(diagnostic["source_correction_applied"])
+        self.assertFalse(diagnostic["source_promoted"])
+        self.assertEqual(report["comparison_mode"], "exact_timestamp_overlap_only_no_dataset_concatenation")
+
 if __name__ == "__main__":
     unittest.main()
