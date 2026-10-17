@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from typing import Mapping, Sequence
 
@@ -85,7 +86,12 @@ def build_asof_features(
     *,
     source_statuses: Mapping[str, str] | None = None,
 ) -> list[dict[str, object]]:
-    """Create stable same-row features; retain anchors even when a source is missing."""
+    """Create stable as-of features in O((anchors + events) log events) time.
+
+    Anchors and external observations are sorted once; each observation enters the
+    rolling state only after its available_at time. This keeps large real-data joins
+    practical and prevents future records from influencing earlier rows.
+    """
     statuses = source_statuses or {}
     anchors: list[tuple[datetime, str, dict[str, object]]] = []
     seen_ids: set[str] = set()
@@ -104,44 +110,100 @@ def build_asof_features(
         anchors.append((dt, decision_id, row))
     anchors.sort(key=lambda item: (item[0], item[1]))
 
-    # Validate all timestamp fields once. All downstream joins compare normalized UTC instants.
-    normalized: list[ExternalObservation] = []
+    # Keep only explicitly timed rows. The unknown-timing count remains visible in every output.
+    unknown_count = 0
+    timed: list[ExternalObservation] = []
     for item in observations:
-        _utc_aware(item.available_at, "available_at", optional=True)
+        available = _utc_aware(item.available_at, "available_at", optional=True)
         if item.event_time is not None:
             _utc_aware(item.event_time, "event_time")
-        if item.available_at is None or item.availability_quality == "unknown":
-            # Keep it out of the causal join; the source audit separately records unknown timing.
+        if available is None or item.availability_quality == "unknown":
+            unknown_count += 1
             continue
-        normalized.append(item)
+        if item.value is not None and not math.isfinite(float(item.value)):
+            continue
+        timed.append(item)
+    timed.sort(key=lambda x: (
+        x.available_at.astimezone(timezone.utc), x.source_id, x.source_record_id
+    ))
 
+    future_index = 0
+    cot_history: list[ExternalObservation] = []
+    macro_history: dict[str, list[ExternalObservation]] = {}
+    news_window = deque()
+    seen_records: dict[tuple[str, str], ExternalObservation] = {}
+    seen_documents: set[str] = set()
+    lineage: dict[str, dict[str, object]] = {}
+    family_latest: dict[str, datetime] = {}
+    proxy_count = 0
+    duplicate_count = 0
+    visible_record_count = 0
     output: list[dict[str, object]] = []
+
     for decision_time, _decision_id, base in anchors:
-        visible = visible_as_of(normalized, decision_time)
-        cot = [x for x in visible if _family(x.source_id) == "cot" and x.value is not None]
-        macro = [x for x in visible if _family(x.source_id) == "macro" and x.value is not None]
-        news_all = [x for x in visible if _family(x.source_id) == "news"]
-        news_all, duplicate_count = _news_deduplicate(news_all)
-        one_hour_start = decision_time - timedelta(hours=1)
-        one_day_start = decision_time - timedelta(hours=24)
-        news_1h = [x for x in news_all if one_hour_start < x.available_at.astimezone(timezone.utc) <= decision_time]
-        news_24h = [x for x in news_all if one_day_start < x.available_at.astimezone(timezone.utc) <= decision_time]
-        cot.sort(key=lambda x: (x.available_at, x.source_record_id))
+        while future_index < len(timed):
+            item = timed[future_index]
+            available = item.available_at.astimezone(timezone.utc)
+            if available > decision_time:
+                break
+            future_index += 1
+            family = _family(item.source_id)
+            if family is None:
+                continue
+            record_key = (item.source_id, item.source_record_id)
+            previous_record = seen_records.get(record_key)
+            if previous_record is not None:
+                # Same source record id should be immutable across archive snapshots.
+                duplicate_count += 1
+                continue
+            seen_records[record_key] = item
+            if family == "news":
+                doc_hash = item.attributes.get("document_sha256")
+                if isinstance(doc_hash, str) and doc_hash:
+                    if doc_hash in seen_documents:
+                        duplicate_count += 1
+                        continue
+                    seen_documents.add(doc_hash)
+                news_window.append(item)
+            elif family == "cot":
+                if item.value is not None:
+                    cot_history.append(item)
+            elif family == "macro":
+                if item.value is not None:
+                    series = item.dataset_or_series_id
+                    bucket = macro_history.setdefault(series, [])
+                    bucket.append(item)
+                    if len(bucket) > 2:
+                        del bucket[:-2]
+            visible_record_count += 1
+            proxy_count += int(item.availability_quality == "conservative_proxy")
+            family_latest[family] = max(family_latest.get(family, available), available)
+            node = lineage.setdefault(item.source_id, {"payload_hashes": set(), "record_count": 0})
+            node["payload_hashes"].add(item.payload_sha256)  # type: ignore[union-attr]
+            node["record_count"] = int(node["record_count"]) + 1
+
+        day_floor = decision_time - timedelta(hours=24)
+        while news_window and news_window[0].available_at.astimezone(timezone.utc) <= day_floor:
+            news_window.popleft()
+        cot = cot_history
         latest_cot = cot[-1] if cot else None
         prior_cot = cot[-2] if len(cot) >= 2 else None
-
-        latest_macro_by_series: dict[str, list[ExternalObservation]] = {}
-        for item in macro:
-            latest_macro_by_series.setdefault(item.dataset_or_series_id, []).append(item)
         latest_macro_values: list[float] = []
         macro_changes: list[float] = []
-        for series_id in sorted(latest_macro_by_series):
-            values = sorted(latest_macro_by_series[series_id], key=lambda x: (x.available_at, x.source_record_id))
-            latest = float(values[-1].value)  # type: ignore[arg-type]
-            latest_macro_values.append(latest)
+        for series_id in sorted(macro_history):
+            values = macro_history[series_id]
+            if values:
+                latest_macro_values.append(float(values[-1].value))  # type: ignore[arg-type]
             if len(values) >= 2:
-                macro_changes.append(latest - float(values[-2].value))  # type: ignore[arg-type]
+                macro_changes.append(float(values[-1].value) - float(values[-2].value))  # type: ignore[arg-type]
 
+        news_24h = list(news_window)
+        one_hour_floor = decision_time - timedelta(hours=1)
+        news_1h = [x for x in news_24h if one_hour_floor < x.available_at.astimezone(timezone.utc) <= decision_time]
+        tone_values = [
+            float(x.value) for x in news_24h
+            if x.value is not None and math.isfinite(float(x.value))
+        ]
         out = dict(base)
         out["feature_cot_net_position"] = float(latest_cot.value) if latest_cot else None
         out["feature_cot_net_position_change"] = (
@@ -152,20 +214,15 @@ def build_asof_features(
         out["feature_macro_change"] = sum(macro_changes) / len(macro_changes) if macro_changes else None
         out["feature_news_count_1h"] = len(news_1h)
         out["feature_news_count_24h"] = len(news_24h)
-        tone_values = [float(x.value) for x in news_24h if x.value is not None and math.isfinite(float(x.value))]
         out["feature_news_tone_mean_24h"] = sum(tone_values) / len(tone_values) if tone_values else None
         for theme in THEME_WHITELIST:
             out[f"feature_news_{theme.lower()}_count_24h"] = sum(
-                1 for item in news_24h
-                if theme in item.attributes.get("themes", ())
+                1 for item in news_24h if theme in item.attributes.get("themes", ())
             )
         out["news_duplicate_records_removed"] = duplicate_count
-        out["availability_proxy_count"] = sum(
-            1 for item in visible if item.availability_quality == "conservative_proxy"
-        )
-        out["unknown_availability_excluded_total"] = sum(
-            1 for item in observations if item.available_at is None or item.availability_quality == "unknown"
-        )
+        out["availability_proxy_count"] = proxy_count
+        out["unknown_availability_excluded_total"] = unknown_count
+        out["visible_external_record_count"] = visible_record_count
         cot_state = _source_state(statuses, "cot")
         macro_state = _source_state(statuses, "macro")
         news_state = _source_state(statuses, "news")
@@ -185,13 +242,9 @@ def build_asof_features(
             "partial_coverage" if news_state == "PARTIAL" else
             "source_unavailable" if news_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
-        lineage: dict[str, dict[str, object]] = {}
-        for item in visible:
-            if _family(item.source_id) is None:
-                continue
-            node = lineage.setdefault(item.source_id, {"payload_hashes": set(), "record_count": 0})
-            node["payload_hashes"].add(item.payload_sha256)  # type: ignore[union-attr]
-            node["record_count"] = int(node["record_count"]) + 1
+        out["feature_family_latest_available_at"] = {
+            family: family_latest[family] for family in sorted(family_latest)
+        }
         out["feature_lineage"] = {
             source: {"payload_hashes": tuple(sorted(node["payload_hashes"])),
                      "record_count": node["record_count"]}
