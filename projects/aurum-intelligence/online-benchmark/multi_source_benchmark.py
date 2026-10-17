@@ -272,6 +272,7 @@ def build_report(results, overlap, min_total_rows):
     all_cases = sum(item["real_data_benchmark"]["rule_comparisons"] for item in results)
     market_paths = sum(item["scenarios"]["market_paths"] for item in results)
     software_scenarios = sum(item["scenarios"]["software_scenarios"] for item in results)
+    price_compatibility = overlap.get("close_relative_delta", {}).get("compatibility_status", "UNKNOWN")
     passed = (
         len(results) == len(SOURCES)
         and all(item["status"] == "PASS" for item in results)
@@ -280,22 +281,32 @@ def build_report(results, overlap, min_total_rows):
         and overlap["status"] == "PASS"
     )
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "1.1.0",
         "benchmark_kind": "multi_source_real_dataset_diagnostics",
         "status": "PASS" if passed else "FAIL",
         "status_semantics": "pipeline and test contracts only; not trading approval",
-        "source_count": len(results), "dataset_rows_sum_not_deduplicated": rows_total,
-        "minimum_total_rows": min_total_rows, "real_data_rule_comparisons": all_cases,
+        "source_count": len(results),
+        "dataset_rows_sum_not_deduplicated": rows_total,
+        "minimum_total_rows": min_total_rows,
+        "real_data_rule_comparisons": all_cases,
         "synthetic_market_path_contracts": market_paths,
         "synthetic_software_contracts": software_scenarios,
-        "sources": results, "overlap_concordance": [overlap],
-        "decision_output": "NO_TRADE", "predictive_model_validated": False,
-        "model_calibrated_for_deployment": False, "live_signal_enabled": False,
+        "sources": results,
+        "overlap_concordance": [overlap],
+        "cross_source_compatibility_status": price_compatibility,
+        "cross_source_confirmation_allowed": False,
+        "production_ready": False,
+        "decision_output": "NO_TRADE",
+        "predictive_model_validated": False,
+        "model_calibrated_for_deployment": False,
+        "live_signal_enabled": False,
         "live_order_execution_enabled": False,
         "limitations": [
             "Rows from different sources are not deduplicated or concatenated; the total is not an independent sample count.",
             "Community-source broker provenance, timezone semantics, data rights and upstream independence remain unverified.",
             "The M5 and M1 results are separate tasks; their metrics are not directly comparable without a normalized protocol.",
+            "M5 price-level compatibility is tested separately from direction agreement using explicit relative-delta thresholds.",
+            "Cross-source confirmation is disabled while independent source lineage and price-level compatibility are unverified.",
             "Costs are assumed, not measured broker spread, commission, slippage, swaps or fills.",
             "Synthetic scenario contracts are code robustness tests, not extra observed market outcomes.",
             "Next-candle body direction is not TP-before-SL calibration or executable strategy performance.",
@@ -303,11 +314,10 @@ def build_report(results, overlap, min_total_rows):
         ],
     }
 
-
 def render_markdown(report):
     lines = [
         "# Aurum multi-source benchmark", "",
-        "Pipeline result: " + report["status"], "Decision gate: NO_TRADE", "",
+        "Pipeline result: " + report["status"], "Cross-source price compatibility: " + report.get("cross_source_compatibility_status", "UNKNOWN"), "Decision gate: NO_TRADE", "",
         "PASS means ingestion/audit/replay/scenario contracts ran; it does not approve a trading model.", "",
         "| Source | Rows | Timeframe | UTC start | UTC end | SHA-256 | Real rule comparisons | Market contracts | Software contracts |",
         "|---|---:|---:|---|---|---|---:|---:|---:|",
@@ -319,14 +329,27 @@ def render_markdown(report):
             data["end_utc"], source["sha256"], item["real_data_benchmark"]["rule_comparisons"],
             item["scenarios"]["market_passed"], item["scenarios"]["software_passed"]))
     overlap = report["overlap_concordance"][0]
+    absolute = overlap.get("close_abs_delta_price_units", {
+        "median": overlap.get("close_abs_delta_median", 0.0),
+        "p95": overlap.get("close_abs_delta_p95", 0.0),
+        "maximum": overlap.get("close_abs_delta_max", 0.0),
+    })
+    relative = overlap.get("close_relative_delta", {})
+    agreement = overlap.get("close_to_close_direction_agreement")
     lines.extend([
-        "", "## Cross-source M5 overlap", "",
-        "Exact shared timestamps: {}; close delta median/p95/max: {:.6f}/{:.6f}/{:.6f} price units.".format(
-            overlap["exact_timestamp_matches"], overlap["close_abs_delta_median"],
-            overlap["close_abs_delta_p95"], overlap["close_abs_delta_max"]),
-        "Direction agreement on matched consecutive bars: {}. Source independence remains UNVERIFIED.".format(
-            "n/a" if overlap["close_to_close_direction_agreement"] is None
-            else format(overlap["close_to_close_direction_agreement"], ".4f")),
+        "", "## Cross-source M5 overlap and price compatibility", "",
+        "Exact shared timestamps: {}.".format(overlap["exact_timestamp_matches"]),
+        "Absolute close difference median/P95/max: {:.6f}/{:.6f}/{:.6f} price units.".format(
+            absolute["median"], absolute["p95"], absolute["maximum"]),
+        "Relative close difference median/P95: {:.4%}/{:.4%}.".format(
+            relative.get("median_fraction", 0.0), relative.get("p95_fraction", 0.0)),
+        "Price-level compatibility: **{}** (median limit {:.2%}; P95 limit {:.2%}).".format(
+            relative.get("compatibility_status", "UNKNOWN"),
+            relative.get("median_limit_fraction", 0.0025),
+            relative.get("p95_limit_fraction", 0.005)),
+        "Consecutive close-to-close direction agreement: {}. Source independence remains UNVERIFIED.".format(
+            "n/a" if agreement is None else format(agreement, ".4f")),
+        "Cross-source confirmation enabled: no. High direction agreement does not cure divergent price levels or prove independent provenance.",
         "", "## Full-history fixed-rule results", "",
     ])
     for item in report["sources"]:
