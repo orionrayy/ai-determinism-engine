@@ -153,19 +153,19 @@ Benchmark interface:
 
 ## Acceptance Checklist
 
-- [ ] Each provider parser has deterministic fixture tests independent of network.
-- [ ] At least one public-source acquisition is verified by payload hash and caps; missing data cannot masquerade as success.
-- [ ] COT availability cannot precede verified/conservative public availability.
-- [ ] GDELT archive-time availability and de-duplication are deterministic.
-- [ ] BLS period/publication time remain distinct; FRED vintages never rewrite old as-known-as-of rows.
-- [ ] Future-row mutation tests leave past features and holdout predictions unchanged.
-- [ ] Ablations use identical rows/labels and report coverage.
-- [ ] ≥100,000 real event records met or explicitly NOT_MET with actual count/reason.
-- [ ] Existing ≥700,000 active-candle and ≥20,000 real scenario gates remain.
-- [ ] Calibration uses fair causal baselines and uncertainty intervals; no profitability implication.
-- [ ] Latest tested commit has an actual completed green hosted run; startup_failure/zero-job runs are not tests.
-- [ ] Artifacts exclude raw large datasets and credentials.
-- [ ] Decision remains NO_TRADE; deployment flags remain false.
+- [x] Each provider parser has deterministic fixture tests independent of network.
+- [x] At least one public-source acquisition is verified by payload hash and caps; missing data cannot masquerade as success.
+- [x] COT availability cannot precede verified/conservative public availability.
+- [x] GDELT archive-time availability and de-duplication are deterministic.
+- [x] BLS period/publication time remain distinct; FRED vintages never rewrite old as-known-as-of rows.
+- [x] Future-row mutation tests leave past features and holdout predictions unchanged.
+- [x] Ablations use identical rows/labels and report coverage.
+- [x] ≥100,000 real event records met or explicitly NOT_MET with actual count/reason.
+- [x] Existing ≥700,000 active-candle and ≥20,000 real scenario gates remain.
+- [x] Calibration uses fair causal baselines and uncertainty intervals; no profitability implication.
+- [x] Latest tested commit has an actual completed green hosted run; startup_failure/zero-job runs are not tests.
+- [x] Artifacts exclude raw large datasets and credentials.
+- [x] Decision remains NO_TRADE; deployment flags remain false.
 
 ## Official References
 
@@ -177,3 +177,20 @@ Benchmark interface:
 - FRED observations/vintage parameters: https://fred.stlouisfed.org/docs/api/fred/series_observations.html
 - FRED real-time/vintage semantics: https://fred.stlouisfed.org/docs/api/fred/realtime_period.html
 - FRED terms: https://fred.stlouisfed.org/docs/api/terms_of_use.html
+
+
+## Actual Execution Outcome — 2026-10-17
+
+**State:** Implementation and hosted verification complete on the P0 research branch; this is not a production release. The PR remains draft/unmerged.
+
+- Verified run: [GitHub Actions #39035732248](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248), conclusion `success`, tested source head `f3eaa644a1f73c0d4f9521870e1ba5c460cfaf69`.
+- Unit/regression tests: 115 passed; temporal-calibration contracts: 240/240 passed. The existing large Bid/Ask benchmark passed with 1,313,280 paired M1 candles, 20,000 valid ATR anchors, and 120,000 TP/SL path scenarios.
+- Artifact #12102745058, 2,624,921 bytes, SHA-256 `b1710712519fd48e3a5f29acf1d532707997821bba1948e49b093004fd7b81f0`; downloadable from https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035732248/artifacts/12102745058.
+- GDELT scale gate: 141,020 unique real observations >= 100,000, no synthetic or duplicated records added, 100 selected archives processed out of 85,809 discovered. The archive set covers only 1,500 of 1,313,279 minutes (0.114218%), so `source_acquisition_status=PASS` but `source_completeness_status=PARTIAL`; this is not full historical news coverage.
+- Feature eligibility across 19,937 mature price labels: COT 19,739 rows (99.0069%, `PARTIAL`), macro 0 (`NOT_MET`), news 0 (`NOT_MET`). BLS values are descriptive without a verified publication-time calendar; FRED/ALFRED skipped without the optional API key. Price+news and price+macro remain ineligible.
+- Same-row holdout n=3,987: price-only Brier 0.1609893 versus price+COT/combined Brier 0.1609044. Incremental Brier improvement +0.00008494, paired moving-block 95% interval [-0.00014777, +0.00032012] crossing zero. No robust incremental COT value, alpha, best-model, or world-leading-accuracy claim is established.
+- A preceding run [#39035356832](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39035356832) failed after unit/price gates due to a report-scope `NameError`. It is preserved as a failed diagnostic. The scope was corrected and the full pipeline was rerun successfully; don't retroactively classify the failed run as green.
+- Application remains v1.3.1 `research-ux-prototype`; evaluation protocol v1.4.0 P0. `NO_TRADE`, deployment calibration false, validated model false, validated profitability false, and live signal/order flags false. PR #164 remains draft/unmerged.
+- Remaining independent blockers: data rights/provenance and quote/time semantics; a material primary-vs-tick price-level discrepancy and suspected shared lineage of the secondary OHLCV/tick Bid feed; broker-authorized quotes and measured execution costs; adequate continuous news coverage and authoritative macro vintages; out-of-sample validation across independent regimes and paper trading.
+
+Note: the checkbox checklist above records current acceptance outcomes. It does not assert that every planned historical RED-phase step was separately logged in chronological TDD order; the evidence of completion is the current code/test head and hosted run cited here.
