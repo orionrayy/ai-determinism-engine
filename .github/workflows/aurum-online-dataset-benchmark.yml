@@ -129,6 +129,13 @@ jobs:
           assert 0 in alignment['tested_offsets_seconds'], alignment
           assert len(alignment['results']) == len(alignment['tested_offsets_seconds']), alignment
           assert alignment['diagnosis'] in {'POSSIBLE_TIMESTAMP_LABEL_OR_TIMEZONE_SHIFT', 'NO_OBVIOUS_BOUNDED_SHIFT_FIX'}, alignment
+          if alignment['diagnosis'] == 'NO_OBVIOUS_BOUNDED_SHIFT_FIX':
+              assert alignment['material_shift_candidate'] is False, alignment
+              assert alignment['best_offset_seconds_diagnostic_only'] is None, alignment
+              assert alignment['relative_median_improvement_fraction'] < 0.2, alignment
+          else:
+              assert alignment['material_shift_candidate'] is True, alignment
+              assert alignment['best_offset_seconds_diagnostic_only'] != 0, alignment
           compatibility = overlap['close_relative_delta']['compatibility_status']
           assert compatibility in {'COMPARABLE', 'DIVERGENT'}, overlap
           assert result['cross_source_compatibility_status'] == compatibility, result
@@ -154,7 +161,10 @@ jobs:
               'median_relative_close_delta': overlap['close_relative_delta']['median_fraction'],
               'p95_relative_close_delta': overlap['close_relative_delta']['p95_fraction'],
               'alignment_diagnosis': alignment['diagnosis'],
+              'material_shift_candidate': alignment['material_shift_candidate'],
               'best_timestamp_offset_seconds_diagnostic_only': alignment['best_offset_seconds_diagnostic_only'],
+              'best_observed_timestamp_offset_seconds_diagnostic_only': alignment['best_observed_offset_seconds_diagnostic_only'],
+              'timestamp_offset_relative_median_improvement': alignment['relative_median_improvement_fraction'],
               'best_relative_close_delta_median': alignment['best_median_relative_delta_fraction'],
               'cross_source_confirmation_allowed': result['cross_source_confirmation_allowed'],
               'decision_output': result['decision_output'],
