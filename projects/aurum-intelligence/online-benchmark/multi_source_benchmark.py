@@ -247,13 +247,19 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
     best = min(eligible, key=lambda item: item["relative_close_delta_median_fraction"])
     exact_median_relative = exact["relative_close_delta_median_fraction"]
     best_median_relative = best["relative_close_delta_median_fraction"]
-    if (
+    relative_median_improvement = (
+        (exact_median_relative - best_median_relative) / exact_median_relative
+        if exact_median_relative > 0 else 0.0
+    )
+    material_shift_candidate = (
         best["source_b_minus_source_a_timestamp_seconds"] != 0
         and best_median_relative < exact_median_relative * 0.8
-    ):
-        alignment_diagnosis = "POSSIBLE_TIMESTAMP_LABEL_OR_TIMEZONE_SHIFT"
-    else:
-        alignment_diagnosis = "NO_OBVIOUS_BOUNDED_SHIFT_FIX"
+    )
+    alignment_diagnosis = (
+        "POSSIBLE_TIMESTAMP_LABEL_OR_TIMEZONE_SHIFT"
+        if material_shift_candidate
+        else "NO_OBVIOUS_BOUNDED_SHIFT_FIX"
+    )
 
     differences = [
         abs(by_a[stamp]["close"] - by_b[stamp]["close"])
@@ -310,9 +316,14 @@ def compare_m5(spec_a, rows_a, spec_b, rows_b, minimum_matches=1000):
         "temporal_alignment_probe": {
             "tested_offsets_seconds": alignment_offsets,
             "results": alignment_probe,
-            "best_offset_seconds_diagnostic_only": best["source_b_minus_source_a_timestamp_seconds"],
+            "best_observed_offset_seconds_diagnostic_only": best["source_b_minus_source_a_timestamp_seconds"],
+            "best_offset_seconds_diagnostic_only": (
+                best["source_b_minus_source_a_timestamp_seconds"] if material_shift_candidate else None
+            ),
             "best_median_relative_delta_fraction": best_median_relative,
             "exact_timestamp_median_relative_delta_fraction": exact_median_relative,
+            "relative_median_improvement_fraction": relative_median_improvement,
+            "material_shift_candidate": material_shift_candidate,
             "diagnosis": alignment_diagnosis,
             "automatic_timestamp_shifting": False,
         },
@@ -393,6 +404,8 @@ def render_markdown(report):
     relative = overlap.get("close_relative_delta", {})
     agreement = overlap.get("close_to_close_direction_agreement")
     alignment = overlap.get("temporal_alignment_probe", {})
+    candidate_offset = alignment.get("best_offset_seconds_diagnostic_only")
+    candidate_offset_text = "none" if candidate_offset is None else str(candidate_offset)
     lines.extend([
         "", "## Cross-source M5 overlap and price compatibility", "",
         "Exact shared timestamps: {}.".format(overlap["exact_timestamp_matches"]),
@@ -406,9 +419,12 @@ def render_markdown(report):
             relative.get("p95_limit_fraction", 0.005)),
         "Consecutive close-to-close direction agreement: {}. Source independence remains UNVERIFIED.".format(
             "n/a" if agreement is None else format(agreement, ".4f")),
-        "Bounded timestamp-alignment probe: best offset B−A = {} seconds; relative median {:.4%}; diagnosis {}. No automatic shift applied.".format(
-            alignment.get("best_offset_seconds_diagnostic_only", "unknown"),
+        "Bounded timestamp-alignment probe: material candidate offset B−A = {} seconds; best observed offset = {} seconds; relative median {:.4%} vs exact {:.4%} (improvement {:.2%}); diagnosis {}. No automatic shift applied.".format(
+            candidate_offset_text,
+            alignment.get("best_observed_offset_seconds_diagnostic_only", "unknown"),
             alignment.get("best_median_relative_delta_fraction", 0.0),
+            alignment.get("exact_timestamp_median_relative_delta_fraction", 0.0),
+            alignment.get("relative_median_improvement_fraction", 0.0),
             alignment.get("diagnosis", "NOT_RECORDED")),
         "Cross-source confirmation enabled: no. High direction agreement does not cure divergent price levels or prove independent provenance.",
         "", "## Full-history fixed-rule results", "",
