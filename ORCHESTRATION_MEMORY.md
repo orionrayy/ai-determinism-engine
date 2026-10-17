@@ -971,3 +971,39 @@ Canonical project remains in `projects/aurum-intelligence`; application package 
 - After saving the latest project status/checkpoint, the full workflow ran again on PR head `65958a8e68f0c3feed22693996f881b86c9d495f`; [GitHub Actions #39026245471](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39026245471) completed successfully. Artifact #12098043414, 2,595,322 bytes, SHA-256 `184ff507423f4902dd8d9f86647d0e6ca5fe3fd73513de4d604f1b3823bc16aa`.
 - All workflow stages passed: setup/installation, temporal calibration contracts, OHLCV benchmark, tick Bid/Ask audit, lineage assertion gates and artifact upload. This rerun does not change the data interpretation: secondary mid-labelled OHLCV is 99.9772% exact on Bid bars from the reconstructed tick dataset and remains non-independent until source provenance is resolved.
 - PR #164 remains open/draft/unmerged. `NO_TRADE`, model calibrated/validated = false, live signal/order execution disabled. The remaining P0 gates are source ownership/provenance and quote semantics, intended-use rights, primary-vs-tick level discrepancy, broker-authorized quotes/measured costs, and independent chronological validation with untouched holdout.
+
+
+## Aurum Intelligence — 700k+ M1 Bid/Ask benchmark and fair base-rate result (2026-10-17 18:24 WIB)
+
+Canonical project remains `projects/aurum-intelligence`; app package v1.3.1, evaluator protocol v1.4.0 P0; PR #164 stays draft/unmerged. Keep `NO_TRADE`.
+
+### Latest green full pipeline
+
+- GitHub Actions [run #39028110673](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39028110673) passed on tested head `375aa2e3c225394943f177a5243d5c18ccd04fd9`. Artifact #12099177720, 2,613,340 bytes, SHA-256 `5b5129edebd988ca885e0e06f69b8430a9db01ab807fcdb8e11c6d3b0470891b`, retention through 2026-10-31.
+- The hosted workflow completed: temporal-calibration contracts, 46 unit tests including new large-scale cases, current community M5 audit, tick Bid/Ask and lineage audit, 700k+/20k+ gates, large-scale benchmark, final assertions, report generation and artifact upload.
+- Later documentation commits on the PR branch do not change benchmark code/workflow files. Workflow path filters don't include all progress/status/checkpoint documents, so the code/test evidence reference is the tested head above.
+
+### Large-scale real dataset
+
+- Source: `kevingtlin/Market-Data-Lab`, dataset ID `XAUUSD-DUKASCOPY-M1-BID-ASK`, metadata reports Dukascopy via `dukascopy-node`; exact broker/source lineage and upstream rights are not independently verified.
+- Period 2023-01 to 2025-06, 30 months. Downloaded 131,316,007 bytes of monthly Bid/Ask M1 data; paired valid rows: **1,313,280**.
+- Weekday rows: 937,440; weekday active non-flat candles: **870,500**, satisfying the minimum 700,000 without counting calendar/weekend padding. Zero-range Mid OHLC fraction: 32.7459%; reported, not hidden.
+- 20,000 unique real timestamp scenario anchors, all valid ATR; 875,611 eligible contiguous windows; 120,000 TP/SL path scenarios (20k anchors × 2 directions × 3 TP distances); 52,883 directional rule events scored; 10,577 final-holdout scored events; 1,218 ambiguous same-bar outcomes excluded.
+- Added finite-positive ATR filtering for anchors, a weekday-active non-flat candle gate, a causal global matured-label prevalence comparator, and a moving-block bootstrap interval vs that comparator. Final holdout priors are frozen; no final-test labels are consumed to update prediction priors.
+
+### Calibration result (do not overclaim)
+
+- Aggregate rule/side probabilities Brier: 0.1401016413; global causal matured-label baseline Brier: 0.1400154407; base rate 0.1681258628.
+- Brier skill against weak constant-0.5 comparator: +0.439593, **not an edge claim** because the target is imbalanced.
+- Against the more appropriate global matured-label baseline, aggregate Brier skill is **-0.000615651**. Moving-block 95% CI for Brier improvement is [-0.000173704, -0.000009063], entirely negative, hence the baseline comparison is a negative/no-edge result.
+- Final holdout Brier: 0.163455139 vs global baseline 0.163549419, skill +0.000576467, ECE 0.0433126. The tiny positive holdout delta does not override negative aggregate skill and is not enough to claim stable alpha.
+- Code/output stays `deployment_calibrated=false`, `validated_model=false`, `validated_for_profitability=false`, `live_signal_enabled=false`, `decision_output=NO_TRADE`. No “world #1 accuracy” or profitability claim is warranted.
+
+### Open P0 gates / next work
+
+1. Verify source-owner lineage, quote basis, timestamp/bar conventions and data-use rights for GetData, Sai310421 and the reconstructed tick source; secondary OHLCV must not count as independent of tick data until explained.
+2. Resolve the primary-vs-tick price-level discrepancy using independent provider/broker evidence.
+3. Obtain broker-authorized Bid/Ask/tick data with measured spread, commission, swap, slippage, latency, market-impact and fill semantics.
+4. Only after the data gate, validate target-specific calibration on independent chronological regimes and locked untouched holdout with uncertainty, compare against global/constant/prequential baselines, then paper-trade and perform separate security/risk review. Do not enable live execution until then.
+
+Checkpoint files on the PR branch were updated: `projects/aurum-intelligence/PROGRESS_LOG.md` commit `e756edaa52e5cfb97c10dac4852203f58660444e`; `IMPLEMENTATION_STATUS.json` commit `576c1de66e9a7b91da3ba38782235d03732a87dd`; large-scale checkpoint `V1_4_1_IMPLEMENTATION_CHECKPOINT.md` commit `3688a6907f68ae5d80839355e09cf548553785e8`. The connector refused the PR description update because the GitHub account requires a verified email address; repo checkpoint files and this canonical memory are updated.
