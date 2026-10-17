@@ -198,7 +198,7 @@ def classify_lineage_overlap(exact_ohlc_matches, overlap_bars, threshold=0.95, m
 
 
 def _request_bytes(url, cap, label, timeout=60):
-    req = Request(url, headers={"User-Agent": "Serevex-Intelligence/1.4.1 research-benchmark"})
+    req = Request(url, headers={"User-Agent": "Serevex-Quant-Research/1.4.1 research-benchmark"})
     last = None
     for attempt in range(3):
         try:
