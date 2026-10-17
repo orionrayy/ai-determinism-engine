@@ -87,6 +87,25 @@ class GdeltGkgTests(unittest.TestCase):
             "https://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
         ])
 
+    def test_budget_limit_after_prior_records_is_a_partial_stop(self):
+        from unittest.mock import patch
+        with patch.object(gdelt, "_bounded_get", side_effect=ValueError("content_length_exceeds_limit")):
+            payload, warning = gdelt._download_archive_with_budget(
+                "https://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
+                remaining_bytes=100, prior_observation_count=500,
+            )
+        self.assertIsNone(payload)
+        self.assertEqual(warning, "aggregate_byte_cap_reached_before_next_archive")
+
+    def test_budget_limit_before_any_records_fails_closed(self):
+        from unittest.mock import patch
+        with patch.object(gdelt, "_bounded_get", side_effect=ValueError("content_length_exceeds_limit")):
+            with self.assertRaisesRegex(ValueError, "content_length_exceeds_limit"):
+                gdelt._download_archive_with_budget(
+                    "https://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
+                    remaining_bytes=100, prior_observation_count=0,
+                )
+
     def test_no_article_body_is_persisted(self):
         raw=row("20260301120000-1")
         result=gdelt.parse_gkg_tsv(raw,manifest(raw))
