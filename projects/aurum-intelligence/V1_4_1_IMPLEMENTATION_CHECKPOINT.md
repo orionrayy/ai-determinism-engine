@@ -49,7 +49,7 @@ Do not add more model complexity, enable live signals, or route orders before th
 
 - PR: https://github.com/orionrayy/ai-determinism-engine/pull/164 (remains draft; not merged).
 - Benchmark report/artifact: https://github.com/orionrayy/ai-determinism-engine/actions/runs/39024803960
-- Latest follow-up CI should be rechecked after this documentation checkpoint updates the PR branch.
+- Latest code/test head passed workflow #39025937658. A later PR head after status/checkpoint documentation also passed workflow #39026245471: https://github.com/orionrayy/ai-determinism-engine/actions/runs/39026245471; artifact #12098043414, SHA-256 `184ff507423f4902dd8d9f86647d0e6ca5fe3fd73513de4d604f1b3823bc16aa`. The latest full pipeline is green; all source/provenance/calibration gates remain open.
 
 
 ## 2026-10-17 — third-source tick Bid/Ask and lineage-audit checkpoint
