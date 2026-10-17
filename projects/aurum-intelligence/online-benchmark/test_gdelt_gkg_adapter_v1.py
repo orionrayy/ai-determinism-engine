@@ -57,6 +57,16 @@ class GdeltGkgTests(unittest.TestCase):
         self.assertEqual(gdelt.classify_doc_api_history(is_doc_api=True, claimed_multiyear=True),"NOT_MET")
         self.assertEqual(gdelt.classify_doc_api_history(is_doc_api=True, claimed_multiyear=False),"SMOKE_ONLY")
 
+    def test_historical_master_list_limit_covers_current_official_listing(self):
+        self.assertGreaterEqual(gdelt.MAX_MASTER_BYTES, 130 * 1024 * 1024)
+
+    def test_official_http_archive_links_are_upgraded_to_https(self):
+        source = "http://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip"
+        self.assertEqual(gdelt.normalize_archive_url(source),
+            "https://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip")
+        with self.assertRaises(ValueError):
+            gdelt.normalize_archive_url("http://example.com/gdeltv2/20230101120000.gkg.csv.zip")
+
     def test_no_article_body_is_persisted(self):
         raw=row("20260301120000-1")
         result=gdelt.parse_gkg_tsv(raw,manifest(raw))
