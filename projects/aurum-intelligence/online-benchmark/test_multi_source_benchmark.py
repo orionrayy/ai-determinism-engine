@@ -88,6 +88,12 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertIn("UNVERIFIED", result["independence_status"])
         self.assertAlmostEqual(result["close_abs_delta_price_units"]["median"], 0.2, places=6)
         self.assertEqual(result["close_relative_delta"]["compatibility_status"], "COMPARABLE")
+        price_diagnostics = result["price_level_diagnostics"]
+        self.assertAlmostEqual(price_diagnostics["signed_close_delta_median_b_minus_a"], 0.2, places=6)
+        self.assertAlmostEqual(price_diagnostics["ohlc_signed_delta_median_b_minus_a"]["close"], 0.2, places=6)
+        self.assertEqual(len(price_diagnostics["monthly_diagnostics"]), 1)
+        self.assertEqual(price_diagnostics["monthly_diagnostics"][0]["month_utc"], "2026-03")
+        self.assertEqual(len(price_diagnostics["representative_paired_candles"]), 5)
         probe = result["temporal_alignment_probe"]
         self.assertIn(0, probe["tested_offsets_seconds"])
         self.assertFalse(probe["automatic_timestamp_shifting"])
@@ -103,6 +109,8 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertEqual(result["exact_timestamp_matches"], 1200)
         self.assertEqual(result["close_relative_delta"]["compatibility_status"], "DIVERGENT")
         self.assertGreater(result["close_relative_delta"]["median_fraction"], 0.0025)
+        self.assertAlmostEqual(result["price_level_diagnostics"]["signed_close_delta_median_b_minus_a"], 100.0, places=6)
+        self.assertGreater(len(result["price_level_diagnostics"]["monthly_diagnostics"]), 0)
         self.assertFalse(result["cross_source_confirmation_allowed"])
         self.assertFalse(result["datasets_merged"])
         probe = result["temporal_alignment_probe"]
