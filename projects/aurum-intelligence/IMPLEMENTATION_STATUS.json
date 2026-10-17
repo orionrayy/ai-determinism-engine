@@ -115,6 +115,7 @@
     "browser_device_acceptance_tested": false
   },
   "required_next": [
+    "read back fresh hosted CI and artifact for paired 250-replicate TP-before-SL calibration-gain uncertainty and holdout mutation invariance; keep NO_TRADE",
     "read back fresh CI result/artifact for target-specific TP-before-SL OOS benchmark; do not promote diagnostic metrics as validation",
     "review data rights, original provenance, timezone semantics and broker quote/execution meanings",
     "acquire licensed broker-specific Bid/Ask/tick data with measured commission, spread, slippage and fill handling",
@@ -473,9 +474,37 @@
     "decision_gate": "NO_TRADE",
     "production_approval": "BLOCKED",
     "pending_acceptance": [
-      "fresh GitHub Actions CI passes on current branch head",
-      "real per-source long/short train/calibration/holdout counts and metrics inspected from artifact",
-      "all maturity/NO_TRADE acceptance assertions pass"
-    ]
+      "fresh hosted CI passes after paired-bootstrap, model-hash and holdout-invariance code change",
+      "latest multi-source artifact contains paired 250-replicate raw-minus-calibrated Brier/log-loss intervals for all fitted source/side calibrators",
+      "read back result and verify point-estimate/interval contracts, all long/short counts, source hashes and no-live-execution flags",
+      "do not promote if paired confidence interval includes zero or event-rate baseline is not consistently beaten across preregistered comparisons"
+    ],
+    "paired_uncertainty": {
+      "method": "paired_moving_block_bootstrap_raw_minus_calibrated",
+      "metrics": [
+        "Brier improvement",
+        "Log-loss improvement"
+      ],
+      "replicates": 250,
+      "block_size": 12,
+      "seed": 20261019,
+      "interpretation": "positive raw-minus-calibrated score improvement favors calibration; if interval includes zero, do not claim reliable calibration gain"
+    },
+    "temporal_invariance_test": "mutating bars only from final holdout must leave training model parameter SHA-256 and calibration fit parameters unchanged",
+    "previous_baseline_run": {
+      "run_id": 39019576117,
+      "conclusion": "success",
+      "artifact_id": 12096301869,
+      "artifact_sha256": "69ac2c75a670fd033d43d0f242bb585a00996135cbc71e425f549e5e548b0727",
+      "artifact_bytes": 49841,
+      "source_commit": "8e1dabf70e0dd1df816424717c4d0efe56c90a0d",
+      "dataset_row_sum_not_deduplicated": 140164,
+      "fixed_rule_comparisons": 750,
+      "synthetic_market_path_contracts": 2160,
+      "synthetic_software_contracts": 720,
+      "barrier_oos_holdout_labels_across_source_side_pairs": 55996,
+      "runtime_ms": 141795.762,
+      "calibration_gain_consistent": false
+    }
   }
 }
