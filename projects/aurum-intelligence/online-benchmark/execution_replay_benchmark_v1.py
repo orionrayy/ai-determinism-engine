@@ -88,6 +88,7 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
 
     quality = large.market_quality(dataset)
     features = large.indicators(dataset)
+    entry_geometry = large.entry_geometry_diagnostics(dataset, features["atr14"])
     anchors, eligible_windows = large.candidate_anchor_indices(dataset, min_anchors, features["atr14"])
     signals = large.signals_for_anchors(dataset, anchors, features)
     if len(np.unique(dataset["ts"][anchors])) < min_anchors:
@@ -97,6 +98,9 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
     outcomes: dict[tuple[int, int], dict[str, Any]] = {}
     status_counts: dict[str, int] = {}
     label_crosschecks = 0
+    invalid_geometry_paths = 0
+    legacy_invalid_geometry_stop_labels = 0
+    signals_blocked_by_entry_geometry = 0
     for ordinal, anchor_value in enumerate(anchors):
         anchor = int(anchor_value)
         atr = float(features["atr14"][anchor])
@@ -108,12 +112,22 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
                 horizon_bars=large.HORIZON_BARS, expected_interval_seconds=60)
             legacy = large.evaluate_path(dataset, features, anchor, direction, 1.0,
                                          horizon=large.HORIZON_BARS)
+            status_counts[result["status"]] = status_counts.get(result["status"], 0) + 1
+            if result["status"] == "invalid_stop_geometry_at_entry":
+                invalid_geometry_paths += 1
+                if legacy.get("status") == "sl_at_open" and legacy.get("label") == 0:
+                    legacy_invalid_geometry_stop_labels += 1
+                outcomes[(ordinal, direction)] = {
+                    "path_status": result["status"], "label": None, "lower_r": None, "upper_r": None,
+                    "entry_time_utc": result["entry_time_utc"], "exit_time_utc": None,
+                    "fill_assumption": result["fill_assumption"],
+                }
+                continue
             if result["outcome_label_tp_before_sl"] != legacy["label"]:
                 raise ValueError("path_label_disagreement_anchor_{}_side_{}".format(anchor, direction))
             label_crosschecks += 1
             if result["status"] == "incomplete_path_gap":
                 raise ValueError("eligible_anchor_has_path_gap_" + str(anchor))
-            status_counts[result["status"]] = status_counts.get(result["status"], 0) + 1
             lower = result["pnl_lower_bound_price_units_per_unit"]
             upper = result["pnl_upper_bound_price_units_per_unit"]
             if lower is None or upper is None:
@@ -134,6 +148,10 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
             direction = int(signals[rule][ordinal])
             if direction == 0:
                 continue
+            outcome = outcomes[(ordinal, direction)]
+            if outcome["lower_r"] is None or outcome["upper_r"] is None:
+                signals_blocked_by_entry_geometry += 1
+                continue
             signal_events.append({
                 "decision_ordinal": ordinal, "anchor_index": anchor,
                 "decision_time_utc": _iso_ms(dataset["ts"][anchor]), "rule": rule,
@@ -150,8 +168,10 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
             by_strategy[rule][side] = _summarize([e for e in signal_events if e["rule"] == rule and e["side"] == side])
 
     final_events = [e for e in signal_events if e["split"] == "final_holdout"]
-    if label_crosschecks != len(anchors) * 2 or len(final_events) < 1000:
+    if label_crosschecks + invalid_geometry_paths != len(anchors) * 2 or len(final_events) < 1000:
         raise ValueError("label_crosscheck_or_holdout_gate_failed")
+    if invalid_geometry_paths != legacy_invalid_geometry_stop_labels:
+        raise ValueError("legacy_invalid_geometry_diagnostic_mismatch")
     manifest_digest = hashlib.sha256(json.dumps(months, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     report = {
         "status": "DIAGNOSTIC_ONLY", "protocol_version": PROTOCOL,
@@ -175,7 +195,11 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
             "dataset_rows": int(len(dataset)), "weekday_active_nonflat_rows": int(quality["weekday_active_nonflat_rows"]),
             "eligible_contiguous_windows": int(eligible_windows), "unique_real_anchors": int(len(anchors)),
             "path_outcomes_evaluated": int(len(outcomes)), "legacy_label_crosschecks": int(label_crosschecks),
-            "legacy_label_mismatches": 0, "signal_events": int(len(signal_events)),
+            "legacy_label_mismatches": 0, "invalid_stop_geometry_paths": int(invalid_geometry_paths),
+            "legacy_invalid_geometry_stop_labels": int(legacy_invalid_geometry_stop_labels),
+            "signals_blocked_by_entry_geometry": int(signals_blocked_by_entry_geometry),
+            "entry_geometry_diagnostics": entry_geometry,
+            "signal_events": int(len(signal_events)),
             "final_holdout_signal_events": int(len(final_events)), "path_status_counts_by_anchor_side": status_counts,
         },
         "metrics_by_strategy": by_strategy,
@@ -202,6 +226,7 @@ def run(output_dir: Path, *, min_candles: int = large.MIN_CANDLES,
         "Status: DIAGNOSTIC_ONLY. Decision: NO_TRADE. Not a broker-executable backtest or profitability claim.", "",
         "- Dataset rows: {:,}; months: {} ({}–{}).".format(len(dataset), metadata["selected_months"], metadata["first_month"], metadata["last_month"]),
         "- Unique real anchors: {:,}; direction paths: {:,}; signal events: {:,}; final holdout events: {:,}.".format(len(anchors), len(outcomes), len(signal_events), len(final_events)),
+        "- Entry geometry blocked paths: {:,}; legacy label cross-checks: {:,}.".format(invalid_geometry_paths, label_crosschecks),
         "- Existing path-label cross-checks: {:,}; mismatches: 0.".format(label_crosschecks), "",
         "## Per-signal event bounds", "",
         "Ambiguous same-bar collisions remain in the economic sample with explicit bounds.", "",
@@ -241,6 +266,8 @@ def main() -> int:
             "status": report["status"], "dataset_rows": report["coverage"]["dataset_rows"],
             "anchors": report["coverage"]["unique_real_anchors"], "path_outcomes": report["coverage"]["path_outcomes_evaluated"],
             "label_crosschecks": report["coverage"]["legacy_label_crosschecks"],
+            "invalid_geometry_paths": report["coverage"]["invalid_stop_geometry_paths"],
+            "signals_blocked_by_entry_geometry": report["coverage"]["signals_blocked_by_entry_geometry"],
             "signal_events": report["coverage"]["signal_events"], "final_holdout_events": report["coverage"]["final_holdout_signal_events"],
             "decision_output": report["decision_output"], "runtime_seconds": report["runtime_seconds"],
             "path_replay_runtime_seconds": report["path_replay_runtime_seconds"],

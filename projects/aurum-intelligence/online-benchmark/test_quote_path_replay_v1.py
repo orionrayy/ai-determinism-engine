@@ -53,6 +53,22 @@ class QuotePathReplayTests(unittest.TestCase):
         self.assertEqual(result["exit_quote_side_price"], "100.5")
         self.assertEqual(result["outcome_label_tp_before_sl"], 0)
 
+    def test_stop_inside_entry_spread_is_blocked_for_both_sides(self):
+        bars = [
+            bar(0),
+            bar(1, bo=100, bh=103, bl=99, bc=100, ao=102, ah=103.2, al=100.2, ac=102),
+            bar(2, bo=100, bh=101, bl=99, bc=100, ao=100.2, ah=101.2, al=99.2, ac=100.2),
+        ]
+        for side in ("long", "short"):
+            result = simulate_bracket_trade(
+                bars, decision_index=0, side=side, atr=1, horizon_bars=2
+            )
+            self.assertEqual(result["status"], "invalid_stop_geometry_at_entry")
+            self.assertIsNone(result["outcome_label_tp_before_sl"])
+            self.assertIsNone(result["gross_quote_pnl_price_units_per_instrument_unit"])
+            self.assertFalse(result["stop_geometry_valid"])
+            self.assertEqual(result["entry_spread_to_stop_distance_ratio"], "2")
+
     def test_gap_in_horizon_blocks_outcome_instead_of_skipping(self):
         bars = [bar(0), bar(1, bo=100, bh=100.3, bl=99.5, bc=100), bar(3)]
         result = simulate_bracket_trade(bars, decision_index=0, side="long", atr=1, horizon_bars=2)

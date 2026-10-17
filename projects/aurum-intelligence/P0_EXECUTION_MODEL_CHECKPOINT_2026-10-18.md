@@ -25,3 +25,11 @@ Decision gate: NO_TRADE; live order routing disabled.
 - Added-cost values in R are hypothetical; broker-specific commission, swap, slippage, latency and fill behavior remain absent.
 - This is not a portfolio backtest. Overlapping rule events are not simulated as simultaneous capital-aware positions.
 - No live signals, order routing, or profitability claims have been enabled.
+
+
+## 2026-10-18 — stop geometry audit finding and corrective gate
+
+- The first hosted full replay passed 40,000/40,000 legacy outcome-label cross-checks and reported 10,064 stop-loss-at-open paths. The report also showed feed close-spread median/P95 of 0.424/1.704 price units.
+- Review of the entry-side logic revealed that the outcome loop checked the entry candle's opposite quote against an ATR-anchored stop at the same entry timestamp. Where entry spread >= stop distance, the barrier is already crossed at the quote snapshot; counting it as an ordinary later stop-out mixes invalid bracket geometry into strategy outcomes.
+- Corrective change: exclude such anchors before sampling, add an explicit entry-spread/ATR population audit, and make the path primitive fail closed with invalid_stop_geometry_at_entry. Valid paths continue to require exact label agreement with the legacy evaluator; legacy false-valid immediate-stop labels are counted separately.
+- This is a methodological correction, not a strategy improvement claim. The economic replay must be rerun on the changed eligible-anchor sample. No live order routing or profitability claim.

@@ -110,6 +110,7 @@ def simulate_bracket_trade(
     target = entry + Decimal(direction) * tp_mult * atr_value
     stop = entry - Decimal(direction) * sl_mult * atr_value
     risk_distance = sl_mult * atr_value
+    entry_spread = entry_bar["ask_open"] - entry_bar["bid_open"]
 
     def finish(status: str, exit_index: int | None, exit_price: Decimal | None,
                label: int | None, fill_assumption: str, *,
@@ -126,6 +127,9 @@ def simulate_bracket_trade(
             "exit_quote_side_price": str(exit_price) if exit_price is not None else None,
             "exit_quote_side": "bid" if direction == 1 else "ask",
             "target_price": str(target), "stop_price": str(stop), "atr": str(atr_value),
+            "entry_spread_price_units": str(entry_spread),
+            "entry_spread_to_stop_distance_ratio": str(entry_spread / risk_distance),
+            "stop_geometry_valid": entry_spread < risk_distance,
             "take_profit_atr": str(tp_mult), "stop_loss_atr": str(sl_mult),
             "horizon_bars": horizon_bars, "outcome_label_tp_before_sl": label,
             "fill_assumption": fill_assumption,
@@ -136,6 +140,12 @@ def simulate_bracket_trade(
             "net_pnl": None, "net_pnl_status": "BLOCKED_COST_PROFILE_REQUIRED",
             "live_execution_authorized": False,
         }
+
+    # If the stop is inside the current Bid/Ask spread, the quote has already crossed it
+    # at the hypothetical entry snapshot. This is not a valid post-entry loss path.
+    if entry_spread >= risk_distance:
+        return finish("invalid_stop_geometry_at_entry", None, None, None,
+                      "stop_distance_not_wider_than_entry_spread")
 
     for offset in range(1, horizon_bars + 1):
         index = entry_index + offset - 1

@@ -400,6 +400,58 @@ def indicators(dataset):
     }
 
 
+def entry_geometry_diagnostics(dataset, atr_values):
+    """Measure how often the entry spread is at least as wide as the proposed stop.
+
+    At such anchors a 1-ATR stop is already crossed on the opposite executable quote side
+    at the same snapshot as entry. These are infeasible bracket geometries, not normal
+    post-entry stop outcomes; the candidate sampler excludes them before evaluation.
+    """
+    ts = dataset["ts"]
+    n = len(ts)
+    if n <= WARMUP_BARS + HORIZON_BARS:
+        raise BenchmarkError("dataset_too_short_for_entry_geometry_audit")
+    atr = np.asarray(atr_values, dtype=np.float64)
+    if len(atr) != n:
+        raise BenchmarkError("entry_geometry_atr_array_length_mismatch")
+    anchors = np.arange(WARMUP_BARS, n - HORIZON_BARS, dtype=np.int64)
+    weekday = ((ts // 86_400_000 + 3) % 7) < 5
+    edge_ok = (np.diff(ts) == 60_000) & weekday[:-1] & weekday[1:]
+    bad_prefix = np.concatenate((np.asarray([0], dtype=np.int64), np.cumsum(~edge_ok, dtype=np.int64)))
+    continuous = (bad_prefix[anchors + HORIZON_BARS] - bad_prefix[anchors - WARMUP_BARS]) == 0
+    atr_ok = np.isfinite(atr[anchors]) & (atr[anchors] > 0)
+    eligible = continuous & atr_ok
+    spreads = np.asarray(dataset["ao"][anchors + 1] - dataset["bo"][anchors + 1], dtype=np.float64)[eligible]
+    atr_eligible = atr[anchors][eligible]
+    if not len(spreads):
+        raise BenchmarkError("no_contiguous_atr_valid_rows_for_entry_geometry_audit")
+    ratios = spreads / atr_eligible
+    infeasible = spreads >= atr_eligible * STOP_ATR_MULTIPLIER
+    return {
+        "candidate_contiguous_windows_with_valid_atr": int(len(spreads)),
+        "entry_geometry_infeasible_windows": int(np.count_nonzero(infeasible)),
+        "entry_geometry_infeasible_fraction": float(np.mean(infeasible)),
+        "stop_atr_multiplier": float(STOP_ATR_MULTIPLIER),
+        "entry_spread_price_units": {
+            "median": float(np.median(spreads)),
+            "p95": float(np.quantile(spreads, 0.95)),
+            "p99": float(np.quantile(spreads, 0.99)),
+        },
+        "atr_price_units": {
+            "median": float(np.median(atr_eligible)),
+            "p05": float(np.quantile(atr_eligible, 0.05)),
+            "p95": float(np.quantile(atr_eligible, 0.95)),
+        },
+        "entry_spread_to_atr_ratio": {
+            "median": float(np.median(ratios)),
+            "p95": float(np.quantile(ratios, 0.95)),
+            "p99": float(np.quantile(ratios, 0.99)),
+            "max": float(np.max(ratios)),
+        },
+        "policy": "skip before signal scoring whenever entry spread is greater than or equal to stop distance",
+    }
+
+
 def candidate_anchor_indices(dataset, required_count=MIN_SCENARIO_ANCHORS, atr_values=None):
     ts = dataset["ts"]
     n = len(ts)
@@ -410,11 +462,17 @@ def candidate_anchor_indices(dataset, required_count=MIN_SCENARIO_ANCHORS, atr_v
     bad_prefix = np.concatenate((np.asarray([0], dtype=np.int64), np.cumsum(~edge_ok, dtype=np.int64)))
     anchors = np.arange(WARMUP_BARS, n - HORIZON_BARS, dtype=np.int64)
     continuous = (bad_prefix[anchors + HORIZON_BARS] - bad_prefix[anchors - WARMUP_BARS]) == 0
+    eligible_atr_count = None
     if atr_values is not None:
         atr_values = np.asarray(atr_values, dtype=np.float64)
         if len(atr_values) != n:
             raise BenchmarkError("atr_array_length_mismatch")
         continuous &= np.isfinite(atr_values[anchors]) & (atr_values[anchors] > 0)
+        eligible_atr_count = int(np.count_nonzero(continuous))
+        # The entry snapshot is Ask for long and Bid for short. If spread >= stop distance,
+        # the corresponding opposite quote has already crossed the stop before any movement.
+        entry_spread = dataset["ao"][anchors + 1] - dataset["bo"][anchors + 1]
+        continuous &= entry_spread < atr_values[anchors] * STOP_ATR_MULTIPLIER
     eligible = anchors[continuous]
     if len(eligible) < required_count:
         raise BenchmarkError(f"real_contiguous_windows_below_20000_gate:{len(eligible)}")
@@ -425,7 +483,7 @@ def candidate_anchor_indices(dataset, required_count=MIN_SCENARIO_ANCHORS, atr_v
         selected = eligible[offsets]
     if len(np.unique(selected)) != required_count:
         raise BenchmarkError("scenario_anchor_selection_not_unique")
-    return selected, int(len(eligible))
+    return selected, int(len(eligible) if eligible_atr_count is None else eligible_atr_count)
 
 
 def signals_for_anchors(dataset, anchors, features):
@@ -772,6 +830,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
             f"weekday_active_candle_contract_failed:{quality['weekday_active_nonflat_rows']}<{required_candles}"
         )
     features = indicators(dataset)
+    entry_geometry = entry_geometry_diagnostics(dataset, features["atr14"])
     anchors, eligible_windows = candidate_anchor_indices(dataset, required_scenarios, features["atr14"])
     signals = signals_for_anchors(dataset, anchors, features)
     labels_by_anchor_side, scenario_outcomes, scenario_count, scenario_samples = scenario_matrix(dataset, anchors, features)
@@ -833,6 +892,8 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
             "stop_loss_atr_multiplier": STOP_ATR_MULTIPLIER,
             "directions_per_anchor": 2,
             "tp_sl_path_scenarios": scenario_count,
+            "entry_geometry_diagnostics": entry_geometry,
+            "entry_geometry_filter_applied_before_sampling": True,
             "scenario_outcome_counts": scenario_outcomes,
             "strategy_rules": list(STRATEGIES),
             "strategy_decision_slots": int(anchor_count * len(STRATEGIES)),

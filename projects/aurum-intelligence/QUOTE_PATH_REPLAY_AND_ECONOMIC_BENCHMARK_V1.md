@@ -26,3 +26,8 @@ Outputs:
 - Touch fills are assumptions; partial fills, market impact, queue priority, rejection, latency, financing calendars, margin/liquidation, and venue-specific costs are not implemented.
 - Event-level observations overlap. There is no capital-aware portfolio/equity simulation.
 - Decision remains NO_TRADE; profitability validation and live execution remain false.
+
+
+## Stop-distance versus entry-spread guard (P0 correction)
+
+The candidate sampler now excludes an anchor if the observed entry spread is greater than or equal to the 1-ATR stop distance. At such an entry snapshot, a long's Bid is already at/below its Ask-anchored stop or a short's Ask is already at/above its Bid-anchored stop. A pre-crossed barrier is an invalid trade setup, not a conventional post-entry stop-out. The data audit reports the fraction of contiguous ATR-valid candidate windows rejected by this geometry rule. The quote-path primitive also checks this invariant independently for callers outside the guarded sampler.

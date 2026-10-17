@@ -222,7 +222,15 @@ jobs:
           assert r['dataset']['upstream_data_rights_verified'] is False, r['dataset']
           assert c['unique_real_anchors'] >= 20000, c
           assert c['path_outcomes_evaluated'] == c['unique_real_anchors'] * 2, c
-          assert c['legacy_label_crosschecks'] == c['path_outcomes_evaluated'] and c['legacy_label_mismatches'] == 0, c
+          assert c['legacy_label_crosschecks'] + c['invalid_stop_geometry_paths'] == c['path_outcomes_evaluated'], c
+          assert c['legacy_label_mismatches'] == 0, c
+          assert c['invalid_stop_geometry_paths'] == 0, c
+          geometry = c['entry_geometry_diagnostics']
+          assert geometry['candidate_contiguous_windows_with_valid_atr'] >= 20000, geometry
+          assert geometry['entry_geometry_infeasible_windows'] > 0, geometry
+          assert 0.0 < geometry['entry_geometry_infeasible_fraction'] < 1.0, geometry
+          assert geometry['entry_spread_to_atr_ratio']['p95'] > 0.0, geometry
+          assert c['legacy_invalid_geometry_stop_labels'] == c['invalid_stop_geometry_paths'], c
           assert c['signal_events'] >= 5000, c
           assert c['final_holdout_signal_events'] >= 1000, c
           assert sum(c['path_status_counts_by_anchor_side'].values()) == c['path_outcomes_evaluated'], c
@@ -241,6 +249,9 @@ jobs:
               'path_outcomes_evaluated': c['path_outcomes_evaluated'],
               'legacy_label_crosschecks': c['legacy_label_crosschecks'],
               'legacy_label_mismatches': c['legacy_label_mismatches'],
+              'entry_geometry_diagnostics': geometry,
+              'invalid_stop_geometry_paths': c['invalid_stop_geometry_paths'],
+              'signals_blocked_by_entry_geometry': c['signals_blocked_by_entry_geometry'],
               'signal_events': c['signal_events'], 'final_holdout_signal_events': c['final_holdout_signal_events'],
               'path_status_counts': c['path_status_counts_by_anchor_side'],
               'cost_is_broker_observed': cost['broker_observed_cost'],
