@@ -11,16 +11,17 @@ def source_rows(n=1200, aware=True, price_shift=0.0, start=3000.0):
         stamp = datetime(2026, 1, 1) + timedelta(minutes=5 * i)
         if aware:
             stamp = stamp.replace(tzinfo=timezone.utc)
-        close = price + (0.2 if i % 3 else -0.1) + price_shift
+        base_close = price + (0.2 if i % 3 else -0.1)
+        close = base_close + price_shift
         rows.append({
             "timestamp": stamp,
             "open": price + price_shift,
-            "high": max(price, close) + 0.1,
-            "low": min(price, close) - 0.1,
+            "high": max(price, base_close) + 0.1 + price_shift,
+            "low": min(price, base_close) - 0.1 + price_shift,
             "close": close,
             "volume": 10.0 + i % 5,
         })
-        price = close
+        price = base_close
     return rows
 
 
