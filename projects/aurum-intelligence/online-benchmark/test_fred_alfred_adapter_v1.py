@@ -32,7 +32,7 @@ class FredAlfredTests(unittest.TestCase):
         with patch.dict(os.environ,{"FRED_API_KEY":"test-secret-do-not-leak"}):
             with patch("fred_alfred_adapter_v1.urllib.request.urlopen",
                        side_effect=OSError("test-secret-do-not-leak")) as mocked:
-                result=fred.acquire_fred({"series_id":"NOT_REAL"})
+                result=fred.acquire_fred({"series_id":"NOT_REAL","observation_start":"2020-01-01","observation_end":"2025-12-31"})
                 mocked.assert_called_once()
         self.assertNotIn("test-secret-do-not-leak",repr(result))
         self.assertNotIn("test-secret-do-not-leak",result.error_code or "")
