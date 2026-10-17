@@ -1106,3 +1106,37 @@ Checkpoint artifacts updated on the PR branch: `IMPLEMENTATION_STATUS.json` comm
 2. In a network-enabled environment, download the voice WAV, run `mux_voiceover.sh`, verify audio stream metadata and actual playback.
 3. Conduct mobile-size typography/readability and frame-by-frame motion QC; user review is still required.
 4. Expand the focus-first design pattern across the 27-scene, 390-second master, retain topic/detail correctness, and only render release candidate after script, audio, and visual gates pass.
+
+
+## FFmpeg Motion Studio — v5 story, rig and pipeline checkpoint (2026-10-17)
+
+### User-requested QC outcomes
+
+The user's latest QC criteria are: stronger narrative flow; substantially more visible digits, arithmetic symbols and educational detail; less repetitive compositions and motion; very smooth/stable animation; a complete simple 2D human character with eyes as the only facial features (no nose/mouth), articulated limbs, precise accessories, scalp-anchored hair, and plausible damped motion/gravity; free-first operation; and direct audio/video integration in the preview. Treat absent audio or unverified mux as a release blocker.
+
+### v5 local artefacts and verified measurements
+
+- Source directory: `/mnt/data/ffmpeg_audit/v5_work/ffmpeg-motion-studio-v5/`.
+- Source ZIP: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v5-source.zip`; SHA-256 `e68f4c3fb38444f14b9ed18bf6e80170a10049cf047d4f04f72bd0c97256c045`.
+- Preview: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v5-visual-only.mp4`; SHA-256 `5efaaa3b3f331e67477c2b3c2a4686dcaa935f3a9462bed545dbf3aabf266f9c`.
+- Contact sheet: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v5-contact-sheet.png`; SHA-256 `98f55b2ce8d3423b6ccedbf02164f2546253358d18c9e89e2c7b23b31e17af17`.
+- Render report: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v5-render-report.json`.
+- Output is a 41.75-second review reel covering 8 instructional beats: receipt/question → item-level multiplication → subtotal → percentage-to-decimal → discount computation → subtraction → count-up/total → recap. This is **not** the full 390-second/27-scene film.
+- Final local `ffprobe`: H.264, 1920×1080, 24/1 fps, 1002-frame expected output, 41.750 s, 6,213,695 bytes. No audio stream; report correctly says `audio_present=false`, `audio_state=PENDING_MUX`.
+- Revalidated `py_compile` and all 7 local tests pass. ZIP integrity verified with `unzip -t`. These are local tests only, not hosted CI and not cinematic/speech quality certification.
+- Renderer uses Pillow procedural drawings and FFmpeg encoding, deterministic time-based easing/damped springs, distinct scene palettes/layouts, large arithmetic equations and staged reveals. The rig defines eye-only face, head/scalp-anchored hair, articulated arms/legs, IK pointing pose, accessory strap/bag with damped sway. Contact sheet has been manually inspected. Refinements remain possible; the reel is a focused prototype.
+- Source deliverables are local sandbox artefacts; they are **not all committed to this repository**. A feature branch `feature/ffmpeg-motion-studio-v5` was created and contains partial code commits for `motion_core.py` and `character_rig.py`; the attempted base64 archive transfer was incomplete and has been removed, as was the dependent incomplete workflow. The branch remains isolated with partial files; no PR opened and no merge. Do not claim source sync or hosted rendering has succeeded.
+
+### Audio: real generated sample, integration still blocked
+
+- Existing generated voice: HeyGen `Renji - Calm & Soothing`, voice ID `c9116f15487b405cb9cfad3f8a227c0f`, duration 41.743673 sec. WAV URL: `https://resource2.heygen.ai/text_to_speech/c3f80441d3074e0abb3c5077a849e504/c9116f15487b405cb9cfad3f8a227c0f/id=646146b1-0604-4966-af3f-aa39f15805ab.wav`.
+- No new speech-generation request was made. Download attempts via the local runtime and URL-content fetch both failed (network resolution/access issue); no WAV was locally available to mux. The voice sample remains a separate URL and has not passed user listening QC. The v5 MP4 is silent. This requirement remains OPEN.
+- Pipeline source includes a voice-download/mux branch that will try to use the existing WAV when run in a network-enabled environment, verify the input WAV and output audio stream, apply FFmpeg audio mastering, and fail closed rather than marking a silent MP4 as a release. The pipeline is included in the local source package and its contract tests; the audio-download/mux path has not been end-to-end tested due the network block.
+
+### Next execution sequence
+
+1. Restore/commit the complete v5 source files (not a partial or corrupted bundle) on a dedicated branch.
+2. In an internet-enabled runner, retrieve the existing WAV URL once and mux into the visual master. Verify with FFprobe that MP4 has AAC audio, 48 kHz, 2 channels, expected duration; audition speech and check Bahasa Indonesia pronunciation, prosody, loudness, and caption timing.
+3. If audio fails, report the exact blocker; do not create unapproved alternate TTS jobs or silently substitute robotic local speech.
+4. Expand the 41.75-second visual pattern to the 27-scene/390-second master only after the user approves this review reel and audio QC passes. Preserve 1080p/24 fps, scene-level story/lesson checks, font mobile readability, deterministic frame timing, character identity, animation stability, and artifact checksum.
+5. Keep free-first; no paid voice service or resource purchase without explicit authorization.
