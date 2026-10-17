@@ -96,10 +96,17 @@ def _parse_rows(data: bytes) -> list[dict[str, str]]:
     reader = csv.DictReader(io.StringIO(text), dialect=dialect)
     if not reader.fieldnames:
         raise ValueError("cot_header_missing")
-    normalized = {name.strip().lower() for name in reader.fieldnames if name}
-    required = {"market_and_exchange_names", "futonly_or_combined", "report_date_as_yyyy-mm-dd",
-                "lev_money_positions_long_all", "lev_money_positions_short_all"}
-    if not required.issubset(normalized):
+    normalized = {name.strip().strip('"').lower() for name in reader.fieldnames if name}
+    # The official Disaggregated COT file uses M_Money_* and
+    # As_of_Date_Form_YYYY-MM-DD. Accept older API-style aliases as well.
+    required_groups = (
+        {"market_and_exchange_names"},
+        {"futonly_or_combined"},
+        {"as_of_date_form_yyyy-mm-dd", "report_date_as_yyyy-mm-dd", "report_date_as_yyyy_mm_dd"},
+        {"m_money_positions_long_all", "lev_money_positions_long_all"},
+        {"m_money_positions_short_all", "lev_money_positions_short_all"},
+    )
+    if any(not (group & normalized) for group in required_groups):
         raise ValueError("cot_required_columns_missing")
     records: list[dict[str, str]] = []
     for row in reader:
@@ -119,15 +126,22 @@ def parse_cot_csv(payload: bytes, manifest: SourceManifest) -> list[ExternalObse
     # Keep the row parser independent from network and return only valid Gold futures records.
     output: list[ExternalObservation] = []
     for row in _parse_rows(data):
-        lower = {k.lower(): v for k, v in row.items()}
+        lower = {k.strip().strip('"').lower(): v for k, v in row.items()}
         market = lower.get("market_and_exchange_names", "").strip()
         future_mode = lower.get("futonly_or_combined", "").strip().lower()
         if "gold" not in market.lower() or future_mode not in {"futonly", "futures only", "futures-only"}:
             continue
         try:
-            report_date = date.fromisoformat(lower["report_date_as_yyyy-mm-dd"][:10])
-            long_pos = float(lower["lev_money_positions_long_all"].replace(",", ""))
-            short_pos = float(lower["lev_money_positions_short_all"].replace(",", ""))
+            date_raw = (lower.get("as_of_date_form_yyyy-mm-dd")
+                        or lower.get("report_date_as_yyyy-mm-dd")
+                        or lower.get("report_date_as_yyyy_mm_dd") or "")
+            long_raw = lower.get("m_money_positions_long_all") or lower.get("lev_money_positions_long_all")
+            short_raw = lower.get("m_money_positions_short_all") or lower.get("lev_money_positions_short_all")
+            if not date_raw or long_raw is None or short_raw is None:
+                continue
+            report_date = date.fromisoformat(date_raw[:10])
+            long_pos = float(long_raw.replace(",", ""))
+            short_pos = float(short_raw.replace(",", ""))
             open_interest_raw = lower.get("open_interest_all", "")
             open_interest = float(open_interest_raw.replace(",", "")) if open_interest_raw else None
             net_position = long_pos - short_pos
