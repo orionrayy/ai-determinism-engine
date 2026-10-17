@@ -124,6 +124,11 @@ jobs:
           assert overlap['exact_timestamp_matches'] >= 1000, overlap
           assert overlap['datasets_merged'] is False, overlap
           assert overlap['independence_status'].startswith('UNVERIFIED'), overlap
+          compatibility = overlap['close_relative_delta']['compatibility_status']
+          assert compatibility in {'COMPARABLE', 'DIVERGENT'}, overlap
+          assert result['cross_source_compatibility_status'] == compatibility, result
+          assert result['cross_source_confirmation_allowed'] is False, result
+          assert result['production_ready'] is False, result
           for source in result['sources']:
               assert source['status'] == 'PASS', source
               assert len(source['source']['sha256']) == 64, source
@@ -140,6 +145,10 @@ jobs:
               'synthetic_market_path_contracts': result['synthetic_market_path_contracts'],
               'synthetic_software_contracts': result['synthetic_software_contracts'],
               'cross_source_exact_timestamp_matches': overlap['exact_timestamp_matches'],
+              'cross_source_price_compatibility': compatibility,
+              'median_relative_close_delta': overlap['close_relative_delta']['median_fraction'],
+              'p95_relative_close_delta': overlap['close_relative_delta']['p95_fraction'],
+              'cross_source_confirmation_allowed': result['cross_source_confirmation_allowed'],
               'decision_output': result['decision_output'],
               'runtime_ms': result['runtime_ms'],
           }, indent=2))
