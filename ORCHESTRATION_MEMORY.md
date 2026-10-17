@@ -1140,3 +1140,30 @@ The user's latest QC criteria are: stronger narrative flow; substantially more v
 3. If audio fails, report the exact blocker; do not create unapproved alternate TTS jobs or silently substitute robotic local speech.
 4. Expand the 41.75-second visual pattern to the 27-scene/390-second master only after the user approves this review reel and audio QC passes. Preserve 1080p/24 fps, scene-level story/lesson checks, font mobile readability, deterministic frame timing, character identity, animation stability, and artifact checksum.
 5. Keep free-first; no paid voice service or resource purchase without explicit authorization.
+
+
+## FFmpeg Motion Studio — v6 screenshot-driven geometry and layout fix (2026-10-17)
+
+### User's screenshot-specific defects and root causes
+
+- User reported that numbers overflowed their panel, pointing hand/arm proportions were wrong, hair/depth layering was wrong, and the character was partially off-screen before the reveal.
+- **Confirmed accessory bug:** `rotate_points(points, cx, cy, angle)` treats input points as absolute screen/rig coordinates, but the v5 bag corners and seam were passed as local offsets. This transformed the accessory to the top-left origin and produced the stray edge fragment/incorrect layering. Fixed by converting each bag-local corner/seam point to rig-space before rotation; regression test checks both transforms.
+- **Confirmed numeric overflow:** opening formula `2 × 15.000 + 3 × 8.000` was drawn at fixed 48px in a 700px panel. Replaced with two separate fit-checked item chips, currency labels, an independent plus operator, and a concise causal caption. Added font-metric test to ensure the item strings remain within their available 250px inner width.
+- **Confirmed off-screen/stretch issue:** v5 root began at x=2025 while the arm was asked to reach an on-screen target. That made an isolated limb cross the scene and the elbow solver clamped elbow geometry while leaving the wrist outside feasible reach. v6 root is held within the frame; character is drawn on a transparent isolated layer and revealed as one group; wrist reach is bounded before the elbow solve; upper/lower limb widths and hand details were reduced.
+- Hair layering is explicit: rear hair silhouette → ears/face → front cap/bangs/side lock → eyes. Facial marks remain eyes only. Accessory strap and bag are composited in the torso rig in intentional depth order.
+
+### v6 local implementation, rendered visual and QC
+
+- Local code directory: `/mnt/data/ffmpeg_audit/v6_work/ffmpeg-motion-studio-v6/`.
+- Preview: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v6-visual-only.mp4`, SHA-256 `1e1fa6264f71527b58616fb3a56d9019b1ecd0db8a9ef1b8a87cfebe75aa7b44`, 2,187,675 bytes; H.264, 1920×1080, 24/1 fps, 1,002 frames, 41.750 seconds.
+- Contact sheet: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v6-contact-sheet.png`, SHA-256 `a1f518a4aa531d516b7db644f41910a1810fea146abe90fbf94d810a327a6163`.
+- Full handoff ZIP: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v6-source.zip`, SHA-256 `2b322507d4edfb8442032616213c3d046b2387cf4c420fa98e3921d2eb5401d2`. Source-only ZIP: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v6-source-only.zip`, SHA-256 `b1a0f9ebd4294be95a3d5096a6a77f1c87fd2afd475428856d59f43256cfc3aa`.
+- Validation report: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v6-validation-report.json`. A fresh `ffprobe` confirmed the expected H.264 video metadata. Output intentionally remains marked visual-only.
+- **12/12 local unit/geometry/layout tests passed**, including: safe character bounds at 10 timeline points, group reveal at t=0 (no pixels changed in base frame), bounded arm reach, no old x=2025 off-screen root, formula text fit, arithmetic, time/easing invariants, and bag/seam coordinate-space regression. These are local tests; no hosted CI ran and no professional animation certification is claimed.
+- Frame/contact review sampled 14 timestamps (0.0, 0.35, 0.7, 1.1, 1.7, 2.2, 4.2, 8.2, 11.8, 14.5, 20.5, 27.5, 34.5, 39.5 sec). All inspected character parts stay inside frame-safe margins; opening expression is split within its chips; no bag polygon is drawn at the origin.
+
+### Audio and source-control boundary
+
+- Reattempted downloading the existing HeyGen Indonesian narration WAV once; local runtime returned DNS resolution failure (`Temporary failure in name resolution`). No new TTS generation was submitted. Thus v6 MP4 is **silent** with `audio_state=PENDING_MUX_NETWORK_DNS_BLOCKED`. The speech URL remains documented by the v5 checkpoint. Audio integration and listening QC are still open.
+- Source files and video are available as local sandbox deliverables. The v6 code package has **not** been committed to the repository and no hosted CI run is claimed. A scratch feature branch `feature/ffmpeg-motion-studio-v6-qc-fix` was created during a sync attempt, but source files were not transferred and no PR/merge occurred; do not present it as a completed implementation branch.
+- Next: run the checked-in source ZIP from a network-enabled CI runner or after complete source sync, fetch the existing WAV (no new TTS call), mux through `pipeline.py`, validate audio stream via FFprobe and audition speech/caption alignment. Full 390-second film remains a separate milestone.
