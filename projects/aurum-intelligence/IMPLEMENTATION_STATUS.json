@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T16:44:00+07:00",
+  "checkpoint": "2026-10-17T17:28:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -75,7 +75,7 @@
     "prequential_probability_predictions_synthetic": 35893,
     "synthetic_market_paths_passed": 1200,
     "software_stress_scenarios_passed": 240,
-    "external_live_full_history_status": "pending CI for v1.3.0 code",
+    "external_live_full_history_status": "completed hosted CI for v1.3.1 application and v1.4.0 P0 evaluator; diagnostic only",
     "online_dataset_full_history_opportunities_per_rule": 35893,
     "online_dataset_chronological_folds": [
       7175,
@@ -293,6 +293,30 @@
       "obtain broker-specific Bid/Ask/tick data and measured costs",
       "validate across independent chronological regimes and an untouched holdout",
       "maintain NO_TRADE and disabled live execution"
-    ]
+    ],
+    "follow_up": {
+      "commit_with_price_basis_diagnostics": "5ec99e2fe4e478ddda60a8ebbef264226c47a076",
+      "tests_commit": "6b5b2f04a674c81deee84f1a2cdaf5ca442663d5",
+      "hosted_workflow_run_id": 39024803960,
+      "hosted_workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39024803960",
+      "hosted_ci_conclusion": "success",
+      "artifact_id": 12097644871,
+      "artifact_bytes": 2563258,
+      "artifact_sha256": "b2bc267bda4d067ed6baec07d196540f903e84545cf342f9938b17371f607415",
+      "price_basis_diagnostics": {
+        "level_correlation": 0.9697756001442143,
+        "ols_primary_from_secondary_slope": 0.9844344464959125,
+        "ols_intercept_price_units": 130.3508172754864,
+        "ols_r_squared": 0.940464714635071,
+        "ols_residual_p95_bps_of_primary_close": 128.84793085695438,
+        "paired_return_difference_median_bps": 0.2639329806819468,
+        "paired_return_difference_p95_bps": 0.9816636409065715,
+        "best_offset_bars_diagnostic_only": 12,
+        "offset_scan_boundary_hit": true,
+        "median_discrepancy_reduction_at_best_offset": 0.023673591163149054,
+        "automatic_shift_scale_merge_or_source_promotion": false
+      },
+      "caveat": "Successful CI means the discrepancy was measured and reported, not that sources agree or model predictions are validated."
+    }
   }
 }
