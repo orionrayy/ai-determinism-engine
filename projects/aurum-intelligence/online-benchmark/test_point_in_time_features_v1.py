@@ -40,10 +40,48 @@ class PointInTimeFeatureTests(unittest.TestCase):
     def test_deduplicated_news_counts_first_available_time_only(self):
         a=obs("gdelt-gkg","news-a",self.t-timedelta(minutes=10),-1,attrs={"document_sha256":"d"*64,"themes":("ECON_GOLD",),"tone":-1})
         b=obs("gdelt-gkg","news-b",self.t-timedelta(minutes=5),-1,attrs={"document_sha256":"d"*64,"themes":("ECON_GOLD",),"tone":-1})
-        row=features.build_asof_features([{"decision_id":"a","decision_time":self.t}],[a,b],
-            source_statuses={"news":"PASS"})[0]
+        row=features.build_asof_features(
+            [{"decision_id":"a","decision_time":self.t}], [a,b],
+            source_statuses={"news":"PASS"},
+            news_coverage_intervals=[(self.t-timedelta(hours=24), self.t)],
+        )[0]
         self.assertEqual(row["feature_news_count_24h"],1)
         self.assertEqual(row["news_duplicate_records_removed"],1)
+        self.assertTrue(row["news_window_24h_fully_covered"])
+
+    def test_sparse_news_archive_does_not_claim_zero_event_coverage(self):
+        row=features.build_asof_features(
+            [{"decision_id":"a","decision_time":self.t}], [],
+            source_statuses={"news":"PASS"},
+            news_coverage_intervals=[(self.t-timedelta(minutes=15), self.t)],
+        )[0]
+        self.assertIsNone(row["feature_news_count_1h"])
+        self.assertIsNone(row["feature_news_count_24h"])
+        self.assertEqual(row["coverage_news"], "incomplete_source_window")
+        self.assertFalse(row["news_window_1h_fully_covered"])
+        self.assertFalse(row["news_window_24h_fully_covered"])
+
+    def test_complete_coverage_can_report_zero_news_events(self):
+        row=features.build_asof_features(
+            [{"decision_id":"a","decision_time":self.t}], [],
+            source_statuses={"news":"PASS"},
+            news_coverage_intervals=[(self.t-timedelta(hours=24), self.t)],
+        )[0]
+        self.assertEqual(row["feature_news_count_1h"], 0)
+        self.assertEqual(row["feature_news_count_24h"], 0)
+        self.assertEqual(row["coverage_news"], "available_zero_events")
+        self.assertTrue(row["news_window_1h_fully_covered"])
+        self.assertTrue(row["news_window_24h_fully_covered"])
+
+    def test_future_archive_coverage_cannot_make_past_window_eligible(self):
+        row=features.build_asof_features(
+            [{"decision_id":"a","decision_time":self.t}], [],
+            source_statuses={"news":"PASS"},
+            news_coverage_intervals=[(self.t, self.t+timedelta(hours=24))],
+        )[0]
+        self.assertIsNone(row["feature_news_count_1h"])
+        self.assertEqual(row["coverage_news"], "incomplete_source_window")
+        self.assertEqual(row["news_coverage_intervals_visible"], 0)
 
     def test_family_coverage_is_reported_without_dropping_baseline_rows(self):
         rows=features.build_asof_features(self.rows,[],source_statuses={"news":"NOT_MET","cot":"PASS"})
