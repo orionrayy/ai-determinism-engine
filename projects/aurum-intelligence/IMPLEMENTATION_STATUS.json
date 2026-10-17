@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T17:42:00+07:00",
+  "checkpoint": "2026-10-17T18:24:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -381,9 +381,70 @@
     }
   },
   "next_p0": [
-    "Verify source-owner provenance, quote-basis and timestamp/candle-label semantics across primary, secondary and tick inputs; do not count secondary and tick as independent until lineage is explained.",
-    "Investigate primary-vs-tick price-level discrepancy and obtain broker-authorized quotes with measured spread/commission/swap/slippage/fill semantics.",
-    "Validate exact TP-before-SL calibration across independent chronological regimes with untouched holdout and uncertainty intervals.",
-    "Keep NO_TRADE; do not enable live signals or order routing."
-  ]
+    "Verify source owner provenance, rights and timestamp/quote basis across GetData, Sai310421 and the reconstructed tick source; do not count the latter two as independent.",
+    "Resolve primary-versus-tick price-level discrepancy before using either as truth for strategy selection.",
+    "Acquire broker-authorized Bid/Ask/tick history and measured spread, commission, swap, slippage, latency and fill semantics.",
+    "Improve predictive probabilities only if they beat causal base-rate and other prespecified baselines on independent chronological regimes and locked final holdout, with uncertainty intervals.",
+    "Keep NO_TRADE and live execution disabled unless data, calibration, paper-trading, risk and security gates pass."
+  ],
+  "latest_external_validation": {
+    "large_scale_bidask": {
+      "application_version": "1.3.1",
+      "evaluation_protocol": "1.4.0",
+      "benchmark_id": "AURUM-LARGE-SCALE-BIDASK-M1-v1.0",
+      "workflow_run_id": 39028110673,
+      "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39028110673",
+      "conclusion": "success",
+      "tested_head": "375aa2e3c225394943f177a5243d5c18ccd04fd9",
+      "artifact_id": 12099177720,
+      "artifact_bytes": 2613340,
+      "artifact_sha256": "5b5129edebd988ca885e0e06f69b8430a9db01ab807fcdb8e11c6d3b0470891b",
+      "dataset": {
+        "repository": "kevingtlin/Market-Data-Lab",
+        "dataset_id": "XAUUSD-DUKASCOPY-M1-BID-ASK",
+        "selected_period": "2023-01 through 2025-06",
+        "months": 30,
+        "paired_m1_bid_ask_candles": 1313280,
+        "total_download_bytes": 131316007,
+        "weekday_rows": 937440,
+        "weekday_active_nonflat_candles": 870500,
+        "zero_range_mid_fraction": 0.327458729288499,
+        "provenance_independently_verified": false,
+        "rights_verified": false
+      },
+      "scenario_benchmark": {
+        "unique_real_timestamp_anchors": 20000,
+        "valid_atr_anchors": 20000,
+        "eligible_contiguous_windows_with_valid_atr": 875611,
+        "tp_sl_path_scenarios": 120000,
+        "direction_rule_events_scored": 52883,
+        "final_holdout_scored_events": 10577,
+        "ambiguous_same_bar_outcomes_excluded": 1218,
+        "trading_gate": "NO_TRADE"
+      },
+      "probability_diagnostics": {
+        "model_brier": 0.1401016412909133,
+        "global_matured_label_baseline_brier": 0.14001544066165955,
+        "label_base_rate": 0.16812586275362593,
+        "brier_skill_vs_constant_0_5": 0.43959343483634683,
+        "brier_skill_vs_global_matured_label_baseline": -0.0006156508799770588,
+        "brier_improvement_vs_global_baseline_moving_block_ci95": [
+          -0.00017370410800070295,
+          -0.000009062720043045605
+        ],
+        "final_holdout_model_brier": 0.16345513860893496,
+        "final_holdout_global_baseline_brier": 0.16354941949326696,
+        "final_holdout_skill_vs_global_baseline": 0.0005764672514528835,
+        "final_holdout_ece": 0.04331258462693602,
+        "interpretation": "aggregate rule/side probability baseline does not outperform a causal global matured-label prevalence baseline; the 0.5-only comparison is misleading for an imbalanced target"
+      },
+      "output": {
+        "deployment_calibrated": false,
+        "validated_model": false,
+        "validated_for_profitability": false,
+        "live_signal_enabled": false,
+        "decision_output": "NO_TRADE"
+      }
+    }
+  }
 }
