@@ -179,3 +179,17 @@ The +00:00 offset is the representation seen in the file, not independent proof 
 - [ ] Maintain NO_TRADE, commercial training/serving blocked, source confirmation blocked and live order execution disabled until all prior evidence gates pass.
 
 Do not treat successful CI as strategy success, source rights clearance or production readiness. PR #165 remains a draft candidate and is not merged.
+
+
+## 2026-10-17 — exact-target TP-before-SL OOS candidate
+
+- [x] Add a separate, dependency-free research module for long/short TP-before-SL labels rather than treating next-candle direction as the same target.
+- [x] Define next-open entry, ATR(14) barriers, fixed 12-bar horizon, conservative stop-first OHLC collision handling, explicit timeout labels and separate outcome counts.
+- [x] Define chronological 60/20/20 train/calibration/untouched-holdout periods and purge outcomes that have not matured before each split boundary.
+- [x] Reuse the temporal calibration diagnostics for calibration-period-only Platt fitting, holdout Brier/log-loss/reliability reports and block-bootstrap sensitivity intervals.
+- [x] Add regression tests for feature causality, same-bar ambiguity, gap-through-barrier behavior, label maturity and the no-live-trading invariant.
+- [ ] Fresh hosted CI must pass all source, overlap, OOS benchmark and acceptance-contract tests on the current branch head; examine the emitted artifact and real dataset OOS metrics.
+- [ ] Review target event rates, calibrator fit status and holdout uncertainty by source/side without tuning or promoting a holdout winner.
+- [ ] Do not enable production prediction until broker-licensed Bid/Ask/tick/fill data, data rights, independent regimes, exact-target external validation and paper-trading/security gates are satisfied.
+
+The current candidate does not change the application response path or trading gate. Its output is research diagnostics only; `NO_TRADE` remains mandatory.
