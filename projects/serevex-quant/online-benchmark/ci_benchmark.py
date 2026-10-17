@@ -82,7 +82,7 @@ def parse_csv(payload, min_rows=1000):
     return rows
 
 def fetch():
-    req = Request(SOURCE, headers={"User-Agent": "Serevex-Intelligence/1.3.0 online-benchmark"})
+    req = Request(SOURCE, headers={"User-Agent": "Serevex-Quant-Research/1.3.0 online-benchmark"})
     last = None
     for attempt in range(3):
         try:
@@ -107,7 +107,7 @@ def fetch():
 
 def fetch_secondary():
     """Fetch a second public community OHLCV source under the same size/retry safety limits."""
-    req = Request(SECONDARY_SOURCE, headers={"User-Agent": "Serevex-Intelligence/1.4.0 source-concordance"})
+    req = Request(SECONDARY_SOURCE, headers={"User-Agent": "Serevex-Quant-Research/1.4.0 source-concordance"})
     last = None
     for attempt in range(3):
         try:
