@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T15:23:47+07:00",
+  "checkpoint": "2026-10-17",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -115,6 +115,7 @@
     "browser_device_acceptance_tested": false
   },
   "required_next": [
+    "read back fresh CI result/artifact for target-specific TP-before-SL OOS benchmark; do not promote diagnostic metrics as validation",
     "review data rights, original provenance, timezone semantics and broker quote/execution meanings",
     "acquire licensed broker-specific Bid/Ask/tick data with measured commission, spread, slippage and fill handling",
     "compare multiple independent sources and non-overlapping chronological regimes using an untouched final holdout and mature-label leakage controls",
@@ -438,5 +439,43 @@
       "observed_file_history": "The M1/M5 Q1-Q2 files appear in the initial commit; no per-month data provenance/checksum history was found in the inspected file-specific history.",
       "interpretation": "Weak auditability; not proof of fabricated or incorrect data."
     }
+  },
+  "target_specific_barrier_oos": {
+    "status": "PENDING_FRESH_HOSTED_CI_AND_ARTIFACT_REVIEW",
+    "component": "projects/aurum-intelligence/online-benchmark/barrier_oos_benchmark.py",
+    "tests": "projects/aurum-intelligence/online-benchmark/test_barrier_oos_benchmark.py",
+    "integrated_into": "projects/aurum-intelligence/online-benchmark/multi_source_benchmark.py",
+    "target": "TP-before-SL within 12 forward bars; long and short evaluated separately",
+    "protocol": {
+      "entry": "next_bar_open",
+      "atr_window": 14,
+      "take_profit_atr_multiple": 1.5,
+      "stop_loss_atr_multiple": 1,
+      "same_bar_collision": "stop_first",
+      "timeout": "label not-hit as zero and report separately",
+      "splits": "chronological 60% train / 20% calibration / 20% untouched holdout",
+      "maturity": "purge labels that have not matured before train/calibration split boundaries",
+      "calibration": "Platt fit from mature calibration-period OOS forecast/outcome pairs",
+      "metrics": [
+        "Brier score",
+        "log loss",
+        "reliability bins",
+        "ECE/MCE",
+        "calibration base-rate comparison",
+        "moving-block-bootstrap intervals"
+      ]
+    },
+    "evidence_class": "historical community OHLCV diagnostic; not broker execution evidence",
+    "model_validated": false,
+    "deployment_calibrated": false,
+    "live_signal_enabled": false,
+    "live_order_execution_enabled": false,
+    "decision_gate": "NO_TRADE",
+    "production_approval": "BLOCKED",
+    "pending_acceptance": [
+      "fresh GitHub Actions CI passes on current branch head",
+      "real per-source long/short train/calibration/holdout counts and metrics inspected from artifact",
+      "all maturity/NO_TRADE acceptance assertions pass"
+    ]
   }
 }
