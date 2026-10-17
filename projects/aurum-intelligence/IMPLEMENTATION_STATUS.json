@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T17:28:00+07:00",
+  "checkpoint": "2026-10-17T17:42:00+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -318,5 +318,62 @@
       },
       "caveat": "Successful CI means the discrepancy was measured and reported, not that sources agree or model predictions are validated."
     }
-  }
+  },
+  "external_data_audit": {
+    "updated_at": "2026-10-17T17:42:00+07:00",
+    "workflow_run_id": 39025937658,
+    "workflow_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39025937658",
+    "conclusion": "success",
+    "code_test_head": "c6f5062fab2a919b4d3795304c5cbee83b67618a",
+    "artifact_id": 12098756760,
+    "artifact_bytes": 2595322,
+    "artifact_sha256": "54a3905b3fb3a3909070245da80a9089d2051b029dd9f45bab5332ed260d7aa8",
+    "dataset": {
+      "id": "CarlosSilva1/xauusd-ticks",
+      "license": "CC-BY-4.0",
+      "attribution_recorded": true,
+      "partition": "year=2026/month=05",
+      "downloaded_parquet_bytes": 58806458,
+      "parquet_parts": 4,
+      "ticks": 6685266,
+      "timestamp_start_utc": "2026-05-01T00:00:00.086000+00:00",
+      "timestamp_end_utc": "2026-05-22T20:59:59.132000+00:00",
+      "derived_m5_bars": 4392,
+      "invalid_quotes": 0,
+      "missing_or_nonfinite_quotes": 0,
+      "raw_tick_data_redistributed": false
+    },
+    "spread_diagnostics": {
+      "median_price_units": 0.58,
+      "p95_price_units": 0.827,
+      "p99_price_units": 0.96,
+      "median_bps_of_mid": 1.255517669758564,
+      "p95_bps_of_mid": 1.7884268908739243,
+      "user_broker_execution_cost_measured": false
+    },
+    "comparison": {
+      "primary_overlap_bars": 4380,
+      "primary_vs_tick_mid_close_difference_median_bps": 123.22944973177712,
+      "primary_vs_tick_mid_close_difference_p95_bps": 138.3789593448795,
+      "primary_minus_tick_mid_signed_close_difference_median_price_units": 56.324999999998454,
+      "secondary_overlap_bars": 4392,
+      "secondary_vs_tick_bid_exact_ohlc_matches": 4391,
+      "secondary_vs_tick_bid_exact_ohlc_match_fraction": 0.9997723132969034,
+      "secondary_vs_tick_mid_close_difference_median_bps": 0.6471987471690566,
+      "secondary_vs_tick_mid_close_difference_p95_bps": 0.9291538505595731,
+      "lineage_status": "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED",
+      "source_independence_verified": false,
+      "automatic_shift_rescale_merge_or_source_promotion": false
+    },
+    "decision_output": "NO_TRADE",
+    "validated_model": false,
+    "calibrated_model": false,
+    "live_signal_enabled": false
+  },
+  "next_p0": [
+    "Verify source-owner provenance, quote-basis and timestamp/candle-label semantics across primary, secondary and tick inputs; do not count secondary and tick as independent until lineage is explained.",
+    "Investigate primary-vs-tick price-level discrepancy and obtain broker-authorized quotes with measured spread/commission/swap/slippage/fill semantics.",
+    "Validate exact TP-before-SL calibration across independent chronological regimes with untouched holdout and uncertainty intervals.",
+    "Keep NO_TRADE; do not enable live signals or order routing."
+  ]
 }
