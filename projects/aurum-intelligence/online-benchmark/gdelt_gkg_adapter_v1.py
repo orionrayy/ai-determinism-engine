@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from urllib.parse import urlparse
+from typing import Sequence
 
 from external_context_schema_v1 import AcquisitionResult, ExternalObservation, SourceManifest, manifest_sha256
 
