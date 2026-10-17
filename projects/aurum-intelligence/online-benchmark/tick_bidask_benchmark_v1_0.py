@@ -17,6 +17,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 import ci_benchmark as base
+from source_qualification_gate_v1 import ALL_EVIDENCE_FIELDS, evaluate_source_qualification
 
 DATASET_ID = "CarlosSilva1/xauusd-ticks"
 DATASET_API = (
@@ -365,6 +366,14 @@ def run(output_dir):
         secondary_bid["exact_ohlc_match_count"],
         secondary_bid["exact_timestamp_overlap_bars"],
     )
+    # These flags intentionally remain false until evidence is reviewed independently.
+    # Download success, public URLs, repository license labels and bar concordance are not proof.
+    unverified_evidence = {field: False for field in ALL_EVIDENCE_FIELDS}
+    source_qualification_gates = {
+        "primary_price": evaluate_source_qualification(base.SOURCE_REPO, unverified_evidence, {}),
+        "secondary_price": evaluate_source_qualification(base.SECONDARY_SOURCE_REPO, unverified_evidence, {}),
+        "tick_bidask": evaluate_source_qualification(DATASET_ID, unverified_evidence, {}),
+    }
     report = {
         "status": "PASS" if (
             comparison["status"] == "THIRD_SOURCE_DIAGNOSTIC_ONLY"
@@ -418,6 +427,7 @@ def run(output_dir):
         "cross_source_comparison": comparison,
         "secondary_community_comparison": secondary_comparison,
         "data_lineage_diagnostic": lineage_diagnostic,
+        "source_qualification_gates": source_qualification_gates,
         "runtime_ms": round((time.perf_counter() - started) * 1000, 3),
         "decision_output": "NO_TRADE",
         "reference_only": True,
@@ -457,6 +467,10 @@ def run(output_dir):
         "| P99 | {:.8f} | {:.4f} |".format(spread["spread_price_units"]["p99"], spread["spread_basis_points_of_mid"]["p99"]),
         "",
         "These are historical quotes in the cited reconstructed feed, not measured costs from the user's broker/account.",
+        "",
+        "## Source qualification",
+        "",
+        "All three feeds remain reference-only. Provenance, intended-use rights, timestamp/bar semantics and quote basis need referenced independent evidence; execution review additionally needs broker authorization and measured costs.",
         "",
         "## Exact-timestamp M5 comparison",
         "",
