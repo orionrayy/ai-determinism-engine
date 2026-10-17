@@ -80,6 +80,14 @@ jobs:
           assert r['scenarios']['software_scenarios'] >= 200, r['scenarios']
           assert r['scenarios']['software_failed'] == 0, r['scenarios']
           assert r['decision_output'] == 'NO_TRADE', r['decision_output']
+          tp = r['tp_sl_evaluation_protocol']
+          assert tp['protocol_version'] == '1.4.0', tp
+          assert tp['status'] == 'DIAGNOSTIC_ONLY', tp
+          assert tp['eligible_decisions'] == r['dataset']['rows'] - 12 - 60, tp
+          assert tp['candidate_trade_events'] > 0, tp
+          assert tp['decision_output'] == 'NO_TRADE' and not tp['live_signal_enabled'], tp
+          assert set(tp['chronological_partitions']) == {'development', 'calibration', 'final_holdout'}, tp
+          assert tp['chronological_partitions']['calibration']['end_index_exclusive'] == tp['chronological_partitions']['final_holdout']['start_index'], tp
           print(json.dumps({
               'status': r['status'],
               'dataset_rows': r['dataset']['rows'],
@@ -94,6 +102,10 @@ jobs:
               'market_passed': r['scenarios']['market_passed'],
               'software_scenarios': r['scenarios']['software_scenarios'],
               'software_passed': r['scenarios']['software_passed'],
+              'tp_sl_protocol_status': tp['status'],
+              'tp_sl_candidate_trade_events': tp['candidate_trade_events'],
+              'tp_sl_scored_binary_events': tp['scored_binary_events'],
+              'tp_sl_ambiguous_same_bar_events': tp['ambiguous_same_bar_events'],
               'decision_output': r['decision_output']}, indent=2))
           PY
       - name: Add benchmark report to job summary
