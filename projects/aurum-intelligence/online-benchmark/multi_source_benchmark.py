@@ -707,8 +707,8 @@ def render_markdown(report):
     lines.extend([
         "## TP-before-SL chronological out-of-sample diagnostic", "",
         "Target: TP reached before SL within 12 bars using ATR-based barriers; entry is next-bar open, same-bar ambiguity is stop-first, and timeout is reported separately. This is an OHLC research label, not a broker fill.", "",
-        "| Source | Side | Train N | Calibration N | Holdout N | TP event rate | Raw Brier | Calibrated Brier | Raw log loss | Calibrated log loss | Calibrator |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| Source | Side | Train N | Calibration N | Holdout N | TP event rate | Raw Brier | Cal Brier | Brier improvement 95% CI | Raw log loss | Cal log loss | Log-loss improvement 95% CI | Calibrator |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---|---:|---:|---|---|",
     ])
     for item in report["sources"]:
         barrier = item.get("target_specific_barrier_oos", {})
@@ -718,15 +718,30 @@ def render_markdown(report):
             adjusted = result.get("calibrated_holdout_metrics") or {}
             fit = result.get("calibration", {}).get("calibrator_fit", {})
             holdout = result.get("holdout", {})
-            lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
+            paired = result.get("paired_calibration_improvement_block_bootstrap_ci", {}).get("metrics", {})
+            brier_ci = paired.get("brier_score", {})
+            log_ci = paired.get("log_loss", {})
+            brier_ci_text = (
+                "n/a" if not brier_ci else "[{:.6f}, {:.6f}] ({:.0%} positive)".format(
+                    brier_ci["lower_95"], brier_ci["upper_95"],
+                    brier_ci["fraction_positive_bootstrap_improvements"])
+            )
+            log_ci_text = (
+                "n/a" if not log_ci else "[{:.6f}, {:.6f}] ({:.0%} positive)".format(
+                    log_ci["lower_95"], log_ci["upper_95"],
+                    log_ci["fraction_positive_bootstrap_improvements"])
+            )
+            lines.append("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                 item["source"]["id"], side,
                 result.get("train_rows", 0), result.get("calibration_rows", 0),
                 holdout.get("rows", result.get("holdout_rows", 0)),
                 "n/a" if holdout.get("positive_rate") is None else format(holdout["positive_rate"], ".4f"),
                 "n/a" if raw.get("brier_score") is None else format(raw["brier_score"], ".6f"),
                 "n/a" if adjusted.get("brier_score") is None else format(adjusted["brier_score"], ".6f"),
+                brier_ci_text,
                 "n/a" if raw.get("log_loss") is None else format(raw["log_loss"], ".6f"),
                 "n/a" if adjusted.get("log_loss") is None else format(adjusted["log_loss"], ".6f"),
+                log_ci_text,
                 fit.get("status", "not_fitted")))
     lines.extend([
         "", "All TP-before-SL results are diagnostics only. The model/calibrator are not validated for deployment, the holdout has not authorized model selection, and NO_TRADE/live-execution guards remain unchanged.",
