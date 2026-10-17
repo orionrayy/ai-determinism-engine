@@ -2,13 +2,14 @@
 """Leakage-aware TP-before-SL out-of-sample diagnostic; never enables trading."""
 from __future__ import annotations
 
+import hashlib
+import json
 import math
+import random
 import statistics
 import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
-
-import ci_benchmark as core
 
 # Reuse the project's tested calibration implementation without adding dependencies.
 _CALIBRATION_PATH = Path(__file__).resolve().parent.parent / "temporal-calibration-v1.3"
@@ -30,6 +31,7 @@ CALIBRATION_FRACTION = 0.20
 MIN_TRAIN_ROWS = 300
 MIN_CALIBRATION_ROWS = 100
 MIN_HOLDOUT_ROWS = 100
+PAIRED_BOOTSTRAP_REPLICATES = 250
 FEATURE_NAMES = (
     "return_1_atr",
     "return_3_atr",
@@ -317,6 +319,96 @@ def predict_probability(model: Mapping[str, Any], features: Sequence[float]) -> 
     return _sigmoid(model["bias"] + sum(w * x for w, x in zip(model["weights"], scaled)))
 
 
+
+def paired_block_bootstrap_improvements(
+    raw_probabilities: Sequence[Any],
+    calibrated_probabilities: Sequence[Any],
+    outcomes: Sequence[Any],
+    *,
+    block_size: int = HORIZON_BARS,
+    replicates: int = PAIRED_BOOTSTRAP_REPLICATES,
+    seed: int = 20261019,
+) -> dict[str, Any]:
+    """Paired moving-block bootstrap for raw-minus-calibrated proper-score gains.
+
+    Positive values mean calibration reduced the score. Resampling the same temporal
+    indices for both probability sets preserves the paired comparison and short-range
+    dependence better than comparing two independent confidence intervals.
+    """
+    if not raw_probabilities or len(raw_probabilities) != len(calibrated_probabilities) or len(raw_probabilities) != len(outcomes):
+        raise ValueError("paired_bootstrap_length_mismatch_or_empty")
+    if isinstance(block_size, bool) or not isinstance(block_size, int) or block_size < 1:
+        raise ValueError("block_size_must_be_positive_integer")
+    if isinstance(replicates, bool) or not isinstance(replicates, int) or not 20 <= replicates <= 5000:
+        raise ValueError("replicates_must_be_integer_between_20_and_5000")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed_must_be_integer")
+
+    raw = [_finite(value, f"raw_probability_{i}") for i, value in enumerate(raw_probabilities)]
+    calibrated = [_finite(value, f"calibrated_probability_{i}") for i, value in enumerate(calibrated_probabilities)]
+    labels = []
+    for i, value in enumerate(outcomes):
+        if isinstance(value, bool) or value not in (0, 1):
+            raise ValueError(f"outcome_must_be_binary_at_{i}")
+        labels.append(int(value))
+    if any(not 0.0 <= value <= 1.0 for value in raw + calibrated):
+        raise ValueError("probability_out_of_range")
+    n = len(labels)
+    size = min(block_size, n)
+    rng = random.Random(seed)
+    improvements = {"brier_score": [], "log_loss": []}
+    raw_sum = {key: 0.0 for key in improvements}
+    calibrated_sum = {key: 0.0 for key in improvements}
+    eps = 1e-12
+
+    def score(probability: float, label: int, metric: str) -> float:
+        clipped = min(1.0 - eps, max(eps, probability))
+        if metric == "brier_score":
+            return (probability - label) ** 2
+        return -(label * math.log(clipped) + (1 - label) * math.log1p(-clipped))
+
+    for p, c, y in zip(raw, calibrated, labels):
+        for key in improvements:
+            raw_sum[key] += score(p, y, key)
+            calibrated_sum[key] += score(c, y, key)
+    point = {key: (raw_sum[key] - calibrated_sum[key]) / n for key in improvements}
+
+    for _ in range(replicates):
+        indexes = []
+        while len(indexes) < n:
+            start = rng.randrange(0, n - size + 1)
+            indexes.extend(range(start, start + size))
+        indexes = indexes[:n]
+        sums = {key: [0.0, 0.0] for key in improvements}
+        for index in indexes:
+            p, c, y = raw[index], calibrated[index], labels[index]
+            for key in improvements:
+                sums[key][0] += score(p, y, key)
+                sums[key][1] += score(c, y, key)
+        for key, (raw_score, calibrated_score) in sums.items():
+            improvements[key].append((raw_score - calibrated_score) / n)
+
+    metrics = {}
+    for key, values in improvements.items():
+        values.sort()
+        metrics[key] = {
+            "point_estimate_raw_minus_calibrated": point[key],
+            "lower_95": values[max(0, int(0.025 * (replicates - 1)))],
+            "upper_95": values[min(replicates - 1, int(0.975 * (replicates - 1)))],
+            "fraction_positive_bootstrap_improvements": sum(value > 0 for value in values) / replicates,
+            "replicates": replicates,
+        }
+    return {
+        "method": "paired_moving_block_bootstrap_raw_minus_calibrated",
+        "n": n,
+        "block_size": size,
+        "seed": seed,
+        "metrics": metrics,
+        "positive_improvement_favors_calibration": True,
+        "interpretation": "If an interval includes zero, this run does not establish that calibration improves the corresponding proper score. This is a sensitivity interval, not production validation.",
+    }
+
+
 def evaluate_side(
     rows: Sequence[Mapping[str, Any]],
     side_samples: Sequence[Mapping[str, Any]],
@@ -377,6 +469,10 @@ def evaluate_side(
         "model_features": list(FEATURE_NAMES),
         "model_training": {
             "training_rows": len(train),
+            "model_parameter_sha256": hashlib.sha256(json.dumps({
+                "weights": model["weights"], "bias": model["bias"],
+                "means": model["means"], "scales": model["scales"],
+            }, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest(),
             "training_positive_rate": sum(int(row["actual_tp"]) for row in train) / len(train),
             "features_use_data_through_decision_close_only": True,
             "labels_matured_before_calibration_period": all(
@@ -427,11 +523,18 @@ def evaluate_side(
         adjusted_metrics = probability_metrics(
             calibrated, holdout_outcomes, reference_probability=reference_probability
         )
+        paired_improvement_ci = paired_block_bootstrap_improvements(
+            holdout_probabilities, calibrated, holdout_outcomes,
+            block_size=HORIZON_BARS,
+            replicates=PAIRED_BOOTSTRAP_REPLICATES,
+            seed=20261019,
+        )
         raw_metrics = base["raw_holdout_metrics"]
         base.update({
             "calibrated_holdout_metrics": adjusted_metrics,
             "raw_holdout_block_bootstrap_ci": raw_bootstrap,
             "calibrated_holdout_block_bootstrap_ci": calibrated_bootstrap,
+            "paired_calibration_improvement_block_bootstrap_ci": paired_improvement_ci,
             "comparison_calibrated_minus_raw": {
                 "brier_improvement": raw_metrics["brier_score"] - adjusted_metrics["brier_score"],
                 "log_loss_improvement": raw_metrics["log_loss"] - adjusted_metrics["log_loss"],
