@@ -69,10 +69,11 @@ def fetch_source(spec, opener=urlopen):
                 length = response.headers.get("Content-Length")
                 if length:
                     try:
-                        if int(length) > spec["max_bytes"]:
-                            raise SourceError("content_length_over_limit:" + spec["id"])
-                    except ValueError as exc:
+                        declared_length = int(length)
+                    except (TypeError, ValueError) as exc:
                         raise SourceError("invalid_content_length:" + spec["id"]) from exc
+                    if declared_length > spec["max_bytes"]:
+                        raise SourceError("content_length_over_limit:" + spec["id"])
                 payload = response.read(spec["max_bytes"] + 1)
                 if not payload:
                     raise SourceError("empty_payload:" + spec["id"])
@@ -320,6 +321,18 @@ def render_markdown(report):
     return "\n".join(lines) + "\n"
 
 
+def write_report_files(report, output_dir):
+    """Persist machine-readable and human-readable evidence without raw source bars."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    json_path = output_dir / "multi_source_dataset_benchmark.json"
+    markdown_path = output_dir / "multi_source_dataset_benchmark.md"
+    json_path.write_text(
+        json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8"
+    )
+    markdown_path.write_text(render_markdown(report), encoding="utf-8")
+    return {"json": json_path, "markdown": markdown_path}
+
+
 def run_catalog(output_dir, cases=CASE_COUNT, min_total_rows=100000):
     if cases < 30:
         raise ValueError("cases_must_be_at_least_30")
@@ -338,11 +351,7 @@ def run_catalog(output_dir, cases=CASE_COUNT, min_total_rows=100000):
     )
     report = build_report(results, overlap, min_total_rows)
     report["runtime_ms"] = round((time.perf_counter() - started) * 1000, 3)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "multi_source_dataset_benchmark.json").write_text(
-        json.dumps(report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
-    (output_dir / "multi_source_dataset_benchmark.md").write_text(
-        render_markdown(report), encoding="utf-8")
+    write_report_files(report, output_dir)
     return report
 
 
