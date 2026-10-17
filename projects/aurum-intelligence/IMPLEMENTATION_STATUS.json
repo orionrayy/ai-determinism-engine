@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T18:35:16.158+07:00",
+  "checkpoint": "2026-10-17",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -449,37 +449,37 @@
   },
   "external_context_research_spec": {
     "path": "docs/superpowers/specs/2026-10-17-aurum-point-in-time-external-context-design.md",
-    "status": "DESIGN_WRITTEN_AWAITING_USER_REVIEW",
-    "specification_commit": "5672fa167377aa23129a8f8cca4c21d0fddde1c6",
-    "scope": [
+    "status": "DESIGN_APPROVED_PLAN_READY_AWAITING_REVIEW",
+    "latest_spec_commit": "5dd1fbb96f6c1c1965c3558964ed6047e75a2ce0",
+    "plan_path": "docs/superpowers/plans/2026-10-17-aurum-point-in-time-external-context.md",
+    "latest_plan_commit": "65ac5c1888390c6010102bb66da2e398daec4e7f",
+    "planned_tasks": 8,
+    "planned_scope": [
       "point_in_time_schema",
       "CFTC_COT",
       "GDELT_GKG_archived_news_metadata",
       "BLS_release_observations",
       "optional_FRED_ALFRED_vintages",
+      "point_in_time_feature_builder",
       "same_row_ablation_benchmark",
-      "leakage_and_data_rights_gates"
+      "hosted_CI_and_evidence_checkpoint"
     ],
     "implementation_started": false,
-    "trade_gate": "NO_TRADE",
-    "primary_sources_reviewed": [
-      "https://www.cftc.gov/MarketReports/CommitmentsofTraders/HistoricalCompressed/index.htm",
-      "https://www.cftc.gov/MarketReports/CommitmentsofTraders/ReleaseSchedule/index.htm",
-      "https://fred.stlouisfed.org/docs/api/fred/series_observations.html",
-      "https://fred.stlouisfed.org/docs/api/fred/realtime_period.html",
-      "https://www.bls.gov/developers/api_faqs.htm",
-      "https://www.gdeltproject.org/"
-    ],
-    "last_full_benchmark_run": {
+    "cftc_availability_policy": "verified historical release timestamp when authoritative; otherwise Wednesday 00:00 America/New_York in the following calendar week (report date + 8 calendar days for usual Tuesday report); quarantine ambiguous holiday schedule",
+    "external_context_scale_target": 100000,
+    "external_context_scale_semantics": "target/acceptance gate; explicitly report NOT_MET with true counts if provider/runtime caps prevent it; never synthesize records",
+    "model_protocol": "fixed L2 logistic baseline, scaler fit on development only, Platt calibration on mature calibration labels only, purged temporal boundaries, final 20 percent untouched holdout",
+    "last_full_price_benchmark_run": {
       "id": 39028110673,
       "conclusion": "success",
       "tested_head": "375aa2e3c225394943f177a5243d5c18ccd04fd9"
     },
-    "latest_pr_head_startup_failure": {
+    "latest_known_pr_head_startup_failure": {
       "id": 39028331604,
       "head": "576c1de66e9a7b91da3ba38782235d03732a87dd",
       "conclusion": "startup_failure",
       "jobs_created": 0
-    }
+    },
+    "decision_gate": "NO_TRADE"
   }
 }
