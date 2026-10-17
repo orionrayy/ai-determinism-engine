@@ -156,12 +156,14 @@ jobs:
           assert d['dataset_rows'] >= 700000, d
           assert d['paired_valid_bid_ask_candles'] >= 700000, d
           assert d['data_quality']['rows_mon_fri_utc'] >= 700000, d
+          assert d['data_quality']['weekday_active_nonflat_rows'] >= 700000, d
           assert d['minimum_candles_required'] >= 700000, d
           assert d['minimum_dataset_rows_required'] >= 20000, d
           assert d['months_requested'] >= 24 and len(d['monthly_manifest']) >= 24, d
           assert d['provider_provenance_independently_verified'] is False, d
           assert d['upstream_data_rights_verified'] is False, d
           assert c['selected_unique_anchor_timestamps'] >= 20000, c
+          assert c['selected_anchor_timestamps_with_valid_atr'] == c['selected_unique_anchor_timestamps'], c
           assert c['anchor_contexts'] >= 20000, c
           assert c['tp_sl_path_scenarios'] >= 20000, c
           assert c['strategy_decision_slots'] >= 20000, c
@@ -172,7 +174,11 @@ jobs:
           assert e['chronological_partitions']['final_holdout']['parameter_fitting_on_partition'] is False, e
           assert e['aggregate']['reliability']['ece_descriptive'] is not None, e
           assert e['aggregate']['constant_0_5_brier'] is not None, e
+          assert e['global_prequential_base_rate_baseline']['n'] == e['binary_scored_strategy_events'], e
+          assert e['aggregate']['brier_skill_vs_global_matured_label_baseline'] is not None, e
+          assert e['chronological_partitions']['final_holdout']['global_matured_label_baseline']['n'] == e['chronological_partitions']['final_holdout']['n'], e
           assert e['moving_block_bootstrap_brier_improvement_vs_constant_0_5']['replicates'] == 250, e
+          assert e['moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate']['replicates'] == 250, e
           assert r['artifact_policy'].startswith('Raw bid/ask OHLCV candles are never written'), r
           assert r['raw_data_included_in_artifact'] is False, r
           assert r['decision_output'] == 'NO_TRADE', r
@@ -182,6 +188,7 @@ jobs:
             'status': r['status'],
             'dataset_rows': d['dataset_rows'],
             'paired_bid_ask_candles': d['paired_valid_bid_ask_candles'],
+            'weekday_active_nonflat_candles': d['data_quality']['weekday_active_nonflat_rows'],
             'months': d['months_requested'],
             'distinct_real_scenario_timestamps': c['selected_unique_anchor_timestamps'],
             'eligible_real_windows': c['eligible_real_contiguous_windows'],
@@ -190,6 +197,9 @@ jobs:
             'ambiguous_same_bar_events_excluded': e['ambiguous_same_bar_events_excluded'],
             'prequential_brier': e['aggregate']['brier'],
             'constant_0_5_brier': e['aggregate']['constant_0_5_brier'],
+            'global_matured_baseline_brier': e['global_prequential_base_rate_baseline']['brier'],
+            'skill_vs_global_matured_baseline': e['aggregate']['brier_skill_vs_global_matured_label_baseline'],
+            'brier_improvement_global_baseline_ci95': e['moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate']['ci95'],
             'final_test_events': e['chronological_partitions']['final_holdout']['n'],
             'final_test_priors_frozen': e['chronological_partitions']['final_holdout']['final_test_priors_frozen'],
             'decision_output': r['decision_output']
