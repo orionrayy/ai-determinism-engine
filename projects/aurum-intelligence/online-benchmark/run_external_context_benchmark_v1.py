@@ -14,7 +14,7 @@ from typing import Any
 
 from external_context_schema_v1 import AcquisitionResult, SourceManifest, validate_observations
 from cftc_cot_adapter_v1 import acquire_cot_year
-from gdelt_gkg_adapter_v1 import acquire_historical_gkg, archive_coverage_intervals
+from gdelt_gkg_adapter_v1 import acquire_historical_gkg, archive_coverage_intervals, summarize_archive_coverage
 from bls_release_adapter_v1 import acquire_bls_series
 from fred_alfred_adapter_v1 import acquire_fred
 from point_in_time_features_v1 import build_asof_features
@@ -92,7 +92,15 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int, 
     }
     gdelt_real_count = len(gdelt_obs)
     gdelt_coverage = archive_coverage_intervals(gdelt_result.manifests)
+    gdelt_time_coverage = summarize_archive_coverage(
+        gdelt_coverage, PREREGISTERED_GDELT_START, PREREGISTERED_GDELT_END
+    )
+    gdelt_archive_window_complete = any(
+        warning == "archive_window_complete=true" for warning in gdelt_result.warnings
+    )
     details["gdelt_gkg"]["observed_archive_batch_intervals"] = len(gdelt_coverage)
+    details["gdelt_gkg"]["archive_window_complete"] = gdelt_archive_window_complete
+    details["gdelt_gkg"]["archive_time_coverage"] = gdelt_time_coverage
     details["gdelt_gkg"]["coverage_semantics"] = (
         "only successfully acquired 15-minute archive batches; gaps remain uncovered; "
         "a batch contributes only after its conservative availability boundary"
@@ -238,13 +246,34 @@ def run(output_path: Path) -> dict[str, Any]:
         bootstrap_replicates=250, block_size=100, seed=20261017,
     )
     scale = scale_gate(gdelt_count)
+    feature_coverage = benchmark.get("coverage", {})
+    temporal_feature_coverage = {}
+    for family in ("cot", "macro", "news"):
+        family_coverage = feature_coverage.get(family, {})
+        fraction = float(family_coverage.get("coverage_fraction", 0.0))
+        temporal_feature_coverage[family] = {
+            **family_coverage,
+            "status": "PASS" if fraction >= 1.0 else "PARTIAL" if fraction > 0.0 else "NOT_MET",
+        }
+    source_completeness_status = (
+        "PASS" if gdelt_archive_window_complete
+        else "PARTIAL" if gdelt_coverage else "NOT_MET"
+    )
     report = {
         "benchmark_id": "AURUM-POINT-IN-TIME-EXTERNAL-CONTEXT-v1",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        # PASS is a pipeline/scale-gate state only; source completeness and usable
+        # feature coverage are reported independently and can remain PARTIAL/NOT_MET.
         "status": "PASS" if scale["passed"] and source_details["gdelt_gkg"]["status"] == "PASS" else "PARTIAL",
+        "status_semantics": (
+            "PASS means bounded acquisition/evaluation completed and the unique-observation scale gate passed; "
+            "it does not imply full archive-window completeness or eligible news/macro features"
+        ),
         "software_execution_status": "PASS",
         "data_acceptance_status": scale["status"],
-        "source_completeness_status": source_details["gdelt_gkg"]["status"],
+        "source_acquisition_status": source_details["gdelt_gkg"]["status"],
+        "source_completeness_status": source_completeness_status,
+        "temporal_feature_coverage": temporal_feature_coverage,
         "research_only": True, "decision_gate": "NO_TRADE",
         "deployment_calibrated": False, "validated": False, "live_signal_enabled": False,
         "scale_gate": scale,
@@ -283,6 +312,10 @@ def main() -> int:
             "status": result["status"], "decision_gate": result["decision_gate"],
             "real_gdelt_unique_observations": result["scale_gate"]["observations"],
             "scale_gate_status": result["scale_gate"]["status"],
+            "source_acquisition_status": result["source_acquisition_status"],
+            "source_completeness_status": result["source_completeness_status"],
+            "gdelt_time_coverage": result["source_details"]["gdelt_gkg"]["archive_time_coverage"],
+            "news_feature_coverage": result["temporal_feature_coverage"]["news"],
             "price_rows": result["source_details"]["price_dataset"]["rows"],
             "scored_real_labels": result["price_label_audit"]["matured_binary_labels"],
             "ablations": {k: v.get("status") for k, v in result["ablation_benchmark"]["ablations"].items()},
