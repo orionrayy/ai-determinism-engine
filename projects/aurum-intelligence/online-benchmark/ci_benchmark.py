@@ -553,7 +553,7 @@ def run(payload, output, min_rows=1000, cases=50, anchors=5, source_url=SOURCE, 
         md.append("| {} | {} | {:.6f} | {:.6f} | {:.6f} | {:.6f} | {:.6f} |".format(method_name, m["n"], m["brier_score"], m["log_loss"], m["brier_skill_vs_constant_50pct"], reliability["ece_descriptive"], reliability["mce_descriptive"]))
     md += ["", "Brier-improvement uncertainty uses a deterministic moving-block bootstrap; intervals are approximate. ECE/MCE are descriptive and sensitive to regime change/temporal dependence.",
         "", "This is a structure and probability-baseline diagnostic, not a broker-executable backtest or validated model. Verify dataset rights, timezone, quote side, execution costs and fills before production use.", "License reference: " + LICENSE, ""]
-md += ["", "## Cross-source data concordance (reference-only)", "",
+    md += ["", "## Cross-source data concordance (reference-only)", "",
         "- Secondary source: {} ({} rows); repository label is MIT, but upstream data rights and broker provenance remain unverified.".format(secondary_source_url, len(secondary_rows) if secondary_rows else 0),
         "- Exact matched timestamps: {}. Status: {}. Median close difference: {} bps; p95: {} bps; one-bar return correlation: {}.".format(secondary_crosscheck.get("common_timestamps", 0), secondary_crosscheck.get("status"), secondary_crosscheck.get("absolute_close_difference_basis_points", {}).get("median"), secondary_crosscheck.get("absolute_close_difference_basis_points", {}).get("p95"), secondary_crosscheck.get("one_bar_return_correlation")),
         "- Datasets are kept separate; comparison uses exact overlapping timestamps only. Neither source is treated as executable ground truth.", ""]
