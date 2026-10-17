@@ -172,6 +172,37 @@ jobs:
               assert use['production_feed_approved'] == 'BLOCKED_PENDING_PROVENANCE_AND_RIGHTS', use
               assert source['predictive_model_validated'] is False, source
               assert source['decision_output'] == 'NO_TRADE', source
+              barrier = source.get('target_specific_barrier_oos')
+              assert barrier is not None, source
+              assert barrier['status'] in {'DIAGNOSTIC_ONLY', 'INSUFFICIENT_HISTORY_OR_MODEL_FIT'}, barrier
+              assert barrier['target'] == 'tp_before_sl_within_12_bars', barrier
+              assert barrier['decision_gate'] == 'NO_TRADE', barrier
+              assert barrier['predictive_model_validated'] is False, barrier
+              assert barrier['deployment_calibrated'] is False, barrier
+              assert barrier['live_signal_enabled'] is False, barrier
+              assert barrier['live_order_execution_enabled'] is False, barrier
+              assert barrier['production_approval'] == 'BLOCKED', barrier
+              for side in ('long', 'short'):
+                  side_report = barrier['sides'][side]
+                  assert side_report['status'] in {'DIAGNOSTIC_ONLY', 'INSUFFICIENT_HISTORY', 'MODEL_FIT_BLOCKED'}, side_report
+                  assert side_report['deployment_calibrated'] is False, side_report
+                  assert side_report['live_signal_enabled'] is False, side_report
+                  assert side_report['train_purged_unmatured_rows'] >= 0, side_report
+                  assert side_report['calibration_purged_unmatured_rows'] >= 0, side_report
+                  if side_report['status'] == 'DIAGNOSTIC_ONLY':
+                      assert side_report['train_rows'] >= 300, side_report
+                      assert side_report['calibration_rows'] >= 100, side_report
+                      assert side_report['holdout_rows'] >= 100, side_report
+                      assert side_report['model_training']['labels_matured_before_calibration_period'] is True, side_report
+                      assert side_report['calibration']['all_calibration_labels_matured_before_holdout'] is True, side_report
+                      raw_metrics = side_report['raw_holdout_metrics']
+                      assert 0.0 <= raw_metrics['brier_score'] <= 1.0, raw_metrics
+                      assert raw_metrics['log_loss'] >= 0.0, raw_metrics
+                      outcomes = side_report['holdout']['outcome_classes']
+                      assert sum(outcomes.values()) == side_report['holdout']['rows'], side_report
+                      if side_report['calibration']['calibrator_fit'].get('fitted'):
+                          calibrated_metrics = side_report['calibrated_holdout_metrics']
+                          assert 0.0 <= calibrated_metrics['brier_score'] <= 1.0, calibrated_metrics
           print(json.dumps({
               'status': result['status'],
               'source_count': result['source_count'],
