@@ -1079,3 +1079,30 @@ Checkpoint artifacts updated on the PR branch: `IMPLEMENTATION_STATUS.json` comm
 ### Operational note
 
 - Free-first is preserved. Do not spend a paid external voice-generation quota without explicit user approval. The current 20-second preview is visual-only, so it must not be described as demonstrating improved Indonesian audio.
+
+
+## FFmpeg Motion Studio — v4 focus-first HD QC iteration (2026-10-17)
+
+### User QC feedback and resulting design constraints
+
+- User review of the v3 20-second preview called out stiffness/clutter, unclear and underspecified teaching content, undersized non-prioritized typography, rushed pacing, low apparent HD quality, and absent audio. Treat these as release-blocking QC issues rather than optional styling preferences.
+- v4 adds a separate focus-first review reel for the receipt/discount learning segment. Six planned beats: item rows -> subtotal -> 10% discount value -> subtraction -> payable total -> three-step recap. One primary message per beat, larger values/formulas, captions isolated in a high-contrast bottom strip, removal of the tiny persistent six-stage rail, staggered row/card reveals and final-value count-up.
+- Rendered artifact: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v4-preview.mp4`; 41.75 sec, H.264, 1920×1080, 24 fps, 1,002 frames, silent visual master. SHA-256 `7ecf74e4dacc0a318de68c25ff847e79acce00f4561ab3e0afcfffb33139d10f`.
+- Contact sheet: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v4-contact-sheet.png`; SHA-256 `370eb4a4b5e5e13a384d6d0a690153fec8c8697da392a77ab67679c1909a47df`.
+- Source/preview/test package: `/mnt/data/ffmpeg_audit/ffmpeg-motion-studio-v4.zip`; SHA-256 `0b85221299dedef9e099748eeef77493ae7d4b3717d1453dba2767c9f886d797`.
+- Seven local delivery tests passed: 1080p H.264 metadata, 24 fps, duration, timing/caption bounds, caption/high-priority typography contract, and honest audio state. Tests did not certify professional animation or natural voice quality.
+- Added `renderer_v4.py`, `test_v4.py`, `narration-preview.srt`, script, audio provenance, and `mux_voiceover.sh` in the package. No external image assets used.
+
+### Audio status — partially completed; do not overclaim
+
+- One Indonesian male speech clip was generated with the connected HeyGen speech tool: voice `Renji - Calm & Soothing`, ID `c9116f15487b405cb9cfad3f8a227c0f`, duration 41.7437 sec. Audio URL: `https://resource2.heygen.ai/text_to_speech/c3f80441d3074e0abb3c5077a849e504/c9116f15487b405cb9cfad3f8a227c0f/id=646146b1-0604-4966-af3f-aa39f15805ab.wav`. Provider playback surfaced in the user conversation.
+- This execution container could not resolve the provider domain; the returned WAV could not be downloaded/muxed. Therefore `audio_present=false`, speech is **not listening-QC-approved**, and the MP4 remains silent. Package includes `mux_voiceover.sh` to fetch/mux on an internet-enabled machine; verify provider URL still works before using.
+- Do not count voice as solved until the audio is integrated into a video and manually checked for Indonesian pronunciation, prosody, intelligibility, volume consistency, and cue alignment. Do not silently substitute eSpeak or claim it is natural.
+- This v4 is a focused 41.75-second review reel, not the complete 390-second film. Do not promote the complete film to release status yet.
+
+### Next gated work
+
+1. Listen to the generated voice sample and decide if timbre/prosody is acceptable; if not, select one voice route once authorized and generate a revised clip (avoid blind repeated TTS side effects).
+2. In a network-enabled environment, download the voice WAV, run `mux_voiceover.sh`, verify audio stream metadata and actual playback.
+3. Conduct mobile-size typography/readability and frame-by-frame motion QC; user review is still required.
+4. Expand the focus-first design pattern across the 27-scene, 390-second master, retain topic/detail correctness, and only render release candidate after script, audio, and visual gates pass.
