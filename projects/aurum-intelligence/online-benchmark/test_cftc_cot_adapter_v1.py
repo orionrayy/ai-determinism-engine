@@ -18,19 +18,19 @@ def manifest(payload=b"fixture"):
 def payload():
     out = io.StringIO()
     w = csv.DictWriter(out, fieldnames=[
-        "Market_and_Exchange_Names", "FutOnly_or_Combined", "Report_Date_as_YYYY-MM-DD",
-        "Open_Interest_All", "Lev_Money_Positions_Long_All", "Lev_Money_Positions_Short_All",
+        "Market_and_Exchange_Names", "FutOnly_or_Combined", "As_of_Date_Form_YYYY-MM-DD",
+        "Open_Interest_All", "M_Money_Positions_Long_All", "M_Money_Positions_Short_All",
         "NonRept_Positions_Long_All", "NonRept_Positions_Short_All"])
     w.writeheader()
     w.writerow({"Market_and_Exchange_Names":"GOLD - COMMODITY EXCHANGE INC.",
-        "FutOnly_or_Combined":"FutOnly", "Report_Date_as_YYYY-MM-DD":"2026-01-06",
-        "Open_Interest_All":"500000", "Lev_Money_Positions_Long_All":"120000",
-        "Lev_Money_Positions_Short_All":"75000", "NonRept_Positions_Long_All":"100",
+        "FutOnly_or_Combined":"FutOnly", "As_of_Date_Form_YYYY-MM-DD":"2026-01-06",
+        "Open_Interest_All":"500000", "M_Money_Positions_Long_All":"120000",
+        "M_Money_Positions_Short_All":"75000", "NonRept_Positions_Long_All":"100",
         "NonRept_Positions_Short_All":"80"})
     w.writerow({"Market_and_Exchange_Names":"SILVER - COMMODITY EXCHANGE INC.",
-        "FutOnly_or_Combined":"FutOnly", "Report_Date_as_YYYY-MM-DD":"2026-01-06",
-        "Open_Interest_All":"200000", "Lev_Money_Positions_Long_All":"10",
-        "Lev_Money_Positions_Short_All":"20"})
+        "FutOnly_or_Combined":"FutOnly", "As_of_Date_Form_YYYY-MM-DD":"2026-01-06",
+        "Open_Interest_All":"200000", "M_Money_Positions_Long_All":"10",
+        "M_Money_Positions_Short_All":"20"})
     return out.getvalue().encode()
 
 
