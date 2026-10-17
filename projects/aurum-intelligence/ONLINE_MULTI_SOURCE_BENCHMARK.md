@@ -24,14 +24,15 @@ These are sources published online by community repositories, not three independ
 4. M1 and M5 datasets are evaluated separately. No data is concatenated, resampled or filled to create a larger synthetic history.
 5. Each source receives 50 chronology-spread decision timestamps, five fixed-rule comparisons per timestamp, full-history replay, five disjoint chronological folds with a final tail segment, and causal prequential probability-baseline diagnostics.
 6. Each source anchors 720 synthetic counterfactual market-path contracts and 240 software-input contracts. These test software handling; they do not count as additional observed market events.
-7. The two M5 datasets are compared only at exact shared timestamps. The report includes overlap size, price-close absolute differences and close-to-close direction agreement. Their statistical/source independence remains explicitly unverified.
+7. The two M5 datasets are compared only at exact shared timestamps. The report includes overlap size, absolute and relative close-price differences, and close-to-close direction agreement. Relative price-level compatibility is flagged `DIVERGENT` if median delta exceeds 0.25% of matched price level or P95 delta exceeds 0.50%. This is a conservative data-comparability gate, not a trading-performance target. Their statistical/source independence remains explicitly unverified.
 8. CI enforces a minimum aggregate of 100,000 downloaded rows (reported as a sum, not a deduplicated or independent sample count), a minimum exact-timestamp overlap, and fixed rule/scenario counts.
 9. Reports include data hashes, UTC observation ranges, interval/gap diagnostics, benchmark metrics, licensing/provenance caveats and a hard-coded NO_TRADE decision boundary.
 
 ## Interpretation rules
 
 - PASS means the acquisition, structural validation, benchmark execution and scenario contracts met their software requirements. It does not mean a strategy is profitable.
-- A positive metric from one source must not be advertised as an independent holdout result when the source lineage, overlap, timestamp semantics or quote side are unresolved.
+- A positive metric from one source must not be advertised as an independent holdout result when source lineage, overlap, timestamp semantics or quote side are unresolved.
+- High directional agreement does not make datasets interchangeable when their price levels diverge; `DIVERGENT` disables cross-source confirmation and blocks production readiness.
 - M1 vs M5 results are different sampling tasks and are not directly comparable without a purpose-built normalized evaluation.
 - Existing cost assumptions are not measured broker Bid/Ask, tick, commission, swap, slippage or fill data.
 - Current direction baselines are not the same target as TP-before-SL probability. Deployment calibration remains false.
