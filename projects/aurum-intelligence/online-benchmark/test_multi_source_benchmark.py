@@ -86,8 +86,21 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertEqual(result["exact_timestamp_matches"], 1200)
         self.assertFalse(result["datasets_merged"])
         self.assertIn("UNVERIFIED", result["independence_status"])
-        self.assertAlmostEqual(result["close_abs_delta_median"], 0.2, places=6)
+        self.assertAlmostEqual(result["close_abs_delta_price_units"]["median"], 0.2, places=6)
+        self.assertEqual(result["close_relative_delta"]["compatibility_status"], "COMPARABLE")
         self.assertIsNotNone(result["close_to_close_direction_agreement"])
+
+    def test_large_price_level_divergence_is_flagged_even_when_direction_matches(self):
+        rows_a = make_rows(1200)
+        rows_b = make_rows(1200, price_offset=100.0)
+        spec_a = {"id": "a", "interval_seconds": 300}
+        spec_b = {"id": "b", "interval_seconds": 300}
+        result = multi.compare_m5(spec_a, rows_a, spec_b, rows_b)
+        self.assertEqual(result["exact_timestamp_matches"], 1200)
+        self.assertEqual(result["close_relative_delta"]["compatibility_status"], "DIVERGENT")
+        self.assertGreater(result["close_relative_delta"]["median_fraction"], 0.0025)
+        self.assertFalse(result["cross_source_confirmation_allowed"])
+        self.assertFalse(result["datasets_merged"])
 
     def test_overlap_fails_closed_when_independent_match_count_is_too_small(self):
         spec_a = {"id": "a", "interval_seconds": 300}
@@ -146,6 +159,8 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertFalse(result["predictive_model_validated"])
         self.assertFalse(result["model_calibrated_for_deployment"])
         self.assertFalse(result["live_order_execution_enabled"])
+        self.assertFalse(result["production_ready"])
+        self.assertFalse(result["cross_source_confirmation_allowed"])
 
 
 if __name__ == "__main__":
