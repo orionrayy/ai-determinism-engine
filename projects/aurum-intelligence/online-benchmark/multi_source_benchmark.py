@@ -479,6 +479,11 @@ def render_markdown(report):
     alignment = overlap.get("temporal_alignment_probe", {})
     candidate_offset = alignment.get("best_offset_seconds_diagnostic_only")
     candidate_offset_text = "none" if candidate_offset is None else str(candidate_offset)
+    price_diag = overlap.get("price_level_diagnostics", {})
+    qa = price_diag.get("source_a_close_quantiles", {})
+    qb = price_diag.get("source_b_close_quantiles", {})
+    monthly = price_diag.get("monthly_diagnostics", [])
+    paired_samples = price_diag.get("representative_paired_candles", [])
     lines.extend([
         "", "## Cross-source M5 overlap and price compatibility", "",
         "Exact shared timestamps: {}.".format(overlap["exact_timestamp_matches"]),
@@ -500,8 +505,43 @@ def render_markdown(report):
             alignment.get("relative_median_improvement_fraction", 0.0),
             alignment.get("diagnosis", "NOT_RECORDED")),
         "Cross-source confirmation enabled: no. High direction agreement does not cure divergent price levels or prove independent provenance.",
-        "", "## Full-history fixed-rule results", "",
+        "", "## Signed price-level bias", "",
+        "Matched-overlap close medians: source A {:.5f}, source B {:.5f}; median signed B−A delta {:.5f}, mean signed delta {:.5f} price units.".format(
+            qa.get("median", 0.0), qb.get("median", 0.0),
+            price_diag.get("signed_close_delta_median_b_minus_a", 0.0),
+            price_diag.get("signed_close_delta_mean_b_minus_a", 0.0)),
+        "Source B closes above/below/equal to source A in {:.2%}/{:.2%}/{:.2%} of matched timestamps.".format(
+            price_diag.get("fraction_source_b_close_above_source_a", 0.0),
+            price_diag.get("fraction_source_b_close_below_source_a", 0.0),
+            price_diag.get("fraction_equal_close", 0.0)),
+        "Median signed B−A OHLC differences: " + ", ".join(
+            "{}={:.5f}".format(k, v) for k, v in price_diag.get("ohlc_signed_delta_median_b_minus_a", {}).items()
+        ) + " price units.",
+        "", "### Monthly matched-price discrepancy", "",
+        "| UTC month | Matched bars | Median signed B−A | Median absolute delta | P95 absolute delta | Median relative delta | P95 relative delta |",
+        "|---|---:|---:|---:|---:|---:|---:|",
     ])
+    for item in monthly:
+        lines.append("| {} | {} | {:.5f} | {:.5f} | {:.5f} | {:.4%} | {:.4%} |".format(
+            item["month_utc"], item["matched_timestamps"],
+            item["signed_close_delta_median_b_minus_a"],
+            item["absolute_close_delta_median_price_units"],
+            item["absolute_close_delta_p95_price_units"],
+            item["relative_close_delta_median_fraction"],
+            item["relative_close_delta_p95_fraction"]))
+    lines.extend([
+        "", "### Representative paired candles (diagnostic samples)", "",
+        "| UTC timestamp | Source A close | Source B close | Signed B−A delta | Relative absolute delta |",
+        "|---|---:|---:|---:|---:|",
+    ])
+    for sample in paired_samples:
+        lines.append("| {} | {:.5f} | {:.5f} | {:.5f} | {:.4%} |".format(
+            sample["timestamp_utc"],
+            sample["source_a_ohlc"]["close"],
+            sample["source_b_ohlc"]["close"],
+            sample["signed_close_delta_b_minus_a"],
+            sample["relative_absolute_close_delta_fraction"]))
+    lines.extend(["", "## Full-history fixed-rule results", ""])
     for item in report["sources"]:
         lines.extend(["### " + item["source"]["id"], "",
                       "| Rule | Full net PnL (assumed costs) | Tail net PnL | Tail trades | Tail PF |",
