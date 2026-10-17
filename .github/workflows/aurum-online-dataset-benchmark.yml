@@ -124,6 +124,12 @@ jobs:
           assert overlap['exact_timestamp_matches'] >= 1000, overlap
           assert overlap['datasets_merged'] is False, overlap
           assert overlap['independence_status'].startswith('UNVERIFIED'), overlap
+          price_diag = overlap['price_level_diagnostics']
+          assert len(price_diag['monthly_diagnostics']) >= 2, price_diag
+          assert sum(item['matched_timestamps'] for item in price_diag['monthly_diagnostics']) == overlap['exact_timestamp_matches'], price_diag
+          assert len(price_diag['representative_paired_candles']) == 5, price_diag
+          assert abs(price_diag['signed_close_delta_median_b_minus_a']) > 0, price_diag
+          assert set(price_diag['ohlc_signed_delta_median_b_minus_a']) == {'open', 'high', 'low', 'close'}, price_diag
           alignment = overlap['temporal_alignment_probe']
           assert alignment['automatic_timestamp_shifting'] is False, alignment
           assert 0 in alignment['tested_offsets_seconds'], alignment
@@ -158,6 +164,11 @@ jobs:
               'synthetic_software_contracts': result['synthetic_software_contracts'],
               'cross_source_exact_timestamp_matches': overlap['exact_timestamp_matches'],
               'cross_source_price_compatibility': compatibility,
+              'median_signed_close_delta_b_minus_a': price_diag['signed_close_delta_median_b_minus_a'],
+              'mean_signed_close_delta_b_minus_a': price_diag['signed_close_delta_mean_b_minus_a'],
+              'fraction_source_b_above_source_a': price_diag['fraction_source_b_close_above_source_a'],
+              'monthly_diagnostic_buckets': len(price_diag['monthly_diagnostics']),
+              'representative_paired_candles': len(price_diag['representative_paired_candles']),
               'median_relative_close_delta': overlap['close_relative_delta']['median_fraction'],
               'p95_relative_close_delta': overlap['close_relative_delta']['p95_fraction'],
               'alignment_diagnosis': alignment['diagnosis'],
