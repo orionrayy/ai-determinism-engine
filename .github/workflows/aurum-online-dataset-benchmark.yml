@@ -147,12 +147,29 @@ jobs:
           assert result['cross_source_compatibility_status'] == compatibility, result
           assert result['cross_source_confirmation_allowed'] is False, result
           assert result['production_ready'] is False, result
+          gates = result['readiness_gates']
+          assert gates['pipeline_status'] == 'PASS', gates
+          assert gates['diagnostic_benchmark_status'] == 'PASS', gates
+          assert gates['source_comparability_gate'] == 'BLOCKED', gates
+          assert gates['cross_source_confirmation_gate'] == 'BLOCKED', gates
+          assert gates['commercial_product_use'] == 'BLOCKED', gates
+          assert gates['model_training_for_commercial_service'] == 'BLOCKED', gates
+          assert gates['production_readiness'] == 'BLOCKED', gates
+          assert gates['live_order_execution'] == 'BLOCKED', gates
+          assert 'UNDERLYING_DATA_RIGHTS_OR_COMMERCIAL_USE_UNVERIFIED' in gates['reason_codes'], gates
           for source in result['sources']:
               assert source['status'] == 'PASS', source
               assert len(source['source']['sha256']) == 64, source
               assert source['real_data_benchmark']['rule_comparisons'] >= 150, source
               assert source['source']['source_timezone_verified'] is False, source
               assert source['source']['broker_provenance_verified'] is False, source
+              assert source['source']['underlying_data_rights_verified'] is False, source
+              assert source['source']['commercial_use_approved'] is False, source
+              use = source['source']['source_use_eligibility']
+              assert use['technical_benchmark'] == 'DIAGNOSTIC_ONLY', use
+              assert use['source_rights_review'] == 'BLOCKED_PENDING_REVIEW', use
+              assert use['model_training_for_commercial_service'] == 'BLOCKED_PENDING_WRITTEN_RIGHTS_CLEARANCE', use
+              assert use['production_feed_approved'] == 'BLOCKED_PENDING_PROVENANCE_AND_RIGHTS', use
               assert source['predictive_model_validated'] is False, source
               assert source['decision_output'] == 'NO_TRADE', source
           print(json.dumps({
@@ -178,6 +195,9 @@ jobs:
               'timestamp_offset_relative_median_improvement': alignment['relative_median_improvement_fraction'],
               'best_relative_close_delta_median': alignment['best_median_relative_delta_fraction'],
               'cross_source_confirmation_allowed': result['cross_source_confirmation_allowed'],
+              'readiness_gates': gates,
+              'commercial_product_use': gates['commercial_product_use'],
+              'production_readiness': gates['production_readiness'],
               'decision_output': result['decision_output'],
               'runtime_ms': result['runtime_ms'],
           }, indent=2))
