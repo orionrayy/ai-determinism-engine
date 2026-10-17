@@ -1,6 +1,6 @@
 {
   "project": "Aurum Intelligence",
-  "checkpoint": "2026-10-17T14:57:33+07:00",
+  "checkpoint": "2026-10-17T15:03:12+07:00",
   "repository": "orionrayy/ai-determinism-engine",
   "project_path": "projects/aurum-intelligence",
   "status": "research-ux-prototype",
@@ -244,21 +244,21 @@
       "state": "open",
       "draft": true,
       "merged": false,
-      "head_sha": "e9f73719bc9acfbd0f9e85c777a97d856b76e1b5",
+      "tested_code_head_sha": "c7043732c18e278ab2956a6599d3e526f15078c0",
       "base_branch": "feature/aurum-online-dataset-benchmark"
     },
     "hosted_ci": {
-      "run_id": 39015468873,
-      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015468873",
+      "run_id": 39015804227,
+      "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015804227",
       "status": "success",
-      "head_sha": "e9f73719bc9acfbd0f9e85c777a97d856b76e1b5",
+      "head_sha": "c7043732c18e278ab2956a6599d3e526f15078c0",
       "temporal_calibration_tests_passed": 8,
       "python_unit_and_regression_tests_passed": 22,
-      "artifact_id": 12094870433,
-      "artifact_bytes": 33975,
-      "artifact_sha256": "8a23015c04bcd27821d41be4abebcf408e1f57df40a9fd399e406b98bad26bb3",
-      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015468873/artifacts/12094870433",
-      "artifact_expires_at": "2026-10-31T07:57:28Z"
+      "artifact_id": 12094359744,
+      "artifact_bytes": 35532,
+      "artifact_sha256": "64427fa192381284e2bde8e198254f1b948c9faba453b94ebb98a95811301131",
+      "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/39015804227/artifacts/12094359744",
+      "artifact_expires_at": "2026-10-31T08:03:08Z"
     },
     "measured_coverage": {
       "source_files": 3,
@@ -267,7 +267,7 @@
       "fixed_rule_comparisons": 750,
       "synthetic_market_path_contracts": 2160,
       "synthetic_software_contracts": 720,
-      "runtime_ms": 53549.711,
+      "runtime_ms": 69531.304,
       "decision_output": "NO_TRADE",
       "predictive_model_validated": false,
       "deployment_calibrated": false,
@@ -330,6 +330,71 @@
       "compatibility_status": "DIVERGENT",
       "source_independence": "UNVERIFIED",
       "cross_source_confirmation_allowed": false,
+      "signed_price_bias": {
+        "median_close_delta_b_minus_a": -63.51500000000033,
+        "mean_close_delta_b_minus_a": -57.86377600139006,
+        "source_b_below_source_a_fraction": 0.9509948735772005,
+        "source_b_above_source_a_fraction": 0.04900512642279955,
+        "ohlc_signed_median_b_minus_a": {
+          "open": -63.534999999999854,
+          "high": -63.55500000000029,
+          "low": -63.44499999999971,
+          "close": -63.51500000000033
+        },
+        "source_a_close_median": 4735.094999999999,
+        "source_b_close_median": 4679.925,
+        "monthly_diagnostics": [
+          {
+            "month_utc": "2026-03",
+            "matched_timestamps": 1071,
+            "signed_close_delta_median_b_minus_a": -94.10499999999956,
+            "absolute_close_delta_median_price_units": 94.10499999999956,
+            "absolute_close_delta_p95_price_units": 95.14999999999964,
+            "relative_close_delta_median_fraction": 0.020268635828222126,
+            "relative_close_delta_p95_fraction": 0.020902105909126296
+          },
+          {
+            "month_utc": "2026-04",
+            "matched_timestamps": 5787,
+            "signed_close_delta_median_b_minus_a": -68.19999999999982,
+            "absolute_close_delta_median_price_units": 68.19999999999982,
+            "absolute_close_delta_p95_price_units": 82.02999999999975,
+            "relative_close_delta_median_fraction": 0.014366458339691227,
+            "relative_close_delta_p95_fraction": 0.016965574065754756
+          },
+          {
+            "month_utc": "2026-05",
+            "matched_timestamps": 4651,
+            "signed_close_delta_median_b_minus_a": -56.70999999999913,
+            "absolute_close_delta_median_price_units": 56.70999999999913,
+            "absolute_close_delta_p95_price_units": 68.13500000000022,
+            "relative_close_delta_median_fraction": 0.012494261292646282,
+            "relative_close_delta_p95_fraction": 0.014800787003594551
+          }
+        ],
+        "representative_samples_signed_delta": [
+          {
+            "timestamp_utc": "2026-03-26T02:30:00+00:00",
+            "delta_b_minus_a": -89.45499999999902
+          },
+          {
+            "timestamp_utc": "2026-04-10T12:30:00+00:00",
+            "delta_b_minus_a": -28.539999999999964
+          },
+          {
+            "timestamp_utc": "2026-04-27T00:00:00+00:00",
+            "delta_b_minus_a": -64.375
+          },
+          {
+            "timestamp_utc": "2026-05-11T10:15:00+00:00",
+            "delta_b_minus_a": -60.60999999999876
+          },
+          {
+            "timestamp_utc": "2026-05-26T00:00:00+00:00",
+            "delta_b_minus_a": -0.23499999999967258
+          }
+        ]
+      },
       "temporal_alignment_probe": {
         "tested_offsets_seconds": [
           -25200,
@@ -364,8 +429,8 @@
       "note": "PASS means acquisition/schema/benchmark/scenario contracts succeeded; it does not mean strategy profitability or model validation."
     },
     "blockers": [
-      "Investigate divergent M5 price levels; a bounded timestamp-offset probe found no material alignment candidate.",
-      "Audit source rights and original provider/broker provenance.",
+      "Investigate time-varying signed M5 price bias; no constant-offset or bounded timestamp shift currently explains the full overlap.",
+      "Audit source rights and original provider/broker provenance, including bar labels, timezone semantics, quote side and volume meaning.",
       "Acquire licensed broker Bid/Ask/tick data and measured spreads, fees, slippage and fill semantics.",
       "Validate exact TP-before-SL probabilities across independent chronological regimes and an untouched final holdout.",
       "Complete paper trading, security/risk review, and real Telegram/OANDA integration tests before deployment."
