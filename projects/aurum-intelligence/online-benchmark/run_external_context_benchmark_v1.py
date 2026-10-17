@@ -14,7 +14,7 @@ from typing import Any
 
 from external_context_schema_v1 import AcquisitionResult, SourceManifest, validate_observations
 from cftc_cot_adapter_v1 import acquire_cot_year
-from gdelt_gkg_adapter_v1 import acquire_historical_gkg
+from gdelt_gkg_adapter_v1 import acquire_historical_gkg, archive_coverage_intervals
 from bls_release_adapter_v1 import acquire_bls_series
 from fred_alfred_adapter_v1 import acquire_fred
 from point_in_time_features_v1 import build_asof_features
@@ -51,7 +51,7 @@ def scale_gate(real_observations: int, target: int = CONTEXT_TARGET) -> dict[str
     }
 
 
-def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int]:
+def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int, tuple[tuple[datetime, datetime], ...]]:
     observations: list[Any] = []
     details: dict[str, Any] = {}
     states: dict[str, str] = {}
@@ -91,6 +91,12 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int]:
         "article_body_persisted": False,
     }
     gdelt_real_count = len(gdelt_obs)
+    gdelt_coverage = archive_coverage_intervals(gdelt_result.manifests)
+    details["gdelt_gkg"]["observed_archive_batch_intervals"] = len(gdelt_coverage)
+    details["gdelt_gkg"]["coverage_semantics"] = (
+        "only successfully acquired 15-minute archive batches; gaps remain uncovered; "
+        "a batch contributes only after its conservative availability boundary"
+    )
 
     # Public BLS v1 observations are acquired but remain descriptive until matched to
     # an independently sourced official release-time calendar; observation period != publish time.
@@ -120,7 +126,7 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int]:
     }
     states["macro"] = "PASS" if fred_obs else "UNKNOWN"
     states["fred"] = fred_result.status
-    return observations, details, states, gdelt_real_count
+    return observations, details, states, gdelt_real_count, gdelt_coverage
 
 
 def _make_price_anchor_rows(
@@ -194,7 +200,7 @@ def _make_price_anchor_rows(
 
 
 def run(output_path: Path) -> dict[str, Any]:
-    observations, source_details, source_states, gdelt_count = _acquire_sources()
+    observations, source_details, source_states, gdelt_count, gdelt_coverage = _acquire_sources()
     audit = validate_observations(observations)
     dataset, _months_report, total_bytes, price_meta = price_benchmark.load_dataset()
     market_quality = price_benchmark.market_quality(dataset)
@@ -220,7 +226,10 @@ def run(output_path: Path) -> dict[str, Any]:
         "macro": source_states.get("macro", "UNKNOWN"),
         "news": source_states.get("news", "FAILED"),
     }
-    enriched = build_asof_features(decision_rows, observations, source_statuses=state_for_features)
+    enriched = build_asof_features(
+        decision_rows, observations, source_statuses=state_for_features,
+        news_coverage_intervals=gdelt_coverage,
+    )
     benchmark = run_context_ablation_benchmark(
         enriched, context_observation_count=gdelt_count,
         target_context_records=CONTEXT_TARGET,
