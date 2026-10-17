@@ -1,7 +1,8 @@
 import unittest
 import io
 import zipfile
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 import gdelt_gkg_adapter_v1 as gdelt
 from external_context_schema_v1 import SourceManifest, manifest_sha256
@@ -190,6 +191,53 @@ class GdeltGkgTests(unittest.TestCase):
 
     def test_aggregate_budget_is_large_enough_for_real_scale_target(self):
         self.assertGreaterEqual(gdelt.MAX_AGGREGATE_BYTES, 800 * 1024 * 1024)
+
+    def test_archive_coverage_intervals_preserve_sampling_gaps(self):
+        first = replace(
+            manifest(),
+            source_url="https://data.gdeltproject.org/gdeltv2/20240101000000.gkg.csv.zip",
+        )
+        later = replace(
+            manifest(),
+            source_url="https://data.gdeltproject.org/gdeltv2/20240102000000.gkg.csv.zip",
+        )
+        intervals = gdelt.archive_coverage_intervals([later, first])
+        self.assertEqual(len(intervals), 2)
+        self.assertEqual(intervals[0][0], datetime(2024, 1, 1, tzinfo=timezone.utc))
+        self.assertEqual(intervals[0][1], intervals[0][0] + gdelt.BATCH_INTERVAL)
+        self.assertGreater(intervals[1][0], intervals[0][1])
+
+    def test_archive_coverage_summary_does_not_fill_unobserved_gaps(self):
+        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        end = start + timedelta(hours=1)
+        summary = gdelt.summarize_archive_coverage(
+            [(start, start + timedelta(minutes=15)),
+             (start + timedelta(minutes=30), end)],
+            start, end,
+        )
+        self.assertEqual(summary["status"], "PARTIAL")
+        self.assertEqual(summary["covered_minutes"], 45.0)
+        self.assertEqual(summary["coverage_fraction"], 0.75)
+
+    def test_archive_coverage_summary_merges_adjacent_batches_and_deduplicates(self):
+        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        middle = start + timedelta(minutes=15)
+        end = middle + timedelta(minutes=15)
+        summary = gdelt.summarize_archive_coverage(
+            [(start, middle), (start, middle), (middle, end)], start, end
+        )
+        self.assertEqual(summary["status"], "PASS")
+        self.assertEqual(summary["observed_interval_count"], 2)
+        self.assertEqual(summary["merged_coverage_interval_count"], 1)
+        self.assertEqual(summary["covered_minutes"], 30.0)
+
+    def test_archive_coverage_interval_rejects_untrusted_manifest_host(self):
+        untrusted = replace(
+            manifest(),
+            source_url="https://evil.example/gdeltv2/20240101000000.gkg.csv.zip",
+        )
+        with self.assertRaisesRegex(ValueError, "gdelt_manifest_source_not_allowlisted"):
+            gdelt.archive_coverage_intervals([untrusted])
 
     def test_same_gkg_record_from_different_archive_hash_is_not_false_conflict(self):
         raw = row("20260301120000-1")
