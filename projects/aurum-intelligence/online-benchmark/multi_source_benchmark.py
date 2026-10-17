@@ -575,6 +575,35 @@ def render_markdown(report):
             source["id"], data["rows"], source["timeframe_seconds"], data["start_utc"],
             data["end_utc"], source["sha256"], item["real_data_benchmark"]["rule_comparisons"],
             item["scenarios"]["market_passed"], item["scenarios"]["software_passed"]))
+    gates = report.get("readiness_gates", {})
+    lines.extend([
+        "", "## Data-use and production readiness gates", "",
+        "Pipeline diagnostics: **{}**; cross-source comparability: **{}**; cross-source confirmation: **{}**; commercial use: **{}**; production: **{}**.".format(
+            gates.get("diagnostic_benchmark_status", "UNKNOWN"),
+            gates.get("source_comparability_gate", "UNKNOWN"),
+            gates.get("cross_source_confirmation_gate", "UNKNOWN"),
+            gates.get("commercial_product_use", "UNKNOWN"),
+            gates.get("production_readiness", "UNKNOWN")),
+        "CI execution success does not grant underlying data rights or authorize commercial model training, source cross-confirmation, or production use.",
+        "", "| Source | Rights review | Commercial approval | Commercial model training | Production feed |",
+        "|---|---|---|---|---|",
+    ])
+    for item in report["sources"]:
+        source = item["source"]
+        use = source.get("source_use_eligibility", {})
+        lines.append("| {} | {} | {} | {} | {} |".format(
+            source["id"],
+            use.get("source_rights_review", "UNKNOWN"),
+            use.get("commercial_use_approved", False),
+            use.get("model_training_for_commercial_service", "UNKNOWN"),
+            use.get("production_feed_approved", "UNKNOWN")))
+        lines.append("- {}: {}".format(source["id"], source.get("license_status", "Rights status not recorded.")))
+        lines.append("  Terms/source notes: {} — {}".format(
+            source.get("terms_url", "n/a"),
+            source.get("provenance_claim", "Provenance not recorded.")))
+    if gates.get("reason_codes"):
+        lines.append("")
+        lines.append("Blocked reason codes: " + ", ".join(gates["reason_codes"]))
     overlap = report["overlap_concordance"][0]
     absolute = overlap.get("close_abs_delta_price_units", {
         "median": overlap.get("close_abs_delta_median", 0.0),
