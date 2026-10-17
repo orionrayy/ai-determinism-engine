@@ -52,5 +52,12 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
         self.assertIn('"PARTIAL" if gdelt_coverage else "NOT_MET"', runner)
 
 
+    def test_price_source_benchmark_emits_evidence_backed_qualification_gates(self):
+        benchmark = (ROOT / "projects" / "aurum-intelligence" / "online-benchmark" / "ci_benchmark.py").read_text(encoding="utf-8")
+        self.assertIn("from source_qualification_gate_v1 import evaluate_source_qualification", benchmark)
+        self.assertIn('"source_qualification_gates":source_qualification_gates', benchmark)
+        self.assertIn('"execution_costs_measured"', benchmark)
+        self.assertIn("A technical benchmark PASS cannot satisfy these gates.", benchmark)
+
 if __name__ == "__main__":
     unittest.main()
