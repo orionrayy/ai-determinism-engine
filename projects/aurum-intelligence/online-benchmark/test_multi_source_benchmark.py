@@ -105,10 +105,12 @@ class MultiSourceBenchmarkTests(unittest.TestCase):
         self.assertGreater(result["close_relative_delta"]["median_fraction"], 0.0025)
         self.assertFalse(result["cross_source_confirmation_allowed"])
         self.assertFalse(result["datasets_merged"])
-        self.assertEqual(
-            result["temporal_alignment_probe"]["diagnosis"],
-            "NO_OBVIOUS_BOUNDED_SHIFT_FIX",
-        )
+        probe = result["temporal_alignment_probe"]
+        self.assertEqual(probe["diagnosis"], "NO_OBVIOUS_BOUNDED_SHIFT_FIX")
+        self.assertFalse(probe["material_shift_candidate"])
+        self.assertIsNone(probe["best_offset_seconds_diagnostic_only"])
+        self.assertGreaterEqual(probe["relative_median_improvement_fraction"], 0.0)
+        self.assertLess(probe["relative_median_improvement_fraction"], 0.2)
 
     def test_overlap_fails_closed_when_independent_match_count_is_too_small(self):
         spec_a = {"id": "a", "interval_seconds": 300}
