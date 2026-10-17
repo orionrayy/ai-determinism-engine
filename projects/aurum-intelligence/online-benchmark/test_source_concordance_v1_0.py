@@ -65,5 +65,19 @@ class SourceConcordanceTests(unittest.TestCase):
         self.assertIn("volume semantics", report["volume_comparison"])
 
 
+    def test_material_price_basis_disagreement_is_not_mislabeled_as_clean_diagnostic(self):
+        primary = source_rows(1200, aware=True)
+        secondary = source_rows(1200, aware=False, price_shift=10.0)
+        report, _ = compare_source_datasets(primary, secondary)
+        self.assertEqual(report["status"], "SOURCE_DISAGREEMENT_REVIEW_REQUIRED")
+        self.assertTrue(report["source_disagreement_screen"]["material_disagreement_flag"])
+        self.assertGreater(report["absolute_close_difference_basis_points"]["p95"], 20.0)
+        self.assertIn("signed_close_difference_units_primary_minus_secondary", report)
+        self.assertTrue(report["source_disagreement_screen"]["thresholds_are_heuristics_not_execution_price_truth"])
+
+    def test_invalid_disagreement_threshold_fails_closed(self):
+        with self.assertRaisesRegex(ValueError, "max_median_close_difference_bps"):
+            compare_source_datasets(source_rows(30), source_rows(30), max_median_close_difference_bps=float("nan"))
+
 if __name__ == "__main__":
     unittest.main()
