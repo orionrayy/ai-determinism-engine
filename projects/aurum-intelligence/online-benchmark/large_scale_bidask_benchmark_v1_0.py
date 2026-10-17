@@ -8,11 +8,9 @@ import hashlib
 import io
 import json
 import math
-import random
 import statistics
 import sys
 import time
-from calendar import monthrange
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -356,9 +354,9 @@ def market_quality(dataset):
         "rows_mon_fri_utc": int(weekdays.sum()),
         "rows_weekend_utc": int((~weekdays).sum()),
         "duplicate_timestamps": int((gaps == 0).sum()),
-        "non_minute_gaps": int((gaps != 1).sum()),
-        "gaps_over_5_minutes": int((gaps > 5).sum()),
-        "max_gap_minutes": int(np.max(gaps)) if len(gaps) else 0,
+        "non_minute_intervals_including_closed_sessions": int((gaps != 1).sum()),
+        "intervals_over_5_minutes_including_closed_sessions": int((gaps > 5).sum()),
+        "max_chronological_interval_minutes": int(np.max(gaps)) if len(gaps) else 0,
         "zero_range_mid_bars": int(zero_range.sum()),
         "zero_range_fraction": float(zero_range.mean()),
         "invalid_or_crossed_quote_rows": 0,
@@ -675,33 +673,6 @@ def prequential_evaluation(dataset, anchors, signals, labels_by_anchor_side):
     return output, prediction_rows
 
 
-def _csv_sample(path, rows, maximum=250):
-    """Write an audit sample without raw prices or raw data redistribution."""
-    fields = ("scenario_id", "timestamp_utc", "rule", "side", "probability", "label", "prior_matured_labels", "split")
-    if not rows:
-        path.write_text(",".join(fields) + "\n", encoding="utf-8")
-        return 0
-    if len(rows) > maximum:
-        indices = np.linspace(0, len(rows) - 1, maximum).round().astype(int)
-        rows = [rows[int(idx)] for idx in indices]
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-        for index, row in enumerate(rows):
-            timestamp = datetime.fromtimestamp(int(row["anchor_index"]) * 0 + 0, timezone.utc)
-            writer.writerow({
-                "scenario_id": index + 1,
-                "timestamp_utc": row["timestamp_utc"],
-                "rule": row["rule"],
-                "side": row["side"],
-                "probability": row["probability"],
-                "label": row["label"],
-                "prior_matured_labels": row["prior_matured_labels"],
-                "split": row["split"],
-            })
-    return len(rows)
-
-
 def _report_timestamp(dataset, index):
     return datetime.fromtimestamp(int(dataset["ts"][int(index)]) / 1000, timezone.utc).isoformat()
 
@@ -851,7 +822,7 @@ def run(output_dir, required_candles=MIN_CANDLES, required_scenarios=MIN_SCENARI
         "",
         f"- Invalid or crossed Bid/Ask rows: {quality['invalid_or_crossed_quote_rows']}.",
         f"- Weekday UTC rows: {quality['rows_mon_fri_utc']:,}; weekend UTC rows: {quality['rows_weekend_utc']:,}.",
-        f"- Non-minute timestamp gaps: {quality['non_minute_gaps']:,}; max observed gap: {quality['max_gap_minutes']} minutes.",
+        f"- Non-minute intervals, including scheduled market closures: {quality['non_minute_intervals_including_closed_sessions']:,}; max chronological interval: {quality['max_chronological_interval_minutes']} minutes.",
         f"- Flat Mid OHLC bars: {quality['zero_range_mid_bars']:,} ({quality['zero_range_fraction']:.4%}).",
         f"- Close spread median/P95: {quality['spread_close_price_units']['median']:.6f} / {quality['spread_close_price_units']['p95']:.6f} price units.",
         f"- Close spread median/P95: {quality['spread_close_bps_mid']['median']:.4f} / {quality['spread_close_bps_mid']['p95']:.4f} bps of mid.",
