@@ -38,11 +38,17 @@ class ExternalContextWorkflowContractTests(unittest.TestCase):
         self.assertIn('"passed": bool(scale_met)', runner)
         self.assertIn('"decision_gate": "NO_TRADE"', runner)
 
-    def test_report_status_cannot_call_price_only_success_full_data_pass(self):
+    def test_report_separates_pipeline_scale_acquisition_and_source_completeness(self):
         runner = RUNNER.read_text(encoding="utf-8")
         self.assertIn('"software_execution_status": "PASS"', runner)
         self.assertIn('"status": "PASS" if scale["passed"] and source_details["gdelt_gkg"]["status"] == "PASS" else "PARTIAL"', runner)
         self.assertIn('"data_acceptance_status": scale["status"]', runner)
+        self.assertIn('"source_acquisition_status": source_details["gdelt_gkg"]["status"]', runner)
+        self.assertIn('"source_completeness_status": source_completeness_status', runner)
+        self.assertIn('"temporal_feature_coverage": temporal_feature_coverage', runner)
+        self.assertIn('"status_semantics"', runner)
+        self.assertIn('"PASS" if gdelt_archive_window_complete', runner)
+        self.assertIn('"NOT_MET" if gdelt_coverage else "NOT_MET"', runner)
 
 
 if __name__ == "__main__":
