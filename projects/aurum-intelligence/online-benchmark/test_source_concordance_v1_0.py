@@ -26,10 +26,14 @@ def source_rows(n=1200, aware=True, price_shift=0.0, start=3000.0):
 
 
 class SourceConcordanceTests(unittest.TestCase):
-    def test_naive_utc_and_aware_utc_align_without_merging_sources(self):
+    def test_naive_utc_assumption_must_be_explicit_and_remains_unverified(self):
         primary = source_rows(1200, aware=True)
         secondary = source_rows(1200, aware=False, price_shift=0.01)
-        report, sample = compare_source_datasets(primary, secondary)
+        with self.assertRaisesRegex(ValueError, "naive_timestamp_timezone_unverified"):
+            compare_source_datasets(primary, secondary)
+        report, sample = compare_source_datasets(
+            primary, secondary, naive_timestamp_policy="assume_utc_for_diagnostic_only"
+        )
         self.assertEqual(report["status"], "CROSS_SOURCE_DIAGNOSTIC_ONLY")
         self.assertEqual(report["common_timestamps"], 1200)
         self.assertEqual(report["sample_rows"], 250)
@@ -38,11 +42,20 @@ class SourceConcordanceTests(unittest.TestCase):
         self.assertFalse(report["upstream_data_rights_independently_verified"])
         self.assertEqual(report["decision_output"], "NO_TRADE")
         self.assertEqual(report["comparison_mode"], "exact_timestamp_overlap_only_no_dataset_concatenation")
+        self.assertEqual(report["timestamp_interpretation_policy"], "assume_utc_for_diagnostic_only")
+        self.assertFalse(report["timestamp_semantics_verified"])
+        self.assertTrue(report["utc_assumption_is_diagnostic_only"])
         self.assertGreater(report["absolute_close_difference_basis_points"]["median"], 0)
+
+    def test_naive_timestamp_rejected_by_default(self):
+        primary = source_rows(40, aware=True)
+        secondary = source_rows(40, aware=False)
+        with self.assertRaisesRegex(ValueError, "naive_timestamp_timezone_unverified"):
+            compare_source_datasets(primary, secondary)
 
     def test_partial_overlap_is_counted_explicitly(self):
         primary = source_rows(1200, aware=True)
-        secondary = source_rows(800, aware=False)
+        secondary = source_rows(800, aware=True)
         report, _ = compare_source_datasets(primary, secondary)
         self.assertEqual(report["status"], "INSUFFICIENT_OVERLAP")
         self.assertEqual(report["common_timestamps"], 800)
@@ -57,7 +70,7 @@ class SourceConcordanceTests(unittest.TestCase):
 
     def test_source_price_fields_are_compared_without_volume_assumption(self):
         primary = source_rows(1200, aware=True)
-        secondary = source_rows(1200, aware=False, price_shift=0.01)
+        secondary = source_rows(1200, aware=True, price_shift=0.01)
         report, _ = compare_source_datasets(primary, secondary)
         self.assertIn("open", report["absolute_price_difference_units"])
         self.assertIn("high", report["absolute_price_difference_units"])
@@ -68,7 +81,7 @@ class SourceConcordanceTests(unittest.TestCase):
 
     def test_material_price_basis_disagreement_is_not_mislabeled_as_clean_diagnostic(self):
         primary = source_rows(1200, aware=True)
-        secondary = source_rows(1200, aware=False, price_shift=10.0)
+        secondary = source_rows(1200, aware=True, price_shift=10.0)
         report, _ = compare_source_datasets(primary, secondary)
         self.assertEqual(report["status"], "SOURCE_DISAGREEMENT_REVIEW_REQUIRED")
         self.assertTrue(report["source_disagreement_screen"]["material_disagreement_flag"])
@@ -127,7 +140,7 @@ class SourceConcordanceTests(unittest.TestCase):
 
     def test_additive_level_offset_is_reported_without_auto_correction(self):
         primary = source_rows(1200, aware=True)
-        secondary = source_rows(1200, aware=False, price_shift=10.0)
+        secondary = source_rows(1200, aware=True, price_shift=10.0)
         report, _ = compare_source_datasets(primary, secondary)
         diagnostic = report["price_basis_diagnostics"]
         fit = diagnostic["ols_level_relationship"]
@@ -147,7 +160,7 @@ class SourceConcordanceTests(unittest.TestCase):
     def test_multiplicative_price_scale_is_reported_as_diagnostic_only(self):
         primary = source_rows(1200, aware=True)
         secondary = []
-        for original in source_rows(1200, aware=False):
+        for original in source_rows(1200, aware=True):
             row = dict(original)
             for field in ("open", "high", "low", "close"):
                 row[field] *= 2.0
