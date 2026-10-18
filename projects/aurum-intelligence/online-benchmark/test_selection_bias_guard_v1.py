@@ -127,6 +127,7 @@ class SelectionBiasGuardTests(unittest.TestCase):
         args["timestamps"][300:] = [value + timedelta(hours=6) for value in args["timestamps"][300:]]
         report = evaluate_white_reality_check(**args)
         self.assertEqual(report["promotion_status"], "SYNTHETIC_ONLY_NO_MARKET_PROMOTION")
+        args = self.inputs()
         args["session_ids"] = ["a"] * 200 + ["b"] * 200 + ["a"] * 200
         with self.assertRaisesRegex(ValueError, "contiguous"):
             evaluate_white_reality_check(**args)
