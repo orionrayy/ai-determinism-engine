@@ -121,7 +121,7 @@ class ActionsConfigTests(unittest.TestCase):
             self.orchestrator,
         )
         self.assertIn(
-            "github.event_name == 'schedule' && 'scheduled-recovery'",
+            "(github.event_name == 'schedule' || (github.event_name == 'repository_dispatch' && github.event.action == 'orchestrator.recovery')) && 'scheduled-recovery'",
             self.orchestrator,
         )
         self.assertIn("github.run_id", self.orchestrator)
@@ -318,6 +318,21 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("git push origin HEAD:main", self.orchestrator)
         self.assertIn("State persistence rebase conflict; refusing to overwrite concurrent main state.", self.orchestrator)
         self.assertIn("State persistence push failed after bounded retries.", self.orchestrator)
+
+
+    def test_cloudflare_watchdog_is_backup_recovery_only_and_deduplicated(self):
+        watchdog = (ROOT / 'control-plane' / 'cloudflare' / 'src' / 'recovery_watchdog.mjs').read_text()
+        worker = (ROOT / 'control-plane' / 'cloudflare' / 'src' / 'worker.js').read_text()
+        wrangler = (ROOT / 'control-plane' / 'cloudflare' / 'wrangler.toml').read_text()
+        self.assertIn('orchestrator.recovery', self.orchestrator)
+        self.assertIn("github.event.action == 'orchestrator.recovery'", self.orchestrator)
+        self.assertIn("runScheduledRecoveryWatchdog(controller, env)", worker)
+        self.assertIn('GITHUB_RECOVERY_TOKEN', watchdog)
+        self.assertIn('class RecoveryWatchdog', watchdog)
+        self.assertIn('transaction(async (txn)', watchdog)
+        self.assertIn('crons = ["*/5 * * * *"]', wrangler)
+        self.assertIn('required = ["GITHUB_RECOVERY_TOKEN"]', wrangler)
+        self.assertIn('recovery_watchdog.mjs', self.tests)
 
 if __name__ == '__main__':
     unittest.main()
