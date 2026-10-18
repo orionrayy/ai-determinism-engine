@@ -107,7 +107,7 @@ class SelectionBiasGuardTests(unittest.TestCase):
 
     def test_irregular_within_session_cadence_fails_closed(self):
         args = self.inputs()
-        args["timestamps"][10] += timedelta(seconds=1)
+        args["timestamps"][10] += timedelta(milliseconds=500)
         with self.assertRaisesRegex(ValueError, "expected_cadence"):
             evaluate_white_reality_check(**args)
 

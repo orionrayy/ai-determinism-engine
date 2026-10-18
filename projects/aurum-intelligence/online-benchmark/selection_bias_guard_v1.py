@@ -164,7 +164,7 @@ def evaluate_white_reality_check(
         raise ValueError("session_ids_length_mismatch")
     for index in range(1, n):
         if session_ids[index] == session_ids[index - 1]:
-            delta = int((parsed_times[index] - parsed_times[index - 1]).total_seconds())
+            delta = (parsed_times[index] - parsed_times[index - 1]).total_seconds()
             if delta != expected_interval_seconds:
                 raise ValueError("within_session_timestamps_must_match_expected_cadence")
 
