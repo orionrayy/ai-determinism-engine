@@ -2,6 +2,8 @@ import copy
 import unittest
 
 import serevex_probability_evolution_v4_v9 as evo
+import serevex_forecast_ledger_producer_v1 as producer
+from test_serevex_forecast_ledger_producer_v1 import digest as fixture_digest, synthetic_rows as synthetic_ohlcv_rows
 
 
 def make_rows(n=720, *, candidate_mode="strong", regimes=1):
@@ -331,6 +333,53 @@ class ProbabilityEvolutionTests(unittest.TestCase):
             [row["decision_id"] for row in ledger["records"]],
         )
         self.assertEqual(report["versions"]["9.0"]["evidence"]["scored_rows"], 39)
+
+    def test_synthetic_producer_to_v4_v9_end_to_end_ledger_reconciliation(self):
+        # Exercise the real ledger producer -> adapter -> all governance versions
+        # without network/data-source dependencies. This proves the wire contract,
+        # not any predictive skill on market data.
+        bars = synthetic_ohlcv_rows(1800)
+        ledger = producer.build_forecast_ledger(
+            bars,
+            dataset_sha256=fixture_digest(b"v4-v9-end-to-end-synthetic-contract"),
+            source_uri="https://example.invalid/synthetic-contract-only",
+            rule="last_return_sign",
+            side="long",
+            evidence_kind="synthetic_contract_test",
+            license_reference="SYNTHETIC_FIXTURE_NOT_EXTERNAL_DATA",
+        )
+        report = evo.evaluate_forecast_ledger_versions(
+            ledger,
+            candidate_expert="alpha_logistic_v1",
+            as_of_index=len(bars),
+            score_partition="final_holdout",
+        )
+        expected_identity = [
+            (row["decision_id"], row["decision_index"])
+            for row in sorted(ledger["records"], key=lambda row: row["decision_index"])
+        ]
+        self.assertEqual(report["score_partition"], "final_holdout")
+        self.assertEqual(tuple(report["versions"]), evo.VERSION_ORDER)
+        row_counts = {
+            result["scored_rows"] for result in report["comparison"].values()
+        }
+        self.assertEqual(len(row_counts), 1)
+        self.assertGreater(next(iter(row_counts)), 0)
+        for version, result in report["versions"].items():
+            evidence = result["evidence"]
+            self.assertEqual(evidence["score_partition"], "final_holdout", version)
+            self.assertEqual(evidence["decision_output"], "NO_TRADE", version)
+            self.assertFalse(evidence["model_validated"], version)
+            self.assertFalse(evidence["deployment_calibrated"], version)
+            self.assertEqual(evidence["forecast_rows_emitted"], len(ledger["records"]), version)
+            self.assertEqual(evidence["rows_at_or_after_as_of_excluded"], 0, version)
+            actual_identity = [
+                (row["decision_id"], row["decision_index"])
+                for row in result["forecasts"]
+            ]
+            self.assertEqual(actual_identity, expected_identity, version)
+        self.assertFalse(report["research_boundary"]["source_qualified_for_training"])
+        self.assertEqual(report["decision_output"], "NO_TRADE")
 
     def test_adapter_rejects_unknown_schema_and_missing_expert_falls_back(self):
         with self.assertRaisesRegex(evo.ProbabilityInputError, "unsupported_forecast_ledger_schema"):
