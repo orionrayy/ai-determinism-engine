@@ -34,7 +34,7 @@ These are software protocol versions, not claims of mathematically novel methods
 - Source-index blocks score 12 bars followed by a 12-bar embargo by default. Block eligibility is anchored to absolute decision indices, not filtered row rank.
 - The selection segment and confirmation segment are split at an absolute source-index block-period boundary (default period 24 bars), never by filtered-event rank. Their scored source-block IDs are exposed in the policy trace and checked for disjointness. v7–v9 require at least eight eligible blocks in the confirmation segment.
 - Weight decisions update in deterministic 12-bar buckets by default and use a bounded 720-record matured-history window. This is a compute/recency policy and must be frozen before final testing.
-- Model metrics are compared with the same baseline and same scored rows: Brier, log loss, ten-bin expected calibration error (ECE), base rate, forecast coverage, and fallback rate. Directional accuracy is not the primary promotion metric.
+- Model metrics are compared with the same baseline and same scored rows: Brier, log loss, ten-bin expected calibration error (ECE), base rate, forecast coverage, and fallback rate. The canonical-ledger entry point and CLI default to `final_holdout` scoring; the causal forecast stream still runs over earlier partitions so only matured prior labels can update later forecasts. The generic row-level evaluator defaults to `all_matured` unless an explicit scoring partition is selected. Directional accuracy is not the primary promotion metric.
 - The output includes an identity hash for emitted forecasts and a separate evaluation-report hash. Hashes establish reproducible identity, not data authenticity, legal rights, or source-time truth.
 
 ## Existing repositories/components reused
@@ -60,7 +60,8 @@ python serevex_probability_evolution_v4_v9.py \\
   --input /path/to/serevex-ledger.json \\
   --output /path/to/serevex-probability-v4-v9-report.json \\
   --as-of-index 100000 \\
-  --candidate-expert alpha_logistic_v1
+  --candidate-expert alpha_logistic_v1 \\
+  --score-partition final_holdout
 \`\`\`
 
 Use the ledger's true exclusive source decision-bar cutoff for \`--as-of-index\`; do not use the number of filtered forecast events as a substitute. The data source must be authorized for the intended use. This runner preserves the ledger's source-qualification flags instead of promoting them.
@@ -77,6 +78,6 @@ Use the ledger's true exclusive source decision-bar cutoff for \`--as-of-index\`
 
 ## Integration status and current limitation
 
-The hosted `aurum-online-dataset-benchmark.yml` workflow now creates a canonical `serevex.forecast-ledger.v1` from the real OHLCV diagnostic cohort, adapts it through `evaluate_forecast_ledger_versions`, evaluates all eight registered versions at the same exclusive as-of boundary, asserts a common scored-row count and research-only authority flags, and writes both `probability_evolution_v4_v9_report.json` and a compact summary into the benchmark artifact directory.
+The hosted `aurum-online-dataset-benchmark.yml` workflow now creates a canonical `serevex.forecast-ledger.v1` from the real OHLCV diagnostic cohort, adapts it through `evaluate_forecast_ledger_versions`, evaluates all eight registered versions at the same exclusive as-of boundary, reports metrics only on the common `final_holdout` partition, reconciles the ordered forecast decision IDs/indices against ledger records, verifies a common scored-row count and research-only authority flags, and writes both `probability_evolution_v4_v9_report.json` and a compact summary into the benchmark artifact directory.
 
-This is an **offline evaluation connection**, not a production prediction-path change: it does not replace the alpha predictions emitted by the producer or connect to Telegram, brokers, or live execution. Hosted CI passing verifies code execution and contracts, not source authenticity, legal data rights, point-in-time publisher availability, predictive superiority, or profitability. Exact ordered source-ledger decision-ID reconciliation remains an additional check before treating the adapter/producer join as fully audited.
+This is an **offline evaluation connection**, not a production prediction-path change: it does not replace the alpha predictions emitted by the producer or connect to Telegram, brokers, or live execution. Hosted CI passing verifies code execution and contracts, not source authenticity, legal data rights, point-in-time publisher availability, predictive superiority, or profitability. The exact decision-ID/index reconciliation is a strong adapter-integrity contract, but it still does not independently certify the origin, rights, or historical availability of the source data.
