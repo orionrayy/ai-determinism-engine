@@ -94,8 +94,11 @@ def _valid_evidence_ref(value: object) -> bool:
         return False
     raw = value.strip()
     if raw.startswith("https://"):
-        parsed = urlparse(raw)
-        return bool(parsed.hostname) and parsed.username is None and parsed.password is None
+        try:
+            parsed = urlparse(raw)
+            return bool(parsed.hostname) and parsed.username is None and parsed.password is None
+        except ValueError:
+            return False
     if raw.startswith(("repo://", "evidence://")):
         scheme, identifier = raw.split("://", 1)
         return scheme in {"repo", "evidence"} and bool(identifier.strip("/")) and not any(ch.isspace() for ch in identifier)
