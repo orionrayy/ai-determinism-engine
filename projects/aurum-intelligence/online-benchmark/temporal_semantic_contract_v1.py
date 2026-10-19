@@ -368,6 +368,7 @@ def validate_candle_series(
         for reason in report["blockers"]:
             blockers.append(f"row_{index}:{reason}")
         session = candle.get("session_id")
+        same_session_as_previous = session == previous_session
         start = _safe_time(candle.get("bar_start"))
         end = _safe_time(candle.get("bar_end"))
         key = (candle.get("source_id"), candle.get("instrument"), start, quote_basis)
@@ -378,18 +379,20 @@ def validate_candle_series(
         if isinstance(session, str) and session:
             if previous_session is None:
                 previous_session = session
+                same_session_as_previous = True
             elif session != previous_session:
                 seen_sessions.add(previous_session)
                 if session in seen_sessions:
                     blockers.append(f"row_{index}:session_id_recurred_after_boundary")
                 previous_session = session
+                same_session_as_previous = False
 
         if start is not None and previous_start is not None and start <= previous_start:
             blockers.append(f"row_{index}:bar_starts_not_strictly_increasing")
         if start is not None and previous_end is not None:
             if start < previous_end:
                 blockers.append(f"row_{index}:bars_overlap")
-            elif session == previous_session and start != previous_end:
+            elif same_session_as_previous and start != previous_end:
                 blockers.append(f"row_{index}:implicit_gap_within_session")
         previous_start = start if start is not None else previous_start
         previous_end = end if end is not None else previous_end
