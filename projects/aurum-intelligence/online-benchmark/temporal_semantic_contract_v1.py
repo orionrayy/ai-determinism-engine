@@ -539,6 +539,8 @@ def validate_feature_batch(
 
     missing_required = sorted(set(required_feature_ids) - observed_feature_ids)
     blockers.extend(f"missing_required_feature:{feature_id}" for feature_id in missing_required)
+    lineage_report = validate_feature_lineage(facts, decision_time=decision)
+    blockers.extend(f"lineage:{reason}" for reason in lineage_report["blockers"])
     blockers = list(dict.fromkeys(blockers))
     return {
         "contract_version": CONTRACT_VERSION,
@@ -549,6 +551,8 @@ def validate_feature_batch(
         "required_feature_ids": list(required_feature_ids),
         "observed_feature_ids": sorted(observed_feature_ids),
         "missing_required_feature_ids": missing_required,
+        "lineage_status": lineage_report["status"],
+        "lineage_report": lineage_report,
         "status": "PASS" if not blockers else "BLOCKED",
         "eligible_for_research_feature_snapshot": not blockers,
         "blockers": blockers,
