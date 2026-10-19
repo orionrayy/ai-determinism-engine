@@ -15,6 +15,7 @@ import math
 import re
 from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
+from urllib.parse import urlparse
 
 CONTRACT_VERSION = "serevex-temporal-semantic-contract-v1.0.0"
 LIVE_SIGNAL_ENABLED = False
@@ -86,6 +87,19 @@ def _nonempty_string(value: object) -> bool:
 
 def _sha256_ok(value: object) -> bool:
     return isinstance(value, str) and SHA256_RE.fullmatch(value.strip()) is not None
+
+
+def _valid_evidence_ref(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip() or len(value) > 2048:
+        return False
+    raw = value.strip()
+    if raw.startswith("https://"):
+        parsed = urlparse(raw)
+        return bool(parsed.hostname) and parsed.username is None and parsed.password is None
+    if raw.startswith(("repo://", "evidence://")):
+        scheme, identifier = raw.split("://", 1)
+        return scheme in {"repo", "evidence"} and bool(identifier.strip("/")) and not any(ch.isspace() for ch in identifier)
+    return False
 
 
 def _number_ok(value: object) -> bool:
@@ -197,13 +211,10 @@ def validate_feature_fact(
                 blockers.append(str(exc))
             if not _sha256_ok(fact.get("transform_fit_data_sha256")):
                 blockers.append("invalid_sha256:transform_fit_data_sha256")
-            if not _nonempty_string(fact.get("transform_fit_manifest_ref")):
+            fit_ref = fact.get("transform_fit_manifest_ref")
+            if not _nonempty_string(fit_ref):
                 blockers.append("transform_fit_manifest_reference_missing")
-            elif not (
-                fact["transform_fit_manifest_ref"].startswith("https://")
-                or fact["transform_fit_manifest_ref"].startswith("repo://")
-                or fact["transform_fit_manifest_ref"].startswith("evidence://")
-            ):
+            elif not _valid_evidence_ref(fit_ref):
                 blockers.append("transform_fit_manifest_reference_invalid")
 
             if fit_cutoff is not None and fit_cutoff > decision:
@@ -251,6 +262,8 @@ def validate_feature_fact(
         blockers.append("published_after_decision")
     if available is not None and available > decision:
         blockers.append("unavailable_at_decision_time")
+    if observed is not None and observed > decision:
+        blockers.append("observed_after_decision_time")
     if published is not None and available is not None and available < published:
         blockers.append("available_before_published_timestamp")
     if available is not None and observed is not None and observed < available:
@@ -694,11 +707,20 @@ def validate_feature_lineage(
 
             parent_available = parsed_available.get(parent_index)
             child_available = parsed_available.get(index)
+            parent_fact = facts[parent_index]
+            parent_observed = None
+            if isinstance(parent_fact, Mapping):
+                try:
+                    parent_observed = _aware_utc(parent_fact.get("observed_at"), f"row_{parent_index}_observed_at")
+                except ValueError:
+                    pass
             if parent_available is not None and child_available is not None:
                 if parent_available > child_available:
                     blockers.append(f"{prefix}:parent_available_after_derived_feature")
                 if parent_available > decision:
                     blockers.append(f"{prefix}:parent_unavailable_at_decision")
+            if parent_observed is not None and child_available is not None and parent_observed > child_available:
+                blockers.append(f"{prefix}:parent_not_observed_before_derived_feature_available")
             parent_report = row_reports[parent_index]
             if parent_report.get("eligible_at_decision_time") is not True:
                 blockers.append(f"{prefix}:parent_fact_not_eligible_at_decision")
