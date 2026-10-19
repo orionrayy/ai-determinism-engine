@@ -432,6 +432,92 @@ def validate_candle_series(
     }
 
 
+
+def validate_feature_batch(
+    facts: Sequence[Mapping[str, Any]],
+    *,
+    decision_time: datetime | str,
+    required_feature_ids: Sequence[str],
+    max_age_seconds_by_feature: Mapping[str, float] | None = None,
+) -> dict[str, Any]:
+    """Validate a complete feature snapshot and prevent duplicate-record masking.
+
+    Required feature IDs refer to semantic slots, not individual source feeds. When
+    two feeds emit the same slot they may both be retained for concordance analysis;
+    an exact duplicate from the same source/record/revision is blocked.
+    """
+    if isinstance(facts, (str, bytes)) or not isinstance(facts, Sequence) or not facts:
+        raise ValueError("facts_must_be_nonempty_sequence")
+    if isinstance(required_feature_ids, (str, bytes)) or not isinstance(required_feature_ids, Sequence):
+        raise ValueError("required_feature_ids_must_be_sequence")
+    if any(not isinstance(item, str) or not item.strip() for item in required_feature_ids):
+        raise ValueError("required_feature_ids_must_be_nonempty_strings")
+    if len(set(required_feature_ids)) != len(required_feature_ids):
+        raise ValueError("required_feature_ids_must_be_unique")
+    if max_age_seconds_by_feature is not None and not isinstance(max_age_seconds_by_feature, Mapping):
+        raise ValueError("max_age_seconds_by_feature_must_be_mapping")
+
+    decision = _aware_utc(decision_time, "decision_time")
+    reports = []
+    blockers: list[str] = []
+    observed_feature_ids: set[str] = set()
+    seen_records: set[tuple[str, str, str, str, str]] = set()
+
+    for index, fact in enumerate(facts):
+        if not isinstance(fact, Mapping):
+            blockers.append(f"row_{index}:fact_must_be_mapping")
+            continue
+        feature_id = fact.get("feature_id")
+        if isinstance(feature_id, str) and feature_id.strip():
+            observed_feature_ids.add(feature_id)
+        age_limit = None
+        if max_age_seconds_by_feature is not None and isinstance(feature_id, str):
+            age_limit = max_age_seconds_by_feature.get(feature_id)
+        report = validate_feature_fact(
+            fact,
+            decision_time=decision,
+            max_age_seconds=age_limit,
+        )
+        reports.append({"row_index": index, **report})
+        for reason in report["blockers"]:
+            blockers.append(f"row_{index}:{reason}")
+
+        identity_fields = (
+            fact.get("feature_id"),
+            fact.get("instrument"),
+            fact.get("source_id"),
+            fact.get("source_record_id"),
+            fact.get("source_revision"),
+        )
+        if all(isinstance(value, str) and value.strip() for value in identity_fields):
+            identity = tuple(identity_fields)
+            if identity in seen_records:
+                blockers.append(f"row_{index}:duplicate_feature_source_record_revision")
+            seen_records.add(identity)
+
+    missing_required = sorted(set(required_feature_ids) - observed_feature_ids)
+    blockers.extend(f"missing_required_feature:{feature_id}" for feature_id in missing_required)
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        "contract_version": CONTRACT_VERSION,
+        "decision_time_utc": decision.isoformat(),
+        "input_fact_count": len(facts),
+        "validated_fact_count": len(reports),
+        "eligible_fact_count": sum(bool(row["eligible_at_decision_time"]) for row in reports),
+        "required_feature_ids": list(required_feature_ids),
+        "observed_feature_ids": sorted(observed_feature_ids),
+        "missing_required_feature_ids": missing_required,
+        "status": "PASS" if not blockers else "BLOCKED",
+        "eligible_for_research_feature_snapshot": not blockers,
+        "blockers": blockers,
+        "row_reports": reports,
+        "snapshot_repaired": False,
+        "promotion_status": "DIAGNOSTIC_ONLY",
+        "decision_output": DECISION_OUTPUT,
+        "live_signal_enabled": LIVE_SIGNAL_ENABLED,
+        "live_order_execution_enabled": LIVE_ORDER_EXECUTION_ENABLED,
+    }
+
 def _safe_time(value: object) -> datetime | None:
     try:
         return _aware_utc(value, "bar_timestamp")
