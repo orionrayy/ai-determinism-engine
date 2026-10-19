@@ -316,6 +316,7 @@ def _choose_weight(
         "selection_source_block_ids": selection_block_ids,
         "gate_source_block_ids": gate_block_ids,
         "candidate_count": len(BLEND_GRID) - 1,
+        "selection_candidate_diagnostics": [],
     }
     if len(selection) < int(config["min_selection_rows"]):
         return base
@@ -328,14 +329,30 @@ def _choose_weight(
     if len(selection_block_counts) < int(config["min_selection_blocks"]):
         return base
     ranked: list[tuple[float, float, float, dict[str, Any]]] = []
+    selection_candidate_diagnostics: list[dict[str, Any]] = []
     for weight in BLEND_GRID[1:]:
         stats = _block_stats(
             selection, alpha_weight=weight,
             block_span=int(config["block_span"]), embargo=int(config["embargo_bars"]), critical_z=float(config["critical_z"])
         )
-        if _dual_score_pass(stats, int(config["min_selection_blocks"]), float(config["positive_block_share"])):
+        eligible = _dual_score_pass(
+            stats, int(config["min_selection_blocks"]), float(config["positive_block_share"])
+        )
+        selection_candidate_diagnostics.append({
+            "weight": float(weight),
+            "blocks": int(stats["blocks"]),
+            "brier_mean_gain": stats["brier"]["mean_gain"],
+            "brier_lower": stats["brier"]["lower"],
+            "brier_positive_share": stats["brier"]["positive_share"],
+            "log_loss_mean_gain": stats["log_loss"]["mean_gain"],
+            "log_loss_lower": stats["log_loss"]["lower"],
+            "log_loss_positive_share": stats["log_loss"]["positive_share"],
+            "eligible": bool(eligible),
+        })
+        if eligible:
             b, l = stats["brier"]["mean_gain"], stats["log_loss"]["mean_gain"]
             ranked.append((float(b), float(l), -weight, stats))
+    base["selection_candidate_diagnostics"] = selection_candidate_diagnostics
     if not ranked:
         base["status"] = "BASELINE_ONLY_SELECTION_DUAL_SCORE_FAILED"
         return base
@@ -505,12 +522,26 @@ def _trace_choice(
 ) -> None:
     selection = choice.get("selection_diagnostics")
     gate = choice.get("gate_diagnostics")
+    status = choice.get("status")
+    if isinstance(gate, Mapping):
+        gate_status = "EVALUATED"
+    elif status == "BASELINE_ONLY_SELECTION_DUAL_SCORE_FAILED":
+        gate_status = "NOT_RUN_SELECTION_GATE_FAILED"
+    elif status == "BASELINE_ONLY_INSUFFICIENT_EVIDENCE":
+        gate_status = "NOT_RUN_INSUFFICIENT_SELECTION_EVIDENCE"
+    elif status == "BASELINE_ONLY_CONFIRMATION_GATE_FAILED":
+        gate_status = "EVALUATED_FAILED"
+    else:
+        gate_status = "NOT_RUN_NO_GATE_DIAGNOSTICS"
     trace.append({
         "version": version,
         "decision_index": decision_index,
         "pool": pool,
         "regime": regime,
         **_selection_summary(choice),
+        "selection_cutoff_index": choice.get("selection_cutoff_index"),
+        "selection_candidate_diagnostics": choice.get("selection_candidate_diagnostics", []),
+        "confirmation_gate_status": gate_status,
         "selection_brier_lower": selection.get("brier", {}).get("lower") if isinstance(selection, Mapping) else None,
         "selection_log_loss_lower": selection.get("log_loss", {}).get("lower") if isinstance(selection, Mapping) else None,
         "gate_brier_lower": gate.get("brier", {}).get("lower") if isinstance(gate, Mapping) else None,
@@ -615,12 +646,37 @@ def _forecast_rows(
                     local_details = local.get("local_diagnostics") if isinstance(local, Mapping) else None
                     if isinstance(local_details, Mapping):
                         uncertainty_evidence = local_details.get("gate_diagnostics", uncertainty_evidence)
+                if isinstance(uncertainty_evidence, Mapping):
+                    uncertainty_status = "AVAILABLE"
+                    summarized_evidence = {
+                        "blocks": uncertainty_evidence.get("blocks"),
+                        "brier": {
+                            "mean_gain": uncertainty_evidence.get("brier", {}).get("mean_gain"),
+                            "lower": uncertainty_evidence.get("brier", {}).get("lower"),
+                            "positive_share": uncertainty_evidence.get("brier", {}).get("positive_share"),
+                        },
+                        "log_loss": {
+                            "mean_gain": uncertainty_evidence.get("log_loss", {}).get("mean_gain"),
+                            "lower": uncertainty_evidence.get("log_loss", {}).get("lower"),
+                            "positive_share": uncertainty_evidence.get("log_loss", {}).get("positive_share"),
+                        },
+                    }
+                else:
+                    global_status = global_choice.get("status")
+                    uncertainty_status = (
+                        "NOT_RUN_SELECTION_GATE_FAILED"
+                        if global_status == "BASELINE_ONLY_SELECTION_DUAL_SCORE_FAILED"
+                        else "NOT_RUN_INSUFFICIENT_SELECTION_EVIDENCE"
+                        if global_status == "BASELINE_ONLY_INSUFFICIENT_EVIDENCE"
+                        else "NOT_RUN_NO_GATE_DIAGNOSTICS"
+                    )
+                    summarized_evidence = None
                 diagnostics["uncertainty_gate"] = {
                     "method": "held_out_chronological_block_lower_screen",
                     "minimum_independent_blocks": int(config["v7_min_gate_blocks"]),
-                    "evidence": _selection_summary({"gate_blocks": uncertainty_evidence.get("blocks", 0) if isinstance(uncertainty_evidence, Mapping) else 0,
-                        "status": "AVAILABLE" if isinstance(uncertainty_evidence, Mapping) else "INSUFFICIENT",
-                        "weight": weight}) if isinstance(uncertainty_evidence, Mapping) else None,
+                    "status": uncertainty_status,
+                    "weight_at_check": weight,
+                    "evidence": summarized_evidence,
                 }
                 if weight > 0.0 and (
                     not isinstance(uncertainty_evidence, dict)
