@@ -94,19 +94,34 @@ def _acquire_sources(
 
     gdelt_result = acquire_historical_gkg(
         PREREGISTERED_GDELT_START, PREREGISTERED_GDELT_END,
-        target_records=CONTEXT_TARGET, max_archives=480, aggregate_cap=800 * 1024 * 1024,
+        target_records=CONTEXT_TARGET, max_archives=480, aggregate_cap=2 * 1024 * 1024 * 1024,
         sampling_design="split_stratified_contiguous_blocks",
         split_boundaries=split_boundaries, block_centers=block_centers,
     )
     gdelt_obs = list(gdelt_result.observations)
     observations.extend(gdelt_obs)
     states["news"] = gdelt_result.status
+    def warning_metric(name: str) -> int:
+        prefix = name + "="
+        for warning in gdelt_result.warnings:
+            if warning.startswith(prefix):
+                try:
+                    return int(warning[len(prefix):])
+                except ValueError:
+                    return 0
+        return 0
+
     details["gdelt_gkg"] = {
         "status": gdelt_result.status, "observations_real_unique": len(gdelt_obs),
         "target_observations": CONTEXT_TARGET, "error_code": gdelt_result.error_code,
         "warnings": list(gdelt_result.warnings),
         "archive_payload_sha256": sorted({m.payload_sha256 for m in gdelt_result.manifests}),
         "archive_count": len(gdelt_result.manifests),
+        "discovered_archive_count": warning_metric("discovered_archives"),
+        "selected_archive_count": warning_metric("sampled_archives"),
+        "processed_archive_count": warning_metric("processed_sampled_archives"),
+        "aggregate_bytes_downloaded": warning_metric("aggregate_bytes"),
+        "requested_aggregate_byte_cap": 2 * 1024 * 1024 * 1024,
         "rights_status": "review-required", "provenance_status": "official-host; rights/upstream lineage not independently verified",
         "article_body_persisted": False,
         "sampling_design": "split_stratified_contiguous_blocks",
@@ -345,6 +360,9 @@ def main() -> int:
             "news_24h_feature_coverage": result["temporal_feature_coverage"]["news_24h"],
             "gdelt_sampling_design": result["source_details"]["gdelt_gkg"]["sampling_design"],
             "gdelt_archive_count": result["source_details"]["gdelt_gkg"]["archive_count"],
+            "gdelt_selected_archive_count": result["source_details"]["gdelt_gkg"]["selected_archive_count"],
+            "gdelt_processed_archive_count": result["source_details"]["gdelt_gkg"]["processed_archive_count"],
+            "gdelt_aggregate_bytes_downloaded": result["source_details"]["gdelt_gkg"]["aggregate_bytes_downloaded"],
             "price_rows": result["source_details"]["price_dataset"]["rows"],
             "scored_real_labels": result["price_label_audit"]["matured_binary_labels"],
             "ablations": {k: v.get("status") for k, v in result["ablation_benchmark"]["ablations"].items()},
