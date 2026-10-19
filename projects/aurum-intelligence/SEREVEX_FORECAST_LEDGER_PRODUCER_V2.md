@@ -1,4 +1,4 @@
-# Serevex Forecast-Ledger Producer v2 — Alpha-Integrated Contract
+# Serevex Forecast-Ledger Producer v2 — Baseline-Governed Alpha — Alpha-Integrated Contract
 
 **Status:** research adapter plus trained alpha forecaster implemented; hosted validation required.  
 **Output:** `serevex.forecast-ledger.v1` JSON and integrated stage 1–3 diagnostic report.  
@@ -18,7 +18,7 @@ The producer emits one causal Laplace baseline and five registered experts:
 - `regime_matured_rate`, falling back to the causal expanding baseline below 20 matured labels.
 - `volatility_matured_rate`, falling back to the causal expanding baseline below 20 matured labels.
 
-The alpha expert emits a 0.5 cold-start probability in development, a development-fit scout prediction during model selection, a pre-calibration refit during calibration, and a frozen calibrated prediction throughout final holdout. Hyperparameter selection uses model-selection observations whose labels mature before calibration begins. Model refit uses only development/model-selection labels mature before calibration begins. Calibration uses only calibration labels mature before final holdout begins. Holdout labels never enter alpha fitting or calibration. Artifact hash, transform hashes, split cutoffs, counts, calibration status and holdout metrics are included in the ledger.
+The alpha expert emits a 0.5 cold-start probability in development, a development-fit scout prediction during model selection, and a pre-calibration refit forecast during calibration. The calibration block is split: early calibration labels fit Platt scaling; a later disjoint calibration sub-block selects a convex blend of calibrated alpha with the causal baseline using paired Brier improvement and a conservative block-error screen. The alpha weight is fixed before final holdout; the governor defaults to exact baseline probability if support is too small or no candidate weight shows convincing calibration-block improvement. Holdout forecasts combine the frozen calibrated alpha probability with that decision-time's prequential baseline under the frozen selected weight. Holdout labels never enter model fitting, calibration or weight selection. Artifact hash, transform hashes, split cutoffs, counts, calibration status and holdout metrics are included in the ledger.
 
 The predictions are model outputs, not trade signals. Statistical improvement remains unproven until independently replicated.
 

@@ -1,4 +1,4 @@
-# Serevex Alpha Model v1 — Fit, Selection, Calibration and Holdout Contract
+# Serevex Alpha Model v2 — Baseline-Governed Probabilities — Fit, Selection, Calibration and Holdout Contract
 
 **Status:** implemented on the research branch; hosted validation is required.  
 **Runtime:** Python standard library only.  
@@ -17,7 +17,7 @@ The split points are derived from eligible source-bar indices before filtering t
 3. **Calibration:** a refit uses only development + model-selection samples whose labels mature before calibration starts. The frozen refit predicts calibration observations. A Platt-style logistic calibrator is fitted only on calibration labels that mature strictly before final holdout starts. Insufficient support falls back to identity calibration and is recorded.
 4. **Final holdout:** the refitted model and calibrator are frozen. Final-holdout labels never participate in model fitting or calibration. Outcomes are read only to calculate evaluation metrics after predictions have been generated.
 
-The trainer hashes model parameters, training-label identity and calibration-label identity. The ledger records the model artifact hash, per-row prediction stage, model-selection candidate metrics, sample counts, calibration status and paired alpha-versus-causal-baseline Brier/log-loss metrics.
+The trainer hashes model parameters, training-label identity and calibration-label identity. The ledger records the model artifact hash, per-row prediction stage, model-selection candidate metrics, sample counts, calibration status, reliability bins and paired alpha-versus-causal-baseline Brier/log-loss metrics with a deterministic paired moving-block bootstrap interval. Holdout-label mutations cannot alter the model/governor artifact hash or holdout predictions.
 
 ## Limits
 

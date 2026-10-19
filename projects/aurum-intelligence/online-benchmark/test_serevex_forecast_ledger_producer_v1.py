@@ -67,11 +67,17 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
         metadata = ledger["metadata"]
         alpha_report = metadata["alpha_model_training"]
         self.assertIn("alpha_logistic_v1", metadata["registered_experts"])
-        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v1")
+        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v2-baseline-governed")
         self.assertEqual(alpha_report["status"], "ALPHA_RESEARCH_TRAINED")
         self.assertFalse(alpha_report["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"])
         self.assertTrue(alpha_report["training_policy"]["final_holdout_predictions_are_frozen"])
         self.assertGreater(alpha_report["final_holdout_metrics"]["rows"], 0)
+        self.assertIn("probability_governor", alpha_report)
+        self.assertIn(alpha_report["probability_governor"]["status"], (
+            "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
+            "BASELINE_ONLY_NO_CONFIRMED_CALIBRATION_GAIN",
+            "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_CONSERVATIVE_SCREEN",
+        ))
         for row in ledger["records"]:
             self.assertIn("alpha_logistic_v1", row["expert_probabilities"])
             self.assertEqual(len(row["feature_facts"]), len(producer.alpha_model.FEATURE_NAMES))

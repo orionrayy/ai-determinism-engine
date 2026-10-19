@@ -93,7 +93,49 @@ class SerevexAlphaModelTests(unittest.TestCase):
         self.assertEqual(stages["5"], "DEVELOPMENT_COLD_START_BASELINE")
         self.assertEqual(stages["205"], "DEVELOPMENT_FIT_SCOUT_FIXED_BEFORE_MODEL_SELECTION")
         self.assertEqual(stages["285"], "REFIT_BEFORE_CALIBRATION_UNCALIBRATED")
-        self.assertEqual(stages["325"], "FROZEN_FINAL_MODEL_AND_CALIBRATOR")
+        self.assertEqual(stages["325"], "FROZEN_FINAL_MODEL_CALIBRATOR_AND_BASELINE_GOVERNOR")
+
+    def test_probability_governor_defaults_to_exact_baseline_when_alpha_loses(self):
+        rows = [
+            {"decision_id": f"bad-{i}", "decision_index": i, "label_mature": True,
+             "label": 0, "baseline_probability": 0.2}
+            for i in range(120)
+        ]
+        alpha_probabilities = {i: 0.95 for i in range(120)}
+        result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
+        self.assertEqual(result["alpha_weight"], 0.0)
+        self.assertEqual(result["status"], "BASELINE_ONLY_NO_CONFIRMED_CALIBRATION_GAIN")
+
+    def test_probability_governor_selects_alpha_when_gain_is_large_and_stable(self):
+        rows = [
+            {"decision_id": f"good-{i}", "decision_index": i, "label_mature": True,
+             "label": int(i % 2 == 0), "baseline_probability": 0.5}
+            for i in range(240)
+        ]
+        alpha_probabilities = {i: (0.98 if i % 2 == 0 else 0.02) for i in range(240)}
+        result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
+        self.assertEqual(result["alpha_weight"], 1.0)
+        self.assertEqual(result["status"], "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_CONSERVATIVE_SCREEN")
+
+    def test_probability_governor_fails_closed_on_insufficient_blocks(self):
+        rows = [
+            {"decision_id": f"short-{i}", "decision_index": i, "label_mature": True,
+             "label": int(i % 2 == 0), "baseline_probability": 0.5}
+            for i in range(60)
+        ]
+        alpha_probabilities = {i: (0.99 if i % 2 == 0 else 0.01) for i in range(60)}
+        result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
+        self.assertEqual(result["alpha_weight"], 0.0)
+        self.assertEqual(result["status"], "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT")
+
+    def test_holdout_reports_paired_block_interval_and_reliability(self):
+        rows = make_events()
+        result = self.train(rows)
+        metrics = result["final_holdout_metrics"]
+        self.assertIn("paired_brier_improvement_ci_vs_causal_baseline", metrics)
+        self.assertIn("reliability_diagnostics", metrics)
+        self.assertEqual(metrics["reliability_diagnostics"]["rows"], metrics["rows"])
+        self.assertEqual(result["probability_governor"]["alpha_weight"], 0.0)  # calibration slice has too few independent blocks
 
     def test_invalid_partition_timeline_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "strictly_chronological"):
