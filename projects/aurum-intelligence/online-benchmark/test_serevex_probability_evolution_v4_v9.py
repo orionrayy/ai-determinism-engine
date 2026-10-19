@@ -1,0 +1,204 @@
+import copy
+import unittest
+
+import serevex_probability_evolution_v4_v9 as evo
+
+
+def make_rows(n=720, *, candidate_mode="strong", regimes=1):
+    rows = []
+    for i in range(n):
+        label = int(i % 2 == 0)
+        if candidate_mode == "strong":
+            candidate = 0.97 if label else 0.03
+        elif candidate_mode == "weak":
+            candidate = 0.51 if label else 0.49
+        elif candidate_mode == "adverse":
+            candidate = 0.03 if label else 0.97
+        else:
+            candidate = None
+        rows.append({
+            "decision_id": f"row-{i}",
+            "decision_index": i,
+            "target_id": "tp-before-sl-h12",
+            "instrument": "XAUUSD",
+            "horizon_bars": 12,
+            "candidate_probability": candidate,
+            "baseline_probability": 0.5,
+            "label": label,
+            "label_mature": True,
+            "label_available_index": i + 1,
+            "regime": f"regime-{i % regimes}",
+            "regime_available_index": i,
+            "feature_available_index": i,
+        })
+    return rows
+
+
+class ProbabilityEvolutionTests(unittest.TestCase):
+    def test_version_order_is_preregistered_and_complete(self):
+        self.assertEqual(
+            evo.VERSION_ORDER,
+            ("4.0", "4.1", "4.2", "5.0", "6.0", "7.0", "8.0", "9.0"),
+        )
+
+    def test_v40_is_reference_passthrough_for_existing_v4_candidate(self):
+        result = evo.evaluate_probability_evolution(make_rows(30), version="4.0")
+        self.assertAlmostEqual(result["forecasts"][10]["probability"], 0.97)
+        self.assertEqual(result["forecasts"][10]["alpha_weight"], 1.0)
+        self.assertEqual(result["evidence"]["scored_rows"], 29)
+        self.assertEqual(result["evidence"]["decision_output"], "NO_TRADE")
+
+    def test_future_feature_is_quarantined_and_baseline_is_used(self):
+        rows = make_rows(10)
+        rows[4]["feature_available_index"] = 5
+        result = evo.evaluate_probability_evolution(rows, version="4.1")
+        out = result["forecasts"][4]
+        self.assertEqual(out["probability"], 0.5)
+        self.assertIn("FUTURE_OR_INVALID_FEATURE_AVAILABILITY", out["reason_codes"])
+        self.assertEqual(out["alpha_weight"], 0.0)
+
+    def test_future_regime_is_replaced_with_unknown(self):
+        rows = make_rows(10)
+        rows[4]["regime_available_index"] = 9
+        result = evo.evaluate_probability_evolution(rows, version="6.0")
+        self.assertEqual(result["forecasts"][4]["regime"], evo.UNKNOWN_REGIME)
+        self.assertIn("REGIME_NOT_AVAILABLE_AT_DECISION", result["forecasts"][4]["reason_codes"])
+
+    def test_invalid_baseline_fails_closed(self):
+        rows = make_rows(10)
+        rows[3]["baseline_probability"] = float("nan")
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "invalid_or_missing_causal_baseline"):
+            evo.evaluate_probability_evolution(rows, version="4.1")
+
+    def test_duplicate_index_fails_closed(self):
+        rows = make_rows(10)
+        rows[3]["decision_index"] = 2
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "duplicate_decision_index"):
+            evo.evaluate_probability_evolution(rows, version="4.0")
+
+    def test_mixed_target_cohorts_are_rejected(self):
+        rows = make_rows(10)
+        rows[3]["target_id"] = "different-horizon"
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "mixed_forecast_cohorts"):
+            evo.evaluate_probability_evolution(rows, version="4.0")
+
+    def test_future_label_maturity_does_not_enter_current_history(self):
+        rows = make_rows(20)
+        rows[2]["label_available_index"] = 18
+        normalized = evo._normalize_rows(rows)
+        hist = evo._matured_history(normalized[:10], 10)
+        self.assertNotIn("row-2", [row["decision_id"] for row in hist])
+        self.assertNotIn(2, [row["decision_index"] for row in hist])
+
+    def test_invalid_candidate_uses_exact_baseline(self):
+        rows = make_rows(10)
+        rows[5]["candidate_probability"] = None
+        rows[5]["baseline_probability"] = 0.37
+        result = evo.evaluate_probability_evolution(rows, version="9.0")
+        out = result["forecasts"][5]
+        self.assertAlmostEqual(out["probability"], 0.37)
+        self.assertEqual(out["alpha_weight"], 0.0)
+        self.assertIn("INVALID_OR_MISSING_CANDIDATE_PROBABILITY", out["reason_codes"])
+
+    def test_v42_requires_paired_dual_score_evidence(self):
+        rows = make_rows(30)
+        result = evo.evaluate_probability_evolution(rows, version="4.2")
+        self.assertAlmostEqual(result["forecasts"][-1]["probability"], 0.5)
+        self.assertEqual(result["forecasts"][-1]["status"], "BASELINE_FALLBACK_DUAL_SCORE_NOT_ESTABLISHED")
+
+    def test_v50_selects_alpha_only_after_selection_and_later_gate(self):
+        rows = make_rows(720)
+        result = evo.evaluate_probability_evolution(rows, version="5.0")
+        forecast = result["forecasts"][-1]
+        self.assertGreater(forecast["alpha_weight"], 0.0)
+        self.assertIn("CHRONOLOGICAL_DUAL_SCORE_GATE", forecast["status"])
+        diag = forecast["diagnostics"]["global_weight_selection"]
+        self.assertGreaterEqual(diag["selection_blocks"], 8)
+        self.assertGreaterEqual(diag["gate_blocks"], 4)
+
+    def test_v60_reports_regime_shrinkage_or_safe_global_fallback(self):
+        rows = make_rows(720, regimes=1)
+        result = evo.evaluate_probability_evolution(rows, version="6.0")
+        out = result["forecasts"][-1]
+        regime_diag = out["diagnostics"]["regime_weight_selection"]
+        self.assertIn(regime_diag["status"], {
+            "REGIME_WEIGHT_SHRUNK_TO_GLOBAL",
+            "GLOBAL_FALLBACK_REGIME_SUPPORT_LOW",
+            "GLOBAL_FALLBACK_LOCAL_GATE_FAILED",
+        })
+        self.assertGreaterEqual(out["alpha_weight"], 0.0)
+        self.assertLessEqual(out["alpha_weight"], 1.0)
+
+    def test_v70_uses_a_disjoint_later_gate_without_recursive_baseline_deadlock(self):
+        rows = make_rows(720)
+        result = evo.evaluate_probability_evolution(rows, version="7.0")
+        out = result["forecasts"][-1]
+        self.assertGreater(out["alpha_weight"], 0.0)
+        uncertainty = out["diagnostics"]["uncertainty_gate"]
+        self.assertEqual(uncertainty["method"], "held_out_chronological_block_lower_screen")
+        self.assertGreaterEqual(uncertainty["minimum_independent_blocks"], 8)
+
+    def test_drift_alarm_uses_only_prior_issued_forecasts(self):
+        rows = []
+        for i in range(600):
+            label = int(i % 2 == 0)
+            row = {
+                "decision_id": f"drift-{i}",
+                "decision_index": i,
+                "_baseline": 0.5,
+                "_y": label,
+                "label": label,
+                "label_mature": True,
+                "label_available_index": i + 1,
+                "_issued_probability": (0.95 if label else 0.05) if i < 400 else (0.05 if label else 0.95),
+            }
+            rows.append(row)
+        cfg = evo._default_config({
+            "drift_recent_bars": 192,
+            "drift_min_rows": 300,
+        })
+        diagnostic = evo._drift_diagnostic(rows[:-1], config=cfg)
+        self.assertIn("alarm", diagnostic)
+        self.assertTrue(diagnostic["alarm"])
+        self.assertEqual(diagnostic["status"], "DRIFT_ALARM_BASELINE_FALLBACK")
+
+    def test_v80_exposes_drift_diagnostic_and_never_authorizes_trading(self):
+        rows = make_rows(720)
+        result = evo.evaluate_probability_evolution(rows, version="8.0")
+        out = result["forecasts"][-1]
+        self.assertIn("drift_guard", out["diagnostics"])
+        self.assertEqual(out["decision_output"], "NO_TRADE")
+        self.assertFalse(out["live_order_execution_enabled"])
+
+    def test_v90_emits_stable_hashes_and_explicit_nonpromotion_state(self):
+        rows = make_rows(720)
+        first = evo.evaluate_probability_evolution(rows, version="9.0")
+        second = evo.evaluate_probability_evolution(rows, version="9.0")
+        self.assertEqual(first["evidence"]["forecast_manifest_sha256"], second["evidence"]["forecast_manifest_sha256"])
+        self.assertEqual(first["evidence"]["evaluation_report_sha256"], second["evidence"]["evaluation_report_sha256"])
+        self.assertFalse(first["evidence"]["model_validated"])
+        self.assertFalse(first["evidence"]["deployment_calibrated"])
+        self.assertEqual(first["evidence"]["decision_output"], "NO_TRADE")
+
+    def test_all_versions_use_identical_scoring_cohort_and_no_auto_promotion(self):
+        result = evo.evaluate_all_probability_versions(make_rows(720))
+        self.assertEqual(tuple(result["versions"]), evo.VERSION_ORDER)
+        scored = {entry["scored_rows"] for entry in result["comparison"].values()}
+        self.assertEqual(len(scored), 1)
+        self.assertEqual(result["status"], "RESEARCH_COMPARISON_NOT_PROMOTION")
+        self.assertFalse(result["model_validated"])
+        self.assertEqual(result["decision_output"], "NO_TRADE")
+
+    def test_unknown_version_and_unknown_config_fail_closed(self):
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "unsupported_probability_version"):
+            evo.evaluate_probability_evolution(make_rows(10), version="10.0")
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "unknown_policy_config"):
+            evo.evaluate_probability_evolution(make_rows(10), config={"allow_live": True})
+
+    def test_non_mapping_rows_use_typed_input_error(self):
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "forecast_row_not_mapping"):
+            evo.evaluate_probability_evolution([None], version="4.0")
+
+
+if __name__ == "__main__":
+    unittest.main()
