@@ -10,7 +10,7 @@ import hashlib
 import json
 import math
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Mapping, Sequence
 
 PROTOCOL_VERSION = "serevex-stage123-integrated-v1"
@@ -62,11 +62,11 @@ def _utc(value: object, field: str) -> str:
         raise ValueError(field + "_must_be_timezone_aware_iso8601") from exc
     if dt.tzinfo is None or dt.utcoffset() is None:
         raise ValueError(field + "_must_be_timezone_aware_iso8601")
-    return dt.astimezone(datetime.now().astimezone().tzinfo).astimezone(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
+    return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _time(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(__import__("datetime").timezone.utc)
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 def _validate_fact(fact: object, decision_time: str, position: int) -> dict[str, Any]:
@@ -731,6 +731,7 @@ def run_serevex_stage123(
         "stage_2_predictability_atlas": atlas,
         "stage_2_expert_complementarity": complementarity,
         "stage_3_delayed_feedback_mixer": mixer,
+        "predictive_skill_proven": False,
         "research_boundary": {
             "predictive_skill_proven": False,
             "mathematical_originality_proven": False,
