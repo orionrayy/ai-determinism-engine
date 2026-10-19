@@ -171,7 +171,7 @@ jobs:
           checked = integrated.validate_forecast_ledger(ledger)
           alpha = ledger["metadata"]["alpha_model_training"]
           assert checked["contract_status"] == "PASS", checked
-          assert alpha["model_version"] == "serevex-alpha-logistic-v1", alpha
+          assert alpha["model_version"] == "serevex-alpha-logistic-v2-baseline-governed", alpha
           assert alpha["status"] == "ALPHA_RESEARCH_TRAINED", alpha
           assert alpha["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"] is False, alpha
           assert alpha["training_policy"]["final_holdout_predictions_are_frozen"] is True, alpha
