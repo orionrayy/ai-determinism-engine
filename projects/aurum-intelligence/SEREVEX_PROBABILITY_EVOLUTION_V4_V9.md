@@ -32,7 +32,7 @@ These are software protocol versions, not claims of mathematically novel methods
 - Forecasts are processed in ascending source decision index.
 - An outcome is available for policy updates only when \`label_mature == true\`, the label is binary, and \`label_available_index < current_decision_index\`. Labels cannot mature at or before their own decision index.
 - Source-index blocks score 12 bars followed by a 12-bar embargo by default. Block eligibility is anchored to absolute decision indices, not filtered row rank.
-- The selection segment and confirmation segment are separate. v7–v9 require at least eight eligible blocks in the confirmation segment.
+- The selection segment and confirmation segment are split at an absolute source-index block-period boundary (default period 24 bars), never by filtered-event rank. Their scored source-block IDs are exposed in the policy trace and checked for disjointness. v7–v9 require at least eight eligible blocks in the confirmation segment.
 - Weight decisions update in deterministic 12-bar buckets by default and use a bounded 720-record matured-history window. This is a compute/recency policy and must be frozen before final testing.
 - Model metrics are compared with the same baseline and same scored rows: Brier, log loss, ten-bin expected calibration error (ECE), base rate, forecast coverage, and fallback rate. Directional accuracy is not the primary promotion metric.
 - The output includes an identity hash for emitted forecasts and a separate evaluation-report hash. Hashes establish reproducible identity, not data authenticity, legal rights, or source-time truth.
