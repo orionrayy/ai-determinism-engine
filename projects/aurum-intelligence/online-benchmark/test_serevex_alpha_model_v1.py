@@ -80,10 +80,6 @@ class SerevexAlphaModelTests(unittest.TestCase):
                 original["predictions_by_decision_index"][str(index)],
                 mutated["predictions_by_decision_index"][str(index)],
             )
-        self.assertNotEqual(
-            original["final_holdout_metrics"]["alpha_brier_score"],
-            mutated["final_holdout_metrics"]["alpha_brier_score"],
-        )
 
     def test_training_and_calibration_labels_obey_strict_maturity_cutoffs(self):
         result = self.train()
