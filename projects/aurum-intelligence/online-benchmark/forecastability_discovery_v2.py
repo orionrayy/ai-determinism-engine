@@ -283,7 +283,7 @@ def assess_forecastability_v2(
     # Every bootstrap draw is shared by every model and regime for a given
     # window and block size, preserving within-draw cross-model dependence.
     unsupported_keys = {key for key, meta in support.items() if meta["status"] != "SUPPORTED"}
-    max_stats: dict[int, list[float]] = {b: [] for b in block_sizes}
+    max_t_by_block_rep: dict[int, list[float]] = {b: [0.0] * bootstrap_replicates for b in block_sizes}
     for window in windows:
         rows = window_rows_by_size[window]
         runs = _runs(rows)
@@ -294,7 +294,6 @@ def assess_forecastability_v2(
             # Use a deterministic independent substream per window/block length.
             rng = random.Random(seed + window * 37 + block_size * 1009)
             dists = {(*key, block_size): [] for key in relevant}
-            replicate_stats: list[list[float]] = []
             valid_replicates = 0
             for _ in range(bootstrap_replicates):
                 positions = _sample_block_positions(runs, len(rows), block_size, rng)
@@ -313,8 +312,9 @@ def assess_forecastability_v2(
                 valid_replicates += 1
                 for key, value in rep_means.items():
                     dists[key].append(value)
-            # Fail closed if regime support drops out of even one bootstrap replicate.
-            if valid_replicates < max(200, int(bootstrap_replicates * 0.99)):
+            # Require every replicate to represent every tested regime. Allowing a
+            # variable number would misalign synchronized max-statistic draws.
+            if valid_replicates != bootstrap_replicates:
                 for key in relevant:
                     support[key]["status"] = "BOOTSTRAP_REGIME_SUPPORT_UNSTABLE"
                 continue
@@ -338,16 +338,19 @@ def assess_forecastability_v2(
             # Need a max statistic over the whole registered set. Here missing or
             # degenerate hypotheses block their own model/regime, while their absent
             # statistic cannot be used as a winning candidate.
-            for rep in range(valid_replicates):
+            for rep in range(bootstrap_replicates):
                 stats = []
                 for key in valid_keys:
                     dist = distributions[(*key, block_size)]
                     stats.append(abs((dist[rep] - observed[key]) / se_by_key[key]))
-                max_stats[block_size].append(max(stats) if stats else 0.0)
+                max_t_by_block_rep[block_size][rep] = max(
+                    max_t_by_block_rep[block_size][rep],
+                    max(stats) if stats else 0.0,
+                )
 
     critical_by_block: dict[int, float] = {}
     for block_size in block_sizes:
-        vals = max_stats[block_size]
+        vals = max_t_by_block_rep[block_size]
         critical_by_block[block_size] = _quantile(vals, 1.0 - float(familywise_alpha)) if vals else math.inf
 
     # Summarize each model × regime across all time windows and block lengths.
