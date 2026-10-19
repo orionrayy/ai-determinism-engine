@@ -53,7 +53,7 @@ def make_ledger(n=600, *, leak_at=None, weak_second=False, partitions=None):
             "state_tags_available_index": i,
             "feature_facts": [{
                 "feature_id": "ema_fast_gap",
-                "available_at": (decision_time - timedelta(seconds=5)).isoformat().replace("+00:00", "Z"),
+                "available_at": available_time.isoformat().replace("+00:00", "Z"),
                 "observed_at": observed_time.isoformat().replace("+00:00", "Z"),
                 "source_revision": "feed-v1",
                 "source_sha256": digest("source-xau"),
