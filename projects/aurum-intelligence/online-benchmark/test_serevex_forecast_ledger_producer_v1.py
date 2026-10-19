@@ -75,12 +75,13 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
     def test_partition_boundaries_are_chronological(self):
         ledger = self.build()
         order = {"development": 0, "model_selection": 1, "calibration": 2, "final_holdout": 3}
-        values = [order[row["partition"]] for row in ledger["records"]]
+        partitions = [row["partition"] for row in ledger["records"]]
+        values = [order[partition] for partition in partitions]
         self.assertEqual(values, sorted(values))
-        self.assertIn("development", values)
-        self.assertIn("model_selection", values)
-        self.assertIn("calibration", values)
-        self.assertIn("final_holdout", values)
+        self.assertIn("development", partitions)
+        self.assertIn("model_selection", partitions)
+        self.assertIn("calibration", partitions)
+        self.assertIn("final_holdout", partitions)
 
     def test_prediction_before_maturity_does_not_use_future_label(self):
         rows = synthetic_rows(1800)
