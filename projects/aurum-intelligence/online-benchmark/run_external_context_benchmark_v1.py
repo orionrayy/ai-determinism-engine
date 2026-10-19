@@ -94,7 +94,7 @@ def _acquire_sources(
 
     gdelt_result = acquire_historical_gkg(
         PREREGISTERED_GDELT_START, PREREGISTERED_GDELT_END,
-        target_records=CONTEXT_TARGET, max_archives=480, aggregate_cap=2 * 1024 * 1024 * 1024,
+        target_records=CONTEXT_TARGET, max_archives=720, aggregate_cap=5 * 1024 * 1024 * 1024,
         sampling_design="split_stratified_contiguous_blocks",
         split_boundaries=split_boundaries, block_centers=block_centers,
     )
@@ -121,11 +121,11 @@ def _acquire_sources(
         "selected_archive_count": warning_metric("sampled_archives"),
         "processed_archive_count": warning_metric("processed_sampled_archives"),
         "aggregate_bytes_downloaded": warning_metric("aggregate_bytes"),
-        "requested_aggregate_byte_cap": 2 * 1024 * 1024 * 1024,
+        "requested_aggregate_byte_cap": 5 * 1024 * 1024 * 1024,
         "rights_status": "review-required", "provenance_status": "official-host; rights/upstream lineage not independently verified",
         "article_body_persisted": False,
         "sampling_design": "split_stratified_contiguous_blocks",
-        "max_archives_requested": 480,
+        "max_archives_requested": 720,
         "split_boundaries_utc": [value.isoformat() for value in split_boundaries],
         "block_centers_utc": [value.isoformat() for value in block_centers],
     }

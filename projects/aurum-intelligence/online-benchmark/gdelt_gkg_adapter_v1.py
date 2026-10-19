@@ -25,12 +25,12 @@ MAX_PAYLOAD_BYTES = 64 * 1024 * 1024
 # but large enough to select historical 15-minute GKG archives.
 MAX_MASTER_BYTES = 160 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 48 * 1024 * 1024
-MAX_AGGREGATE_BYTES = 2 * 1024 * 1024 * 1024
+MAX_AGGREGATE_BYTES = 5 * 1024 * 1024 * 1024
 MAX_RECORDS_PER_ARCHIVE = 500_000
 # The parser's field cap is bounded by the total input payload cap; otherwise the
 # stdlib CSV default (typically 128 KiB) can reject legitimate large GKG metadata fields.
 csv.field_size_limit(MAX_PAYLOAD_BYTES)
-MAX_ARCHIVES_PER_RUN = 480
+MAX_ARCHIVES_PER_RUN = 720
 TIMEOUT_SECONDS = 20
 MAX_RETRIES = 2
 BATCH_INTERVAL = timedelta(minutes=15)

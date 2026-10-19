@@ -42,10 +42,10 @@ The one-hour and 24-hour windows are qualified separately:
   `coverage_news_1h` and `coverage_news_24h` expose the separate contracts.
 
 The CI archive sampler chooses bounded contiguous blocks around centers in the development,
-calibration, and final-holdout time segments. Centers come from the fixed chronological
+calibration, and final-holdout time segments, with up to 240 selected archives per split at the 720-archive cap. Centers come from the fixed chronological
 price-row cohort, not context values. Blocks are downloaded in round-robin split order
 so a byte-limited sample does not silently consume only the earliest segment. The total
-download budget is capped at 2 GiB including the master listing and archive payloads;
+download budget is capped at 5 GiB including the master listing and archive payloads;
 the report distinguishes discovered, selected, and successfully parsed archive counts
 as well as actual transferred bytes. The sampler remains a coverage-focused sample, not
 a complete archive census; overall time coverage and row-level eligibility remain separate.

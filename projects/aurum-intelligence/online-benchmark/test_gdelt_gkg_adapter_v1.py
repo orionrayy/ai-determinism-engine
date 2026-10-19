@@ -84,8 +84,8 @@ class GdeltGkgTests(unittest.TestCase):
 
     def test_historical_master_list_limit_covers_current_official_listing(self):
         self.assertGreaterEqual(gdelt.MAX_MASTER_BYTES, 130 * 1024 * 1024)
-        self.assertGreaterEqual(gdelt.MAX_ARCHIVES_PER_RUN, 480)
-        self.assertGreaterEqual(gdelt.MAX_AGGREGATE_BYTES, 2 * 1024 * 1024 * 1024)
+        self.assertGreaterEqual(gdelt.MAX_ARCHIVES_PER_RUN, 720)
+        self.assertGreaterEqual(gdelt.MAX_AGGREGATE_BYTES, 5 * 1024 * 1024 * 1024)
 
     def test_official_http_archive_links_are_upgraded_to_https(self):
         source = "http://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip"
