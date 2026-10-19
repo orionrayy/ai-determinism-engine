@@ -1,0 +1,38 @@
+name: Free-First Opportunity Radar
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opportunity-radar
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        run: python -m unittest discover -s income_radar -p 'test_*.py' -v
+      - name: Discover leads
+        env:
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+        run: python income_radar/scout.py --out-dir reports/opportunity-radar
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: opportunity-radar
+          path: reports/opportunity-radar/
+          if-no-files-found: error
+          retention-days: 14
