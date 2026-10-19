@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from temporal_semantic_contract_v1 import (
     CONTRACT_VERSION,
     validate_candle_series,
+    validate_feature_batch,
     validate_feature_fact,
     validate_ohlc_candle,
 )
@@ -247,6 +248,61 @@ class TemporalSemanticContractTests(unittest.TestCase):
         )
         self.assertIn("row_2:session_id_recurred_after_boundary", report["blockers"])
 
+
+
+    def test_semantic_type_and_event_time_role_must_match(self):
+        fact = self.fact()
+        fact["event_time_role"] = "scheduled_future_event"
+        fact["event_time"] = "2026-01-01T12:00:00Z"
+        fact["published_at"] = "2026-01-01T00:04:01Z"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("semantic_type_event_time_role_mismatch", report["blockers"])
+
+    def test_malformed_enum_types_fail_closed_without_type_error(self):
+        fact = self.fact()
+        fact["semantic_type"] = {"malformed": True}
+        fact["event_time_role"] = []
+        fact["value_type"] = {}
+        fact["quote_basis"] = []
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertFalse(report["eligible_at_decision_time"])
+        self.assertIn("semantic_type_unknown", report["blockers"])
+        self.assertIn("event_time_role_unknown", report["blockers"])
+        self.assertIn("value_type_unknown", report["blockers"])
+        self.assertIn("quote_basis_unknown", report["blockers"])
+
+    def test_feature_batch_requires_slots_and_blocks_duplicate_records(self):
+        second = self.fact()
+        second["feature_id"] = "macro.cpi.yoy"
+        second["semantic_type"] = "macro_observation"
+        second["event_time_role"] = "observation_period"
+        second["quote_basis"] = "not_applicable"
+        second["value"] = 3.1
+        second["unit"] = "percent"
+        second["source_record_id"] = "macro:cpi:2025-12"
+        report = validate_feature_batch(
+            [self.fact(), second],
+            decision_time="2026-01-01T00:05:00Z",
+            required_feature_ids=["xau.close.m1", "macro.cpi.yoy"],
+        )
+        self.assertEqual(report["status"], "PASS", report)
+        self.assertTrue(report["eligible_for_research_feature_snapshot"])
+        duplicate_report = validate_feature_batch(
+            [self.fact(), self.fact()],
+            decision_time="2026-01-01T00:05:00Z",
+            required_feature_ids=["xau.close.m1"],
+        )
+        self.assertIn("row_1:duplicate_feature_source_record_revision", duplicate_report["blockers"])
+        self.assertEqual(duplicate_report["status"], "BLOCKED")
+
+    def test_feature_batch_blocks_when_required_semantic_slot_is_absent(self):
+        report = validate_feature_batch(
+            [self.fact()],
+            decision_time="2026-01-01T00:05:00Z",
+            required_feature_ids=["xau.close.m1", "macro.cpi.yoy"],
+        )
+        self.assertIn("macro.cpi.yoy", report["missing_required_feature_ids"])
+        self.assertEqual(report["status"], "BLOCKED")
 
 if __name__ == "__main__":
     unittest.main()
