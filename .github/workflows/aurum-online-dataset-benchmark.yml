@@ -169,7 +169,14 @@ jobs:
               atlas_bootstrap_replicates=200,
           )
           checked = integrated.validate_forecast_ledger(ledger)
+          alpha = ledger["metadata"]["alpha_model_training"]
           assert checked["contract_status"] == "PASS", checked
+          assert alpha["model_version"] == "serevex-alpha-logistic-v1", alpha
+          assert alpha["status"] == "ALPHA_RESEARCH_TRAINED", alpha
+          assert alpha["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"] is False, alpha
+          assert alpha["training_policy"]["final_holdout_predictions_are_frozen"] is True, alpha
+          assert alpha["final_holdout_metrics"]["rows"] > 0, alpha
+          assert all("alpha_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
           assert report["status"] == "PASS_CONTRACT_DIAGNOSTIC_ONLY", report
           assert report["stage_1_ledger_contract"] == "PASS", report
           assert report["decision_output"] == "NO_TRADE", report
@@ -207,6 +214,19 @@ jobs:
               "mixer_baseline_brier": mixer["baseline_brier"],
               "brier_skill_baseline_minus_mixer": mixer["brier_skill_baseline_minus_candidate"],
               "mixer_final_weights_sha256": mixer["final_global_weights_sha256"],
+              "alpha_model_version": alpha["model_version"],
+              "alpha_model_status": alpha["status"],
+              "alpha_model_artifact_sha256": alpha["model_artifact_sha256"],
+              "alpha_selected_l2": alpha["selected_l2"],
+              "alpha_selection_status": alpha["selection_status"],
+              "alpha_training_rows": alpha["training_policy"]["final_model_train_rows"],
+              "alpha_calibration_rows": alpha["training_policy"]["calibration_rows"],
+              "alpha_holdout_rows": alpha["final_holdout_metrics"]["rows"],
+              "alpha_holdout_brier": alpha["final_holdout_metrics"]["alpha_brier_score"],
+              "alpha_baseline_holdout_brier": alpha["final_holdout_metrics"]["causal_baseline_brier_score"],
+              "alpha_brier_improvement_baseline_minus_alpha": alpha["final_holdout_metrics"]["brier_improvement_baseline_minus_alpha"],
+              "alpha_calibration_status": alpha["calibrator"]["status"],
+              "alpha_holdout_frozen": alpha["training_policy"]["final_holdout_predictions_are_frozen"],
               "ledger_sha256": checked["ledger_sha256"],
               "report_sha256": report["report_sha256"],
               "source_verification": checked["source_verification"],
@@ -232,6 +252,9 @@ jobs:
               f"- Stage-3 scored rows: {summary['mixer_scored_rows']}",
               f"- Baseline Brier: {summary['mixer_baseline_brier']}; mixer Brier: {summary['mixer_candidate_brier']}",
               f"- Baseline-minus-mixer Brier skill: {summary['brier_skill_baseline_minus_mixer']}",
+              f"- Alpha training: {summary['alpha_model_status']}; fit rows: {summary['alpha_training_rows']}; calibration rows: {summary['alpha_calibration_rows']}",
+              f"- Alpha final-holdout Brier: {summary['alpha_holdout_brier']}; causal baseline Brier: {summary['alpha_baseline_holdout_brier']}; improvement: {summary['alpha_brier_improvement_baseline_minus_alpha']}",
+              f"- Alpha calibration: {summary['alpha_calibration_status']}; frozen holdout model: {summary['alpha_holdout_frozen']}; artifact SHA-256: {summary['alpha_model_artifact_sha256']}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
               f"- Producer report SHA-256: {summary['report_sha256']}",
               "",
