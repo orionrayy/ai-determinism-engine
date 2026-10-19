@@ -2,6 +2,9 @@ name: Free-First Opportunity Radar
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/free-first-opportunity-radar
   schedule:
     - cron: "17 2 * * *"
 
