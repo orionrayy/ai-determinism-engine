@@ -10,9 +10,10 @@ The adapter accepts only a mapping from build_synchronized_return_panel and chec
 - time-alignment status and evidence-eligible status;
 - panel row count, strategy count, clock cadence, timestamp/session arrays, and benchmark-vector length;
 - exact equality between panel strategy IDs and the independently registered trial IDs;
-- the per-strategy ledger hash family and panel SHA-256;
+- the per-strategy ledger hash family; a recomputed canonical panel SHA-256 must match the supplied digest (a 64-character string alone is insufficient);
 - distinct SHA-256 digests for the full trial registry and frozen source dataset;
-- exactly five evidence gates and references: complete trial registry, unseen locked holdout, qualified source, verified costs, and verified portfolio replay.
+- exactly five evidence gates and valid stable evidence references: complete trial registry, unseen locked holdout, qualified source, verified costs, and verified portfolio replay;
+- a unique digest identity across panel, trial-registry manifest, and frozen source-dataset manifest.
 
 After structural gating, it calls selection_bias_guard_v1 with every panel return series on the common clock. It does not change values or remove rows. The underlying guard still validates timestamps, cadence, session continuity, finite returns, block-length sensitivity and evidence gates.
 

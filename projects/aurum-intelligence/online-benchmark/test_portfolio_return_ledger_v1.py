@@ -225,6 +225,26 @@ class PortfolioReturnLedgerTests(unittest.TestCase):
             build_synchronized_return_panel({"trial-A": report},
                 expected_interval_seconds=60, benchmark_returns=[0.0])
 
+    def test_panel_builder_rejects_mutated_ledger_periods(self):
+        report = self.validate(make_rows(), **flags())
+        report["periods"][1]["net_return"] += 0.25
+        with self.assertRaisesRegex(ValueError, "content_sha256_mismatch"):
+            build_synchronized_return_panel({"trial-A": report},
+                expected_interval_seconds=60, benchmark_returns=[0.0] * 5)
+
+    def test_panel_builder_rejects_mutated_return_projection(self):
+        report = self.validate(make_rows(), **flags())
+        report["net_returns"][1] += 0.25
+        with self.assertRaisesRegex(ValueError, "series_projection_mismatch"):
+            build_synchronized_return_panel({"trial-A": report},
+                expected_interval_seconds=60, benchmark_returns=[0.0] * 5)
+
+    def test_panel_builder_checks_strategy_identity(self):
+        report = self.validate(make_rows(), **flags())
+        with self.assertRaisesRegex(ValueError, "strategy_identity_mismatch"):
+            build_synchronized_return_panel({"different-id": report},
+                expected_interval_seconds=60, benchmark_returns=[0.0] * 5)
+
     def test_ledger_digest_is_deterministic(self):
         a = self.validate(make_rows(), **flags())
         b = self.validate(make_rows(), **flags())

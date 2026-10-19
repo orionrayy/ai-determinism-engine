@@ -25,6 +25,8 @@ Equity must reconcile within an explicit tolerance: equity_after = equity_before
 - Unknown or assumed cost evidence blocks eligibility for market inference.
 - Gross leverage has a caller-specified upper limit; equity must remain positive.
 - Strategy ledgers must share the identical timestamps and session IDs. No unmatched rows can be dropped while building a panel.
+- The panel builder recomputes each ledger SHA-256 over canonical normalized period rows and verifies the report-level timestamp/session/return vectors are exact projections of those same rows. Mutated rows or detached projection arrays block the panel.
+- Each period net return is checked against net PnL divided by beginning equity within a tiny arithmetic tolerance.
 
 ## Evidence gate
 

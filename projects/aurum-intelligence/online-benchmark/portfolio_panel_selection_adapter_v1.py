@@ -7,6 +7,8 @@ must all be supplied again at the inference boundary.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from typing import Any, Mapping, Sequence
 
@@ -29,6 +31,34 @@ REQUIRED_GATES = (
 
 def _sha256(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value) is not None
+
+
+def _valid_evidence_ref(value: object) -> bool:
+    if not isinstance(value, str) or not value.strip() or len(value) > 2048:
+        return False
+    raw = value.strip()
+    if raw.startswith("https://"):
+        from urllib.parse import urlparse
+        parsed = urlparse(raw)
+        return bool(parsed.hostname) and parsed.username is None and parsed.password is None
+    if raw.startswith(("repo://", "evidence://")):
+        scheme, identifier = raw.split("://", 1)
+        return scheme in {"repo", "evidence"} and bool(identifier.strip("/")) and not any(c.isspace() for c in identifier)
+    return False
+
+
+def _recompute_panel_sha256(panel: Mapping[str, Any]) -> str:
+    manifest = {
+        "schema_version": panel.get("schema_version"),
+        "expected_interval_seconds": panel.get("expected_interval_seconds"),
+        "timestamps": panel.get("timestamps"),
+        "session_ids": panel.get("session_ids"),
+        "strategy_ledger_sha256": panel.get("strategy_ledger_sha256"),
+        "strategy_returns": panel.get("strategy_returns"),
+        "benchmark_returns": panel.get("benchmark_returns"),
+    }
+    canonical = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _blocked(reason: str, *, panel_sha256: object = None) -> dict[str, Any]:
@@ -118,8 +148,22 @@ def evaluate_synchronized_portfolio_panel(
         return _blocked("panel_row_count_mismatch", panel_sha256=panel_digest)
     if panel.get("strategy_count") != len(raw_names):
         return _blocked("panel_strategy_count_mismatch", panel_sha256=panel_digest)
+    if isinstance(expected_interval_seconds, bool) or not isinstance(expected_interval_seconds, int) or expected_interval_seconds <= 0:
+        return _blocked("expected_interval_seconds_must_be_positive_integer", panel_sha256=panel_digest)
+    if panel.get("schema_version") != "synchronized-portfolio-return-panel-v1.0.0":
+        return _blocked("panel_schema_version_mismatch", panel_sha256=panel_digest)
     if panel.get("expected_interval_seconds") != expected_interval_seconds:
         return _blocked("expected_interval_mismatch", panel_sha256=panel_digest)
+    if isinstance(panel.get("row_count"), bool) or not isinstance(panel.get("row_count"), int):
+        return _blocked("panel_row_count_type_invalid", panel_sha256=panel_digest)
+    if isinstance(panel.get("strategy_count"), bool) or not isinstance(panel.get("strategy_count"), int):
+        return _blocked("panel_strategy_count_type_invalid", panel_sha256=panel_digest)
+    try:
+        recomputed_digest = _recompute_panel_sha256(panel)
+    except (TypeError, ValueError, OverflowError):
+        return _blocked("panel_manifest_not_canonical_json", panel_sha256=panel_digest)
+    if recomputed_digest != panel_digest.lower():
+        return _blocked("panel_sha256_mismatch", panel_sha256=panel_digest)
 
     if not isinstance(gate_flags, Mapping) or set(gate_flags.keys()) != set(REQUIRED_GATES):
         return _blocked("gate_flags_must_cover_exact_required_gates", panel_sha256=panel_digest)
@@ -133,30 +177,39 @@ def evaluate_synchronized_portfolio_panel(
         return _blocked("trial_registry_sha256_invalid", panel_sha256=panel_digest)
     if not _sha256(source_dataset_sha256):
         return _blocked("source_dataset_sha256_invalid", panel_sha256=panel_digest)
+    if trial_registry_sha256.lower() == source_dataset_sha256.lower():
+        return _blocked("trial_registry_and_source_dataset_digests_must_be_distinct", panel_sha256=panel_digest)
+    if panel_digest.lower() in {trial_registry_sha256.lower(), source_dataset_sha256.lower()}:
+        return _blocked("panel_registry_source_digest_collision", panel_sha256=panel_digest)
+    if any(not _valid_evidence_ref(gate_evidence_refs[key]) for key in REQUIRED_GATES):
+        return _blocked("gate_evidence_reference_invalid", panel_sha256=panel_digest)
     if evidence_kind not in {"synthetic_contract_test", "real_market_research"}:
         return _blocked("evidence_kind_invalid", panel_sha256=panel_digest)
 
-    report = evaluate_white_reality_check(
-        timestamps=timestamps,
-        session_ids=session_ids,
-        strategy_returns=raw_returns,
-        benchmark_returns=benchmark_returns,
-        expected_interval_seconds=expected_interval_seconds,
-        block_lengths=block_lengths,
-        bootstrap_replicates=bootstrap_replicates,
-        seed=seed,
-        alpha=alpha,
-        returns_basis="net_return",
-        evidence_kind=evidence_kind,
-        trial_registry_complete=gate_flags["trial_registry_complete"],
-        locked_holdout_unseen=gate_flags["locked_holdout_unseen"],
-        source_data_qualified=gate_flags["source_data_qualified"],
-        execution_costs_verified=gate_flags["execution_costs_verified"],
-        portfolio_replay_verified=gate_flags["portfolio_replay_verified"],
-        trial_registry_sha256=trial_registry_sha256,
-        dataset_sha256=source_dataset_sha256,
-        gate_evidence_refs=gate_evidence_refs,
-    )
+    try:
+        report = evaluate_white_reality_check(
+            timestamps=timestamps,
+            session_ids=session_ids,
+            strategy_returns=raw_returns,
+            benchmark_returns=benchmark_returns,
+            expected_interval_seconds=expected_interval_seconds,
+            block_lengths=block_lengths,
+            bootstrap_replicates=bootstrap_replicates,
+            seed=seed,
+            alpha=alpha,
+            returns_basis="net_return",
+            evidence_kind=evidence_kind,
+            trial_registry_complete=gate_flags["trial_registry_complete"],
+            locked_holdout_unseen=gate_flags["locked_holdout_unseen"],
+            source_data_qualified=gate_flags["source_data_qualified"],
+            execution_costs_verified=gate_flags["execution_costs_verified"],
+            portfolio_replay_verified=gate_flags["portfolio_replay_verified"],
+            trial_registry_sha256=trial_registry_sha256,
+            dataset_sha256=source_dataset_sha256,
+            gate_evidence_refs=gate_evidence_refs,
+        )
+    except (ValueError, TypeError, OverflowError):
+        return _blocked("selection_guard_rejected_input", panel_sha256=panel_digest)
     return {
         "adapter_version": ADAPTER_VERSION,
         "adapter_status": "PASS",

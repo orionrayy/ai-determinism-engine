@@ -1,3 +1,5 @@
+import hashlib
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -22,8 +24,8 @@ def make_panel(n=600, effect=0.0005):
         "trial-b": rng.normal(0, 0.001, size=n).tolist(),
         "trial-c": rng.normal(0, 0.001, size=n).tolist(),
     }
-    return {
-        "panel_sha256": HASH,
+    panel = {
+        "schema_version": "synchronized-portfolio-return-panel-v1.0.0",
         "time_alignment_status": "PASS",
         "selection_guard_input_eligible": True,
         "panel_status": "EVIDENCE_ELIGIBLE",
@@ -36,6 +38,16 @@ def make_panel(n=600, effect=0.0005):
         "strategy_count": len(returns),
         "expected_interval_seconds": 60,
     }
+    manifest_keys = (
+        "schema_version", "expected_interval_seconds", "timestamps", "session_ids",
+        "strategy_ledger_sha256", "strategy_returns", "benchmark_returns",
+    )
+    canonical = json.dumps(
+        {key: panel[key] for key in manifest_keys},
+        sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False,
+    )
+    panel["panel_sha256"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return panel
 
 
 def call(panel=None, **changes):
@@ -111,10 +123,31 @@ class PortfolioPanelSelectionAdapterTests(unittest.TestCase):
         self.assertEqual(result["blocker"], "panel_clock_or_benchmark_length_invalid")
 
     def test_panel_hash_and_source_dataset_hash_are_distinct_lineage_fields(self):
-        result = call()
-        self.assertEqual(result["input_panel_sha256"], HASH)
+        panel = make_panel()
+        result = call(panel)
+        self.assertEqual(result["input_panel_sha256"], panel["panel_sha256"])
         self.assertEqual(result["source_dataset_sha256"], "c" * 64)
         self.assertNotEqual(result["input_panel_sha256"], result["source_dataset_sha256"])
+
+    def test_tampered_return_vector_with_stale_panel_hash_blocks(self):
+        panel = make_panel()
+        panel["strategy_returns"]["trial-a"][0] += 0.25
+        result = call(panel)
+        self.assertEqual(result["adapter_status"], "BLOCKED")
+        self.assertEqual(result["blocker"], "panel_sha256_mismatch")
+        self.assertIsNone(result["selection_guard"])
+
+    def test_registry_and_source_dataset_digest_must_be_distinct(self):
+        result = call(trial_registry_sha256="c" * 64, source_dataset_sha256="c" * 64)
+        self.assertEqual(result["adapter_status"], "BLOCKED")
+        self.assertEqual(result["blocker"], "trial_registry_and_source_dataset_digests_must_be_distinct")
+
+    def test_unusable_evidence_reference_blocks_before_inference(self):
+        refs = dict(REFS)
+        refs["execution_costs_verified"] = "file:///tmp/unverified.json"
+        result = call(gate_evidence_refs=refs)
+        self.assertEqual(result["adapter_status"], "BLOCKED")
+        self.assertEqual(result["blocker"], "gate_evidence_reference_invalid")
 
     def test_real_market_with_missing_gate_flags_never_runs(self):
         gates = dict(FLAGS)

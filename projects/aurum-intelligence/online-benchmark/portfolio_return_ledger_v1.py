@@ -384,11 +384,37 @@ def build_synchronized_return_panel(
             raise ValueError("ledger_report_entries_invalid")
         if report.get("contract_status") != "PASS" or report.get("expected_interval_seconds") != expected_interval_seconds:
             raise ValueError(f"ledger_{key}_not_valid_or_interval_mismatch")
+        if report.get("strategy_id") != key:
+            raise ValueError(f"ledger_{key}_strategy_identity_mismatch")
+        periods = report.get("periods")
+        if not isinstance(periods, list) or not periods or any(not isinstance(row, Mapping) for row in periods):
+            raise ValueError(f"ledger_{key}_period_rows_missing")
+        claimed_ledger_sha = report.get("ledger_sha256")
+        if not _sha(claimed_ledger_sha):
+            raise ValueError(f"ledger_{key}_digest_invalid")
+        canonical_ledger = json.dumps(periods, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        computed_ledger_sha = hashlib.sha256(canonical_ledger.encode("utf-8")).hexdigest()
+        if computed_ledger_sha != claimed_ledger_sha.lower():
+            raise ValueError(f"ledger_{key}_content_sha256_mismatch")
+        times_from_periods = [row.get("timestamp") for row in periods]
+        sessions_from_periods = [row.get("session_id") for row in periods]
+        returns_from_periods = [row.get("net_return") for row in periods]
         times, sessions, values = report.get("timestamps"), report.get("session_ids"), report.get("net_returns")
         if not isinstance(times, list) or not isinstance(sessions, list) or not isinstance(values, list) or not times:
             raise ValueError(f"ledger_{key}_series_missing")
+        if report.get("row_count") != len(periods):
+            raise ValueError(f"ledger_{key}_row_count_mismatch")
+        if times != times_from_periods or sessions != sessions_from_periods or values != returns_from_periods:
+            raise ValueError(f"ledger_{key}_series_projection_mismatch")
         if not (len(times) == len(sessions) == len(values)):
             raise ValueError(f"ledger_{key}_series_length_mismatch")
+        for row_index, period in enumerate(periods):
+            equity_before = _dec(period.get("equity_before"), f"ledger_{key}_period_{row_index}_equity_before")
+            net_pnl = _dec(period.get("net_pnl_quote_side_after_costs"), f"ledger_{key}_period_{row_index}_net_pnl")
+            net_return = _dec(period.get("net_return"), f"ledger_{key}_period_{row_index}_net_return")
+            expected_return = net_pnl / equity_before
+            if abs(expected_return - net_return) > Decimal("1e-12"):
+                raise ValueError(f"ledger_{key}_period_return_arithmetic_mismatch")
         if base_times is None:
             base_times, base_sessions = list(times), list(sessions)
         elif times != base_times or sessions != base_sessions:
@@ -397,9 +423,7 @@ def build_synchronized_return_panel(
             raise ValueError("duplicate_strategy_label")
         strategy_returns[key] = [float(_dec(v, f"ledger_{key}_return")) for v in values]
         eligible = eligible and report.get("selection_guard_input_eligible") is True
-        if not _sha(report.get("ledger_sha256")):
-            raise ValueError(f"ledger_{key}_digest_invalid")
-        digests[key] = report["ledger_sha256"].lower()
+        digests[key] = claimed_ledger_sha.lower()
     benchmark = [float(_dec(x, "benchmark_return")) for x in benchmark_returns]
     if base_times is None or base_sessions is None:
         raise ValueError("no_ledger_series")
