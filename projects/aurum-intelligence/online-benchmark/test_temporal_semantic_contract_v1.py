@@ -144,7 +144,7 @@ class TemporalSemanticContractTests(unittest.TestCase):
         fact["quote_basis"] = "unknown"
         report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
         self.assertIn("value_does_not_match_declared_type", report["blockers"])
-        self.assertIn("quote_basis_unknown", report["blockers"])
+        self.assertIn("market_feature_requires_explicit_quote_basis", report["blockers"])
 
     def test_invalid_contract_arguments_raise_instead_of_guessing(self):
         with self.assertRaisesRegex(ValueError, "decision_time_timezone_unverified"):
