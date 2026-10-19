@@ -87,8 +87,12 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
             self.assertIn("alpha_logistic_v1", row["expert_probabilities"])
             self.assertEqual(len(row["feature_facts"]), len(producer.alpha_model.FEATURE_NAMES))
             self.assertEqual(row["alpha_model_artifact_sha256"], alpha_report["model_artifact_sha256"])
-            self.assertIn(row["alpha_model_forecast_policy"], ("ALPHA_ELIGIBLE", "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"))
-            self.assertTrue(0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
+            if row["partition"] == "final_holdout":
+                self.assertIn(row["alpha_model_forecast_policy"], ("ALPHA_ELIGIBLE", "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"))
+                self.assertTrue(0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
+            else:
+                self.assertEqual(row["alpha_model_forecast_policy"], "NOT_APPLICABLE_PRE_FINAL_HOLDOUT")
+                self.assertIsNone(row["alpha_model_out_of_domain_fraction"])
         checked = stage123.validate_forecast_ledger(ledger)
         self.assertEqual(checked["contract_status"], "PASS")
         self.assertFalse(checked["predictive_skill_proven"] if "predictive_skill_proven" in checked else False)

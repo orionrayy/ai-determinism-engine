@@ -187,7 +187,12 @@ jobs:
               "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN",
           ), alpha
           assert all("alpha_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
-          assert all(0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0 for row in ledger["records"])
+          assert all(
+              (0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
+              if row["partition"] == "final_holdout"
+              else row["alpha_model_out_of_domain_fraction"] is None
+              for row in ledger["records"]
+          )
           assert report["status"] == "PASS_CONTRACT_DIAGNOSTIC_ONLY", report
           assert report["stage_1_ledger_contract"] == "PASS", report
           assert report["decision_output"] == "NO_TRADE", report

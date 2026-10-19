@@ -588,15 +588,17 @@ def train_alpha_model(
 
     raw_predictions: dict[str, float] = {}
     calibrated_alpha_predictions: dict[str, float] = {}
-    out_of_domain_fractions: dict[str, float] = {}
+    out_of_domain_fractions: dict[str, float | None] = {}
     forecast_policy_by_index: dict[str, str] = {}
     predictions: dict[str, float] = {}
     forecast_stages: dict[str, str] = {}
     for row in sorted(events, key=lambda r: int(r["decision_index"])):
         di = int(row["decision_index"])
         partition = row["partition"]
-        ood_fraction = _out_of_domain_fraction(final_model, row)
-        forecast_policy = "ALPHA_ELIGIBLE"
+        # OOD scoring only applies once the final-holdout model is frozen. Earlier
+        # partitions must not receive diagnostics computed with a model trained on later rows.
+        ood_fraction = _out_of_domain_fraction(final_model, row) if partition == "final_holdout" else None
+        forecast_policy = "ALPHA_ELIGIBLE" if partition == "final_holdout" else "NOT_APPLICABLE_PRE_FINAL_HOLDOUT"
         if partition == "development":
             raw_probability = 0.5
             calibrated_probability = 0.5
@@ -618,7 +620,7 @@ def train_alpha_model(
             raw_probability = _predict_raw(final_model, row)
             calibrated_probability = _apply_calibrator(raw_probability, calibrator)
             baseline = min(max(float(row.get("baseline_probability", 0.5)), 1e-6), 1.0 - 1e-6)
-            if ood_fraction >= OOD_MAX_FEATURE_FRACTION:
+            if ood_fraction is not None and ood_fraction >= OOD_MAX_FEATURE_FRACTION:
                 probability = baseline
                 forecast_policy = "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"
                 stage = "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"
@@ -629,7 +631,7 @@ def train_alpha_model(
             raise ValueError("alpha_unknown_partition:" + str(partition))
         raw_predictions[str(di)] = float(raw_probability)
         calibrated_alpha_predictions[str(di)] = float(calibrated_probability)
-        out_of_domain_fractions[str(di)] = float(ood_fraction)
+        out_of_domain_fractions[str(di)] = None if ood_fraction is None else float(ood_fraction)
         forecast_policy_by_index[str(di)] = forecast_policy
         predictions[str(di)] = min(max(float(probability), 1e-6), 1.0 - 1e-6)
         forecast_stages[str(di)] = stage
@@ -661,7 +663,7 @@ def train_alpha_model(
     )
     holdout_reliability = _reliability_diagnostics(holdout_alpha, holdout_labels)
     holdout_ood_flags = [
-        out_of_domain_fractions[str(int(row["decision_index"]))] >= OOD_MAX_FEATURE_FRACTION
+        float(out_of_domain_fractions[str(int(row["decision_index"]))] or 0.0) >= OOD_MAX_FEATURE_FRACTION
         for row in holdout_rows
     ]
     holdout_ood_fraction_rate = (sum(holdout_ood_flags) / len(holdout_ood_flags)) if holdout_ood_flags else None
@@ -686,7 +688,20 @@ def train_alpha_model(
         "calibration_fit_labels_sha256": calibration_labels_sha,
         "blend_selection_labels_sha256": blend_selection_labels_sha,
         "selected_alpha_weight": selected_alpha_weight,
-        "probability_governor_protocol": "paired_brier_baseline_shrinkage_block_screen_v1",
+        "probability_governor_protocol": "paired_brier_logloss_block_stability_ood_fallback_v3",
+        "probability_governor_policy": {
+            "blend_weights": list(BLEND_WEIGHTS),
+            "critical_multiplier": BLEND_CRITICAL_Z,
+            "block_size": BLEND_BLOCK_SIZE,
+            "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
+            "minimum_calibration_rows": MIN_BLEND_SELECTION_ROWS,
+            "minimum_independent_blocks": BLEND_MIN_BLOCKS,
+        },
+        "out_of_domain_policy": {
+            "z_score_limit": OOD_Z_LIMIT,
+            "minimum_feature_fraction_to_fallback": OOD_MAX_FEATURE_FRACTION,
+            "fallback_probability": "exact_rowwise_causal_baseline",
+        },
     }
     model_hash = _sha(model_payload)
     return {
