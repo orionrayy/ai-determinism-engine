@@ -179,10 +179,15 @@ jobs:
           assert len(set(cohort_row_counts.values())) == 1, cohort_row_counts
           assert len(ledger["records"]) == len(probability_evolution_report["versions"]["9.0"]["forecasts"])
           for version, result in probability_evolution_report["versions"].items():
-              assert result["evidence"]["decision_output"] == "NO_TRADE", (version, result["evidence"])
-              assert result["evidence"]["model_validated"] is False, (version, result["evidence"])
-              assert result["evidence"]["deployment_calibrated"] is False, (version, result["evidence"])
-              assert result["evidence"]["scored_rows"] == next(iter(cohort_row_counts.values())), (version, cohort_row_counts)
+              evidence = result["evidence"]
+              assert evidence["decision_output"] == "NO_TRADE", (version, evidence)
+              assert evidence["model_validated"] is False, (version, evidence)
+              assert evidence["deployment_calibrated"] is False, (version, evidence)
+              assert evidence["scored_rows"] == next(iter(cohort_row_counts.values())), (version, cohort_row_counts)
+              assert evidence["forecast_rows_emitted"] == len(ledger["records"]), (version, evidence)
+              assert evidence["rows_at_or_after_as_of_excluded"] == 0, (version, evidence)
+              assert evidence["last_emitted_decision_index"] < len(rows), (version, evidence)
+              assert all(item["decision_index"] < len(rows) for item in result["forecasts"]), version
           assert probability_evolution_report["source_evidence"]["historical_feature_availability_verified"] is False
           alpha = ledger["metadata"]["alpha_model_training"]
           assert checked["contract_status"] == "PASS", checked
