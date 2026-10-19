@@ -368,6 +368,7 @@ def build_forecast_ledger(
         state = states[index]
         raw_events.append({
             "decision_index": index,
+            "partition": partition_for(index),
             "decision_time": normalized_rows[index]["timestamp"].isoformat().replace("+00:00", "Z"),
             "target_exit_index": exit_index,
             "label_available_index": exit_index,
