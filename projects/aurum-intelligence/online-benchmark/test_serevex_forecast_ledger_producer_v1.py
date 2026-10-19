@@ -73,6 +73,9 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
         self.assertTrue(alpha_report["training_policy"]["final_holdout_predictions_are_frozen"])
         self.assertGreater(alpha_report["final_holdout_metrics"]["rows"], 0)
         self.assertIn("probability_governor", alpha_report)
+        for large_field in ("predictions_by_decision_index", "raw_predictions_by_decision_index",
+                            "calibrated_alpha_predictions_by_decision_index", "forecast_stage_by_decision_index"):
+            self.assertNotIn(large_field, alpha_report)
         self.assertIn(alpha_report["probability_governor"]["status"], (
             "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
             "BASELINE_ONLY_NO_CONFIRMED_CALIBRATION_GAIN",
