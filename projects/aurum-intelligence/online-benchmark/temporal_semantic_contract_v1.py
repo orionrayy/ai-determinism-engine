@@ -386,7 +386,8 @@ def validate_candle_series(
         source_key = candle.get("source_id")
         instrument_key = candle.get("instrument")
         if isinstance(source_key, str) and isinstance(instrument_key, str) and start is not None:
-            key = (source_key, instrument_key, start, quote_basis)
+            quote_key = quote_basis if isinstance(quote_basis, str) else "<invalid-quote-basis>"
+            key = (source_key, instrument_key, start, quote_key)
             if key in seen_keys:
                 blockers.append(f"row_{index}:duplicate_bar_identity")
             seen_keys.add(key)
