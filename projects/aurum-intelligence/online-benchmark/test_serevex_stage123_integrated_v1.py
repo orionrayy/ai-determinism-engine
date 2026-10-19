@@ -153,7 +153,7 @@ class SerevexStage123Tests(unittest.TestCase):
             as_of_index=610,
             registered_category_registry=ledger["normalized_ledger"]["metadata"]["atlas_category_registry"],
             min_rows=40, block_size=6, min_independent_blocks=4,
-            bootstrap_replicates=200, axes=["regime_id"],
+            bootstrap_replicates=200, axes=["regime_id", "volatility_bucket"],
         )
         self.assertEqual(result["status"], "DIAGNOSTIC_ONLY")
         self.assertTrue(any(x["expert_id"] == "trend_expert" and x["status"] == "ELIGIBLE_FOR_INDEPENDENT_REPLICATION" for x in result["results"]))
