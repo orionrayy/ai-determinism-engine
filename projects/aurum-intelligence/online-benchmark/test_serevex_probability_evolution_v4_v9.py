@@ -230,6 +230,25 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertTrue(diagnostic["alarm"])
         self.assertEqual(diagnostic["status"], "DRIFT_ALARM_BASELINE_FALLBACK")
 
+    def test_failed_selection_diagnostics_are_retained_and_confirmation_gate_is_marked_not_run(self):
+        rows = make_rows(720, candidate_mode="adverse")
+        result = evo.evaluate_probability_evolution(rows, version="7.0")
+        out = result["forecasts"][-1]
+        self.assertEqual(out["alpha_weight"], 0.0)
+        uncertainty = out["diagnostics"]["uncertainty_gate"]
+        self.assertEqual(uncertainty["status"], "NOT_RUN_SELECTION_GATE_FAILED")
+        self.assertIsNone(uncertainty["evidence"])
+        global_trace = [
+            item for item in result["policy_trace"]
+            if item.get("pool") == "global"
+        ][-1]
+        self.assertEqual(global_trace["status"], "BASELINE_ONLY_SELECTION_DUAL_SCORE_FAILED")
+        diagnostics = global_trace["selection_candidate_diagnostics"]
+        self.assertEqual(len(diagnostics), len(evo.BLEND_GRID) - 1)
+        self.assertTrue(all(item["eligible"] is False for item in diagnostics))
+        self.assertTrue(all(item["brier_lower"] is not None for item in diagnostics))
+        self.assertEqual(global_trace["confirmation_gate_status"], "NOT_RUN_SELECTION_GATE_FAILED")
+
     def test_v80_exposes_drift_diagnostic_and_never_authorizes_trading(self):
         rows = make_rows(720)
         result = evo.evaluate_probability_evolution(rows, version="8.0")
