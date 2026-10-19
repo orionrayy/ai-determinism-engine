@@ -223,8 +223,19 @@ def _timestamp_offset_sensitivity(
     p95_materially_reduced = bool(zero and best and zero.get("p95_absolute_close_difference_bps") and best.get("p95_absolute_close_difference_bps") <= 0.8 * zero["p95_absolute_close_difference_bps"])
     potential_offset = bool(best and zero and best["secondary_timestamp_offset_bars_for_diagnostic_only"] != 0 and reduction >= 0.5 and p95_materially_reduced)
     best_at_boundary = bool(best and abs(best["secondary_timestamp_offset_bars_for_diagnostic_only"]) == max_abs_lag_bars)
+    if best is None or zero is None:
+        alignment_assessment = "INSUFFICIENT_OVERLAP_FOR_OFFSET_ASSESSMENT"
+    elif best_at_boundary:
+        # A boundary optimum means the tested domain did not bracket the minimum.
+        # Do not turn a finite-window search into an unqualified negative finding.
+        alignment_assessment = "INDETERMINATE_SCAN_BOUNDARY"
+    elif potential_offset:
+        alignment_assessment = "POTENTIAL_ALIGNMENT_MISMATCH_CANDIDATE"
+    else:
+        alignment_assessment = "NO_STRONG_OFFSET_EVIDENCE_WITHIN_CONFIGURED_SCAN"
     return {
         "method": "sensitivity scan only; original timestamps and the primary exact-time report are unchanged",
+        "alignment_assessment": alignment_assessment,
         "zero_offset_median_absolute_close_difference_bps": zero_median,
         "best_candidate_median_absolute_close_difference_bps": best_median,
         "relative_median_discrepancy_reduction_vs_zero_offset": reduction,
