@@ -150,6 +150,7 @@ jobs:
           import ci_benchmark
           import serevex_forecast_ledger_producer_v1 as producer
           import serevex_stage123_integrated_v1 as integrated
+          import serevex_probability_evolution_v4_v9 as probability_evolution
 
           payload = ci_benchmark.fetch()
           rows = ci_benchmark.parse_csv(payload)
@@ -169,6 +170,20 @@ jobs:
               atlas_bootstrap_replicates=200,
           )
           checked = integrated.validate_forecast_ledger(ledger)
+          probability_evolution_report = probability_evolution.evaluate_forecast_ledger_versions(
+              ledger, candidate_expert="alpha_logistic_v1", as_of_index=len(rows)
+          )
+          assert list(probability_evolution_report["versions"]) == list(probability_evolution.VERSION_ORDER), probability_evolution_report
+          assert probability_evolution_report["status"] == "RESEARCH_COMPARISON_NOT_PROMOTION", probability_evolution_report
+          cohort_row_counts = {version: item["scored_rows"] for version, item in probability_evolution_report["comparison"].items()}
+          assert len(set(cohort_row_counts.values())) == 1, cohort_row_counts
+          assert len(ledger["records"]) == len(probability_evolution_report["versions"]["9.0"]["forecasts"])
+          for version, result in probability_evolution_report["versions"].items():
+              assert result["evidence"]["decision_output"] == "NO_TRADE", (version, result["evidence"])
+              assert result["evidence"]["model_validated"] is False, (version, result["evidence"])
+              assert result["evidence"]["deployment_calibrated"] is False, (version, result["evidence"])
+              assert result["evidence"]["scored_rows"] == next(iter(cohort_row_counts.values())), (version, cohort_row_counts)
+          assert probability_evolution_report["source_evidence"]["historical_feature_availability_verified"] is False
           alpha = ledger["metadata"]["alpha_model_training"]
           assert checked["contract_status"] == "PASS", checked
           assert alpha["model_version"] == "serevex-alpha-logistic-v4-embargoed-dual-score-ood", alpha
@@ -253,6 +268,12 @@ jobs:
               "alpha_holdout_brier_ci_vs_baseline": alpha["final_holdout_metrics"]["paired_brier_improvement_ci_vs_causal_baseline"]["ci95"],
               "alpha_holdout_ece": alpha["final_holdout_metrics"]["reliability_diagnostics"]["ece"],
               "alpha_holdout_frozen": alpha["training_policy"]["final_holdout_predictions_are_frozen"],
+              "probability_evolution_status": probability_evolution_report["status"],
+              "probability_evolution_expert": probability_evolution_report["source_evidence"]["candidate_expert"],
+              "probability_evolution_scored_rows": next(iter(cohort_row_counts.values())),
+              "probability_evolution_comparison": probability_evolution_report["comparison"],
+              "probability_evolution_trace_counts": {v: len(item["policy_trace"]) for v, item in probability_evolution_report["versions"].items()},
+              "probability_evolution_source_evidence": probability_evolution_report["source_evidence"],
               "ledger_sha256": checked["ledger_sha256"],
               "report_sha256": report["report_sha256"],
               "source_verification": checked["source_verification"],
@@ -266,6 +287,9 @@ jobs:
           output.mkdir(parents=True, exist_ok=True)
           (output / "real_data_stage123_summary.json").write_text(
               json.dumps(summary, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+          )
+          (output / "probability_evolution_v4_v9_report.json").write_text(
+              json.dumps(probability_evolution_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
           )
           lines = [
               "# Serevex real-data ledger and integrated stages 1–3",
@@ -284,6 +308,8 @@ jobs:
               f"- Alpha out-of-domain baseline fallbacks: {summary['alpha_ood_fallback_rows']} rows; rate: {summary['alpha_ood_fallback_rate']}",
               f"- Alpha raw/calibrated holdout Brier: {summary['alpha_raw_holdout_brier']} / {summary['alpha_calibrated_holdout_brier']}; ECE: {summary['alpha_holdout_ece']}; paired Brier CI vs baseline: {summary['alpha_holdout_brier_ci_vs_baseline']}",
               f"- Alpha calibration: {summary['alpha_calibration_status']}; frozen holdout model: {summary['alpha_holdout_frozen']}; artifact SHA-256: {summary['alpha_model_artifact_sha256']}",
+              f"- Probability evolution v4.0–v9.0: {summary['probability_evolution_status']}; expert: {summary['probability_evolution_expert']}; same-cohort scored rows: {summary['probability_evolution_scored_rows']}",
+              f"- Probability evolution full JSON: {output / 'probability_evolution_v4_v9_report.json'}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
               f"- Producer report SHA-256: {summary['report_sha256']}",
               "",
