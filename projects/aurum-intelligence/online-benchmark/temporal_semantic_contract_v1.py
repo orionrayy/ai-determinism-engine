@@ -146,21 +146,33 @@ def validate_feature_fact(
     if fact.get("schema_version") != CONTRACT_VERSION:
         blockers.append("schema_version_mismatch")
     semantic_type = fact.get("semantic_type")
-    if semantic_type not in SEMANTIC_TYPES:
+    if not isinstance(semantic_type, str) or semantic_type not in SEMANTIC_TYPES:
         blockers.append("semantic_type_unknown")
     event_role = fact.get("event_time_role")
-    if event_role not in EVENT_TIME_ROLES:
+    if not isinstance(event_role, str) or event_role not in EVENT_TIME_ROLES:
         blockers.append("event_time_role_unknown")
+    if isinstance(semantic_type, str) and isinstance(event_role, str):
+        expected_event_roles = {
+            "market_bar": {"bar_close", "past_market_event"},
+            "derived_market_feature": {"bar_close", "past_market_event"},
+            "macro_observation": {"observation_period", "reporting_period"},
+            "positioning_report": {"reporting_period", "past_market_event"},
+            "news_event": {"past_market_event", "scheduled_future_event"},
+            "scheduled_event": {"scheduled_future_event"},
+        }
+        allowed_roles = expected_event_roles.get(semantic_type)
+        if allowed_roles is not None and event_role not in allowed_roles:
+            blockers.append("semantic_type_event_time_role_mismatch")
     value_type = fact.get("value_type")
-    if value_type not in VALUE_TYPES:
+    if not isinstance(value_type, str) or value_type not in VALUE_TYPES:
         blockers.append("value_type_unknown")
     elif "value" in fact and not _value_is_well_typed(fact.get("value"), value_type):
         blockers.append("value_does_not_match_declared_type")
 
     quote_basis = fact.get("quote_basis")
-    if quote_basis not in QUOTE_BASES:
+    if not isinstance(quote_basis, str) or quote_basis not in QUOTE_BASES:
         blockers.append("quote_basis_unknown")
-    elif semantic_type in {"market_bar", "derived_market_feature"} and quote_basis not in {"bid", "ask", "mid", "last"}:
+    elif isinstance(semantic_type, str) and semantic_type in {"market_bar", "derived_market_feature"} and quote_basis not in {"bid", "ask", "mid", "last"}:
         blockers.append("market_feature_requires_explicit_quote_basis")
 
     for key in ("source_sha256", "transform_sha256"):
@@ -202,7 +214,7 @@ def validate_feature_fact(
         blockers.append("available_before_published_timestamp")
     if available is not None and observed is not None and observed < available:
         blockers.append("observed_before_available_timestamp")
-    if event is not None and event_role in PAST_ONLY_EVENT_ROLES and event > decision:
+    if event is not None and isinstance(event_role, str) and event_role in PAST_ONLY_EVENT_ROLES and event > decision:
         blockers.append("event_time_after_decision_for_past_only_role")
     if max_age_seconds is not None and available is not None:
         age = (decision - available).total_seconds()
@@ -265,7 +277,7 @@ def validate_ohlc_candle(
 
     if timestamp_semantics_verified is not True:
         blockers.append("candle_timestamp_semantics_unverified")
-    if quote_basis not in {"bid", "ask", "mid", "last"}:
+    if not isinstance(quote_basis, str) or quote_basis not in {"bid", "ask", "mid", "last"}:
         blockers.append("candle_quote_basis_not_explicit")
 
     for key in ("instrument", "source_id", "session_id"):
@@ -371,10 +383,15 @@ def validate_candle_series(
         same_session_as_previous = session == previous_session
         start = _safe_time(candle.get("bar_start"))
         end = _safe_time(candle.get("bar_end"))
-        key = (candle.get("source_id"), candle.get("instrument"), start, quote_basis)
-        if key in seen_keys:
-            blockers.append(f"row_{index}:duplicate_bar_identity")
-        seen_keys.add(key)
+        source_key = candle.get("source_id")
+        instrument_key = candle.get("instrument")
+        if isinstance(source_key, str) and isinstance(instrument_key, str) and start is not None:
+            key = (source_key, instrument_key, start, quote_basis)
+            if key in seen_keys:
+                blockers.append(f"row_{index}:duplicate_bar_identity")
+            seen_keys.add(key)
+        else:
+            blockers.append(f"row_{index}:duplicate_identity_not_checkable")
 
         if isinstance(session, str) and session:
             if previous_session is None:
