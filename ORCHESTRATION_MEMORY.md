@@ -1167,3 +1167,44 @@ The user's latest QC criteria are: stronger narrative flow; substantially more v
 - Reattempted downloading the existing HeyGen Indonesian narration WAV once; local runtime returned DNS resolution failure (`Temporary failure in name resolution`). No new TTS generation was submitted. Thus v6 MP4 is **silent** with `audio_state=PENDING_MUX_NETWORK_DNS_BLOCKED`. The speech URL remains documented by the v5 checkpoint. Audio integration and listening QC are still open.
 - Source files and video are available as local sandbox deliverables. The v6 code package has **not** been committed to the repository and no hosted CI run is claimed. A scratch feature branch `feature/ffmpeg-motion-studio-v6-qc-fix` was created during a sync attempt, but source files were not transferred and no PR/merge occurred; do not present it as a completed implementation branch.
 - Next: run the checked-in source ZIP from a network-enabled CI runner or after complete source sync, fetch the existing WAV (no new TTS call), mux through `pipeline.py`, validate audio stream via FFprobe and audition speech/caption alignment. Full 390-second film remains a separate milestone.
+
+
+## Motion Studio — canonical product goals, scope contract, and current checkpoint (2026-10-20)
+
+This is a persistent product-goal memory, not a claim that all features exist. Read the full subsystem-by-subsystem acceptance contract before any Motion Studio task:
+https://github.com/orionrayy/project-memory-and-database/blob/main/projects/video-production-pipeline/MOTION_STUDIO_MASTER_TARGETS.md
+
+### Full requested feature groups — do not narrow
+
+1. **Character authoring and rig:** bone rigging and character setup; hierarchical skeleton; bone constraints/limits; weight painting and mesh deformation; IK and FK plus blending; pivot/joint placement; bone mirroring and symmetry.
+2. **Animation:** walk and run cycles; overlapping action; motion smoothing; anticipation/follow-through; secondary motion; background/property calibration and integration; interaction/physics; pose-to-pose, keyframe interpolation and smart keyframing; per-body-part timing, contact and constraints.
+3. **Effects and image compositing:** particle system; speed effects; mask/matte; outline, overlay, blend, blur; color grading and filters; custom LUTs; chroma key; reusable effect stacks and transitions.
+4. **Captions and typography:** smart/auto captions; attention-catching subtitle transitions including fade/glitch where appropriate; word emphasis/color; kinetic typography; lower thirds; configurable fonts, font size/weight, outline/shadow, safe zones and mobile readability.
+5. **Camera and editing:** camera angles, tracking, pan and zoom; motion tracking; match cuts/match-on-action; compound clips/nesting; multitrack timeline; speed ramps with transition combinations; social-video formats such as 9:16/4:5 and 16:9.
+6. **Audio and sound design:** hook SFX, ambience/idle/motion SFX, noise treatment, pacing and intentional pause; volume balance/keyframes; surgical EQ, equalizer and frequency-masking avoidance; crossfades; compression/limiting; reverb and per-clip effects; beat sync; layered BGM/sound; spectral/multiband or sidechain ducking; independent voice/music/SFX/ambience tracks.
+7. **Project/export:** one canonical editable project graph, timeline, scene/clip/effect/keyframe/asset schemas, save/reload, undo/redo, renderer, codecs/export presets, manifests, caching, resumable jobs, deterministic tests, render logs and checksums.
+8. **Rights and free-first operation:** verify actual copyright/royalty-free/commercial license terms for each font, image, video, music, SFX, model and other asset; retain origin, license version, attribution, restrictions, checksum and acquisition metadata. “Royalty-free” must not be treated as unrestricted or copyright-free.
+9. **Quality gates:** report source vs render vs human visual/audio acceptance independently; inspect bulk frames and full-speed playback; verify self-intersections, foot skating, mesh/joint flips, visual layout, audio/video sync, audibility, source provenance and export decoding.
+
+### Evidence/status rules
+- FFmpeg filters are implementation primitives, not proof that a Motion Studio product subsystem exists. A feature is implemented only if its source/model/API or UI, persistence, tests and demonstrable export path are available.
+- Geometry tests cannot substitute for natural movement or visual review. An MP4 that decodes is not automatically acceptable.
+- Never mark a legacy feature verified before recovering its missing dependencies and re-running end-to-end validation.
+- Keep unimplemented features as explicit roadmap goals; do not imply a production-grade editor exists today.
+
+### Motion Studio checkpoint v0.8.0
+- User's screenshot of v0.7.0 showed clear defects (crossed leg projections, stiff upper body, arm/prop pose quality); the screenshot is evidence that v0.7.0 failed artistic acceptance.
+- Implemented candidate: Hermite foot swing with stance-velocity matching; stable pole-target two-bone IK; depth-projected bilateral leg tracks; heel/toe roll; separately configured basket-carry and free-arm profiles; measured carry elbow angles; explicit prop-contact checks.
+- Current code review branch in orionrayy/projects: motion-studio-v0.8.0-character-quality, head 048a472e9171d491bd3bf8695e78c4520f5a86f3. Hosted run https://github.com/orionrayy/projects/actions/runs/39311955265 succeeded with 9/9 tests for the committed solver/scene slice. It does not render the complete source package or assess artistry.
+- Local full bundle tests: Node 62/62; focused v0.8 Node 10/10; Python 13/13; scene/evidence schemas, synthetic motion benchmark, rendered-pose check 96/96 and reference keyframe-clip validation passed.
+- Carry preview: H.264 1280x720, 24fps, 192 frames / 8s, no audio, SHA-256 8a89e4d26114fa341782fc7d6b5b4a6c8f1bd7c0a823c09b1349f4bf7dd71d01.
+- Free-arm preview: H.264 1280x720, 24fps, 192 frames / 8s, no audio, SHA-256 9f1e5137ef2bce54e25c8007e2561960014b59cb70e490795dea02d0de9ebb7b.
+- Contact sheets for both clips were inspected; elbow flexion and leg path order improved, but the character still reads as schematic. Status: PROTOTYPE / VISUAL ACCEPTANCE PENDING. Full-speed artistic review has not approved naturalness; browser-vs-FFmpeg raster parity remains unresolved; these studies contain no audio.
+- Main branch of orionrayy/projects remains unchanged at 39415a2cb71d99bddcd84c10805c0ff0b8995cca. Do not merge automatically.
+
+### Ordered next work
+A. Character quality first: frame-level limb/mesh intersection and ground/contact checks, leg/foot phase art direction, hand/prop grip, body-part sync, and full-speed human acceptance.
+B. Resolve reproducible browser-vs-FFmpeg raster parity; do not silently convert timeouts into passes.
+C. Recover and vendor/version the missing legacy renderer dependency before reusing V3 caption/VFX/SFX features.
+D. Build the real timeline/project graph and generic effect/caption UI after the character/source gates; next implement audio multitrack and objective sync/listening checks.
+E. Finish rights ledger, commercial-license validation, export/package checksums and end-to-end hosted CI before any production-ready claim.
