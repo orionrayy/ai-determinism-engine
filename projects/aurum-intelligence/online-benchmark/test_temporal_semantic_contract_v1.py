@@ -478,5 +478,15 @@ class TemporalSemanticContractTests(unittest.TestCase):
         report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
         self.assertIn("derived_feature_fit_scope_not_causal_or_unknown", report["blockers"])
 
+
+    def test_malformed_fit_manifest_url_fails_closed_without_parser_exception(self):
+        fact = self.derived_fact()
+        fact["transform_fit_scope"] = "rolling_past_only"
+        fact["transform_fit_cutoff"] = "2026-01-01T00:04:01Z"
+        fact["transform_fit_data_sha256"] = "e" * 64
+        fact["transform_fit_manifest_ref"] = "https://[malformed"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("transform_fit_manifest_reference_invalid", report["blockers"])
+
 if __name__ == "__main__":
     unittest.main()
