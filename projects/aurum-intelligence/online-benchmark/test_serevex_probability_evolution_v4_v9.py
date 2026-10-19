@@ -307,7 +307,8 @@ class ProbabilityEvolutionTests(unittest.TestCase):
                     "state_tags_available_index": i,
                     "baseline_probability": 0.5,
                     "expert_probabilities": {
-                        "alpha_logistic_v1": 0.95 if i % 2 == 0 else 0.05
+                        "alpha_logistic_v1": 0.95 if i % 2 == 0 else 0.05,
+                        "alpha_calibrated_logistic_v1": 0.91 if i % 2 == 0 else 0.09,
                     },
                 }
                 for i in range(40)
@@ -315,7 +316,7 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         }
         rows, source = evo.adapt_forecast_ledger(ledger)
         self.assertEqual(len(rows), 40)
-        self.assertEqual(rows[0]["candidate_probability"], 0.95)
+        self.assertEqual(rows[0]["candidate_probability"], 0.91)
         self.assertEqual(rows[0]["target_id"], ledger["metadata"]["target_id"])
         self.assertEqual(
             [(row["decision_id"], row["decision_index"]) for row in rows],
@@ -326,6 +327,7 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertEqual(tuple(report["versions"]), evo.VERSION_ORDER)
         self.assertEqual(report["score_partition"], "final_holdout")
         self.assertEqual(report["source_evidence"]["dataset_sha256"], "a" * 64)
+        self.assertEqual(report["source_evidence"]["candidate_expert"], "alpha_calibrated_logistic_v1")
         self.assertFalse(report["research_boundary"]["source_qualified_for_training"])
         self.assertEqual(report["decision_output"], "NO_TRADE")
         self.assertEqual(
