@@ -6,6 +6,7 @@ from temporal_semantic_contract_v1 import (
     validate_candle_series,
     validate_feature_batch,
     validate_feature_fact,
+    validate_feature_lineage,
     validate_ohlc_candle,
 )
 
@@ -303,6 +304,130 @@ class TemporalSemanticContractTests(unittest.TestCase):
         )
         self.assertIn("macro.cpi.yoy", report["missing_required_feature_ids"])
         self.assertEqual(report["status"], "BLOCKED")
+
+
+    def derived_fact(self, feature_id="xau.ema.5", source_record_id="derived:ema5"):
+        fact = self.fact()
+        fact.update({
+            "feature_id": feature_id,
+            "semantic_type": "derived_market_feature",
+            "event_time_role": "bar_close",
+            "value": 2350.75,
+            "published_at": "2026-01-01T00:04:04Z",
+            "available_at": "2026-01-01T00:04:05Z",
+            "observed_at": "2026-01-01T00:04:06Z",
+            "source_record_id": source_record_id,
+            "source_revision": "calc-1",
+            "source_sha256": "c" * 64,
+            "transform_id": "ema",
+            "transform_version": "1.0.0",
+            "transform_sha256": "d" * 64,
+            "parent_feature_refs": [{
+                "feature_id": "xau.close.m1",
+                "instrument": "XAUUSD",
+                "source_id": "feed-a",
+                "source_record_id": "feed-a:XAUUSD:M1:2026-01-01T00:04:00Z:bid",
+                "source_revision": "rev-1",
+                "source_sha256": "a" * 64,
+            }],
+            "transform_fit_scope": "stateless",
+        })
+        return fact
+
+    def parent_fact(self):
+        return self.fact()
+
+    def test_valid_declared_lineage_passes_only_for_research_snapshot(self):
+        report = validate_feature_lineage(
+            [self.parent_fact(), self.derived_fact()],
+            decision_time="2026-01-01T00:05:00Z",
+        )
+        self.assertEqual(report["status"], "PASS", report)
+        self.assertTrue(report["lineage_valid_for_research_snapshot"])
+        self.assertEqual(report["lineage_edge_count"], 1)
+        self.assertEqual(report["promotion_status"], "DIAGNOSTIC_ONLY")
+        self.assertFalse(report["live_signal_enabled"])
+        self.assertFalse(report["live_order_execution_enabled"])
+
+    def test_derived_feature_without_parents_or_causal_fit_scope_is_blocked(self):
+        fact = self.derived_fact()
+        fact.pop("parent_feature_refs")
+        fact.pop("transform_fit_scope")
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("derived_feature_parent_lineage_required", report["blockers"])
+        self.assertIn("derived_feature_fit_scope_not_causal_or_unknown", report["blockers"])
+
+        fact = self.derived_fact()
+        fact["transform_fit_scope"] = "global_dataset"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("derived_feature_fit_scope_not_causal_or_unknown", report["blockers"])
+
+    def test_fitted_transform_requires_cutoff_hash_manifest_and_no_future_fit(self):
+        fact = self.derived_fact()
+        fact["transform_fit_scope"] = "expanding_past_only"
+        fact["transform_fit_cutoff"] = "2026-01-01T00:04:01Z"
+        fact["transform_fit_data_sha256"] = "e" * 64
+        fact["transform_fit_manifest_ref"] = "repo://fit-manifests/model-a.json"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertNotIn("derived_feature_fit_scope_not_causal_or_unknown", report["blockers"])
+        self.assertFalse(any(item.startswith("transform_fit_") for item in report["blockers"]), report)
+
+        fact["transform_fit_cutoff"] = "2026-01-01T00:05:30Z"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("transform_fit_cutoff_after_decision", report["blockers"])
+
+    def test_parent_missing_or_digest_mismatch_blocks_lineage(self):
+        report = validate_feature_lineage(
+            [self.derived_fact()],
+            decision_time="2026-01-01T00:05:00Z",
+        )
+        self.assertIn("row_0:parent_0:parent_fact_not_found_in_snapshot", report["blockers"])
+
+        fact = self.derived_fact()
+        fact["parent_feature_refs"][0]["source_sha256"] = "f" * 64
+        report = validate_feature_lineage(
+            [self.parent_fact(), fact],
+            decision_time="2026-01-01T00:05:00Z",
+        )
+        self.assertIn("row_1:parent_0:parent_digest_or_revision_mismatch", report["blockers"])
+
+    def test_parent_available_after_derived_feature_is_rejected(self):
+        parent = self.parent_fact()
+        parent["available_at"] = "2026-01-01T00:04:50Z"
+        parent["observed_at"] = "2026-01-01T00:04:55Z"
+        fact = self.derived_fact()
+        report = validate_feature_lineage(
+            [parent, fact],
+            decision_time="2026-01-01T00:05:00Z",
+        )
+        self.assertIn("row_1:parent_0:parent_available_after_derived_feature", report["blockers"])
+
+    def test_cyclic_feature_dependencies_are_rejected(self):
+        left = self.derived_fact("xau.derived.left", "derived:left")
+        right = self.derived_fact("xau.derived.right", "derived:right")
+        right["source_sha256"] = "f" * 64
+        # Each derived value is declared as a parent of the other; a valid data
+        # lineage graph must be a directed acyclic graph.
+        def ref_for(item):
+            return {
+                "feature_id": item["feature_id"],
+                "instrument": item["instrument"],
+                "source_id": item["source_id"],
+                "source_record_id": item["source_record_id"],
+                "source_revision": item["source_revision"],
+                "source_sha256": item["source_sha256"],
+            }
+        left["parent_feature_refs"] = [ref_for(right)]
+        right["parent_feature_refs"] = [ref_for(left)]
+        right["available_at"] = "2026-01-01T00:04:06Z"
+        right["observed_at"] = "2026-01-01T00:04:07Z"
+        left["available_at"] = "2026-01-01T00:04:08Z"
+        left["observed_at"] = "2026-01-01T00:04:09Z"
+        report = validate_feature_lineage(
+            [left, right],
+            decision_time="2026-01-01T00:05:00Z",
+        )
+        self.assertTrue(any("feature_dependency_cycle" in item for item in report["blockers"]), report)
 
 if __name__ == "__main__":
     unittest.main()
