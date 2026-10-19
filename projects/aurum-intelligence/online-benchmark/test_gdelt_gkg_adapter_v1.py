@@ -63,6 +63,15 @@ class GdeltGkgTests(unittest.TestCase):
         result=gdelt.deduplicate_snapshots([a,b])
         self.assertTrue(any("conflicting_snapshot" in x for x in result[0].quality_flags))
 
+    def test_large_but_bounded_gkg_field_is_parsed(self):
+        raw = row("20260301120000-1")
+        fields = raw.decode("utf-8").split("\t")
+        fields[5] = "x" * 150_000
+        payload = "\t".join(fields).encode("utf-8")
+        parsed = gdelt.parse_gkg_tsv(payload, manifest(payload))
+        self.assertEqual(len(parsed), 1)
+        self.assertLessEqual(len(payload), gdelt.MAX_PAYLOAD_BYTES)
+
     def test_bad_record_id_and_oversized_payload_fail_closed(self):
         with self.assertRaises(ValueError):
             gdelt.archive_available_at("not-a-record-id")

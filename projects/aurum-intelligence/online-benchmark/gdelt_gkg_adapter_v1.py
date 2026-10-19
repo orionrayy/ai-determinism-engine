@@ -27,6 +27,9 @@ MAX_MASTER_BYTES = 160 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 48 * 1024 * 1024
 MAX_AGGREGATE_BYTES = 800 * 1024 * 1024
 MAX_RECORDS_PER_ARCHIVE = 500_000
+# The parser's field cap is bounded by the total input payload cap; otherwise the
+# stdlib CSV default (typically 128 KiB) can reject legitimate large GKG metadata fields.
+csv.field_size_limit(MAX_PAYLOAD_BYTES)
 MAX_ARCHIVES_PER_RUN = 480
 TIMEOUT_SECONDS = 20
 MAX_RETRIES = 2
@@ -473,7 +476,9 @@ def acquire_historical_gkg(
                 "official-host;independent-rights-review-required")
             try:
                 parsed = parse_gkg_tsv(payload, source_manifest)
-            except (ValueError, UnicodeError):
+            except (ValueError, UnicodeError, csv.Error):
+                # One structurally invalid or over-complex batch is quarantined; it
+                # must not abort the full bounded acquisition run.
                 acquisition_warnings.append("archive_skipped_parser_rejection")
                 continue
             manifests.append(SourceManifest(source_manifest.source_id, source_manifest.dataset_or_series_id,
