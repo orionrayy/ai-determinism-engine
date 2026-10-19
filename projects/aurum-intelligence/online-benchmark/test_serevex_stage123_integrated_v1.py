@@ -51,6 +51,7 @@ def make_ledger(n=600, *, leak_at=None, weak_second=False, partitions=None):
                 "event_risk_bucket": "scheduled" if i % 7 == 0 else "quiet",
             },
             "state_tags_available_index": i,
+            "state_tags_available_time": (decision_time - timedelta(seconds=4)).isoformat().replace("+00:00", "Z"),
             "feature_facts": [{
                 "feature_id": "ema_fast_gap",
                 "available_at": available_time.isoformat().replace("+00:00", "Z"),
@@ -79,6 +80,13 @@ def make_ledger(n=600, *, leak_at=None, weak_second=False, partitions=None):
             },
             "registered_experts": ["trend_expert", "alt_expert"],
             "registered_regimes": ["trend", "range"],
+            "atlas_category_registry": {
+                "regime_id": ["trend", "range"],
+                "session_id": ["london", "new_york"],
+                "volatility_bucket": ["high", "low", "not_observed_in_holdout"],
+                "spread_bucket": ["normal", "wide"],
+                "event_risk_bucket": ["scheduled", "quiet"],
+            },
             "evidence_kind": "synthetic_contract_test",
             "source_verification": {
                 "provider_provenance_independently_verified": False,
@@ -118,6 +126,20 @@ class SerevexStage123Tests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "regime_not_available"):
             validate_forecast_ledger(ledger)
 
+    def test_label_timestamp_cannot_postdate_its_declared_maturity_index(self):
+        ledger = make_ledger(20)
+        decision_time = datetime.fromisoformat(ledger["records"][0]["decision_time"].replace("Z", "+00:00"))
+        ledger["records"][0]["label_available_time"] = (decision_time + timedelta(minutes=2)).isoformat().replace("+00:00", "Z")
+        with self.assertRaisesRegex(ValueError, "label_time_after_declared_maturity_index"):
+            validate_forecast_ledger(ledger)
+
+    def test_future_state_tags_time_is_rejected(self):
+        ledger = make_ledger(20)
+        decision_time = datetime.fromisoformat(ledger["records"][4]["decision_time"].replace("Z", "+00:00"))
+        ledger["records"][4]["state_tags_available_time"] = (decision_time + timedelta(seconds=1)).isoformat().replace("+00:00", "Z")
+        with self.assertRaisesRegex(ValueError, "future_state_tags"):
+            validate_forecast_ledger(ledger)
+
     def test_partition_order_cannot_go_backward(self):
         ledger = make_ledger(4, partitions=["development", "calibration", "model_selection", "final_holdout"])
         with self.assertRaisesRegex(ValueError, "chronologically_ordered"):
@@ -128,11 +150,15 @@ class SerevexStage123Tests(unittest.TestCase):
         result = build_predictability_atlas(
             ledger["normalized_ledger"]["records"],
             registered_experts=["trend_expert", "alt_expert"],
-            as_of_index=610, min_rows=40, block_size=6, min_independent_blocks=4,
+            as_of_index=610,
+            registered_category_registry=ledger["normalized_ledger"]["metadata"]["atlas_category_registry"],
+            min_rows=40, block_size=6, min_independent_blocks=4,
             bootstrap_replicates=200, axes=["regime_id"],
         )
         self.assertEqual(result["status"], "DIAGNOSTIC_ONLY")
         self.assertTrue(any(x["expert_id"] == "trend_expert" and x["status"] == "ELIGIBLE_FOR_INDEPENDENT_REPLICATION" for x in result["results"]))
+        missing_cell = next(x for x in result["results"] if x["category"] == "not_observed_in_holdout")
+        self.assertEqual(missing_cell["status"], "INSUFFICIENT_SUPPORT")
         self.assertFalse(result["model_validated"])
         self.assertFalse(result["live_signal_enabled"])
         self.assertEqual(result["decision_output"], "NO_TRADE")
@@ -161,6 +187,22 @@ class SerevexStage123Tests(unittest.TestCase):
         self.assertEqual(forecasts[1]["matured_labels_seen_globally_before_decision"], 0)
         self.assertEqual(forecasts[2]["matured_labels_seen_globally_before_decision"], 1)
         self.assertTrue(result["updates_only_after_strict_label_maturity"])
+
+    def test_mixer_does_not_process_rows_after_as_of_cutoff(self):
+        ledger = validate_forecast_ledger(make_ledger(80))
+        records = ledger["normalized_ledger"]["records"]
+        kwargs = dict(
+            registered_experts=["trend_expert", "alt_expert"], as_of_index=40,
+            min_global_matured=5, min_regime_matured=10, eta=2.0, fixed_share_rate=0.02,
+        )
+        full = run_delayed_feedback_mixer(records, **kwargs)
+        prefix = run_delayed_feedback_mixer(records[:40], **kwargs)
+        self.assertEqual(full["forecast_ledger"], prefix["forecast_ledger"])
+        self.assertEqual(full["final_global_weights"], prefix["final_global_weights"])
+        self.assertEqual(full["final_global_weights_sha256"], prefix["final_global_weights_sha256"])
+        self.assertEqual(full["rows_at_or_after_as_of_excluded"], 40)
+        self.assertEqual(full["last_processed_decision_index"], 39)
+        self.assertEqual(full["decision_output"], "NO_TRADE")
 
     def test_integrated_run_keeps_authority_boundary_and_report_hash(self):
         result = run_serevex_stage123(
