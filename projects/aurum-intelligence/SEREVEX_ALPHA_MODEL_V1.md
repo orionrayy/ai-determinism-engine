@@ -1,4 +1,4 @@
-# Serevex Alpha Model v3 — Dual-Score and Out-of-Domain Governed Probabilities — Fit, Selection, Calibration and Holdout Contract
+# Serevex Alpha Model v4 — Embargoed Dual-Score and Out-of-Domain Governed Probabilities — Fit, Selection, Calibration and Holdout Contract
 
 **Status:** implemented on the research branch; hosted validation is required.  
 **Runtime:** Python standard library only.  
@@ -47,3 +47,10 @@ The governor requires candidate alpha/baseline weights to pass both a conservati
 At final holdout, a training-scaler-only out-of-domain (OOD) diagnostic flags feature vectors with at least 25% of features beyond four training standard deviations (missing/invalid values also count). Flagged rows use the exact row-specific causal baseline regardless of the selected blend weight. The OOD gate uses features and training-only scaling, not holdout outcomes. Its holdout fallback rate and per-row diagnostics are reported.
 
 This improves conservatism but cannot prove statistical validity under arbitrary dependence or distribution shift; the block screen is heuristic. Final holdout remains read-only for post-prediction evaluation.
+
+
+## Temporal-block independence hardening v4
+
+Governor uncertainty is no longer estimated by grouping consecutive *event rows*, which can have overlapping targets. Rows are grouped by absolute source decision index into 12-source-bar scoring windows followed by 12-source-bar embargo windows. Only non-empty scoring windows are used for the dual-score screen; the block-level mean improvement gives each source-time block equal weight. With the fixed 12-bar maximum target horizon, a scored block's outcomes mature before the next scored block begins. The same embargoed block design is used for the paired final-holdout Brier bootstrap diagnostic.
+
+The policy now requires at least eight non-empty source-time blocks and sufficient scored rows. It records span and embargo parameters in the model artifact hash. This is a conservative dependence-control heuristic; irregular sampling, data-provider timestamp semantics, residual dependence and selection bias still require independent scrutiny.

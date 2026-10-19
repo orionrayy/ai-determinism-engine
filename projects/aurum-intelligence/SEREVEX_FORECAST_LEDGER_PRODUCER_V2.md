@@ -56,3 +56,8 @@ All output continues to enforce `NO_TRADE` and disabled live-signal/order flags.
 ## Alpha probability v3 gates
 
 The calibration governor now screens candidate blend weights on paired Brier and log-loss gain, and requires positive gain in at least 70% of chronological non-overlapping calibration blocks for both metrics. Any failed score/stability gate leaves alpha weight zero. The frozen final-holdout predictor also falls back to the row-specific causal baseline when 25% or more of its features exceed four training-only standard deviations, or are missing/invalid. These gates are conservative heuristics, not proof of predictive edge.
+
+
+## Source-time embargo v4
+
+Probability-governor selection now uses fixed source-index windows of 12 bars, followed by an excluded 12-bar gap. This uses absolute candle decision indices rather than filtered event count, so scored blocks are separated by the configured target horizon even when events are sparse or clustered. Paired holdout Brier uncertainty uses the same source-index block + embargo design and equal-weight block means. It is a dependence-aware diagnostic, not an exact guarantee.

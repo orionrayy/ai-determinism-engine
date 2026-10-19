@@ -167,6 +167,8 @@ class SerevexAlphaModelTests(unittest.TestCase):
         candidate_one = next(x for x in result["candidate_diagnostics"] if x["alpha_weight"] == 1.0)
         self.assertFalse(candidate_one["eligible"])
         self.assertLess(result["alpha_weight"], 1.0)
+        self.assertEqual(result["embargo_bars"], alpha.BLEND_EMBARGO_BARS)
+        self.assertLessEqual(result["independent_block_count"], 10)
 
     def test_invalid_partition_timeline_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "strictly_chronological"):

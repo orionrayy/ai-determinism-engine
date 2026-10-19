@@ -67,7 +67,7 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
         metadata = ledger["metadata"]
         alpha_report = metadata["alpha_model_training"]
         self.assertIn("alpha_logistic_v1", metadata["registered_experts"])
-        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v3-dual-score-ood-governed")
+        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v4-embargoed-dual-score-ood")
         self.assertEqual(alpha_report["status"], "ALPHA_RESEARCH_TRAINED")
         self.assertFalse(alpha_report["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"])
         self.assertTrue(alpha_report["training_policy"]["final_holdout_predictions_are_frozen"])

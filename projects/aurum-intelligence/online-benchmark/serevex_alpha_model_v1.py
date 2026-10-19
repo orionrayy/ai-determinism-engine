@@ -11,7 +11,7 @@ import math
 import random
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-alpha-logistic-v3-dual-score-ood-governed"
+MODEL_VERSION = "serevex-alpha-logistic-v4-embargoed-dual-score-ood"
 FEATURE_NAMES = (
     "atr_pct",
     "trend_efficiency",
@@ -31,7 +31,8 @@ TRAIN_EPOCHS = 100
 CALIBRATION_EPOCHS = 160
 MIN_BLEND_SELECTION_ROWS = 30
 BLEND_WEIGHTS = (0.0, 0.1, 0.25, 0.5, 0.75, 1.0)
-BLEND_BLOCK_SIZE = 12
+BLEND_BLOCK_SIZE = 12  # source-decision bars evaluated per block
+BLEND_EMBARGO_BARS = 12  # target horizon gap between scored blocks
 BLEND_MIN_BLOCKS = 8
 BLEND_CRITICAL_Z = 2.58
 MIN_POSITIVE_BLOCK_SHARE = 0.70
@@ -218,15 +219,41 @@ def _binary_log_loss(probability: float, label: int) -> float:
     return -(int(label) * math.log(p) + (1 - int(label)) * math.log(1.0 - p))
 
 
-def _block_stats(gains: Sequence[float], block_size: int, critical_z: float) -> dict[str, Any]:
-    block_means = [
-        sum(gains[i:i + block_size]) / block_size
-        for i in range(0, len(gains), block_size)
-    ]
-    mean_gain = sum(gains) / len(gains) if gains else 0.0
+def _embargoed_time_blocks(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    block_span_bars: int = BLEND_BLOCK_SIZE,
+    embargo_bars: int = BLEND_EMBARGO_BARS,
+) -> tuple[list[list[Mapping[str, Any]]], list[Mapping[str, Any]]]:
+    """Build deterministic source-index blocks separated by a target-horizon embargo.
+
+    Block phase is anchored to absolute source decision indices, not filtered event rank.
+    With a 12-bar label horizon, each scored 12-bar source window is followed by 12
+    source bars that are excluded from governor/bootstrap estimation. This prevents
+    adjacent scored windows from having overlapping target horizons.
+    """
+    if block_span_bars < 1 or embargo_bars < 0:
+        raise ValueError("temporal_block_and_embargo_parameters_invalid")
+    period = block_span_bars + embargo_bars
+    grouped: dict[int, list[Mapping[str, Any]]] = {}
+    used: list[Mapping[str, Any]] = []
+    for row in sorted(rows, key=lambda r: int(r["decision_index"])):
+        decision_index = int(row["decision_index"])
+        phase = decision_index % period
+        if phase >= block_span_bars:
+            continue
+        block_id = decision_index // period
+        grouped.setdefault(block_id, []).append(row)
+        used.append(row)
+    return [grouped[key] for key in sorted(grouped)], used
+
+
+def _block_stats(block_gains: Sequence[Sequence[float]], critical_z: float) -> dict[str, Any]:
+    """Equal-weight temporal-block statistics, avoiding false precision from dense blocks."""
+    block_means = [sum(gains) / len(gains) for gains in block_gains if gains]
+    mean_gain = sum(block_means) / len(block_means) if block_means else 0.0
     if len(block_means) >= 2:
-        block_mean = sum(block_means) / len(block_means)
-        variance = sum((x - block_mean) ** 2 for x in block_means) / (len(block_means) - 1)
+        variance = sum((x - mean_gain) ** 2 for x in block_means) / (len(block_means) - 1)
         se = math.sqrt(max(0.0, variance) / len(block_means))
         lower = mean_gain - critical_z * se
         positive_share = sum(x > 0.0 for x in block_means) / len(block_means)
@@ -240,6 +267,7 @@ def _block_stats(gains: Sequence[float], block_size: int, critical_z: float) -> 
         "conservative_lower_screen": lower if math.isfinite(lower) else None,
         "independent_blocks": len(block_means),
         "positive_block_share": positive_share,
+        "block_means": block_means,
     }
 
 
@@ -261,41 +289,49 @@ def _choose_baseline_shrinkage_weight(
     """
     ordered = sorted(
         [r for r in rows if r.get("label_mature") is True and r.get("label") in (0, 1)
-         and isinstance(r.get("decision_index"), int)],
+         and isinstance(r.get("decision_index"), int) and not isinstance(r.get("decision_index"), bool)],
         key=lambda r: int(r["decision_index"]),
+    )
+    blocks, used = _embargoed_time_blocks(
+        ordered, block_span_bars=block_size, embargo_bars=BLEND_EMBARGO_BARS
     )
     base = {
         "alpha_weight": 0.0,
         "status": "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
         "selection_rows": len(ordered),
-        "block_size": block_size,
-        "independent_block_count": len(ordered) // max(1, block_size),
+        "selection_rows_used": len(used),
+        "block_size_source_bars": block_size,
+        "embargo_bars": BLEND_EMBARGO_BARS,
+        "independent_block_count": len(blocks),
         "critical_multiplier": critical_z,
-        "family_size_nonzero_weights": len(BLEND_WEIGHTS) - 1,
         "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
+        "family_size_nonzero_weights": len(BLEND_WEIGHTS) - 1,
         "dual_score_gate_required": ["brier", "log_loss"],
         "candidate_diagnostics": [],
-        "selected_by": "paired_brier_and_log_loss_gain_vs_rowwise_causal_baseline_with_block_stability",
+        "selected_by": "paired_brier_and_log_loss_gain_vs_rowwise_causal_baseline_with_embargoed_time_block_stability",
     }
-    full_blocks = len(ordered) // block_size if block_size > 0 else 0
-    if block_size < 2 or len(ordered) < minimum_rows or full_blocks < minimum_blocks:
+    if len(used) < minimum_rows or len(blocks) < minimum_blocks:
         return base
 
-    used = ordered[:full_blocks * block_size]
     candidates: list[dict[str, Any]] = []
     for weight in BLEND_WEIGHTS:
-        brier_gains: list[float] = []
-        logloss_gains: list[float] = []
-        for row in used:
-            index = int(row["decision_index"])
-            y = int(row["label"])
-            baseline = min(max(float(row.get("baseline_probability", 0.5)), 1e-6), 1.0 - 1e-6)
-            alpha_p = min(max(float(calibrated_alpha_probabilities[index]), 1e-6), 1.0 - 1e-6)
-            mixed = min(max((1.0 - weight) * baseline + weight * alpha_p, 1e-6), 1.0 - 1e-6)
-            brier_gains.append((baseline - y) ** 2 - (mixed - y) ** 2)
-            logloss_gains.append(_binary_log_loss(baseline, y) - _binary_log_loss(mixed, y))
-        brier = _block_stats(brier_gains, block_size, critical_z)
-        logloss = _block_stats(logloss_gains, block_size, critical_z)
+        brier_block_gains: list[list[float]] = []
+        logloss_block_gains: list[list[float]] = []
+        for block in blocks:
+            block_brier: list[float] = []
+            block_logloss: list[float] = []
+            for row in block:
+                index = int(row["decision_index"])
+                y = int(row["label"])
+                baseline = min(max(float(row.get("baseline_probability", 0.5)), 1e-6), 1.0 - 1e-6)
+                alpha_p = min(max(float(calibrated_alpha_probabilities[index]), 1e-6), 1.0 - 1e-6)
+                mixed = min(max((1.0 - weight) * baseline + weight * alpha_p, 1e-6), 1.0 - 1e-6)
+                block_brier.append((baseline - y) ** 2 - (mixed - y) ** 2)
+                block_logloss.append(_binary_log_loss(baseline, y) - _binary_log_loss(mixed, y))
+            brier_block_gains.append(block_brier)
+            logloss_block_gains.append(block_logloss)
+        brier = _block_stats(brier_block_gains, critical_z)
+        logloss = _block_stats(logloss_block_gains, critical_z)
         eligible = bool(
             weight > 0.0
             and brier["conservative_lower_screen"] is not None
@@ -330,15 +366,12 @@ def _choose_baseline_shrinkage_weight(
     else:
         base["alpha_weight"] = 0.0
         base["status"] = "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN"
-
     base["candidate_diagnostics"] = candidates
-    base["selection_rows_used"] = len(used)
     base["selection_labels_sha256"] = _sha([
         [row.get("decision_id", row.get("decision_index")), int(row["label"])]
         for row in used
     ])
     return base
-
 
 def _paired_block_bootstrap_ci(
     rows: Sequence[Mapping[str, Any]],
@@ -349,46 +382,61 @@ def _paired_block_bootstrap_ci(
     block_size: int = BLEND_BLOCK_SIZE,
     seed: int = 20261019,
 ) -> dict[str, Any]:
-    """Paired moving-block interval for baseline-minus-model Brier improvement."""
+    """Bootstrap paired improvement across source-index blocks separated by horizon embargo."""
     if len(rows) != len(model_probabilities) or len(rows) != len(baseline_probabilities):
         raise ValueError("paired_bootstrap_inputs_must_have_equal_lengths")
-    n = len(rows)
-    if n < block_size * 4 or block_size < 2:
+    if block_size < 1:
+        raise ValueError("bootstrap_block_size_must_be_positive")
+    per_decision = {
+        int(row["decision_index"]): (dict(row), float(model_p), float(baseline_p))
+        for row, model_p, baseline_p in zip(rows, model_probabilities, baseline_probabilities)
+    }
+    blocks, used = _embargoed_time_blocks(
+        [item[0] for item in per_decision.values()],
+        block_span_bars=block_size,
+        embargo_bars=BLEND_EMBARGO_BARS,
+    )
+    if len(blocks) < BLEND_MIN_BLOCKS:
         return {
-            "status": "INSUFFICIENT_BLOCK_SUPPORT",
-            "rows": n, "block_size": block_size, "replicates": 0,
+            "status": "INSUFFICIENT_EMBARGOED_TEMPORAL_BLOCK_SUPPORT",
+            "rows": len(used), "holdout_rows_total": len(rows),
+            "independent_blocks": len(blocks), "block_span_bars": block_size,
+            "embargo_bars": BLEND_EMBARGO_BARS, "replicates": 0,
             "mean_improvement_baseline_minus_model": None, "ci95": None,
         }
-    gains = []
-    for row, model_p, baseline_p in zip(rows, model_probabilities, baseline_probabilities):
-        y = int(row["label"])
-        gains.append((float(baseline_p) - y) ** 2 - (float(model_p) - y) ** 2)
-    starts = list(range(0, n - block_size + 1))
-    if not starts:
+    block_gains: list[float] = []
+    for block in blocks:
+        gains = []
+        for row in block:
+            _, model_p, baseline_p = per_decision[int(row["decision_index"])]
+            y = int(row["label"])
+            gains.append((baseline_p - y) ** 2 - (model_p - y) ** 2)
+        if gains:
+            block_gains.append(sum(gains) / len(gains))
+    if len(block_gains) < BLEND_MIN_BLOCKS:
         return {
-            "status": "INSUFFICIENT_BLOCK_SUPPORT",
-            "rows": n, "block_size": block_size, "replicates": 0,
-            "mean_improvement_baseline_minus_model": sum(gains) / n if n else None,
-            "ci95": None,
+            "status": "INSUFFICIENT_EMBARGOED_TEMPORAL_BLOCK_SUPPORT",
+            "rows": len(used), "holdout_rows_total": len(rows),
+            "independent_blocks": len(block_gains), "block_span_bars": block_size,
+            "embargo_bars": BLEND_EMBARGO_BARS, "replicates": 0,
+            "mean_improvement_baseline_minus_model": None, "ci95": None,
         }
     rng = random.Random(seed)
-    boot_means: list[float] = []
-    for _ in range(replicates):
-        sample: list[float] = []
-        while len(sample) < n:
-            start = starts[rng.randrange(len(starts))]
-            sample.extend(gains[start:start + block_size])
-        sample = sample[:n]
-        boot_means.append(sum(sample) / n)
-    boot_means.sort()
+    boot_means = sorted(
+        sum(block_gains[rng.randrange(len(block_gains))] for _ in range(len(block_gains))) / len(block_gains)
+        for _ in range(replicates)
+    )
     lower = boot_means[max(0, math.ceil(0.025 * len(boot_means)) - 1)]
     upper = boot_means[min(len(boot_means) - 1, math.ceil(0.975 * len(boot_means)) - 1)]
     return {
-        "status": "PAIRED_MOVING_BLOCK_BOOTSTRAP_DIAGNOSTIC",
-        "rows": n, "block_size": block_size, "replicates": replicates,
-        "mean_improvement_baseline_minus_model": sum(gains) / n,
+        "status": "EMBARGOED_SOURCE_INDEX_BLOCK_BOOTSTRAP_DIAGNOSTIC",
+        "rows": len(used), "holdout_rows_total": len(rows),
+        "independent_blocks": len(block_gains), "block_span_bars": block_size,
+        "embargo_bars": BLEND_EMBARGO_BARS, "replicates": replicates,
+        "mean_improvement_baseline_minus_model": sum(block_gains) / len(block_gains),
         "ci95": [lower, upper],
-        "interpretation": "Positive improvement favors the model. The interval is diagnostic and does not correct all strategy/model selection.",
+        "sampling_method": "equal-weight paired Brier means from 12-source-bar blocks separated by a 12-source-bar target-horizon embargo",
+        "interpretation": "This is an embargoed-block diagnostic, not an exact finite-sample confidence guarantee or selection-bias correction.",
     }
 
 
@@ -688,11 +736,12 @@ def train_alpha_model(
         "calibration_fit_labels_sha256": calibration_labels_sha,
         "blend_selection_labels_sha256": blend_selection_labels_sha,
         "selected_alpha_weight": selected_alpha_weight,
-        "probability_governor_protocol": "paired_brier_logloss_block_stability_ood_fallback_v3",
+        "probability_governor_protocol": "embargoed_source_index_block_dual_score_ood_fallback_v4",
         "probability_governor_policy": {
             "blend_weights": list(BLEND_WEIGHTS),
             "critical_multiplier": BLEND_CRITICAL_Z,
-            "block_size": BLEND_BLOCK_SIZE,
+            "block_span_source_bars": BLEND_BLOCK_SIZE,
+            "embargo_source_bars": BLEND_EMBARGO_BARS,
             "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
             "minimum_calibration_rows": MIN_BLEND_SELECTION_ROWS,
             "minimum_independent_blocks": BLEND_MIN_BLOCKS,
