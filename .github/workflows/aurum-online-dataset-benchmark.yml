@@ -138,6 +138,108 @@ jobs:
               'tp_sl_ambiguous_same_bar_events': tp['ambiguous_same_bar_events'],
               'decision_output': r['decision_output']}, indent=2))
           PY
+      - name: Run real OHLCV through integrated Serevex stages 1-3
+        working-directory: projects/aurum-intelligence/online-benchmark
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          import ci_benchmark
+          import serevex_forecast_ledger_producer_v1 as producer
+          import serevex_stage123_integrated_v1 as integrated
+
+          payload = ci_benchmark.fetch()
+          rows = ci_benchmark.parse_csv(payload)
+          first_ts = rows[0]["timestamp"]
+          naive = first_ts.tzinfo is None or first_ts.utcoffset() is None
+          timestamp_policy = "assume_utc_for_diagnostic_only" if naive else "reject"
+          ledger, report = producer.run_end_to_end(
+              rows,
+              dataset_sha256=hashlib.sha256(payload).hexdigest(),
+              source_uri=ci_benchmark.SOURCE,
+              rule="last_return_sign",
+              side="long",
+              as_of_index=len(rows),
+              naive_timestamp_policy=timestamp_policy,
+              evidence_kind="real_market_research",
+              license_reference=ci_benchmark.LICENSE,
+              atlas_bootstrap_replicates=200,
+          )
+          checked = integrated.validate_forecast_ledger(ledger)
+          assert checked["contract_status"] == "PASS", checked
+          assert report["status"] == "PASS_CONTRACT_DIAGNOSTIC_ONLY", report
+          assert report["stage_1_ledger_contract"] == "PASS", report
+          assert report["decision_output"] == "NO_TRADE", report
+          assert report["live_signal_enabled"] is False and report["live_order_execution_enabled"] is False, report
+          assert checked["all_source_verification_flags_true"] is False, checked
+          assert len(ledger["records"]) > 1000, checked
+          mixer = report["stage_3_delayed_feedback_mixer"]
+          assert mixer["status"] == "DIAGNOSTIC_ONLY", mixer
+          assert mixer["scored_rows"] > 0, mixer
+          assert mixer["rows_at_or_after_as_of_excluded"] == 0, mixer
+          atlas = report["stage_2_predictability_atlas"]
+          status_counts = dict(Counter(cell["status"] for cell in atlas["results"]))
+          summary = {
+              "status": "PASS_REAL_DATA_LEDGER_AND_STAGES_1_3_CONTRACTS",
+              "evidence_kind": ledger["metadata"]["evidence_kind"],
+              "dataset_rows": len(rows),
+              "dataset_sha256": ledger["metadata"]["dataset_sha256"],
+              "source_uri": ledger["metadata"]["source_uri"],
+              "rule": ledger["metadata"]["rule"],
+              "side": ledger["metadata"]["side"],
+              "target_id": ledger["metadata"]["target_id"],
+              "timestamp_policy": ledger["metadata"]["source_timezone_policy"],
+              "source_timestamp_semantics_verified": ledger["metadata"]["source_timestamp_semantics_verified"],
+              "historical_feature_availability_verified": ledger["metadata"]["historical_feature_availability_verified"],
+              "license_reference_claim": ledger["metadata"]["license_reference_claim"],
+              "ledger_record_count": checked["record_count"],
+              "ledger_sha256": checked["ledger_sha256"],
+              "partition_counts": checked["partition_counts"],
+              "binary_matured_label_count_in_ledger": sum(1 for row in ledger["records"] if row["label_mature"] and row["label"] in (0, 1)),
+              "ambiguous_unresolved_label_count": sum(1 for row in ledger["records"] if row["label"] is None),
+              "atlas_hypothesis_family_size": atlas["hypothesis_family_size"],
+              "atlas_cell_status_counts": status_counts,
+              "mixer_scored_rows": mixer["scored_rows"],
+              "mixer_candidate_brier": mixer["candidate_brier"],
+              "mixer_baseline_brier": mixer["baseline_brier"],
+              "brier_skill_baseline_minus_mixer": mixer["brier_skill_baseline_minus_candidate"],
+              "mixer_final_weights_sha256": mixer["final_global_weights_sha256"],
+              "ledger_sha256": checked["ledger_sha256"],
+              "report_sha256": report["report_sha256"],
+              "source_verification": checked["source_verification"],
+              "model_validated": report["model_validated"],
+              "deployment_calibrated": report["deployment_calibrated"],
+              "live_signal_enabled": report["live_signal_enabled"],
+              "live_order_execution_enabled": report["live_order_execution_enabled"],
+              "decision_output": report["decision_output"],
+          }
+          output = Path("/tmp/aurum-online-benchmark/serevex-stage123")
+          output.mkdir(parents=True, exist_ok=True)
+          (output / "real_data_stage123_summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+          )
+          lines = [
+              "# Serevex real-data ledger and integrated stages 1–3",
+              "",
+              "Status: PASS_CONTRACT_DIAGNOSTIC_ONLY; decision output: NO_TRADE.",
+              "",
+              f"- Input rows: {summary['dataset_rows']}; dataset SHA-256: {summary['dataset_sha256']}",
+              f"- Cohort: {summary['rule']} / {summary['side']}; ledger records: {summary['ledger_record_count']}",
+              f"- Ledger SHA-256: {summary['ledger_sha256']}",
+              f"- Stage-3 scored rows: {summary['mixer_scored_rows']}",
+              f"- Baseline Brier: {summary['mixer_baseline_brier']}; mixer Brier: {summary['mixer_candidate_brier']}",
+              f"- Baseline-minus-mixer Brier skill: {summary['brier_skill_baseline_minus_mixer']}",
+              f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
+              f"- Producer report SHA-256: {summary['report_sha256']}",
+              "",
+              "All source verification and deployment authority flags remain false. This is a historical community OHLCV diagnostic, not proof of point-in-time source availability, source rights, predictive skill, or profitability.",
+          ]
+          (output / "real_data_stage123_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
       - name: Run 700k M1 candles and 20k distinct real timestamp scenarios
         run: >-
           python projects/aurum-intelligence/online-benchmark/execution_replay_benchmark_v1.py
@@ -449,6 +551,9 @@ jobs:
           fi
           if [ -f /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/serevex-stage123/real_data_stage123_summary.md ]; then
+            cat /tmp/aurum-online-benchmark/serevex-stage123/real_data_stage123_summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
