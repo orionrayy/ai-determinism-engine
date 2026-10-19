@@ -80,8 +80,8 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
             self.assertNotIn(large_field, alpha_report)
         self.assertIn(alpha_report["probability_governor"]["status"], (
             "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
-            "BASELINE_ONLY_NO_CONFIRMED_CALIBRATION_GAIN",
-            "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_CONSERVATIVE_SCREEN",
+            "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN",
+            "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN",
         ))
         for row in ledger["records"]:
             self.assertIn("alpha_logistic_v1", row["expert_probabilities"])
