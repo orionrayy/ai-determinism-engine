@@ -109,6 +109,12 @@ CI passing establishes that these specified contracts and regression tests execu
    Motivation for keeping a complete registered candidate family and treating repeated reuse of a history as an inference risk.
 7. Sullivan, R., Timmermann, A., and White, H. (1999), “Data-Snooping, Technical Trading Rule Performance, and the Bootstrap,” Journal of Finance 54, 1647–1691: https://doi.org/10.1111/0022-1082.00163  
    Demonstrates the relevance of data-snooping adjustments when a broad universe of trading rules is explored.
+8. Feast, Point-in-time joins: https://docs.feast.dev/getting-started/concepts/point-in-time-joins  
+   Documents event-time-correct feature retrieval and the additional created-time filter needed to prevent features backfilled or corrected after the historical decision timestamp from leaking into training data. The distinction closely matches this contract's separation of event_time from available_at/observed_at.
+9. OpenLineage, Lineage Job Facet: https://openlineage.io/docs/spec/facets/job-facets/lineage/  
+   Describes explicit input-to-output lineage edges. It also cautions against inferring every possible input/output combination when a job has multiple inputs and outputs; Serevex likewise requires declared parent identities rather than inventing a Cartesian dependency graph.
+10. OpenLineage, core specification: https://github.com/OpenLineage/OpenLineage/blob/main/spec/OpenLineage.md  
+   Describes run, job, dataset, and facet identities as a structured basis for reproducible lineage metadata.
 
 ## Explicit remaining gaps
 
