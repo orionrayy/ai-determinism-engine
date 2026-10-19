@@ -188,6 +188,32 @@ class SerevexStage123Tests(unittest.TestCase):
         self.assertEqual(forecasts[2]["matured_labels_seen_globally_before_decision"], 1)
         self.assertTrue(result["updates_only_after_strict_label_maturity"])
 
+    def test_maturity_queue_preserves_tied_batch_order_and_strict_cutoff(self):
+        ledger = make_ledger(12)
+        records = ledger["records"]
+        # Row 0 matures at source index 3; rows 1 and 2 tie at index 2 and 3.
+        # A label cannot update the mixer when maturity_index == current decision_index.
+        records[0]["label_available_index"] = 3
+        records[1]["label_available_index"] = 2
+        records[2]["label_available_index"] = 3
+        result = run_delayed_feedback_mixer(
+            records,
+            registered_experts=["trend_expert", "alt_expert"],
+            as_of_index=12,
+            min_global_matured=1,
+            min_regime_matured=1000,
+        )
+        forecasts = result["forecast_ledger"]
+        row_2 = next(x for x in forecasts if x["decision_index"] == 2)
+        row_3 = next(x for x in forecasts if x["decision_index"] == 3)
+        row_4 = next(x for x in forecasts if x["decision_index"] == 4)
+        self.assertEqual(row_2["matured_labels_seen_globally_before_decision"], 0)
+        self.assertEqual(row_3["matured_labels_seen_globally_before_decision"], 1)
+        self.assertEqual(row_4["matured_labels_seen_globally_before_decision"], 3)
+        self.assertTrue(result["updates_only_after_strict_label_maturity"])
+        update_pairs = [(x["label_available_index"], x["batch_rows"]) for x in result["update_events"][:2]]
+        self.assertEqual(update_pairs, [(2, 1), (3, 2)])
+
     def test_mixer_does_not_process_rows_after_as_of_cutoff(self):
         ledger = validate_forecast_ledger(make_ledger(80))
         records = ledger["normalized_ledger"]["records"]

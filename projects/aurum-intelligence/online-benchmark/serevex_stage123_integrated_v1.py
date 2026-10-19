@@ -626,8 +626,6 @@ def run_delayed_feedback_mixer(
     regime_weights = {regime: dict(global_weights) for regime in regimes}
     global_matured = 0
     regime_matured = {regime: 0 for regime in regimes}
-    processed: set[str] = set()
-    history: list[dict[str, Any]] = []
     forecast_rows: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
 
@@ -645,26 +643,42 @@ def run_delayed_feedback_mixer(
             raise ValueError("mixer_decision_ids_must_be_unique_at_" + str(pos))
         prior_ids.add(did)
 
+    # Index mature outcomes by their availability point once. The previous implementation
+    # rescanned the complete forecast history at every decision (quadratic in row count).
+    # Maturity buckets preserve deterministic batching and strict index < decision timing.
+    maturity_buckets: dict[int, list[dict[str, Any]]] = {}
+    for pos, row in enumerate(rows):
+        di = int(row["decision_index"])
+        maturity_index = row.get("label_available_index")
+        if not _is_int(maturity_index) or maturity_index <= di:
+            raise ValueError("mixer_label_maturity_must_follow_decision_at_" + str(pos))
+        if not isinstance(row.get("label_mature"), bool):
+            raise ValueError("mixer_label_mature_must_be_boolean_at_" + str(pos))
+        label = row.get("label")
+        if label is not None and (isinstance(label, bool) or label not in (0, 1)):
+            raise ValueError("mixer_label_must_be_binary_or_none_at_" + str(pos))
+        if row["label_mature"] and label is None:
+            raise ValueError("mixer_mature_label_missing_at_" + str(pos))
+        if row["label_mature"] is True and label in (0, 1) and maturity_index < as_of_index:
+            maturity_buckets.setdefault(int(maturity_index), []).append(dict(row))
+    maturity_indices = sorted(maturity_buckets)
+    for maturity_index in maturity_indices:
+        maturity_buckets[maturity_index].sort(key=lambda r: r["decision_id"])
+    maturity_cursor = 0
+
     rows_after_as_of_excluded = 0
     for row_position, current in enumerate(rows):
         di = int(current["decision_index"])
         if di >= as_of_index:
             rows_after_as_of_excluded = len(rows) - row_position
             break
-        newly_matured = [
-            old for old in history
-            if old["decision_id"] not in processed
-            and old["label_mature"] is True and old["label"] in (0, 1)
-            and old["label_available_index"] < di
-        ]
-        by_maturity: dict[int, list[dict[str, Any]]] = {}
-        for old in newly_matured:
-            by_maturity.setdefault(int(old["label_available_index"]), []).append(old)
-        for maturity_index in sorted(by_maturity):
-            batch = sorted(by_maturity[maturity_index], key=lambda r: r["decision_id"])
+        while maturity_cursor < len(maturity_indices) and maturity_indices[maturity_cursor] < di:
+            maturity_index = maturity_indices[maturity_cursor]
+            batch = maturity_buckets[maturity_index]
             before_hash = _sha(global_weights)
             global_weights = _update_weights(global_weights, batch, option_ids, float(eta), float(fixed_share_rate))
             global_matured += len(batch)
+            # Each maturity event is processed once; regime pools see the same tied batch.
             for regime in regimes:
                 regime_batch = [r for r in batch if r["regime_id"] == regime]
                 if regime_batch:
@@ -672,8 +686,6 @@ def run_delayed_feedback_mixer(
                         regime_weights[regime], regime_batch, option_ids, float(eta), float(fixed_share_rate)
                     )
                     regime_matured[regime] += len(regime_batch)
-            for old in batch:
-                processed.add(old["decision_id"])
             updates.append({
                 "label_available_index": maturity_index,
                 "applied_before_decision_index": di,
@@ -682,6 +694,7 @@ def run_delayed_feedback_mixer(
                 "global_weights_sha256_before": before_hash,
                 "global_weights_sha256_after": _sha(global_weights),
             })
+            maturity_cursor += 1
 
         regime = str(current["regime_id"])
         if global_matured < min_global_matured:
@@ -712,7 +725,6 @@ def run_delayed_feedback_mixer(
             "matured_labels_seen_in_regime_before_decision": regime_matured.get(regime, 0),
         }
         forecast_rows.append(output)
-        history.append(dict(current))
 
     scored_predictions = [
         r for r in forecast_rows
