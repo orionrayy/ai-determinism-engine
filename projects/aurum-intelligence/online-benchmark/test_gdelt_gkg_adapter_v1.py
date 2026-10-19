@@ -63,6 +63,15 @@ class GdeltGkgTests(unittest.TestCase):
         result=gdelt.deduplicate_snapshots([a,b])
         self.assertTrue(any("conflicting_snapshot" in x for x in result[0].quality_flags))
 
+    def test_large_but_bounded_gkg_field_is_parsed(self):
+        raw = row("20260301120000-1")
+        fields = raw.decode("utf-8").split("\t")
+        fields[5] = "x" * 150_000
+        payload = "\t".join(fields).encode("utf-8")
+        parsed = gdelt.parse_gkg_tsv(payload, manifest(payload))
+        self.assertEqual(len(parsed), 1)
+        self.assertLessEqual(len(payload), gdelt.MAX_PAYLOAD_BYTES)
+
     def test_bad_record_id_and_oversized_payload_fail_closed(self):
         with self.assertRaises(ValueError):
             gdelt.archive_available_at("not-a-record-id")
@@ -75,6 +84,8 @@ class GdeltGkgTests(unittest.TestCase):
 
     def test_historical_master_list_limit_covers_current_official_listing(self):
         self.assertGreaterEqual(gdelt.MAX_MASTER_BYTES, 130 * 1024 * 1024)
+        self.assertGreaterEqual(gdelt.MAX_ARCHIVES_PER_RUN, 720)
+        self.assertGreaterEqual(gdelt.MAX_AGGREGATE_BYTES, 5 * 1024 * 1024 * 1024)
 
     def test_official_http_archive_links_are_upgraded_to_https(self):
         source = "http://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip"
@@ -102,6 +113,40 @@ class GdeltGkgTests(unittest.TestCase):
             "https://data.gdeltproject.org/gdeltv2/20230101120000.gkg.csv.zip",
             "https://data.gdeltproject.org/gdeltv2/20240101120000.gkg.csv.zip",
         ])
+
+    def test_split_stratified_sampler_selects_contiguous_blocks_inside_each_split(self):
+        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        stamps = [
+            (start + timedelta(minutes=15 * i)).strftime("%Y%m%d%H%M%S")
+            for i in range(72 * 4)
+        ]
+        listing = archive_listing(*stamps)
+        boundaries = (start + timedelta(hours=24), start + timedelta(hours=48))
+        centers = (start + timedelta(hours=12), start + timedelta(hours=36), start + timedelta(hours=60))
+        selected, discovered = gdelt.select_historical_gkg_archives(
+            listing.decode("utf-8"), start, start + timedelta(hours=72),
+            max_archives=12, sampling_design="split_stratified_contiguous_blocks",
+            split_boundaries=boundaries, block_centers=centers,
+        )
+        self.assertEqual(discovered, 72 * 4)
+        self.assertEqual(len(selected), 12)
+        edges = (start, boundaries[0], boundaries[1], start + timedelta(hours=72))
+        for split_index, (left, right) in enumerate(zip(edges[:-1], edges[1:])):
+            block = sorted(when for when, _ in selected
+                           if left <= when < right or (split_index == 2 and when == right))
+            self.assertEqual(len(block), 4)
+            for previous, current in zip(block, block[1:]):
+                self.assertEqual(current - previous, timedelta(minutes=15))
+
+    def test_split_stratified_sampler_rejects_invalid_boundaries(self):
+        start = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        listing = archive_listing("20240101000000", "20240101001500")
+        with self.assertRaisesRegex(ValueError, "split_boundaries_must_be_inside_window"):
+            gdelt.select_historical_gkg_archives(
+                listing.decode("utf-8"), start, start + timedelta(hours=1), max_archives=1,
+                sampling_design="split_stratified_contiguous_blocks",
+                split_boundaries=(start, start + timedelta(minutes=30)),
+            )
 
     def test_budget_limit_after_prior_records_is_a_partial_stop(self):
         from unittest.mock import patch

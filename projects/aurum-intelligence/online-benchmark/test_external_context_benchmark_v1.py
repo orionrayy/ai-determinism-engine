@@ -70,19 +70,21 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
 
     def test_future_feature_mutation_does_not_change_holdout_predictions(self):
         rows=make_rows()
-        boundary=rows[960]["decision_time"]
         for i,row in enumerate(rows):
-            if i>=960:
+            if i>=960 and i % 10 == 0:
                 row["context_available_at_by_family"]={"news":row["decision_time"]+timedelta(minutes=1)}
         report_a=bench.run_context_ablation_benchmark(rows,context_observation_count=120_000,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
         changed=make_rows()
         for i,row in enumerate(changed):
-            if i>=960:
+            if i>=960 and i % 10 == 0:
                 row["context_available_at_by_family"]={"news":row["decision_time"]+timedelta(minutes=1)}
+                # Mutate only rows whose news feature is explicitly unavailable at decision time.
                 row["feature_news_count_24h"]=999999.0
         report_b=bench.run_context_ablation_benchmark(changed,context_observation_count=120_000,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
+        self.assertEqual(report_a["ablations"]["price_news"]["status"], "SCORED")
+        self.assertEqual(report_b["ablations"]["price_news"]["status"], "SCORED")
         self.assertEqual(report_a["ablations"]["price_news"]["prediction_sha256"],
                          report_b["ablations"]["price_news"]["prediction_sha256"])
 
@@ -92,6 +94,35 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
         self.assertEqual(bench.paired_moving_block_brier_ci(p,y,[0.3]*len(p),y,
             block_size=4,replicates=40,seed=7),bench.paired_moving_block_brier_ci(p,y,[0.3]*len(p),y,
             block_size=4,replicates=40,seed=7))
+
+    def test_news_one_hour_gate_is_independent_from_24h_coverage(self):
+        row = {
+            "decision_time": datetime(2024, 1, 1, 12, tzinfo=timezone.utc),
+            "coverage_news": "incomplete_source_window",
+            "coverage_news_1h": "available_zero_events",
+            "coverage_news_24h": "incomplete_source_window",
+            "feature_news_count_1h": 0,
+            "feature_news_count_24h": None,
+        }
+        self.assertEqual(bench._numeric(row, "feature_news_count_1h", "news"), 0.0)
+        self.assertIsNone(bench._numeric(row, "feature_news_count_24h", "news"))
+
+    def test_news_feature_below_split_floor_is_omitted_from_the_model(self):
+        rows = make_rows()
+        for row in rows[10:]:
+            row["feature_news_count_24h"] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"), bootstrap_replicates=40,
+        )
+        news = report["ablations"]["price_news"]
+        self.assertEqual(news["status"], "SCORED")
+        self.assertNotIn("feature_news_count_24h", news["effective_context_feature_keys"])
+        self.assertIn("feature_news_count_24h", news["omitted_context_feature_keys"])
+        self.assertEqual(
+            news["context_family_support_by_split"]["news"]["development"]["eligible_values_by_feature"]["feature_news_count_24h"],
+            10,
+        )
 
     def test_low_count_calibration_is_flagged(self):
         report=bench.run_context_ablation_benchmark(make_rows(500),context_observation_count=50,
@@ -106,6 +137,62 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
         self.assertEqual(report["scale_gate"]["status"],"NOT_MET")
         self.assertEqual(report["scale_gate"]["observations"],99_999)
         self.assertFalse(report["scale_gate"]["passed"])
+
+    def test_combined_ablation_is_ineligible_when_requested_families_are_missing(self):
+        rows = make_rows()
+        for row in rows:
+            row["coverage_macro"] = "unknown"
+            row["feature_macro_level"] = None
+            row["feature_macro_change"] = None
+            row["coverage_news"] = "unknown"
+            for key in bench.CONTEXT_FEATURES["news"]:
+                row[key] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            bootstrap_replicates=40,
+        )
+        combined = report["ablations"]["price_combined"]
+        self.assertEqual(combined["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertEqual(combined["requested_context_families"], ["cot", "macro", "news"])
+        self.assertEqual(combined["effective_context_families"], ["cot"])
+        self.assertEqual(combined["omitted_context_families"], ["macro", "news"])
+        self.assertEqual(report["ablations"]["price_cot"]["status"], "SCORED")
+        self.assertNotIn("price_combined", report["summary"]["scored_ablations"])
+
+    def test_context_family_requires_support_in_development_calibration_and_holdout(self):
+        rows = make_rows()
+        for row in rows[984:]:
+            row["coverage_cot"] = "unknown"
+            row["feature_cot_net_position"] = None
+            row["feature_cot_net_position_change"] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            bootstrap_replicates=40,
+        )
+        combined = report["ablations"]["price_combined"]
+        self.assertEqual(combined["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertIn("cot", combined["omitted_context_families"])
+        self.assertIn(
+            "insufficient_holdout_support",
+            combined["missing_context_family_reasons"]["cot"],
+        )
+
+    def test_unqualified_declared_source_status_blocks_that_context_family(self):
+        report = bench.run_context_ablation_benchmark(
+            make_rows(), context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            source_statuses={"cot": "FAILED", "macro": "PASS", "news": "PASS"},
+            bootstrap_replicates=40,
+        )
+        combined = report["ablations"]["price_combined"]
+        self.assertEqual(combined["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertIn("cot", combined["omitted_context_families"])
+        self.assertIn(
+            "source_status_not_qualified_for_feature_use",
+            combined["missing_context_family_reasons"]["cot"],
+        )
 
     def test_report_never_enables_trading(self):
         report=bench.run_context_ablation_benchmark(make_rows(),context_observation_count=120_000,

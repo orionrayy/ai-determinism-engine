@@ -1,7 +1,8 @@
 """Cross-source XAUUSD OHLC comparison without merging unlike feeds.
 
-Naive timestamps from a source whose public README claims UTC are interpreted as UTC only
-for matching. That convention is recorded as unverified; no source is promoted for trading.
+Naive timestamps are rejected by default. A caller may explicitly allow a UTC assumption
+for descriptive diagnostics only; that assumption never verifies source timezone semantics.
+No source is promoted for trading by this module.
 """
 from __future__ import annotations
 
@@ -16,13 +17,15 @@ DEFAULT_MAX_MEDIAN_CLOSE_DIFFERENCE_BPS = 5.0
 DEFAULT_MAX_P95_CLOSE_DIFFERENCE_BPS = 20.0
 
 
-def _utc_timestamp(value: Any) -> datetime:
+def _utc_timestamp(value: Any, *, naive_timestamp_policy: str = "reject") -> datetime:
     if not isinstance(value, datetime):
         raw = str(value).strip()
         if raw.endswith("Z"):
             raw = raw[:-1] + "+00:00"
         value = datetime.fromisoformat(raw)
     if value.tzinfo is None or value.utcoffset() is None:
+        if naive_timestamp_policy != "assume_utc_for_diagnostic_only":
+            raise ValueError("naive_timestamp_timezone_unverified")
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
 
@@ -220,8 +223,19 @@ def _timestamp_offset_sensitivity(
     p95_materially_reduced = bool(zero and best and zero.get("p95_absolute_close_difference_bps") and best.get("p95_absolute_close_difference_bps") <= 0.8 * zero["p95_absolute_close_difference_bps"])
     potential_offset = bool(best and zero and best["secondary_timestamp_offset_bars_for_diagnostic_only"] != 0 and reduction >= 0.5 and p95_materially_reduced)
     best_at_boundary = bool(best and abs(best["secondary_timestamp_offset_bars_for_diagnostic_only"]) == max_abs_lag_bars)
+    if best is None or zero is None:
+        alignment_assessment = "INSUFFICIENT_OVERLAP_FOR_OFFSET_ASSESSMENT"
+    elif best_at_boundary:
+        # A boundary optimum means the tested domain did not bracket the minimum.
+        # Do not turn a finite-window search into an unqualified negative finding.
+        alignment_assessment = "INDETERMINATE_SCAN_BOUNDARY"
+    elif potential_offset:
+        alignment_assessment = "POTENTIAL_ALIGNMENT_MISMATCH_CANDIDATE"
+    else:
+        alignment_assessment = "NO_STRONG_OFFSET_EVIDENCE_WITHIN_CONFIGURED_SCAN"
     return {
         "method": "sensitivity scan only; original timestamps and the primary exact-time report are unchanged",
+        "alignment_assessment": alignment_assessment,
         "zero_offset_median_absolute_close_difference_bps": zero_median,
         "best_candidate_median_absolute_close_difference_bps": best_median,
         "relative_median_discrepancy_reduction_vs_zero_offset": reduction,
@@ -254,6 +268,7 @@ def compare_source_datasets(
     max_median_close_difference_bps: float = DEFAULT_MAX_MEDIAN_CLOSE_DIFFERENCE_BPS,
     max_p95_close_difference_bps: float = DEFAULT_MAX_P95_CLOSE_DIFFERENCE_BPS,
     max_abs_timestamp_lag_bars: int = 12,
+    naive_timestamp_policy: str = "reject",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     if not primary_rows or not secondary_rows:
         raise ValueError("both_source_datasets_must_be_nonempty")
@@ -264,16 +279,18 @@ def compare_source_datasets(
             raise ValueError(name + "_must_be_finite_nonnegative")
     if isinstance(max_abs_timestamp_lag_bars, bool) or not isinstance(max_abs_timestamp_lag_bars, int) or not 0 <= max_abs_timestamp_lag_bars <= 24:
         raise ValueError("max_abs_timestamp_lag_bars_must_be_integer_between_0_and_24")
+    if naive_timestamp_policy not in {"reject", "assume_utc_for_diagnostic_only"}:
+        raise ValueError("naive_timestamp_policy_invalid")
 
     secondary_map: dict[datetime, Mapping[str, Any]] = {}
     for row in secondary_rows:
-        ts = _utc_timestamp(row["timestamp"])
+        ts = _utc_timestamp(row["timestamp"], naive_timestamp_policy=naive_timestamp_policy)
         if ts in secondary_map:
             raise ValueError("duplicate_timestamp_in_secondary_source")
         secondary_map[ts] = row
     primary_map: dict[datetime, Mapping[str, Any]] = {}
     for row in primary_rows:
-        ts = _utc_timestamp(row["timestamp"])
+        ts = _utc_timestamp(row["timestamp"], naive_timestamp_policy=naive_timestamp_policy)
         if ts in primary_map:
             raise ValueError("duplicate_timestamp_in_primary_source")
         primary_map[ts] = row
@@ -340,6 +357,9 @@ def compare_source_datasets(
     report = {
         "status": status,
         "comparison_mode": "exact_timestamp_overlap_only_no_dataset_concatenation",
+        "timestamp_interpretation_policy": naive_timestamp_policy,
+        "timestamp_semantics_verified": False,
+        "utc_assumption_is_diagnostic_only": naive_timestamp_policy == "assume_utc_for_diagnostic_only",
         "timestamp_offset_sensitivity": lag_sensitivity,
         "primary_source": {
             "rows": len(primary_rows),

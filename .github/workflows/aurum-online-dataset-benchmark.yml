@@ -348,6 +348,15 @@ jobs:
           if g['passed']:
               assert g['observations'] >= 100000, g
           assert g['synthetic_or_duplicated_observations_added'] == 0, g
+          gkg = r['source_details']['gdelt_gkg']
+          assert gkg['sampling_design'] == 'split_stratified_contiguous_blocks', gkg
+          assert 0 <= gkg['archive_count'] <= 720, gkg
+          assert gkg['archive_count'] == gkg['processed_archive_count'], gkg
+          assert gkg['archive_count'] <= gkg['selected_archive_count'] <= 720, gkg
+          assert gkg['selected_archive_count'] <= gkg['discovered_archive_count'], gkg
+          assert 0 < gkg['aggregate_bytes_downloaded'] <= gkg['requested_aggregate_byte_cap'], gkg
+          assert len(gkg['block_centers_utc']) == 3, gkg
+          assert {'news_1h', 'news_24h'} <= set(r['temporal_feature_coverage']), r['temporal_feature_coverage']
           b = r['ablation_benchmark']
           assert b['protocol']['holdout_used_for_selection'] is False, b['protocol']
           assert b['protocol']['holdout_used_for_calibration'] is False, b['protocol']
@@ -357,11 +366,38 @@ jobs:
           assert d['weekday_active_nonflat_rows'] >= 700000, d
           assert r['price_label_audit']['candidate_anchors'] >= 20000, r['price_label_audit']
           assert r['price_label_audit']['matured_binary_labels'] >= 1000, r['price_label_audit']
+
+          # A scored context ablation must expose a paired comparison with price-only
+          # on the exact same chronological holdout rows and labels.
+          for name, a in b['ablations'].items():
+              pair = a.get('paired_moving_block_ci_vs_price_only')
+              if a.get('status') == 'SCORED' and name == 'price_only':
+                  assert pair is None, (name, pair)
+              elif a.get('status') == 'SCORED':
+                  assert isinstance(pair, dict), (name, pair)
+                  assert pair.get('comparison_reference') == 'price_only', (name, pair)
+                  assert pair.get('replicates', 0) >= 20, (name, pair)
+                  assert pair.get('lower_95') <= pair.get('upper_95'), (name, pair)
+                  assert a.get('scored_rows_sha256'), (name, a)
+                  assert a.get('labels_sha256'), (name, a)
+              else:
+                  assert pair is None, (name, pair)
+          scored = [a for a in b['ablations'].values() if a.get('status') == 'SCORED']
+          assert len({a['scored_rows_sha256'] for a in scored}) == 1, scored
+          assert len({a['labels_sha256'] for a in scored}) == 1, scored
+
           print(json.dumps({
               'status': r['status'],
               'decision_gate': r['decision_gate'],
               'real_unique_gdelt_observations': g['observations'],
               'context_scale_gate': g['status'],
+              'news_1h_feature_coverage': r['temporal_feature_coverage']['news_1h'],
+              'news_24h_feature_coverage': r['temporal_feature_coverage']['news_24h'],
+              'gdelt_sampling_design': r['source_details']['gdelt_gkg']['sampling_design'],
+              'gdelt_archive_count': r['source_details']['gdelt_gkg']['archive_count'],
+              'gdelt_selected_archive_count': r['source_details']['gdelt_gkg']['selected_archive_count'],
+              'gdelt_processed_archive_count': r['source_details']['gdelt_gkg']['processed_archive_count'],
+              'gdelt_aggregate_bytes_downloaded': r['source_details']['gdelt_gkg']['aggregate_bytes_downloaded'],
               'price_rows': d['paired_valid_bid_ask_candles'],
               'valid_atr_anchors': r['price_label_audit']['candidate_anchors'],
               'matured_unambiguous_labels': r['price_label_audit']['matured_binary_labels'],
@@ -369,7 +405,8 @@ jobs:
               'ablations': {k: {'status': v.get('status'),
                   'calibration_status': v.get('calibration_status'),
                   'brier': v.get('metrics', {}).get('brier_score'),
-                  'brier_ci_vs_baseline': v.get('paired_moving_block_ci_vs_causal_baseline')}
+                  'brier_ci_vs_baseline': v.get('paired_moving_block_ci_vs_causal_baseline'),
+                  'brier_ci_vs_price_only': v.get('paired_moving_block_ci_vs_price_only')}
                   for k, v in b['ablations'].items()}
           }, indent=2))
           with open('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.md', 'w', encoding='utf-8') as f:
@@ -377,12 +414,21 @@ jobs:
               f.write(f"- Decision gate: {r['decision_gate']}\n")
               f.write(f"- Real unique GDELT records: {g['observations']} / {g['target']} (scale: {g['status']})\n")
               f.write(f"- Price rows: {d['paired_valid_bid_ask_candles']}; mature unambiguous labels: {r['price_label_audit']['matured_binary_labels']}\n")
-              f.write('\n| Ablation | Status | Calibration | Holdout Brier | Paired Brier improvement 95% interval |\n|---|---|---|---:|---|\n')
+              f.write(f"- GDELT sampling: {r['source_details']['gdelt_gkg']['sampling_design']}; selected: {r['source_details']['gdelt_gkg']['selected_archive_count']}; processed: {r['source_details']['gdelt_gkg']['processed_archive_count']}; discovered: {r['source_details']['gdelt_gkg']['discovered_archive_count']}\n")
+              f.write(f"- GDELT aggregate bytes: {r['source_details']['gdelt_gkg']['aggregate_bytes_downloaded']}/{r['source_details']['gdelt_gkg']['requested_aggregate_byte_cap']}\n")
+              f.write(f"- Fully observed 1h news-feature rows: {r['temporal_feature_coverage']['news_1h']['eligible_rows']}/{r['temporal_feature_coverage']['news_1h']['total_rows']}\n")
+              f.write(f"- Fully observed 24h news-feature rows: {r['temporal_feature_coverage']['news_24h']['eligible_rows']}/{r['temporal_feature_coverage']['news_24h']['total_rows']}\n")
+              f.write('\n| Ablation | Status | Calibration | Holdout Brier | Improvement vs causal baseline (95% CI) | Improvement vs price-only (95% CI) |\n|---|---|---|---:|---|---|\n')
               for name, a in b['ablations'].items():
                   metric = a.get('metrics', {})
-                  ci = a.get('paired_moving_block_ci_vs_causal_baseline', {})
-                  interval = f"[{ci.get('lower_95')}, {ci.get('upper_95')}]" if ci else 'n/a'
-                  f.write(f"| {name} | {a.get('status')} | {a.get('calibration_status', 'n/a')} | {metric.get('brier_score', 'n/a')} | {interval} |\n")
+                  ci = a.get('paired_moving_block_ci_vs_causal_baseline') or {}
+                  price_ci = a.get('paired_moving_block_ci_vs_price_only') or {}
+                  interval = (f"Δ={ci.get('brier_improvement_baseline_minus_model')}; "
+                              f"[{ci.get('lower_95')}, {ci.get('upper_95')}]") if ci else 'n/a'
+                  price_interval = (f"Δ={price_ci.get('brier_improvement_price_only_minus_model')}; "
+                                    f"[{price_ci.get('lower_95')}, {price_ci.get('upper_95')}]") if price_ci else 'n/a'
+                  f.write(f"| {name} | {a.get('status')} | {a.get('calibration_status', 'n/a')} | {metric.get('brier_score', 'n/a')} | {interval} | {price_interval} |\n")
+              f.write('\nPositive Δ means reference Brier minus model Brier, so positive favors the model. The price-only interval compares context and price-only predictions on identical holdout rows and labels; an interval spanning zero is inconclusive. An ineligible ablation has no numeric result.\n')
               f.write('\nPipeline success is not proof of data scale, calibrated edge, profitability, or deployment readiness.\n')
           PY
       - name: Add benchmark report to job summary
