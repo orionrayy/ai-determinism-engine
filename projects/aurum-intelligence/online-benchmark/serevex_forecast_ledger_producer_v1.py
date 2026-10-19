@@ -491,11 +491,17 @@ def build_forecast_ledger(
             })
         probabilities = dict(event["pre_alpha_expert_probabilities"])
         probabilities["alpha_logistic_v1"] = float(alpha_probabilities[str(index)])
-        # Separate the frozen-calibrator candidate from the legacy governed expert.
-        # Keep the final-holdout OOD guard: out-of-domain rows use the exact baseline.
-        calibrated_candidate = float(alpha_calibrated_probabilities[str(index)])
-        if alpha_training["forecast_policy_by_decision_index"][str(index)] == "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES":
-            calibrated_candidate = float(event["baseline_probability"])
+        # Build the candidate on the information set that actually existed at this
+        # point in the chronology. Before final holdout, preserve the producer's staged
+        # forecast (cold-start/scout/uncalibrated calibration-stage output); do not
+        # back-apply a calibrator to rows that helped fit it. Only final holdout uses the
+        # frozen calibrator output before baseline shrinkage, with the OOD fallback intact.
+        if event["partition"] == "final_holdout":
+            calibrated_candidate = float(alpha_calibrated_probabilities[str(index)])
+            if alpha_training["forecast_policy_by_decision_index"][str(index)] == "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES":
+                calibrated_candidate = float(event["baseline_probability"])
+        else:
+            calibrated_candidate = float(alpha_probabilities[str(index)])
         probabilities["alpha_calibrated_logistic_v1"] = calibrated_candidate
         record = {
             "decision_id": _canonical_sha({
