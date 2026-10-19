@@ -76,6 +76,22 @@ Use the ledger's true exclusive source decision-bar cutoff for \`--as-of-index\`
 6. Review runtime, memory, history truncation, missing outcomes, sparse regimes, drift false alarms, and selection/multiplicity effects. If any requirement fails, do not promote.
 7. Keep \`model_validated=false\`, \`deployment_calibrated=false\`, \`live_signal_enabled=false\`, \`live_order_execution_enabled=false\`, and \`decision_output=NO_TRADE\`.
 
+## Empirical checkpoint — real OHLCV comparison (run #319, 19 October 2026)
+
+The hosted benchmark run [#319](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39311625673) completed successfully on this version of the integration, and uploaded [artifact 12216534351](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39311625673/artifacts/12216534351). Artifact SHA-256: `333f76289b0d3e42b603f5e2548c032c8e327940f12777f11556d1b3d7da32d4`.
+
+- Source cohort: 35,954 OHLCV rows; canonical ledger: 17,747 events; matured binary labels: 17,654; ambiguous labels omitted: 93.
+- Dataset SHA-256: `acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db`.
+- Ledger SHA-256: `26f223c9d41f08037071a704787ec3aaf253d004b63a5ef965bc993f89c3f652`.
+- Common `final_holdout` comparison: 3,573 scored rows, all versions on the same cohort.
+- Causal baseline Brier: `0.23005421963067674`; baseline log-loss: `0.6527546508638715`.
+- v4.0 and v4.1 Brier: `0.23200445541381515`; log-loss: `0.6565635995920584`. Both underperform the row-wise causal baseline (baseline-minus-model gains: Brier `-0.0019502358`, log-loss `-0.0038089487`).
+- v4.2–v9.0 emitted baseline fallback on 100% of forecast rows in this cohort and therefore match the baseline metrics exactly. This is a correct fail-closed response, not evidence that those versions learned extra predictive skill.
+- The alpha governor itself selected weight `0.0` with status `BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN`. The raw alpha Brier was `0.2297555138`, while calibrated alpha Brier was `0.2323395154`; these are exploratory holdout point estimates only and are not authorization to choose a winner on this same holdout.
+- Provider provenance, data rights, source timestamp semantics, historical feature availability, and broker-feed quote equivalence all remain unverified.
+
+The software workflow passed, but **predictive skill did not pass the evidence gate**. Keep `model_validated=false`, `deployment_calibrated=false`, both live flags false, and `decision_output=NO_TRADE`. The current run's report exposes a further diagnostics improvement: report paired holdout uncertainty for raw vs calibrated candidates and state explicitly when the v7–v9 confirmation gate was not run because selection failed. Those diagnostic refinements must be re-run through CI; they must not change the no-promotion decision.
+
 ## Integration status and current limitation
 
 The hosted `aurum-online-dataset-benchmark.yml` workflow now creates a canonical `serevex.forecast-ledger.v1` from the real OHLCV diagnostic cohort, adapts it through `evaluate_forecast_ledger_versions`, evaluates all eight registered versions at the same exclusive as-of boundary, reports metrics only on the common `final_holdout` partition, reconciles the ordered forecast decision IDs/indices against ledger records, verifies a common scored-row count and research-only authority flags, and writes both `probability_evolution_v4_v9_report.json` and a compact summary into the benchmark artifact directory.
