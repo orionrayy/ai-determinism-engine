@@ -187,7 +187,7 @@ def validate_feature_fact(
 
         fit_scope = fact.get("transform_fit_scope")
         allowed_fit_scopes = {"stateless", "expanding_past_only", "rolling_past_only"}
-        if fit_scope not in allowed_fit_scopes:
+        if not isinstance(fit_scope, str) or fit_scope not in allowed_fit_scopes:
             blockers.append("derived_feature_fit_scope_not_causal_or_unknown")
         elif fit_scope in {"expanding_past_only", "rolling_past_only"}:
             try:
@@ -554,6 +554,193 @@ def validate_feature_batch(
         "blockers": blockers,
         "row_reports": reports,
         "snapshot_repaired": False,
+        "promotion_status": "DIAGNOSTIC_ONLY",
+        "decision_output": DECISION_OUTPUT,
+        "live_signal_enabled": LIVE_SIGNAL_ENABLED,
+        "live_order_execution_enabled": LIVE_ORDER_EXECUTION_ENABLED,
+    }
+
+
+def validate_feature_lineage(
+    facts: Sequence[Mapping[str, Any]],
+    *,
+    decision_time: datetime | str,
+) -> dict[str, Any]:
+    """Validate parent references, temporal dependency ordering, and cycles.
+
+    Each parent_feature_refs item must identify an exact parent fact by feature_id,
+    instrument, source_id, source_record_id, source_revision, and source_sha256.
+    All parent facts must be present in this snapshot. Derived features must also
+    pass the parent/fit-scope requirements in validate_feature_fact.
+
+    This detects broken declared lineage. It cannot infer undeclared dependencies
+    hidden inside transformation code or authenticate an external manifest.
+    """
+    if isinstance(facts, (str, bytes)) or not isinstance(facts, Sequence) or not facts:
+        raise ValueError("facts_must_be_nonempty_sequence")
+    decision = _aware_utc(decision_time, "decision_time")
+    blockers: list[str] = []
+    row_reports: list[dict[str, Any]] = []
+    by_identity: dict[tuple[str, str, str, str, str], list[int]] = {}
+    by_identity_sha: dict[tuple[str, str, str, str, str, str], list[int]] = {}
+    parsed_available: dict[int, datetime] = {}
+    graph: dict[int, list[int]] = {}
+
+    def logical_identity(item: Mapping[str, Any]) -> tuple[str, str, str, str, str] | None:
+        values = (
+            item.get("feature_id"), item.get("instrument"), item.get("source_id"),
+            item.get("source_record_id"), item.get("source_revision"),
+        )
+        if all(isinstance(value, str) and value.strip() for value in values):
+            return tuple(values)  # type: ignore[return-value]
+        return None
+
+    def exact_identity(item: Mapping[str, Any]) -> tuple[str, str, str, str, str, str] | None:
+        logical = logical_identity(item)
+        digest = item.get("source_sha256")
+        if logical is not None and _sha256_ok(digest):
+            return (*logical, digest.lower())
+        return None
+
+    for index, fact in enumerate(facts):
+        if not isinstance(fact, Mapping):
+            blockers.append(f"row_{index}:fact_must_be_mapping")
+            row_reports.append({"row_index": index, "status": "BLOCKED", "blockers": ["fact_must_be_mapping"]})
+            continue
+
+        report = validate_feature_fact(fact, decision_time=decision)
+        row_reports.append({"row_index": index, **report})
+        for reason in report["blockers"]:
+            blockers.append(f"row_{index}:{reason}")
+
+        logical = logical_identity(fact)
+        exact = exact_identity(fact)
+        if logical is None:
+            blockers.append(f"row_{index}:lineage_identity_incomplete")
+        else:
+            by_identity.setdefault(logical, []).append(index)
+        if exact is not None:
+            by_identity_sha.setdefault(exact, []).append(index)
+
+        try:
+            parsed_available[index] = _aware_utc(fact.get("available_at"), f"row_{index}_available_at")
+        except ValueError:
+            pass
+        graph[index] = []
+
+    for identity, indices in by_identity.items():
+        if len(indices) > 1:
+            blockers.append("duplicate_logical_feature_identity:" + "|".join(identity))
+
+    for index, fact in enumerate(facts):
+        if not isinstance(fact, Mapping):
+            continue
+        if fact.get("semantic_type") != "derived_market_feature":
+            # Other fact types may carry dependency declarations, so still inspect
+            # explicit references when present, but do not require them.
+            if "parent_feature_refs" not in fact:
+                continue
+        parents = fact.get("parent_feature_refs")
+        if parents is None:
+            if fact.get("semantic_type") == "derived_market_feature":
+                blockers.append(f"row_{index}:derived_feature_parent_lineage_required")
+            continue
+        if isinstance(parents, (str, bytes)) or not isinstance(parents, Sequence):
+            blockers.append(f"row_{index}:parent_feature_refs_must_be_sequence")
+            continue
+        if fact.get("semantic_type") == "derived_market_feature" and len(parents) == 0:
+            blockers.append(f"row_{index}:derived_feature_parent_lineage_required")
+            continue
+
+        for parent_position, parent_ref in enumerate(parents):
+            prefix = f"row_{index}:parent_{parent_position}"
+            if not isinstance(parent_ref, Mapping):
+                blockers.append(f"{prefix}:reference_must_be_mapping")
+                continue
+            required_ref_fields = (
+                "feature_id", "instrument", "source_id", "source_record_id",
+                "source_revision", "source_sha256",
+            )
+            if any(not _nonempty_string(parent_ref.get(name)) for name in required_ref_fields):
+                blockers.append(f"{prefix}:reference_identity_incomplete")
+                continue
+            if not _sha256_ok(parent_ref.get("source_sha256")):
+                blockers.append(f"{prefix}:invalid_source_sha256")
+                continue
+
+            parent_key = (
+                parent_ref["feature_id"], parent_ref["instrument"], parent_ref["source_id"],
+                parent_ref["source_record_id"], parent_ref["source_revision"],
+            )
+            parent_digest_key = (*parent_key, parent_ref["source_sha256"].lower())
+            matches = by_identity_sha.get(parent_digest_key, [])
+            if len(matches) != 1:
+                logical_matches = by_identity.get(parent_key, [])
+                if logical_matches:
+                    blockers.append(f"{prefix}:parent_digest_or_revision_mismatch")
+                else:
+                    blockers.append(f"{prefix}:parent_fact_not_found_in_snapshot")
+                continue
+
+            parent_index = matches[0]
+            graph[index].append(parent_index)
+            if parent_index == index:
+                blockers.append(f"{prefix}:self_reference_cycle")
+                continue
+
+            parent_available = parsed_available.get(parent_index)
+            child_available = parsed_available.get(index)
+            if parent_available is not None and child_available is not None:
+                if parent_available > child_available:
+                    blockers.append(f"{prefix}:parent_available_after_derived_feature")
+                if parent_available > decision:
+                    blockers.append(f"{prefix}:parent_unavailable_at_decision")
+            parent_report = row_reports[parent_index]
+            if parent_report.get("eligible_at_decision_time") is not True:
+                blockers.append(f"{prefix}:parent_fact_not_eligible_at_decision")
+
+    # Three-colour DFS catches cycles over the exact in-snapshot dependency graph.
+    colors: dict[int, int] = {}
+    cycle_nodes: set[int] = set()
+
+    def visit(node: int, stack: list[int]) -> None:
+        color = colors.get(node, 0)
+        if color == 2:
+            return
+        if color == 1:
+            try:
+                cycle_start = stack.index(node)
+            except ValueError:
+                cycle_start = 0
+            cycle_nodes.update(stack[cycle_start:])
+            cycle_nodes.add(node)
+            return
+        colors[node] = 1
+        stack.append(node)
+        for parent_node in graph.get(node, []):
+            visit(parent_node, stack)
+        stack.pop()
+        colors[node] = 2
+
+    for node in graph:
+        if colors.get(node, 0) == 0:
+            visit(node, [])
+
+    for node in sorted(cycle_nodes):
+        blockers.append(f"row_{node}:feature_dependency_cycle")
+
+    blockers = list(dict.fromkeys(blockers))
+    return {
+        "contract_version": CONTRACT_VERSION,
+        "decision_time_utc": decision.isoformat(),
+        "fact_count": len(facts),
+        "lineage_edge_count": sum(len(items) for items in graph.values()),
+        "status": "PASS" if not blockers else "BLOCKED",
+        "lineage_valid_for_research_snapshot": not blockers,
+        "blockers": blockers,
+        "row_reports": row_reports,
+        "dependencies_repaired": False,
+        "undeclared_dependencies_inferred": False,
         "promotion_status": "DIAGNOSTIC_ONLY",
         "decision_output": DECISION_OUTPUT,
         "live_signal_enabled": LIVE_SIGNAL_ENABLED,
