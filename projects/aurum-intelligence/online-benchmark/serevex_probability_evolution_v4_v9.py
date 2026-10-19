@@ -280,8 +280,15 @@ def _choose_weight(
 ) -> dict[str, Any]:
     candidates = [r for r in history if r.get("_candidate") is not None and _label(r) in (0, 1)]
     candidates.sort(key=lambda r: int(r["decision_index"]))
-    split = int(len(candidates) * 2 / 3)
-    selection, gate = candidates[:split], candidates[split:]
+    # Partition on an absolute source-index block boundary, never by filtered-row
+    # rank: otherwise a single 12-bar scoring block could leak into both selection
+    # and confirmation sets when signals are sparse.
+    split_position = min(max(1, int(len(candidates) * 2 / 3)), max(1, len(candidates) - 1))
+    period = int(config["block_span"]) + int(config["embargo_bars"])
+    anchor = int(candidates[split_position]["decision_index"]) if len(candidates) > 1 else int(candidates[0]["decision_index"])
+    cutoff = (anchor // period) * period
+    selection = [row for row in candidates if int(row["decision_index"]) < cutoff]
+    gate = [row for row in candidates if int(row["decision_index"]) >= cutoff]
     base = {
         "weight": 0.0,
         "status": "BASELINE_ONLY_INSUFFICIENT_EVIDENCE",
@@ -315,7 +322,8 @@ def _choose_weight(
     weight = -ranked[0][2]
     gate_stats = _block_stats(
         gate, alpha_weight=weight,
-        block_span=int(config["block_span"]), embargo=int(config["embargo_bars"])
+        block_span=int(config["block_span"]), embargo=int(config["embargo_bars"]),
+        critical_z=float(config["critical_z"])
     )
     base["gate_blocks"] = gate_stats["blocks"]
     base["gate_diagnostics"] = gate_stats
@@ -392,11 +400,13 @@ def _drift_diagnostic(
     # Monitor the forecast actually emitted by this version; never inspect the current label.
     recent_stats = _block_stats(
         recent, alpha_weight=1.0, block_span=int(config["block_span"]),
-        embargo=int(config["embargo_bars"]), probability_key="_issued_probability"
+        embargo=int(config["embargo_bars"]), probability_key="_issued_probability",
+        critical_z=float(config["critical_z"])
     )
     older_stats = _block_stats(
         older, alpha_weight=1.0, block_span=int(config["block_span"]),
-        embargo=int(config["embargo_bars"]), probability_key="_issued_probability"
+        embargo=int(config["embargo_bars"]), probability_key="_issued_probability",
+        critical_z=float(config["critical_z"])
     )
     rb, ob = recent_stats["brier"], older_stats["brier"]
     enough = rb["blocks"] >= 4 and ob["blocks"] >= 4
