@@ -62,6 +62,24 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
         self.assertFalse(checked["source_authenticity_independently_verified"])
         self.assertEqual(ledger["metadata"]["source_verification"]["broker_feed_match_verified"], False)
 
+    def test_ledger_contains_trained_alpha_model_and_causal_features(self):
+        ledger = self.build()
+        metadata = ledger["metadata"]
+        alpha_report = metadata["alpha_model_training"]
+        self.assertIn("alpha_logistic_v1", metadata["registered_experts"])
+        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v1")
+        self.assertEqual(alpha_report["status"], "ALPHA_RESEARCH_TRAINED")
+        self.assertFalse(alpha_report["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"])
+        self.assertTrue(alpha_report["training_policy"]["final_holdout_predictions_are_frozen"])
+        self.assertGreater(alpha_report["final_holdout_metrics"]["rows"], 0)
+        for row in ledger["records"]:
+            self.assertIn("alpha_logistic_v1", row["expert_probabilities"])
+            self.assertEqual(len(row["feature_facts"]), len(producer.alpha_model.FEATURE_NAMES))
+            self.assertEqual(row["alpha_model_artifact_sha256"], alpha_report["model_artifact_sha256"])
+        checked = stage123.validate_forecast_ledger(ledger)
+        self.assertEqual(checked["contract_status"], "PASS")
+        self.assertFalse(checked["predictive_skill_proven"] if "predictive_skill_proven" in checked else False)
+
     def test_estimators_always_emit_finite_probabilities(self):
         ledger = self.build()
         for row in ledger["records"]:
