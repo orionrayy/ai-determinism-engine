@@ -289,13 +289,18 @@ def _choose_weight(
     cutoff = (anchor // period) * period
     selection = [row for row in candidates if int(row["decision_index"]) < cutoff]
     gate = [row for row in candidates if int(row["decision_index"]) >= cutoff]
+    selection_block_ids = sorted({int(block[0]["decision_index"]) // period for block in _temporal_blocks(selection, block_span=int(config["block_span"]), embargo=int(config["embargo_bars"]))})
+    gate_block_ids = sorted({int(block[0]["decision_index"]) // period for block in _temporal_blocks(gate, block_span=int(config["block_span"]), embargo=int(config["embargo_bars"]))})
     base = {
         "weight": 0.0,
         "status": "BASELINE_ONLY_INSUFFICIENT_EVIDENCE",
         "selection_rows": len(selection),
         "gate_rows": len(gate),
-        "selection_blocks": 0,
-        "gate_blocks": 0,
+        "selection_cutoff_index": cutoff,
+        "selection_blocks": len(selection_block_ids),
+        "gate_blocks": len(gate_block_ids),
+        "selection_source_block_ids": selection_block_ids,
+        "gate_source_block_ids": gate_block_ids,
         "candidate_count": len(BLEND_GRID) - 1,
     }
     if len(selection) < int(config["min_selection_rows"]):
@@ -304,6 +309,8 @@ def _choose_weight(
         selection, block_span=int(config["block_span"]), embargo=int(config["embargo_bars"])
     )
     base["selection_blocks"] = len(selection_block_counts)
+    if set(base["selection_source_block_ids"]) & set(base["gate_source_block_ids"]):
+        raise ProbabilityInputError("selection_and_gate_share_source_time_block")
     if len(selection_block_counts) < int(config["min_selection_blocks"]):
         return base
     ranked: list[tuple[float, float, float, dict[str, Any]]] = []
