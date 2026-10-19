@@ -39,10 +39,10 @@ These are software protocol versions, not claims of mathematically novel methods
 
 ## Existing repositories/components reused
 
-The implementation intentionally depends only on the Python standard library and uses Serevex's current forecast-ledger contract rather than replacing it. It is compatible with the existing producer output \`serevex.forecast-ledger.v1\`, selecting the \`alpha_logistic_v1\` expert by default.
+The implementation intentionally depends only on the Python standard library and uses Serevex's current forecast-ledger contract. The producer preserves `alpha_logistic_v1` as the legacy baseline-governed expert and also registers `alpha_calibrated_logistic_v1`, the frozen-calibrator candidate before baseline shrinkage, while retaining the final-holdout OOD fallback. The v4.0–v9.0 ledger adapter and CLI default to `alpha_calibrated_logistic_v1`, so this comparison tests the additional probability-governance ladder rather than reusing an already-governed probability as its own candidate.
 
 Relevant existing assets:
-- \`online-benchmark/serevex_alpha_model_v1.py\`: existing trained alpha v4 forecaster and baseline governor.
+- `online-benchmark/serevex_alpha_model_v1.py`: existing trained alpha v4 forecaster, calibrator, baseline governor and OOD fallback. The producer exposes the legacy governed output and a separately hashed calibrated pre-governor candidate for evaluating additional probability policies.
 - \`online-benchmark/serevex_forecast_ledger_producer_v1.py\`: point-in-time forecast-ledger producer for a fixed registered rule/side cohort.
 - \`online-benchmark/serevex_stage123_integrated_v1.py\`: ledger contract, predictability atlas, complementarity audit, delayed-feedback mixer.
 - \`temporal-calibration-v1.3/calibration_diagnostics.py\`: established calibration metric contracts and synthetic contract tests.
