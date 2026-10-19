@@ -9,6 +9,9 @@ on:
       - "projects/aurum-intelligence/online-benchmark/test_serevex_forecast_ledger_producer_v1.py"
       - "projects/aurum-intelligence/online-benchmark/serevex_stage123_integrated_v1.py"
       - "projects/aurum-intelligence/online-benchmark/test_serevex_stage123_integrated_v1.py"
+      - "projects/aurum-intelligence/online-benchmark/serevex_probability_evolution_v4_v9.py"
+      - "projects/aurum-intelligence/online-benchmark/test_serevex_probability_evolution_v4_v9.py"
+      - "projects/aurum-intelligence/SEREVEX_PROBABILITY_EVOLUTION_V4_V9.md"
       - ".github/workflows/serevex-probability-tests.yml"
   workflow_dispatch:
 
@@ -33,7 +36,7 @@ jobs:
       - name: Compile probabilistic method modules
         working-directory: projects/aurum-intelligence/online-benchmark
         run: |
-          python -m py_compile serevex_alpha_model_v1.py serevex_forecast_ledger_producer_v1.py serevex_stage123_integrated_v1.py
+          python -m py_compile serevex_alpha_model_v1.py serevex_forecast_ledger_producer_v1.py serevex_stage123_integrated_v1.py serevex_probability_evolution_v4_v9.py test_serevex_probability_evolution_v4_v9.py
       - name: Test probabilistic method and integrated stage contracts
         working-directory: projects/aurum-intelligence/online-benchmark
-        run: python -m unittest -v test_serevex_alpha_model_v1.py test_serevex_forecast_ledger_producer_v1.py test_serevex_stage123_integrated_v1.py
+        run: python -m unittest -v test_serevex_alpha_model_v1.py test_serevex_forecast_ledger_producer_v1.py test_serevex_stage123_integrated_v1.py test_serevex_probability_evolution_v4_v9.py
