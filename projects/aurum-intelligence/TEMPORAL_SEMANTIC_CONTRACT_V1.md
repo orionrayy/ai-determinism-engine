@@ -13,7 +13,8 @@ This contract is deliberately stricter than a generic JSON schema. It is a decis
 The module is temporal_semantic_contract_v1.py.
 
 - validate_feature_fact(...) validates one immutable feature observation against a decision timestamp.
-- validate_feature_batch(...) validates a complete declared feature snapshot, requires specified semantic slots, and blocks exact duplicate source-record/revision identities.
+- validate_feature_batch(...) validates a complete declared feature snapshot, requires specified semantic slots, blocks exact duplicate source-record/revision identities, and incorporates the lineage audit.
+- validate_feature_lineage(...) resolves every declared parent to an exact in-snapshot record identity, verifies parent/child temporal ordering, and rejects cycles.
 - validate_ohlc_candle(...) checks an individual OHLC bar's time, quote basis, price geometry and optional volume.
 - validate_candle_series(...) checks order, identity, duplicate bars, overlaps, within-session continuity, and explicit session boundaries.
 
@@ -26,7 +27,7 @@ Every returned report includes a diagnostic-only promotion state and preserves N
 | event_time | The market event, observation period, reporting period, or scheduled event to which the fact refers | Its interpretation is explicit through event_time_role; it is not a proxy for when the system knew the value |
 | published_at | Timestamp the upstream publisher made this version public | Must have an explicitly verified timezone and must not be after the decision time |
 | available_at | Earliest defensible time that this exact source record/revision was available for use | Must be no later than the decision time; this is the principal point-in-time gate |
-| observed_at | Time the ingestion/measurement system actually observed the record | Must not precede available_at under this contract's declared semantics |
+| observed_at | Time the ingestion/measurement system actually observed the record | Must not precede available_at and must not be after the decision time |
 | source_revision | Provider revision/version identity | Must be explicit; revision semantics must be verified |
 | source_sha256 | Digest of captured source content or immutable source artifact | Must be a 64-character SHA-256 hex digest |
 | transform_id, transform_version, transform_sha256 | Reproducible identity and digest of the transformation used to derive the feature | Must be explicit; output is not reproducible merely because the code has a name |
@@ -37,8 +38,9 @@ The validator rejects timezone-naive timestamps. Do not replace an unknown timez
 
 An explicit event_time_role prevents the system from assigning universal meaning to one timestamp:
 
-- bar_close and past_market_event: must not lie after the decision time.
-- observation_period and reporting_period: used for macro/positioning observation periods; they must still be distinguishable from release/availability time.
+- bar_close, past_market_event, observation_period and reporting_period: must not lie after the decision time.
+- observation_period and reporting_period describe historical/reference periods; they are not a way to label known-ahead calendar events.
+
 - scheduled_future_event: permits a known-ahead event timestamp only when the publisher/availability timestamps show the information was already available.
 - effective_from: records an effective-time concept and requires a domain-specific interpretation before it can be admitted to a strategy.
 - not_applicable: only for facts whose semantics truly have no event-time concept.
@@ -51,12 +53,17 @@ A feature fact can be eligible for a research feature snapshot only if:
 
 1. Required semantic fields are present and typed.
 2. The semantic type, event-time role, unit and quote basis are unambiguous.
-3. published_at <= available_at <= observed_at and the published/available timestamps are no later than the decision time.
+3. published_at <= available_at <= observed_at and all three timestamps are no later than the decision time.
 4. Every timestamp has explicit timezone semantics.
 5. The exact source content and transform hashes are syntactically valid.
 6. Provenance, rights, revision semantics and data quality are marked verified/passed.
 7. Optional staleness thresholds declared by the caller are satisfied.
 8. All required feature slots are present, and no exact source-record/revision identity is duplicated.
+9. Every derived feature has parent references that resolve to exact records in the same feature snapshot. Parent records must be available before the derived feature is available, and must already have been observed by the ingestion system.
+10. Dependency edges form an acyclic graph. A missing parent, changed source digest, duplicate logical identity, self-reference, or dependency cycle blocks the entire snapshot.
+11. Any fitted transform declares a causal fit scope (expanding/rolling past-only), a timezone-aware fit cutoff no later than decision time and feature availability, a fit-data SHA-256, and a stable fit-manifest reference. Global/full-history fit scopes are blocked; stateless transforms do not claim a fitted window.
+
+The `validate_feature_fact` function checks a single fact's local metadata. The `validate_feature_lineage` function must also pass before a derived feature set is considered complete; `validate_feature_batch` includes that graph check automatically. Parent references are exact and include feature ID, instrument, source ID, record ID, revision, and source SHA-256.
 
 The validation flags (VERIFIED, PASS, semantics booleans) are claims made by the calling pipeline. They are not self-authenticating. A separate evidence review must verify the underlying provider/source, timestamp behavior, data license, revision history, and hash manifest. Therefore the contract's strongest result is ELIGIBLE_FOR_RESEARCH_FEATURE_SET, never “live-ready.”
 
@@ -75,12 +82,14 @@ The candle contract enforces:
 - strictly increasing, unique bars without overlaps;
 - exact continuity inside one explicitly identified session;
 - gaps allowed only when a session boundary is explicit; session IDs may not recur after a boundary.
+- a full snapshot lineage graph has no cycles and no parent/child availability violations;
+- derived transformations identify whether they are stateless or fitted on expanding/rolling past-only data; global/full-history fit scope is blocked.
 
 These are structural invariants, not proof that the upstream OHLC is true or licensed for use. A bid candle, ask candle, midpoint candle and last-trade candle are not interchangeable; quote basis is retained rather than silently normalized.
 
 ## Test coverage in the same CI suite
 
-The new test module covers valid and unavailable-at-decision features, known-ahead scheduled events, future market-bar leakage, timezone-naive inputs, timestamp order, staleness, source/rights/hash blockers, typed values and quote basis, semantic-role conflicts, malformed enum types, required feature slots, duplicate source revisions, closed-candle checks, OHLC geometry, volume, session gaps, overlaps, and recurring session IDs.
+The new test module covers valid and unavailable-at-decision features, late ingestion, known-ahead scheduled events, future market-bar and future observation-period leakage, timezone-naive inputs, timestamp order, staleness, source/rights/hash blockers, typed values and quote basis, semantic-role conflicts, malformed enum types, required feature slots, duplicate source revisions, exact parent resolution, parent digest mismatch, parent availability/ingestion ordering, dependency cycles, fitted-transform cutoff and manifest rules, closed-candle checks, OHLC geometry, volume, session gaps, overlaps, and recurring session IDs.
 
 CI passing establishes that these specified contracts and regression tests execute successfully. It does not establish real-world provenance, profitable expected return, broker-specific net PnL, or the absence of every possible leakage path. The module is not yet wired into the Telegram decision path and must not be described as doing runtime gating until that integration is separately reviewed and tested.
 
@@ -105,6 +114,9 @@ CI passing establishes that these specified contracts and regression tests execu
 
 - No third-party auditor has independently authenticated all data-provider identities, licensing rights, timestamp semantics, or source snapshots.
 - A digest proves file identity only after the trusted digest and collection procedure are established; it does not prove the source itself is correct.
-- Feature causality also depends on the transformation graph. Every parent feature must have passed the same point-in-time contract; hidden joins, revised labels and global preprocessing can reintroduce leakage.
+- The graph validator only checks *declared* parent links. It cannot inspect arbitrary transformation code to discover an omitted dependency; independent review of transform code/manifests remains necessary.
+- Parent facts must be included in the validated snapshot for exact in-snapshot resolution. This may require an explicit, hashed dependency manifest for large rolling features rather than silently omitting inputs.
+- A fit cutoff and manifest reference are assertions, not proof that the training dataset truly stopped there. The fit manifest and data lineage must be independently audited.
+- Feature causality also depends on every data join, label revision, fitted scaler, imputation rule and hyperparameter search. Global preprocessing or a revised label can reintroduce leakage.
 - This module does not define a full event ontology for every possible domain. Unrecognized semantics should stay blocked until a versioned mapping and tests are reviewed.
 - This is not a learned model, context understanding benchmark, profitability test, or live order safety certificate.
