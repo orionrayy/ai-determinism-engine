@@ -73,6 +73,37 @@ class PointInTimeFeatureTests(unittest.TestCase):
         self.assertTrue(row["news_window_1h_fully_covered"])
         self.assertTrue(row["news_window_24h_fully_covered"])
 
+    def test_one_hour_news_feature_is_eligible_without_complete_24h_coverage(self):
+        intervals = [
+            (self.t - timedelta(minutes=15 * step), self.t - timedelta(minutes=15 * (step - 1)))
+            for step in range(4, 0, -1)
+        ]
+        row = features.build_asof_features(
+            [{"decision_id":"a","decision_time":self.t}], [],
+            source_statuses={"news":"PASS"}, news_coverage_intervals=intervals,
+        )[0]
+        self.assertEqual(row["feature_news_count_1h"], 0)
+        self.assertIsNone(row["feature_news_count_24h"])
+        self.assertEqual(row["coverage_news_1h"], "available_zero_events")
+        self.assertEqual(row["coverage_news_24h"], "incomplete_source_window")
+        self.assertEqual(row["coverage_news"], "incomplete_source_window")
+        self.assertTrue(row["news_window_1h_fully_covered"])
+        self.assertFalse(row["news_window_24h_fully_covered"])
+
+    def test_non_quarter_hour_decision_uses_latest_completed_batches(self):
+        decision = self.t + timedelta(minutes=7)
+        intervals = [
+            (self.t - timedelta(minutes=15 * step), self.t - timedelta(minutes=15 * (step - 1)))
+            for step in range(4, 0, -1)
+        ]
+        row = features.build_asof_features(
+            [{"decision_id":"a","decision_time":decision}], [],
+            source_statuses={"news":"PASS"}, news_coverage_intervals=intervals,
+        )[0]
+        self.assertEqual(row["feature_news_count_1h"], 0)
+        self.assertTrue(row["news_window_1h_fully_covered"])
+        self.assertFalse(row["news_window_24h_fully_covered"])
+
     def test_future_archive_coverage_cannot_make_past_window_eligible(self):
         row=features.build_asof_features(
             [{"decision_id":"a","decision_time":self.t}], [],

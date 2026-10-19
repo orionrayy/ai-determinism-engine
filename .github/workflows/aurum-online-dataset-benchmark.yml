@@ -348,6 +348,11 @@ jobs:
           if g['passed']:
               assert g['observations'] >= 100000, g
           assert g['synthetic_or_duplicated_observations_added'] == 0, g
+          gkg = r['source_details']['gdelt_gkg']
+          assert gkg['sampling_design'] == 'split_stratified_contiguous_blocks', gkg
+          assert 0 <= gkg['archive_count'] <= 480, gkg
+          assert len(gkg['block_centers_utc']) == 3, gkg
+          assert {'news_1h', 'news_24h'} <= set(r['temporal_feature_coverage']), r['temporal_feature_coverage']
           b = r['ablation_benchmark']
           assert b['protocol']['holdout_used_for_selection'] is False, b['protocol']
           assert b['protocol']['holdout_used_for_calibration'] is False, b['protocol']
@@ -382,6 +387,10 @@ jobs:
               'decision_gate': r['decision_gate'],
               'real_unique_gdelt_observations': g['observations'],
               'context_scale_gate': g['status'],
+              'news_1h_feature_coverage': r['temporal_feature_coverage']['news_1h'],
+              'news_24h_feature_coverage': r['temporal_feature_coverage']['news_24h'],
+              'gdelt_sampling_design': r['source_details']['gdelt_gkg']['sampling_design'],
+              'gdelt_archive_count': r['source_details']['gdelt_gkg']['archive_count'],
               'price_rows': d['paired_valid_bid_ask_candles'],
               'valid_atr_anchors': r['price_label_audit']['candidate_anchors'],
               'matured_unambiguous_labels': r['price_label_audit']['matured_binary_labels'],
@@ -398,6 +407,9 @@ jobs:
               f.write(f"- Decision gate: {r['decision_gate']}\n")
               f.write(f"- Real unique GDELT records: {g['observations']} / {g['target']} (scale: {g['status']})\n")
               f.write(f"- Price rows: {d['paired_valid_bid_ask_candles']}; mature unambiguous labels: {r['price_label_audit']['matured_binary_labels']}\n")
+              f.write(f"- GDELT sampling: {r['source_details']['gdelt_gkg']['sampling_design']}; selected archives: {r['source_details']['gdelt_gkg']['archive_count']}\n")
+              f.write(f"- Fully observed 1h news-feature rows: {r['temporal_feature_coverage']['news_1h']['eligible_rows']}/{r['temporal_feature_coverage']['news_1h']['total_rows']}\n")
+              f.write(f"- Fully observed 24h news-feature rows: {r['temporal_feature_coverage']['news_24h']['eligible_rows']}/{r['temporal_feature_coverage']['news_24h']['total_rows']}\n")
               f.write('\n| Ablation | Status | Calibration | Holdout Brier | Improvement vs causal baseline (95% CI) | Improvement vs price-only (95% CI) |\n|---|---|---|---:|---|---|\n')
               for name, a in b['ablations'].items():
                   metric = a.get('metrics', {})

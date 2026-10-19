@@ -11,6 +11,7 @@ from external_context_schema_v1 import ExternalObservation
 VALID_SOURCE_STATES = frozenset({
     "PASS", "PARTIAL", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY", "NOT_MET", "FAILED"
 })
+NEWS_BATCH_INTERVAL = timedelta(minutes=15)
 THEME_WHITELIST = (
     "ECON_GOLD", "ECON_MARKET", "ECON_MONEY", "ECON_INFLATION",
     "ECON_CENTRAL_BANK", "ECON_STOCKMARKET", "ECON_COMMODITY", "ECON_EXCHANGE_RATE",
@@ -90,6 +91,30 @@ def _window_fully_covered(
 ) -> bool:
     """A window is complete only when one merged observed interval spans it."""
     return any(left <= start and right >= end for left, right in intervals)
+
+
+def _archive_batch_window_fully_covered(
+    decision_time: datetime,
+    duration: timedelta,
+    intervals: Sequence[tuple[datetime, datetime]],
+) -> bool:
+    """Require each complete 15-minute GDELT batch available in a rolling feature window."""
+    decision = _utc_aware(decision_time, "decision_time")
+    batch_seconds = int(NEWS_BATCH_INTERVAL.total_seconds())
+    latest_complete_end = int(decision.timestamp() // batch_seconds) * batch_seconds
+    lower_epoch = (decision - duration).timestamp()
+    first_required_end = (int(lower_epoch // batch_seconds) + 1) * batch_seconds
+    if first_required_end > latest_complete_end:
+        return False
+    batch_end_epoch = first_required_end
+    checked = 0
+    while batch_end_epoch <= latest_complete_end:
+        batch_end = datetime.fromtimestamp(batch_end_epoch, tz=timezone.utc)
+        if not _window_fully_covered(batch_end - NEWS_BATCH_INTERVAL, batch_end, intervals):
+            return False
+        checked += 1
+        batch_end_epoch += batch_seconds
+    return checked > 0
 
 
 def _news_deduplicate(rows: Sequence[ExternalObservation]) -> tuple[list[ExternalObservation], int]:
@@ -200,11 +225,11 @@ def build_asof_features(
             coverage_cursor += 1
         if coverage_cursor > prior_coverage_cursor:
             merged_visible_news_coverage = _merge_coverage_intervals(visible_news_coverage)
-        news_window_1h_fully_covered = _window_fully_covered(
-            decision_time - timedelta(hours=1), decision_time, merged_visible_news_coverage
+        news_window_1h_fully_covered = _archive_batch_window_fully_covered(
+            decision_time, timedelta(hours=1), merged_visible_news_coverage
         )
-        news_window_24h_fully_covered = _window_fully_covered(
-            decision_time - timedelta(hours=24), decision_time, merged_visible_news_coverage
+        news_window_24h_fully_covered = _archive_batch_window_fully_covered(
+            decision_time, timedelta(hours=24), merged_visible_news_coverage
         )
 
         while future_index < len(timed):
@@ -313,15 +338,22 @@ def build_asof_features(
             "source_unavailable" if macro_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"} else "unknown"
         )
         if news_state in {"NOT_MET", "FAILED", "SKIPPED_CREDENTIAL_REQUIRED", "SKIPPED_POLICY"}:
-            news_coverage_status = "source_unavailable"
+            news_coverage_1h_status = "source_unavailable"
+            news_coverage_24h_status = "source_unavailable"
         elif news_state in {"PASS", "PARTIAL"}:
-            if news_window_24h_fully_covered:
-                news_coverage_status = "available" if news_24h else "available_zero_events"
-            else:
-                news_coverage_status = "incomplete_source_window"
+            news_coverage_1h_status = (
+                "available" if news_1h else "available_zero_events"
+            ) if news_window_1h_fully_covered else "incomplete_source_window"
+            news_coverage_24h_status = (
+                "available" if news_24h else "available_zero_events"
+            ) if news_window_24h_fully_covered else "incomplete_source_window"
         else:
-            news_coverage_status = "unknown"
-        out["coverage_news"] = news_coverage_status
+            news_coverage_1h_status = "unknown"
+            news_coverage_24h_status = "unknown"
+        out["coverage_news_1h"] = news_coverage_1h_status
+        out["coverage_news_24h"] = news_coverage_24h_status
+        # Compatibility field keeps its 24-hour interpretation.
+        out["coverage_news"] = news_coverage_24h_status
         out["feature_family_latest_available_at"] = {
             family: family_latest[family] for family in sorted(family_latest)
         }

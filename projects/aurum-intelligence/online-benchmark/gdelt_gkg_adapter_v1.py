@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+from bisect import bisect_left
 import hashlib
 import io
 import math
@@ -26,7 +27,7 @@ MAX_MASTER_BYTES = 160 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 48 * 1024 * 1024
 MAX_AGGREGATE_BYTES = 800 * 1024 * 1024
 MAX_RECORDS_PER_ARCHIVE = 500_000
-MAX_ARCHIVES_PER_RUN = 100
+MAX_ARCHIVES_PER_RUN = 480
 TIMEOUT_SECONDS = 20
 MAX_RETRIES = 2
 BATCH_INTERVAL = timedelta(minutes=15)
@@ -231,6 +232,9 @@ def select_historical_gkg_archives(
     end: datetime,
     *,
     max_archives: int,
+    sampling_design: str = "evenly_spaced",
+    split_boundaries: Sequence[datetime] | None = None,
+    block_centers: Sequence[datetime] | None = None,
 ) -> tuple[list[tuple[datetime, str]], int]:
     """Extract historical GKG URLs from the official size/hash/URL master-list rows.
 
@@ -243,8 +247,36 @@ def select_historical_gkg_archives(
         raise ValueError("invalid_time_window")
     if isinstance(max_archives, bool) or not isinstance(max_archives, int) or max_archives < 1:
         raise ValueError("invalid_max_archives")
+    if sampling_design not in {"evenly_spaced", "split_stratified_contiguous_blocks"}:
+        raise ValueError("invalid_sampling_design")
     start_utc = start.astimezone(timezone.utc)
     end_utc = end.astimezone(timezone.utc)
+    normalized_boundaries: tuple[datetime, datetime] | None = None
+    normalized_centers: tuple[datetime, datetime, datetime] | None = None
+    if sampling_design == "split_stratified_contiguous_blocks":
+        if split_boundaries is None or len(split_boundaries) != 2:
+            raise ValueError("split_sampling_requires_two_chronological_boundaries")
+        bounds = []
+        for index, value in enumerate(split_boundaries):
+            if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+                raise ValueError(f"split_boundary_must_be_timezone_aware_at_{index}")
+            bounds.append(value.astimezone(timezone.utc))
+        if not start_utc < bounds[0] < bounds[1] < end_utc:
+            raise ValueError("split_boundaries_must_be_inside_window_and_increasing")
+        normalized_boundaries = (bounds[0], bounds[1])
+        if block_centers is not None:
+            if len(block_centers) != 3:
+                raise ValueError("split_sampling_requires_three_block_centers")
+            centers = []
+            for index, value in enumerate(block_centers):
+                if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+                    raise ValueError(f"block_center_must_be_timezone_aware_at_{index}")
+                centers.append(value.astimezone(timezone.utc))
+            if not (start_utc <= centers[0] < bounds[0]
+                    and bounds[0] <= centers[1] < bounds[1]
+                    and bounds[1] <= centers[2] <= end_utc):
+                raise ValueError("block_centers_must_fall_inside_their_chronological_splits")
+            normalized_centers = (centers[0], centers[1], centers[2])
     candidates: list[tuple[datetime, str]] = []
     for line in master_listing.splitlines():
         bits = line.split()
@@ -267,12 +299,44 @@ def select_historical_gkg_archives(
     candidates.sort()
     discovered_count = len(candidates)
     if discovered_count > max_archives:
-        # Deterministic evenly spaced sample across the preregistered historical window.
-        indices = sorted({
-            round(i * (discovered_count - 1) / (max_archives - 1))
-            for i in range(max_archives)
-        }) if max_archives > 1 else [0]
-        candidates = [candidates[i] for i in indices]
+        if sampling_design == "evenly_spaced":
+            # Compatibility mode: evenly spaced timestamps do not imply continuous coverage.
+            indices = sorted({
+                round(i * (discovered_count - 1) / (max_archives - 1))
+                for i in range(max_archives)
+            }) if max_archives > 1 else [0]
+            candidates = [candidates[i] for i in indices]
+        else:
+            assert normalized_boundaries is not None
+            edges = (start_utc, normalized_boundaries[0], normalized_boundaries[1], end_utc)
+            centers = normalized_centers or tuple(
+                left + (right - left) / 2 for left, right in zip(edges[:-1], edges[1:])
+            )
+            base_budget, remainder = divmod(max_archives, 3)
+            budgets = [base_budget + int(i < remainder) for i in range(3)]
+            blocks: list[list[tuple[datetime, str]]] = []
+            for split_index, (left, right, center, budget) in enumerate(
+                zip(edges[:-1], edges[1:], centers, budgets)
+            ):
+                segment = [item for item in candidates
+                           if left <= item[0] < right or (split_index == 2 and item[0] == right)]
+                if budget <= 0 or not segment:
+                    blocks.append([])
+                elif len(segment) <= budget:
+                    blocks.append(segment)
+                else:
+                    times = [item[0] for item in segment]
+                    center_index = min(bisect_left(times, center), len(segment) - 1)
+                    block_start = max(0, min(center_index - budget // 2, len(segment) - budget))
+                    blocks.append(segment[block_start:block_start + budget])
+            # Interleave the segments so a strict aggregate-byte cap cannot spend
+            # all available bytes on the earliest chronological region.
+            selected: list[tuple[datetime, str]] = []
+            for rank in range(max((len(block) for block in blocks), default=0)):
+                for block in blocks:
+                    if rank < len(block):
+                        selected.append(block[rank])
+            candidates = selected
     return candidates, discovered_count
 
 
@@ -356,6 +420,9 @@ def summarize_archive_coverage(
 def acquire_historical_gkg(
     start: datetime, end: datetime, *, target_records: int = 100_000,
     max_archives: int = MAX_ARCHIVES_PER_RUN, aggregate_cap: int = MAX_AGGREGATE_BYTES,
+    sampling_design: str = "evenly_spaced",
+    split_boundaries: Sequence[datetime] | None = None,
+    block_centers: Sequence[datetime] | None = None,
 ) -> AcquisitionResult:
     """Acquire metadata archives in a bounded time window; honest NOT_MET if under target."""
     if start.tzinfo is None or end.tzinfo is None or start >= end:
@@ -367,7 +434,8 @@ def acquire_historical_gkg(
     try:
         listing = _bounded_get(MASTER_URL, MAX_MASTER_BYTES).decode("utf-8", errors="replace")
         candidates, discovered_archive_count = select_historical_gkg_archives(
-            listing, start, end, max_archives=max_archives
+            listing, start, end, max_archives=max_archives, sampling_design=sampling_design,
+            split_boundaries=split_boundaries, block_centers=block_centers,
         )
         observations = []
         manifests = []
@@ -446,7 +514,7 @@ def acquire_historical_gkg(
                       f"sampled_window_coverage={sampled_window_coverage:.6f}",
                       f"sample_completed={str(sample_completed).lower()}",
                       f"archive_window_complete={str(archive_window_complete).lower()}",
-                      "sampling_design=deterministic_evenly_spaced_archive_sample",
+                      f"sampling_design={sampling_design}",
                       "no_article_body_retained", *acquisition_warnings))
     except (ValueError, RuntimeError, UnicodeError) as exc:
         return AcquisitionResult("FAILED", error_code=str(exc))

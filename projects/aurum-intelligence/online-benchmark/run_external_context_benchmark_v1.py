@@ -10,7 +10,7 @@ import sys
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from external_context_schema_v1 import AcquisitionResult, SourceManifest, validate_observations
 from cftc_cot_adapter_v1 import acquire_cot_year
@@ -51,7 +51,25 @@ def scale_gate(real_observations: int, target: int = CONTEXT_TARGET) -> dict[str
     }
 
 
-def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int, tuple[tuple[datetime, datetime], ...]]:
+def _acquire_sources(
+    decision_rows: Sequence[Mapping[str, Any]],
+) -> tuple[list[Any], dict[str, Any], dict[str, str], int, tuple[tuple[datetime, datetime], ...]]:
+    decision_times = sorted(row["decision_time"] for row in decision_rows)
+    if len(decision_times) < 100:
+        raise ValueError("insufficient_decision_rows_for_context_sampling")
+    dev_stop = int(len(decision_times) * 0.70)
+    cal_stop = int(len(decision_times) * 0.80)
+    split_boundaries = (decision_times[dev_stop], decision_times[cal_stop])
+    block_centers = (
+        decision_times[int(len(decision_times) * 0.35)],
+        decision_times[int(len(decision_times) * 0.75)],
+        decision_times[int(len(decision_times) * 0.90)],
+    )
+    if not (PREREGISTERED_GDELT_START < split_boundaries[0]
+            < split_boundaries[1] < PREREGISTERED_GDELT_END):
+        raise ValueError("price_context_split_boundaries_outside_preregistered_gdelt_window")
+    if decision_times[0] < PREREGISTERED_GDELT_START or decision_times[-1] > PREREGISTERED_GDELT_END:
+        raise ValueError("price_decision_times_outside_preregistered_gdelt_window")
     observations: list[Any] = []
     details: dict[str, Any] = {}
     states: dict[str, str] = {}
@@ -76,7 +94,9 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int, 
 
     gdelt_result = acquire_historical_gkg(
         PREREGISTERED_GDELT_START, PREREGISTERED_GDELT_END,
-        target_records=CONTEXT_TARGET, max_archives=100, aggregate_cap=800 * 1024 * 1024,
+        target_records=CONTEXT_TARGET, max_archives=480, aggregate_cap=800 * 1024 * 1024,
+        sampling_design="split_stratified_contiguous_blocks",
+        split_boundaries=split_boundaries, block_centers=block_centers,
     )
     gdelt_obs = list(gdelt_result.observations)
     observations.extend(gdelt_obs)
@@ -89,6 +109,10 @@ def _acquire_sources() -> tuple[list[Any], dict[str, Any], dict[str, str], int, 
         "archive_count": len(gdelt_result.manifests),
         "rights_status": "review-required", "provenance_status": "official-host; rights/upstream lineage not independently verified",
         "article_body_persisted": False,
+        "sampling_design": "split_stratified_contiguous_blocks",
+        "max_archives_requested": 480,
+        "split_boundaries_utc": [value.isoformat() for value in split_boundaries],
+        "block_centers_utc": [value.isoformat() for value in block_centers],
     }
     gdelt_real_count = len(gdelt_obs)
     gdelt_coverage = archive_coverage_intervals(gdelt_result.manifests)
@@ -208,8 +232,6 @@ def _make_price_anchor_rows(
 
 
 def run(output_path: Path) -> dict[str, Any]:
-    observations, source_details, source_states, gdelt_count, gdelt_coverage = _acquire_sources()
-    audit = validate_observations(observations)
     dataset, _months_report, total_bytes, price_meta = price_benchmark.load_dataset()
     market_quality = price_benchmark.market_quality(dataset)
     indicators = price_benchmark.indicators(dataset)
@@ -217,6 +239,9 @@ def run(output_path: Path) -> dict[str, Any]:
         dataset, PRICE_CANDIDATE_ANCHORS, indicators["atr14"]
     )
     decision_rows, label_audit = _make_price_anchor_rows(dataset, indicators, anchors)
+    # Sampling centers use the fixed chronological price-row cohort, not context values.
+    observations, source_details, source_states, gdelt_count, gdelt_coverage = _acquire_sources(decision_rows)
+    audit = validate_observations(observations)
     source_details["price_dataset"] = {
         "repository": price_benchmark.REPOSITORY,
         "dataset_id": price_benchmark.DATASET_ID,
@@ -248,7 +273,7 @@ def run(output_path: Path) -> dict[str, Any]:
     scale = scale_gate(gdelt_count)
     feature_coverage = benchmark.get("coverage", {})
     temporal_feature_coverage = {}
-    for family in ("cot", "macro", "news"):
+    for family in ("cot", "macro", "news", "news_1h", "news_24h"):
         family_coverage = feature_coverage.get(family, {})
         fraction = float(family_coverage.get("coverage_fraction", 0.0))
         temporal_feature_coverage[family] = {
@@ -316,6 +341,10 @@ def main() -> int:
             "source_completeness_status": result["source_completeness_status"],
             "gdelt_time_coverage": result["source_details"]["gdelt_gkg"]["archive_time_coverage"],
             "news_feature_coverage": result["temporal_feature_coverage"]["news"],
+            "news_1h_feature_coverage": result["temporal_feature_coverage"]["news_1h"],
+            "news_24h_feature_coverage": result["temporal_feature_coverage"]["news_24h"],
+            "gdelt_sampling_design": result["source_details"]["gdelt_gkg"]["sampling_design"],
+            "gdelt_archive_count": result["source_details"]["gdelt_gkg"]["archive_count"],
             "price_rows": result["source_details"]["price_dataset"]["rows"],
             "scored_real_labels": result["price_label_audit"]["matured_binary_labels"],
             "ablations": {k: v.get("status") for k, v in result["ablation_benchmark"]["ablations"].items()},

@@ -230,9 +230,13 @@ def paired_moving_block_brier_ci(
 
 def _numeric(row: Mapping[str, Any], key: str, family: str | None = None) -> float | None:
     if family:
-        coverage = str(row.get(f"coverage_{family}", "unknown"))
-        allowed = {"cot": {"available"}, "macro": {"available"},
-                   "news": {"available", "available_zero_events"}}[family]
+        if family == "news":
+            field = "coverage_news_1h" if key == "feature_news_count_1h" else "coverage_news_24h"
+            coverage = str(row.get(field, row.get("coverage_news", "unknown")))
+            allowed = {"available", "available_zero_events"}
+        else:
+            coverage = str(row.get(f"coverage_{family}", "unknown"))
+            allowed = {"cot": {"available"}, "macro": {"available"}}[family]
         if coverage not in allowed:
             return None
         availability_map = row.get("context_available_at_by_family")
@@ -360,12 +364,20 @@ def _metric_bundle(probabilities: Sequence[float], labels: Sequence[int], baseli
 
 def _coverage_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     summary = {}
-    for family in ("cot", "macro", "news"):
-        allowed = {"cot": {"available"}, "macro": {"available"},
-                   "news": {"available", "available_zero_events"}}[family]
+    for family in ("cot", "macro"):
+        allowed = {"cot": {"available"}, "macro": {"available"}}[family]
         count = sum(str(row.get(f"coverage_{family}", "unknown")) in allowed for row in rows)
         summary[family] = {"eligible_rows": count, "total_rows": len(rows),
                            "coverage_fraction": count / len(rows) if rows else 0.0}
+    for key, field in (
+        ("news", "coverage_news"),
+        ("news_1h", "coverage_news_1h"),
+        ("news_24h", "coverage_news_24h"),
+    ):
+        allowed = {"available", "available_zero_events"}
+        count = sum(str(row.get(field, row.get("coverage_news", "unknown"))) in allowed for row in rows)
+        summary[key] = {"eligible_rows": count, "total_rows": len(rows),
+                        "coverage_fraction": count / len(rows) if rows else 0.0}
     return summary
 
 
@@ -510,9 +522,6 @@ def run_context_ablation_benchmark(
     for ablation_name, context_families in ABLATIONS.items():
         requested_context_families = list(context_families)
         requested = list(candidate_price_keys)
-        for family in requested_context_families:
-            requested.extend(CONTEXT_FEATURES[family])
-        feature_keys, scaler = _fit_scaler(dev_rows, requested)
         context_support = {
             family: {
                 "development": _family_support(dev_rows, family),
@@ -524,6 +533,17 @@ def run_context_ablation_benchmark(
         requested_context_features = [
             key for family in requested_context_families for key in CONTEXT_FEATURES[family]
         ]
+        context_features_meeting_split_support = [
+            key for key in requested_context_features
+            if all(
+                context_support[_family_of_key(key)][split]["eligible_values_by_feature"].get(key, 0)
+                >= MIN_CONTEXT_FAMILY_SUPPORT_ROWS
+                for split in ("development", "calibration", "holdout")
+            )
+        ]
+        # Admit a context feature only when that exact key meets the support floor in all splits.
+        requested.extend(context_features_meeting_split_support)
+        feature_keys, scaler = _fit_scaler(dev_rows, requested)
         effective_context_feature_keys = [
             key for key in feature_keys if _family_of_key(key) in requested_context_families
         ]
@@ -533,8 +553,8 @@ def run_context_ablation_benchmark(
             declared_source_status = family_source_statuses.get(family)
             if declared_source_status is not None and str(declared_source_status).upper() not in VALID_CONTEXT_SOURCE_STATES:
                 reasons.append("source_status_not_qualified_for_feature_use")
-            if not any(_family_of_key(key) == family for key in feature_keys):
-                reasons.append("no_eligible_feature_fitted_on_development")
+            if not any(_family_of_key(key) == family for key in context_features_meeting_split_support):
+                reasons.append("no_context_feature_meets_minimum_support_across_splits")
             for split in ("development", "calibration", "holdout"):
                 if context_support[family][split]["eligible_rows"] < MIN_CONTEXT_FAMILY_SUPPORT_ROWS:
                     reasons.append(f"insufficient_{split}_support")

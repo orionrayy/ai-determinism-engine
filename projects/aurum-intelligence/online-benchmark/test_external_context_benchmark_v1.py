@@ -95,6 +95,35 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
             block_size=4,replicates=40,seed=7),bench.paired_moving_block_brier_ci(p,y,[0.3]*len(p),y,
             block_size=4,replicates=40,seed=7))
 
+    def test_news_one_hour_gate_is_independent_from_24h_coverage(self):
+        row = {
+            "decision_time": datetime(2024, 1, 1, 12, tzinfo=timezone.utc),
+            "coverage_news": "incomplete_source_window",
+            "coverage_news_1h": "available_zero_events",
+            "coverage_news_24h": "incomplete_source_window",
+            "feature_news_count_1h": 0,
+            "feature_news_count_24h": None,
+        }
+        self.assertEqual(bench._numeric(row, "feature_news_count_1h", "news"), 0.0)
+        self.assertIsNone(bench._numeric(row, "feature_news_count_24h", "news"))
+
+    def test_news_feature_below_split_floor_is_omitted_from_the_model(self):
+        rows = make_rows()
+        for row in rows[10:]:
+            row["feature_news_count_24h"] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"), bootstrap_replicates=40,
+        )
+        news = report["ablations"]["price_news"]
+        self.assertEqual(news["status"], "SCORED")
+        self.assertNotIn("feature_news_count_24h", news["effective_context_feature_keys"])
+        self.assertIn("feature_news_count_24h", news["omitted_context_feature_keys"])
+        self.assertEqual(
+            news["context_family_support_by_split"]["news"]["development"]["eligible_values_by_feature"]["feature_news_count_24h"],
+            10,
+        )
+
     def test_low_count_calibration_is_flagged(self):
         report=bench.run_context_ablation_benchmark(make_rows(500),context_observation_count=50,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
