@@ -65,6 +65,8 @@ def _log_loss(p: float, y: int) -> float:
 def _normalize_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     if not rows:
         raise ProbabilityInputError("forecast_ledger_empty")
+    if any(not isinstance(row, Mapping) for row in rows):
+        raise ProbabilityInputError("forecast_row_not_mapping")
     normalized: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     seen_indices: set[int] = set()
@@ -206,6 +208,7 @@ def _block_stats(
     block_span: int,
     embargo: int,
     probability_key: str = "_candidate",
+    critical_z: float = DEFAULT_CRITICAL_Z,
 ) -> dict[str, Any]:
     block_brier: list[float] = []
     block_log: list[float] = []
@@ -236,7 +239,7 @@ def _block_stats(
         else:
             variance = sum((x - mean) ** 2 for x in values) / (n - 1)
             se = math.sqrt(max(0.0, variance) / n)
-            lower = mean - DEFAULT_CRITICAL_Z * se
+            lower = mean - float(critical_z) * se
         return {
             "blocks": n,
             "mean_gain": mean,
@@ -363,6 +366,7 @@ def _regime_weight(
         "global_weight": global_weight,
         "local_weight": float(local_result["weight"]),
         "local_status": local_result["status"],
+        "local_diagnostics": local_result,
         "shrinkage": shrinkage,
     }
 
@@ -502,16 +506,26 @@ def _forecast_rows(
                 weight = float(local_choice["weight"])
                 status = str(local_choice["status"])
             if version in ("7.0", "8.0", "9.0"):
-                issued_key = "_issued_probability"
-                gate_history = [h for h in history if h.get(issued_key) is not None]
-                strict_stats = _block_stats(
-                    gate_history, alpha_weight=1.0, block_span=int(config["block_span"]),
-                    embargo=int(config["embargo_bars"]), probability_key=issued_key
-                )
-                diagnostics["uncertainty_gate"] = strict_stats
-                if not _dual_score_pass(
-                    strict_stats, int(config["v7_min_gate_blocks"]),
-                    float(config["positive_block_share"])
+                # The weight-selection routine reserves a later chronological gate that
+                # is disjoint from the selection segment. Tighten its independent-block
+                # floor in v7+; do not gate on previous governed forecasts, which would
+                # create a baseline-only deadlock before the first alpha forecast.
+                uncertainty_evidence = global_choice.get("gate_diagnostics")
+                if "regime_weight_selection" in diagnostics:
+                    local = diagnostics["regime_weight_selection"]
+                    if isinstance(local.get("local_diagnostics"), dict):
+                        uncertainty_evidence = local["local_diagnostics"].get("gate_diagnostics", uncertainty_evidence)
+                diagnostics["uncertainty_gate"] = {
+                    "method": "held_out_chronological_block_lower_screen",
+                    "minimum_independent_blocks": int(config["v7_min_gate_blocks"]),
+                    "evidence": uncertainty_evidence,
+                }
+                if weight > 0.0 and (
+                    not isinstance(uncertainty_evidence, dict)
+                    or not _dual_score_pass(
+                        uncertainty_evidence, int(config["v7_min_gate_blocks"]),
+                        float(config["positive_block_share"])
+                    )
                 ):
                     weight = 0.0
                     status = "BASELINE_FALLBACK_UNCERTAINTY_GATE_FAILED"
