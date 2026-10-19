@@ -4,7 +4,7 @@
 **Branch:** \`research/serevex-forecastability-discovery-v1\`  
 **Implementation:** \`online-benchmark/serevex_probability_evolution_v4_v9.py\`  
 **Tests:** \`online-benchmark/test_serevex_probability_evolution_v4_v9.py\`  
-**State:** isolated research / offline governance comparison; not yet a production or Telegram/broker integration.
+**State:** isolated research / offline governance comparison, now invoked by the hosted real-OHLCV benchmark workflow; not a production or Telegram/broker integration.
 
 ## Objective and evidence boundary
 
@@ -29,7 +29,7 @@ These are software protocol versions, not claims of mathematically novel methods
 
 ## Chronology and scoring rules
 
-- Forecasts are processed in ascending source decision index.
+- Forecasts are processed in ascending source decision index and only for rows with `decision_index < as_of_index`. The exclusive cutoff constrains emitted forecasts as well as scored outcomes; rows at or beyond it are excluded from the forecast manifest, fallback statistics, and evaluation metrics.
 - An outcome is available for policy updates only when \`label_mature == true\`, the label is binary, and \`label_available_index < current_decision_index\`. Labels cannot mature at or before their own decision index.
 - Source-index blocks score 12 bars followed by a 12-bar embargo by default. Block eligibility is anchored to absolute decision indices, not filtered row rank.
 - The selection segment and confirmation segment are split at an absolute source-index block-period boundary (default period 24 bars), never by filtered-event rank. Their scored source-block IDs are exposed in the policy trace and checked for disjointness. v7–v9 require at least eight eligible blocks in the confirmation segment.
@@ -75,6 +75,8 @@ Use the ledger's true exclusive source decision-bar cutoff for \`--as-of-index\`
 6. Review runtime, memory, history truncation, missing outcomes, sparse regimes, drift false alarms, and selection/multiplicity effects. If any requirement fails, do not promote.
 7. Keep \`model_validated=false\`, \`deployment_calibrated=false\`, \`live_signal_enabled=false\`, \`live_order_execution_enabled=false\`, and \`decision_output=NO_TRADE\`.
 
-## Current limitation
+## Integration status and current limitation
 
-The module creates an offline comparison and supports adapting canonical ledger JSON. It does not yet replace or automatically govern the alpha predictions emitted by the existing producer; that wiring must follow successful isolated tests and real-ledger reconciliation. A full benchmark CI success will verify execution contracts and artifacts, not prove that v9.0 is more predictive or profitable.
+The hosted `aurum-online-dataset-benchmark.yml` workflow now creates a canonical `serevex.forecast-ledger.v1` from the real OHLCV diagnostic cohort, adapts it through `evaluate_forecast_ledger_versions`, evaluates all eight registered versions at the same exclusive as-of boundary, asserts a common scored-row count and research-only authority flags, and writes both `probability_evolution_v4_v9_report.json` and a compact summary into the benchmark artifact directory.
+
+This is an **offline evaluation connection**, not a production prediction-path change: it does not replace the alpha predictions emitted by the producer or connect to Telegram, brokers, or live execution. Hosted CI passing verifies code execution and contracts, not source authenticity, legal data rights, point-in-time publisher availability, predictive superiority, or profitability. Exact ordered source-ledger decision-ID reconciliation remains an additional check before treating the adapter/producer join as fully audited.
