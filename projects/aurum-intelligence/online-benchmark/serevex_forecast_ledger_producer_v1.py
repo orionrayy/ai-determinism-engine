@@ -18,8 +18,9 @@ from typing import Any, Mapping, Sequence
 import ci_benchmark
 import evaluation_protocol_v1_4 as eval_protocol
 import serevex_stage123_integrated_v1 as stage123
+import serevex_alpha_model_v1 as alpha_model
 
-PRODUCER_VERSION = "serevex-forecast-ledger-producer-v1"
+PRODUCER_VERSION = "serevex-forecast-ledger-producer-v2-alpha"
 WARMUP_BARS = 60
 ATR_PERIOD = 14
 TAKE_PROFIT_ATR = 1.5
@@ -32,6 +33,9 @@ SESSION_ID = "session_unverified"
 SPREAD_BUCKET = "unknown_no_bidask_quotes"
 EVENT_RISK_BUCKET = "unknown_no_event_calendar"
 EXPERT_SPECS: dict[str, dict[str, Any]] = {
+    "alpha_logistic_v1": {"kind": "trained_logistic_alpha", "model_version": alpha_model.MODEL_VERSION,
+        "features": list(alpha_model.FEATURE_NAMES), "fit": "development_then_model_selection_refit",
+        "calibration": "calibration_partition_only", "final_holdout": "frozen_model_and_calibrator"},
     "constant_50pct": {"kind": "fixed_probability", "probability": 0.5},
     "rolling_matured_rate_288": {"kind": "laplace_rate", "cohort": "same_rule_side", "window_matured_labels": ROLLING_MATURED_EVENTS},
     "regime_matured_rate": {"kind": "laplace_rate", "cohort": "same_rule_side_and_regime", "min_support": MIN_CONDITIONAL_SUPPORT, "fallback": "expanding_baseline"},
@@ -164,6 +168,50 @@ def _state_by_index(
     return states
 
 
+def _alpha_features_by_index(
+    rows: Sequence[Mapping[str, Any]],
+    atr_pct: Sequence[float | None],
+    states: Sequence[Mapping[str, Any]],
+) -> list[dict[str, float]]:
+    """Causal OHLCV features; all windows end at the current decision bar."""
+    result: list[dict[str, float]] = []
+    for index, row in enumerate(rows):
+        close = float(row["close"])
+        open_price = float(row["open"])
+        high, low = float(row["high"]), float(row["low"])
+        bar_range = max(high - low, 1e-12)
+        current_atr_pct = atr_pct[index]
+        atr_scale = max(float(current_atr_pct or 0.0), 1e-8)
+        previous_close = float(rows[index - 1]["close"]) if index else close
+        prior5_close = float(rows[index - 5]["close"]) if index >= 5 else close
+        momentum_1 = math.log(close / previous_close) / atr_scale if index and previous_close > 0 else 0.0
+        momentum_5 = (
+            math.log(close / prior5_close) / (atr_scale * math.sqrt(5.0))
+            if index >= 5 and prior5_close > 0 else 0.0
+        )
+        body_ratio = (close - open_price) / bar_range
+        close_location = 2.0 * (close - low) / bar_range - 1.0
+        range_to_atr = ((high - low) / close) / atr_scale if close > 0 else 0.0
+        prior_volumes = [
+            float(rows[j]["volume"])
+            for j in range(max(0, index - 20), index)
+            if math.isfinite(float(rows[j]["volume"]))
+        ]
+        prior_volume_median = statistics.median(prior_volumes) if prior_volumes else float(row["volume"])
+        volume_log_ratio = math.log((float(row["volume"]) + 1.0) / (prior_volume_median + 1.0))
+        result.append({
+            "atr_pct": float(current_atr_pct or 0.0),
+            "trend_efficiency": float(states[index]["trend_efficiency"]),
+            "momentum_1_atr": max(-8.0, min(8.0, momentum_1)),
+            "momentum_5_atr": max(-8.0, min(8.0, momentum_5)),
+            "candle_body_to_range": max(-1.0, min(1.0, body_ratio)),
+            "close_location_in_range": max(-1.0, min(1.0, close_location)),
+            "bar_range_to_atr": max(0.0, min(8.0, range_to_atr)),
+            "volume_log_ratio": max(-5.0, min(5.0, volume_log_ratio)),
+        })
+    return result
+
+
 def build_forecast_ledger(
     rows: Sequence[Mapping[str, Any]],
     *,
@@ -259,13 +307,31 @@ def build_forecast_ledger(
         "source_timezone_policy": timezone_policy,
         "bar_close_semantics_verified": False,
     })
-    feature_transforms = {
-        "atr_pct": _canonical_sha({"formula": "simple_mean_true_range_n_over_current_close", "period": atr_period, "version": 1}),
-        "trend_efficiency": _canonical_sha({"formula": "close_change_10_over_sum_abs_close_changes_10", "threshold": 0.65, "version": 1}),
+    feature_formulas = {
+        "atr_pct": {"formula": "simple_mean_true_range_n_over_current_close", "period": atr_period, "version": 1},
+        "trend_efficiency": {"formula": "close_change_10_over_sum_abs_close_changes_10", "threshold": 0.65, "version": 1},
+        "momentum_1_atr": {"formula": "log_close_return_1_divided_by_causal_atr_fraction_clipped_8", "version": 1},
+        "momentum_5_atr": {"formula": "log_close_return_5_divided_by_causal_atr_fraction_sqrt5_clipped_8", "version": 1},
+        "candle_body_to_range": {"formula": "close_minus_open_divided_by_current_high_low_range_clipped_1", "version": 1},
+        "close_location_in_range": {"formula": "twice_close_position_in_current_high_low_range_minus_1", "version": 1},
+        "bar_range_to_atr": {"formula": "current_high_low_range_fraction_divided_by_causal_atr_fraction_clipped_8", "version": 1},
+        "volume_log_ratio": {"formula": "log_current_volume_plus1_over_prior20_volume_median_plus1_clipped_5", "version": 1},
+    }
+    feature_transforms = {name: _canonical_sha(spec) for name, spec in feature_formulas.items()}
+    feature_semantics = {
+        "atr_pct": "normalized_average_true_range_fraction",
+        "trend_efficiency": "bounded_directional_efficiency",
+        "momentum_1_atr": "one_bar_log_return_scaled_by_atr_fraction",
+        "momentum_5_atr": "five_bar_log_return_scaled_by_atr_and_sqrt_horizon",
+        "candle_body_to_range": "bounded_current_candle_body_fraction",
+        "close_location_in_range": "bounded_current_close_location_in_range",
+        "bar_range_to_atr": "current_bar_range_scaled_by_atr_fraction",
+        "volume_log_ratio": "log_current_volume_to_prior_median_volume_ratio",
     }
 
     atr_pct = _atr_pct_by_index(normalized_rows, atr_period)
     states = _state_by_index(normalized_rows, atr_pct)
+    alpha_features_by_index = _alpha_features_by_index(normalized_rows, atr_pct, states)
     eligible_count = len(normalized_rows) - horizon_bars - warmup_bars
     development_end = warmup_bars + int(eligible_count * 0.50)
     model_selection_end = warmup_bars + int(eligible_count * 0.70)
@@ -320,12 +386,12 @@ def build_forecast_ledger(
             "trend_efficiency": state["trend_efficiency"],
             "resolution": label["resolution"],
             "gross_r": label.get("gross_r"),
+            "alpha_features": alpha_features_by_index[index],
         })
     if not raw_events:
         raise ValueError("no_events_for_registered_rule_side_cohort")
 
     rows_so_far: list[dict[str, Any]] = []
-    forecast_records: list[dict[str, Any]] = []
     for event in raw_events:
         di = int(event["decision_index"])
         matured_prior = [
@@ -345,7 +411,8 @@ def build_forecast_ledger(
             int(previous["label"]) for previous in matured_prior
             if previous["state_tags"]["volatility_bucket"] == event["state_tags"]["volatility_bucket"]
         ]
-        probabilities = {
+        event["baseline_probability"] = baseline
+        event["pre_alpha_expert_probabilities"] = {
             "constant_50pct": 0.5,
             "rolling_matured_rate_288": _probability(rolling_labels),
             "regime_matured_rate": (
@@ -357,13 +424,44 @@ def build_forecast_ledger(
                 if len(volatility_labels) >= MIN_CONDITIONAL_SUPPORT else baseline
             ),
         }
-        index = di
+        event["matured_label_count_before_decision"] = len(matured_prior)
+        event["conditional_regime_support_before_decision"] = len(regime_labels)
+        event["conditional_volatility_support_before_decision"] = len(volatility_labels)
+        rows_so_far.append(event)
+
+    partition_start_indices = {
+        "development": warmup_bars,
+        "model_selection": development_end,
+        "calibration": model_selection_end,
+        "final_holdout": calibration_end,
+    }
+    alpha_training = alpha_model.train_alpha_model(
+        raw_events,
+        partition_start_indices=partition_start_indices,
+        as_of_index=len(normalized_rows),
+    )
+    expert_hashes["alpha_logistic_v1"] = alpha_training["model_artifact_sha256"]
+    alpha_probabilities = alpha_training["predictions_by_decision_index"]
+    alpha_forecast_stages = alpha_training["forecast_stage_by_decision_index"]
+    alpha_summary = {
+        key: value for key, value in alpha_training.items()
+        if key not in ("predictions_by_decision_index", "forecast_stage_by_decision_index")
+    }
+
+    forecast_records: list[dict[str, Any]] = []
+    for event in raw_events:
+        index = int(event["decision_index"])
         decision_time = event["decision_time"]
-        fact_rows = []
-        feature_values = (
-            ("atr_pct", event["atr_pct"], feature_transforms["atr_pct"], "normalized_average_true_range_fraction"),
-            ("trend_efficiency", event["trend_efficiency"], feature_transforms["trend_efficiency"], "bounded_directional_efficiency"),
+        feature_values = tuple(
+            (
+                feature_id,
+                event["alpha_features"].get(feature_id),
+                feature_transforms[feature_id],
+                feature_semantics[feature_id],
+            )
+            for feature_id in alpha_model.FEATURE_NAMES
         )
+        fact_rows = []
         for feature_id, value, transform_sha, semantic_type in feature_values:
             fact_rows.append({
                 "feature_id": feature_id,
@@ -376,9 +474,11 @@ def build_forecast_ledger(
                 "semantic_type": semantic_type,
                 "quote_basis": "ohlcv_close_not_executable_bid_ask",
                 "quality_status": "REFERENCE_ONLY_SOURCE_TIME_AND_AVAILABILITY_UNVERIFIED",
-                "value": None if value is None else float(value),
+                "value": float(value),
                 "timestamp_semantics_sha256": timestamp_sha,
             })
+        probabilities = dict(event["pre_alpha_expert_probabilities"])
+        probabilities["alpha_logistic_v1"] = float(alpha_probabilities[str(index)])
         record = {
             "decision_id": _canonical_sha({
                 "series_id": series_id, "decision_index": index,
@@ -395,7 +495,7 @@ def build_forecast_ledger(
             "regime_available_index": index,
             "regime_available_time": decision_time,
             "session_id": event["session_id"],
-            "baseline_probability": baseline,
+            "baseline_probability": event["baseline_probability"],
             "expert_probabilities": probabilities,
             "state_tags": event["state_tags"],
             "state_tags_available_index": index,
@@ -404,13 +504,14 @@ def build_forecast_ledger(
             "target_exit_index": event["target_exit_index"],
             "target_resolution": event["resolution"],
             "target_gross_r_reference_only": event["gross_r"],
-            "matured_label_count_before_decision": len(matured_prior),
-            "conditional_regime_support_before_decision": len(regime_labels),
-            "conditional_volatility_support_before_decision": len(volatility_labels),
-            "forecast_method": "prequential_laplace_estimators_over_strictly_matured_labels",
+            "matured_label_count_before_decision": event["matured_label_count_before_decision"],
+            "conditional_regime_support_before_decision": event["conditional_regime_support_before_decision"],
+            "conditional_volatility_support_before_decision": event["conditional_volatility_support_before_decision"],
+            "forecast_method": "prequential_laplace_estimators_plus_partition_frozen_alpha_logistic_v1",
+            "alpha_model_forecast_stage": alpha_forecast_stages[str(index)],
+            "alpha_model_artifact_sha256": alpha_training["model_artifact_sha256"],
         }
         forecast_records.append(record)
-        rows_so_far.append(event)
 
     ledger = {
         "schema_version": "serevex.forecast-ledger.v1",
@@ -450,6 +551,13 @@ def build_forecast_ledger(
             "side": side,
             "target_spec": target_spec,
             "expert_specs": EXPERT_SPECS,
+            "alpha_model_training": alpha_summary,
+            "alpha_feature_schema": {
+                "feature_names": list(alpha_model.FEATURE_NAMES),
+                "feature_formulas": feature_formulas,
+                "feature_transforms_sha256": feature_transforms,
+                "point_in_time_note": "OHLCV source timestamp and bar-close availability remain unverified; all computations are causally restricted to bars at or before decision index",
+            },
             "partition_policy": {
                 "development": "first 50 percent of eligible decision bars",
                 "model_selection": "50-70 percent",
