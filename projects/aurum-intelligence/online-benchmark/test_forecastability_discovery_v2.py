@@ -155,5 +155,19 @@ class ForecastabilityDiscoveryV2Tests(unittest.TestCase):
         self.assertEqual(none["decision_output"], "NO_TRADE")
 
 
+    def test_simultaneous_max_t_bounds_are_reported_for_each_window_and_block_size(self):
+        report = evaluate(make_records())
+        self.assertIn("max-|t|", report["simultaneous_method"])
+        entry = report["models"]["expert"]["gold"]
+        self.assertEqual(set(entry["windows"]), {"120", "240"})
+        for window in entry["windows"].values():
+            self.assertEqual(set(window["block_sensitivity"]), {"6", "12"})
+            for result in window["block_sensitivity"].values():
+                self.assertIn("simultaneous_lower_bound", result)
+                self.assertIn("simultaneous_upper_bound", result)
+                self.assertGreaterEqual(result["replicates"], 200)
+        self.assertEqual(report["decision_output"], "NO_TRADE")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
