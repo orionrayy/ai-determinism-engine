@@ -32,13 +32,31 @@ MONEY_RE = re.compile(
 )
 MANUAL_LEADS = [
     {
-        "title": "Indonesian AI voice evaluator",
+        "title": "Indonesian AI voice evaluator — Outlier",
         "kind": "Paid-task application",
         "url": "https://outlier.ai/languages/id-id",
         "payout_signal": "Official listing advertises up to US$7.50/hour; actual rate, task supply, screening and eligibility vary.",
-        "fit": ["Indonesian", "AI evaluation", "language quality"],
+        "fit": ["Indonesian", "AI evaluation", "language quality", "prompt writing"],
         "next_step": "Check the listing, eligibility, privacy terms and payment route; complete screening honestly.",
-        "verification": "Listing lead; application and acceptance have not been verified.",
+        "verification": "Official listing lead; application and acceptance have not been verified.",
+    },
+    {
+        "title": "Indonesian ASR data collection — RWS TrainAI",
+        "kind": "Paid-task application",
+        "url": "https://app.tai.rws.com/opportunities",
+        "payout_signal": "Official opportunity portal recently listed Indonesian ASR data collection at US$5/hour for Indonesia; verify it remains open.",
+        "fit": ["Indonesian", "speech/audio", "data quality", "recording"],
+        "next_step": "Open the portal, confirm the Indonesian role remains available, review recording and privacy requirements, then apply.",
+        "verification": "Recent official listing lead; current availability and selection are not verified.",
+    },
+    {
+        "title": "Indonesian Quality Assurance Rater — TELUS Digital",
+        "kind": "Part-time AI-quality application",
+        "url": "https://jobs.telusdigital.com/search/jobs/in/jakarta",
+        "payout_signal": "Official careers search recently listed a remote, part-time Indonesian Quality Assurance Rater role; public search excerpt did not show pay.",
+        "fit": ["Indonesian", "quality assurance", "critical thinking", "content evaluation"],
+        "next_step": "Check the live vacancy, location eligibility, hours, compensation and assessment requirements.",
+        "verification": "Official careers lead; rate, availability and acceptance are unverified.",
     },
     {
         "title": "OnlyDust open-source contributor opportunities",
@@ -68,7 +86,6 @@ MANUAL_LEADS = [
         "verification": "Platform lead; no reward is guaranteed.",
     },
 ]
-
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
