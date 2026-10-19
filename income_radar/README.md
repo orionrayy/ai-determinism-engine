@@ -18,7 +18,7 @@ At the advertised maximum of US$7.50/hour on the Indonesian AI voice-evaluator l
 - Uses Python standard library only; no paid API or dependency.
 - Searches public GitHub Issues for bounty/reward language.
 - Extracts explicit money mentions and scores skill fit / recency transparently.
-- Includes direct platform leads with caveats.
+- Includes direct leads for Outlier Indonesian AI evaluation, RWS TrainAI Indonesian speech-data work, TELUS Digital Indonesian QA work, and contributor/security-bounty platforms; all leads are caveated and must be re-verified.
 - Writes Markdown and JSON reports.
 - Has an offline mode for report generation.
 - Does not auto-apply, claim bounties, test security targets, submit pull requests, or perform financial actions.
