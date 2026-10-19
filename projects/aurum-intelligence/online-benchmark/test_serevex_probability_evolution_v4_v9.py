@@ -48,6 +48,33 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertEqual(result["evidence"]["scored_rows"], 29)
         self.assertEqual(result["evidence"]["decision_output"], "NO_TRADE")
 
+    def test_as_of_index_excludes_later_forecasts_and_post_cutoff_rows(self):
+        rows = make_rows(40)
+        result = evo.evaluate_probability_evolution(
+            rows, version="4.0", as_of_index=20
+        )
+        forecasts = result["forecasts"]
+        self.assertEqual(len(forecasts), 20)
+        self.assertTrue(all(row["decision_index"] < 20 for row in forecasts))
+        self.assertEqual(result["evidence"]["forecast_rows_emitted"], 20)
+        self.assertEqual(result["evidence"]["rows_at_or_after_as_of_excluded"], 20)
+        self.assertEqual(result["evidence"]["last_emitted_decision_index"], 19)
+        self.assertEqual(result["evidence"]["scored_rows"], 19)
+        self.assertEqual(
+            result["evidence"]["decision_output"], "NO_TRADE"
+        )
+
+    def test_as_of_before_first_decision_emits_no_forecasts(self):
+        result = evo.evaluate_probability_evolution(
+            make_rows(10), version="9.0", as_of_index=0
+        )
+        self.assertEqual(result["forecasts"], [])
+        self.assertEqual(result["evidence"]["forecast_rows_emitted"], 0)
+        self.assertEqual(result["evidence"]["rows_at_or_after_as_of_excluded"], 10)
+        self.assertIsNone(result["evidence"]["last_emitted_decision_index"])
+        self.assertEqual(result["evidence"]["scored_rows"], 0)
+        self.assertEqual(result["evidence"]["decision_output"], "NO_TRADE")
+
     def test_future_feature_is_quarantined_and_baseline_is_used(self):
         rows = make_rows(10)
         rows[4]["feature_available_index"] = 5
