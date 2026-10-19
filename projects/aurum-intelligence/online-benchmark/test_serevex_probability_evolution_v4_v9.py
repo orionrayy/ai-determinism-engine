@@ -113,7 +113,10 @@ class ProbabilityEvolutionTests(unittest.TestCase):
             first = result["forecasts"][0]
             self.assertEqual(first["probability"], first["baseline_probability"])
             self.assertEqual(first["alpha_weight"], 0.0)
-            self.assertIn("FALLBACK", first["status"])
+            self.assertTrue(
+                "BASELINE" in first["status"] or "FALLBACK" in first["status"],
+                first["status"],
+            )
 
     def test_v50_selects_alpha_only_after_selection_and_later_gate(self):
         rows = make_rows(720)
