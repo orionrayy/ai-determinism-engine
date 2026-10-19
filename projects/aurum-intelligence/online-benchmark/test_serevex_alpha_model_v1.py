@@ -135,6 +135,23 @@ class SerevexAlphaModelTests(unittest.TestCase):
         self.assertIn("paired_brier_improvement_ci_vs_causal_baseline", metrics)
         self.assertIn("reliability_diagnostics", metrics)
         self.assertEqual(metrics["reliability_diagnostics"]["rows"], metrics["rows"])
+        for key in (
+            "raw_alpha_paired_brier_improvement_ci_vs_causal_baseline",
+            "calibrated_alpha_paired_brier_improvement_ci_vs_causal_baseline",
+            "raw_alpha_reliability_diagnostics",
+            "calibrated_alpha_reliability_diagnostics",
+            "raw_alpha_with_ood_fallback_brier_score",
+            "calibrated_alpha_with_ood_fallback_brier_score",
+            "raw_alpha_with_ood_fallback_paired_brier_improvement_ci_vs_causal_baseline",
+            "calibrated_alpha_with_ood_fallback_paired_brier_improvement_ci_vs_causal_baseline",
+            "calibrated_alpha_with_ood_fallback_reliability_diagnostics",
+            "diagnostic_interpretation",
+        ):
+            self.assertIn(key, metrics)
+        self.assertEqual(metrics["raw_alpha_reliability_diagnostics"]["rows"], metrics["rows"])
+        self.assertEqual(metrics["calibrated_alpha_reliability_diagnostics"]["rows"], metrics["rows"])
+        self.assertEqual(metrics["calibrated_alpha_with_ood_fallback_reliability_diagnostics"]["rows"], metrics["rows"])
+        self.assertIn("descriptive only", metrics["diagnostic_interpretation"])
         self.assertEqual(result["probability_governor"]["alpha_weight"], 0.0)  # calibration slice has too few independent blocks
 
     def test_out_of_domain_holdout_features_force_exact_baseline_fallback(self):
