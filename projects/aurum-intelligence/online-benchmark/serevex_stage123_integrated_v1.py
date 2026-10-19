@@ -6,11 +6,13 @@ All outputs preserve NO_TRADE and can never authorize live signals or orders.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
 import random
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 PROTOCOL_VERSION = "serevex-stage123-integrated-v1"
@@ -123,7 +125,7 @@ def validate_forecast_ledger(ledger: Mapping[str, Any]) -> dict[str, Any]:
     required_meta = {
         "series_id", "target_id", "target_definition_sha256", "dataset_sha256",
         "source_lineage_sha256", "model_artifact_sha256_by_expert",
-        "registered_experts", "registered_regimes", "evidence_kind",
+        "registered_experts", "registered_regimes", "atlas_category_registry", "evidence_kind",
         "source_verification", "decision_time_basis", "label_definition",
     }
     missing_meta = sorted(required_meta - set(metadata))
@@ -145,6 +147,21 @@ def validate_forecast_ledger(ledger: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("registered_regimes_must_be_nonempty_and_valid")
     if len(set(regimes)) != len(regimes):
         raise ValueError("registered_regimes_must_be_unique")
+    category_registry = metadata.get("atlas_category_registry")
+    allowed_atlas_axes = {"regime_id", "session_id", *REQUIRED_STATE_TAGS}
+    if not isinstance(category_registry, Mapping) or set(category_registry) != allowed_atlas_axes:
+        raise ValueError("atlas_category_registry_must_preregister_all_supported_axes")
+    normalized_category_registry: dict[str, list[str]] = {}
+    for axis in sorted(allowed_atlas_axes):
+        categories = category_registry.get(axis)
+        if (not isinstance(categories, list) or not categories
+                or any(not isinstance(x, str) or not x.strip() for x in categories)
+                or len(set(categories)) != len(categories)):
+            raise ValueError("atlas_category_registry_invalid:" + axis)
+        normalized_category_registry[axis] = list(categories)
+    if set(normalized_category_registry["regime_id"]) != set(regimes):
+        raise ValueError("atlas_regime_registry_must_match_registered_regimes")
+
     artifact_hashes = metadata.get("model_artifact_sha256_by_expert")
     if not isinstance(artifact_hashes, Mapping) or set(artifact_hashes) != set(experts):
         raise ValueError("model_artifact_hash_keys_must_match_expert_registry")
@@ -169,7 +186,7 @@ def validate_forecast_ledger(ledger: Mapping[str, Any]) -> dict[str, Any]:
         "label_available_index", "label_available_time", "label", "label_mature",
         "regime_id", "regime_available_index", "regime_available_time",
         "session_id", "baseline_probability", "expert_probabilities",
-        "state_tags", "state_tags_available_index", "feature_facts",
+        "state_tags", "state_tags_available_index", "state_tags_available_time", "feature_facts",
     }
     for pos, source in enumerate(records):
         if not isinstance(source, Mapping):
@@ -203,10 +220,13 @@ def validate_forecast_ledger(ledger: Mapping[str, Any]) -> dict[str, Any]:
         decision_time = _utc(row.get("decision_time"), "decision_time")
         available_time = _utc(row.get("label_available_time"), "label_available_time")
         regime_time = _utc(row.get("regime_available_time"), "regime_available_time")
+        state_tags_time = _utc(row.get("state_tags_available_time"), "state_tags_available_time")
         if _time(available_time) <= _time(decision_time):
             raise ValueError("label_availability_time_must_follow_decision_at_" + str(pos))
         if _time(regime_time) > _time(decision_time):
             raise ValueError("future_regime_metadata_at_" + str(pos))
+        if _time(state_tags_time) > _time(decision_time):
+            raise ValueError("future_state_tags_at_" + str(pos))
         if previous_decision_time is not None and _time(decision_time) <= previous_decision_time:
             raise ValueError("decision_times_must_be_strictly_increasing")
         previous_decision_time = _time(decision_time)
@@ -214,6 +234,7 @@ def validate_forecast_ledger(ledger: Mapping[str, Any]) -> dict[str, Any]:
         row["decision_time"] = decision_time
         row["label_available_time"] = available_time
         row["regime_available_time"] = regime_time
+        row["state_tags_available_time"] = state_tags_time
 
         regime = row.get("regime_id")
         if not isinstance(regime, str) or regime not in registered_regimes:
@@ -253,9 +274,25 @@ def validate_forecast_ledger(ledger: Mapping[str, Any]) -> dict[str, Any]:
         ]
         rows.append(row)
 
+    # Cross-check availability indices against the clock times at those decision indices.
+    # The index contract is fail-closed when an indexed time anchor exists in this ledger.
+    decision_time_by_index = {row["decision_index"]: _time(row["decision_time"]) for row in rows}
+    for pos, row in enumerate(rows):
+        maturity_anchor = decision_time_by_index.get(row["label_available_index"])
+        if (row["label_mature"] and maturity_anchor is not None
+                and _time(row["label_available_time"]) > maturity_anchor):
+            raise ValueError("label_time_after_declared_maturity_index_at_" + str(pos))
+        regime_anchor = decision_time_by_index.get(row["regime_available_index"])
+        if regime_anchor is not None and _time(row["regime_available_time"]) > regime_anchor:
+            raise ValueError("regime_time_after_declared_availability_index_at_" + str(pos))
+        tag_anchor = decision_time_by_index.get(row["state_tags_available_index"])
+        if tag_anchor is not None and _time(row["state_tags_available_time"]) > tag_anchor:
+            raise ValueError("state_tags_time_after_declared_availability_index_at_" + str(pos))
+
     canonical_meta = dict(metadata)
     canonical_meta["registered_experts"] = list(experts)
     canonical_meta["registered_regimes"] = list(regimes)
+    canonical_meta["atlas_category_registry"] = normalized_category_registry
     canonical_meta["model_artifact_sha256_by_expert"] = {x: artifact_hashes[x] for x in experts}
     canonical_meta["source_verification"] = {k: verification[k] for k in verification_fields}
     ledger_sha = _sha({"schema_version": ledger["schema_version"], "metadata": canonical_meta, "records": rows})
@@ -363,6 +400,7 @@ def build_predictability_atlas(
     *,
     registered_experts: Sequence[str],
     as_of_index: int,
+    registered_category_registry: Mapping[str, Sequence[str]],
     score_partition: str = "final_holdout",
     axes: Sequence[str] = ("regime_id", "session_id", "volatility_bucket", "spread_bucket", "event_risk_bucket"),
     min_rows: int = 80,
@@ -380,6 +418,17 @@ def build_predictability_atlas(
         raise ValueError("score_partition_invalid")
     if not axes or any(not isinstance(x, str) or not x.strip() for x in axes) or len(set(axes)) != len(axes):
         raise ValueError("atlas_axes_must_be_unique_nonempty_strings")
+    if not isinstance(registered_category_registry, Mapping):
+        raise ValueError("atlas_requires_preregistered_category_registry")
+    allowed_axes = {"regime_id", "session_id", *REQUIRED_STATE_TAGS}
+    if any(axis not in allowed_axes for axis in axes):
+        raise ValueError("atlas_axis_not_supported")
+    for axis in axes:
+        values = registered_category_registry.get(axis)
+        if (not isinstance(values, Sequence) or isinstance(values, (str, bytes)) or not values
+                or any(not isinstance(x, str) or not x.strip() for x in values)
+                or len(set(values)) != len(values)):
+            raise ValueError("atlas_preregistered_categories_invalid:" + axis)
     if not _is_int(min_rows) or min_rows < 20 or not _is_int(block_size) or block_size < 2:
         raise ValueError("atlas_support_parameters_invalid")
     if not _is_int(min_independent_blocks) or min_independent_blocks < 2:
@@ -398,7 +447,8 @@ def build_predictability_atlas(
             if axis in ("regime_id", "session_id"):
                 return str(row[axis])
             return row["state_tags"].get(axis)
-        categories = sorted({axis_value(row) for row in mature if axis_value(row) is not None})
+        # Hypothesis cells come from the registry, not from categories observed in holdout.
+        categories = list(registered_category_registry[axis])
         for category in categories:
             group = [r for r in mature if axis_value(r) == category]
             for expert in experts:
@@ -581,8 +631,26 @@ def run_delayed_feedback_mixer(
     forecast_rows: list[dict[str, Any]] = []
     updates: list[dict[str, Any]] = []
 
-    for current in rows:
+    # Validate ordering at this public API boundary and never advance beyond the exclusive
+    # as-of cutoff. Otherwise report hashes/final weights could reflect post-cutoff feedback.
+    prior_index = -1
+    prior_ids: set[str] = set()
+    for pos, row in enumerate(rows):
+        di = row.get("decision_index")
+        if not _is_int(di) or di <= prior_index:
+            raise ValueError("mixer_decision_indices_must_be_strictly_increasing_at_" + str(pos))
+        prior_index = di
+        did = row.get("decision_id")
+        if not isinstance(did, str) or not did.strip() or did in prior_ids:
+            raise ValueError("mixer_decision_ids_must_be_unique_at_" + str(pos))
+        prior_ids.add(did)
+
+    rows_after_as_of_excluded = 0
+    for row_position, current in enumerate(rows):
         di = int(current["decision_index"])
+        if di >= as_of_index:
+            rows_after_as_of_excluded = len(rows) - row_position
+            break
         newly_matured = [
             old for old in history
             if old["decision_id"] not in processed
@@ -665,6 +733,9 @@ def run_delayed_feedback_mixer(
         "protocol_version": "serevex-delayed-feedback-mixer-v2-integrated",
         "status": "DIAGNOSTIC_ONLY",
         "as_of_index_exclusive": as_of_index,
+        "input_rows": len(rows),
+        "rows_at_or_after_as_of_excluded": rows_after_as_of_excluded,
+        "last_processed_decision_index": forecast_rows[-1]["decision_index"] if forecast_rows else None,
         "score_partition": score_partition,
         "scored_rows": n,
         "candidate_brier": candidate_brier,
@@ -710,6 +781,7 @@ def run_serevex_stage123(
     experts = metadata["registered_experts"]
     atlas = build_predictability_atlas(
         records, registered_experts=experts, as_of_index=as_of_index,
+        registered_category_registry=metadata["atlas_category_registry"],
         score_partition=score_partition, axes=atlas_axes, min_rows=atlas_min_rows,
         block_size=atlas_block_size, min_independent_blocks=atlas_min_independent_blocks,
         bootstrap_replicates=atlas_bootstrap_replicates,
@@ -744,3 +816,37 @@ def run_serevex_stage123(
     }
     report_core["report_sha256"] = _sha(report_core)
     return report_core
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Run the integrated research diagnostic from a JSON forecast ledger."""
+    parser = argparse.ArgumentParser(description="Serevex integrated stages 1-3 (research only)")
+    parser.add_argument("--input", type=Path, required=True, help="JSON ledger following serevex.forecast-ledger.v1")
+    parser.add_argument("--output", type=Path, required=True, help="Output JSON report path")
+    parser.add_argument("--as-of-index", type=int, required=True, help="Exclusive decision index cutoff")
+    parser.add_argument("--score-partition", choices=PARTITIONS, default="final_holdout")
+    parser.add_argument("--atlas-axes", nargs="+",
+                        default=["regime_id", "session_id", "volatility_bucket", "spread_bucket", "event_risk_bucket"])
+    parser.add_argument("--atlas-bootstrap-replicates", type=int, default=1000)
+    args = parser.parse_args(argv)
+    try:
+        ledger = json.loads(args.input.read_text(encoding="utf-8"))
+        report = run_serevex_stage123(
+            ledger, as_of_index=args.as_of_index, score_partition=args.score_partition,
+            atlas_axes=args.atlas_axes, atlas_bootstrap_replicates=args.atlas_bootstrap_replicates,
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+        print(json.dumps({
+            "status": report["status"], "report_sha256": report["report_sha256"],
+            "ledger_sha256": report["ledger"]["ledger_sha256"],
+            "decision_output": report["decision_output"], "output_path": str(args.output),
+        }, sort_keys=True))
+        return 0
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        parser.error(str(exc))
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
