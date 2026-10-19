@@ -689,8 +689,15 @@ def evaluate_probability_evolution(
     as_of = max_index + 1 if as_of_index is None else as_of_index
     if not _integer(as_of) or as_of < 0:
         raise ProbabilityInputError("invalid_as_of_index")
+    # The exclusive as-of boundary controls both emitted forecasts and scored outcomes.
+    # Post-cutoff rows are not passed into the prequential runner at all.
+    point_in_time_rows = [
+        row for row in normalized if int(row["decision_index"]) < as_of
+    ]
     policy_trace: list[dict[str, Any]] = []
-    forecasts = _forecast_rows(normalized, version=version, config=settings, policy_trace=policy_trace)
+    forecasts = _forecast_rows(
+        point_in_time_rows, version=version, config=settings, policy_trace=policy_trace
+    )
     forecast_by_id = {row["decision_id"]: row for row in forecasts}
     scored_rows: list[dict[str, Any]] = []
     for source in normalized:
@@ -698,8 +705,11 @@ def evaluate_probability_evolution(
         di = int(source["decision_index"])
         y = _label(source)
         if source.get("label_mature") is True and _integer(ai) and ai < as_of and di < as_of and y in (0, 1):
+            forecast = forecast_by_id.get(source["decision_id"])
+            if forecast is None:
+                raise ProbabilityInputError("as_of_scored_row_missing_emitted_forecast:" + str(source["decision_id"]))
             merged = dict(source)
-            merged["_governed_probability"] = forecast_by_id[source["decision_id"]]["probability"]
+            merged["_governed_probability"] = forecast["probability"]
             scored_rows.append(merged)
     model_metrics = _metrics(scored_rows, "_governed_probability")
     baseline_metrics = _metrics(scored_rows, "_baseline")
@@ -733,6 +743,9 @@ def evaluate_probability_evolution(
         "version": version,
         "as_of_index": as_of,
         "scored_rows": len(scored_rows),
+        "forecast_rows_emitted": len(forecasts),
+        "rows_at_or_after_as_of_excluded": len(normalized) - len(point_in_time_rows),
+        "last_emitted_decision_index": forecasts[-1]["decision_index"] if forecasts else None,
         "model_metrics": model_metrics,
         "baseline_metrics": baseline_metrics,
         "baseline_minus_model_brier_gain": brier_gain,
