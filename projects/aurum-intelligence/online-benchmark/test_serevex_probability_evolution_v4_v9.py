@@ -116,6 +116,14 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertGreaterEqual(diag["selection_blocks"], 8)
         self.assertGreaterEqual(diag["gate_blocks"], 4)
 
+    def test_selection_and_confirmation_use_disjoint_absolute_time_blocks(self):
+        normalized = evo._normalize_rows(make_rows(720))
+        sparse = [row for row in normalized if int(row["decision_index"]) % 7 not in (1, 2, 5)]
+        choice = evo._choose_weight(sparse, config=evo._default_config(None), min_gate_blocks=4)
+        self.assertEqual(choice["selection_cutoff_index"] % (evo.DEFAULT_BLOCK_SPAN + evo.DEFAULT_EMBARGO_BARS), 0)
+        self.assertEqual(set(choice["selection_source_block_ids"]) & set(choice["gate_source_block_ids"]), set())
+        self.assertGreaterEqual(choice["selection_blocks"], 8)
+
     def test_v60_reports_regime_shrinkage_or_safe_global_fallback(self):
         rows = make_rows(720, regimes=1)
         result = evo.evaluate_probability_evolution(rows, version="6.0")
