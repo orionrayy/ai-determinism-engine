@@ -6,10 +6,12 @@ forecaster, create trade instructions, or authorize live execution.
 """
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import math
 from collections import Counter
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 VERSION_ORDER = ("4.0", "4.1", "4.2", "5.0", "6.0", "7.0", "8.0", "9.0")
@@ -23,8 +25,10 @@ DEFAULT_MIN_SELECTION_BLOCKS = 8
 DEFAULT_MIN_GATE_BLOCKS = 4
 DEFAULT_V7_MIN_GATE_BLOCKS = 8
 DEFAULT_MIN_SELECTION_ROWS = 96
-DEFAULT_MIN_REGIME_ROWS = 192
+DEFAULT_MIN_REGIME_ROWS = 288
 DEFAULT_DRIFT_RECENT_BARS = 192
+DEFAULT_HISTORY_WINDOW = 720
+DEFAULT_WEIGHT_UPDATE_INTERVAL_BARS = 12
 UNKNOWN_REGIME = "__UNKNOWN__"
 
 
@@ -121,6 +125,9 @@ def _normalize_rows(rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             regime = UNKNOWN_REGIME
             if row.get("regime") is not None:
                 reasons.append("REGIME_NOT_AVAILABLE_AT_DECISION")
+        available_index = row.get("label_available_index")
+        if row.get("label_mature") is True and _label(row) in (0, 1) and _integer(available_index) and available_index <= index:
+            raise ProbabilityInputError("label_maturity_not_after_decision:" + decision_id)
         row["_candidate"] = candidate
         row["_baseline"] = baseline
         row["_input_reasons"] = reasons
@@ -296,7 +303,7 @@ def _choose_weight(
     for weight in BLEND_GRID[1:]:
         stats = _block_stats(
             selection, alpha_weight=weight,
-            block_span=int(config["block_span"]), embargo=int(config["embargo_bars"])
+            block_span=int(config["block_span"]), embargo=int(config["embargo_bars"]), critical_z=float(config["critical_z"])
         )
         if _dual_score_pass(stats, int(config["min_selection_blocks"]), float(config["positive_block_share"])):
             b, l = stats["brier"]["mean_gain"], stats["log_loss"]["mean_gain"]
@@ -428,6 +435,8 @@ def _default_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
         "min_regime_rows": DEFAULT_MIN_REGIME_ROWS,
         "drift_recent_bars": DEFAULT_DRIFT_RECENT_BARS,
         "drift_min_rows": 2 * DEFAULT_DRIFT_RECENT_BARS,
+        "history_window": DEFAULT_HISTORY_WINDOW,
+        "weight_update_interval_bars": DEFAULT_WEIGHT_UPDATE_INTERVAL_BARS,
     }
     if config:
         unknown = set(config) - set(out)
@@ -436,7 +445,8 @@ def _default_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
         out.update(config)
     for key in ("block_span", "min_selection_blocks", "min_gate_blocks",
                 "v7_min_gate_blocks", "min_selection_rows", "min_regime_rows",
-                "drift_recent_bars", "drift_min_rows"):
+                "drift_recent_bars", "drift_min_rows", "history_window",
+                "weight_update_interval_bars"):
         if not _integer(out[key]) or out[key] < 1:
             raise ProbabilityInputError("invalid_policy_config:" + key)
     if not _integer(out["embargo_bars"]) or out["embargo_bars"] < 0:
@@ -452,16 +462,30 @@ def _forecast_rows(
     rows: Sequence[Mapping[str, Any]], *, version: str, config: Mapping[str, Any]
 ) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
+    maturity_queue = sorted(
+        [
+            row for row in rows
+            if row.get("label_mature") is True and _label(row) in (0, 1)
+            and _integer(row.get("label_available_index"))
+            and int(row["label_available_index"]) > int(row["decision_index"])
+        ],
+        key=lambda row: (int(row["label_available_index"]), int(row["decision_index"])),
+    )
+    maturity_pointer = 0
+    matured_pool: list[dict[str, Any]] = []
+    choice_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
     for position, row in enumerate(rows):
         index = int(row["decision_index"])
+        while (
+            maturity_pointer < len(maturity_queue)
+            and int(maturity_queue[maturity_pointer]["label_available_index"]) < index
+        ):
+            matured_pool.append(maturity_queue[maturity_pointer])
+            maturity_pointer += 1
+        history = matured_pool[-int(config["history_window"]):]
         baseline = float(row["_baseline"])
         candidate = row["_candidate"]
         reasons = list(row["_input_reasons"])
-        history = _matured_history(rows[:position], index)
-        history = [
-            h for h in history
-            if h.get("_candidate") is not None or h.get("_issued_probability") is not None
-        ]
         weight = 1.0 if candidate is not None else 0.0
         status = "V4_REFERENCE_CANDIDATE" if candidate is not None else "BASELINE_FALLBACK_INVALID_CANDIDATE"
         diagnostics: dict[str, Any] = {"matured_history_rows": len(history)}
@@ -476,7 +500,7 @@ def _forecast_rows(
         elif version == "4.2":
             stats = _block_stats(
                 history, alpha_weight=1.0, block_span=int(config["block_span"]),
-                embargo=int(config["embargo_bars"])
+                embargo=int(config["embargo_bars"]), critical_z=float(config["critical_z"])
             )
             diagnostics["dual_score_evidence"] = stats
             enough_rows = len(history) >= int(config["min_selection_rows"])
@@ -493,23 +517,28 @@ def _forecast_rows(
                 reasons.append("DUAL_SCORE_EVIDENCE_INSUFFICIENT_OR_NEGATIVE")
         elif version in ("5.0", "6.0", "7.0", "8.0", "9.0"):
             gate_min = int(config["v7_min_gate_blocks"]) if version in ("7.0", "8.0", "9.0") else int(config["min_gate_blocks"])
-            global_choice = _choose_weight(history, config=config, min_gate_blocks=gate_min)
+            bucket = index // int(config["weight_update_interval_bars"])
+            global_key = ("global", bucket, gate_min)
+            if global_key not in choice_cache:
+                choice_cache[global_key] = _choose_weight(history, config=config, min_gate_blocks=gate_min)
+            global_choice = choice_cache[global_key]
             diagnostics["global_weight_selection"] = global_choice
             weight = float(global_choice["weight"])
             status = str(global_choice["status"])
             if version in ("6.0", "7.0", "8.0", "9.0"):
-                local_choice = _regime_weight(
-                    history, str(row["_regime"]), global_choice,
-                    config=config, min_gate_blocks=gate_min
-                )
+                regime = str(row["_regime"])
+                local_key = ("regime", regime, bucket, gate_min)
+                if local_key not in choice_cache:
+                    choice_cache[local_key] = _regime_weight(
+                        history, regime, global_choice, config=config, min_gate_blocks=gate_min
+                    )
+                local_choice = choice_cache[local_key]
                 diagnostics["regime_weight_selection"] = local_choice
                 weight = float(local_choice["weight"])
                 status = str(local_choice["status"])
             if version in ("7.0", "8.0", "9.0"):
-                # The weight-selection routine reserves a later chronological gate that
-                # is disjoint from the selection segment. Tighten its independent-block
-                # floor in v7+; do not gate on previous governed forecasts, which would
-                # create a baseline-only deadlock before the first alpha forecast.
+                # The weight selector reserves a later chronological gate disjoint from
+                # the selection segment. v7+ requires more independent blocks than v5/v6.
                 uncertainty_evidence = global_choice.get("gate_diagnostics")
                 if "regime_weight_selection" in diagnostics:
                     local = diagnostics["regime_weight_selection"]
@@ -566,12 +595,11 @@ def _forecast_rows(
         if diagnostics:
             emitted["diagnostics"] = diagnostics
         output.append(emitted)
-        # Keep past issued forecasts separate from raw candidate probabilities.
+        # These are generated forecasts, not observed outcomes.
         row["_issued_probability"] = probability
         row["_issued_weight"] = float(weight)
         row["_issued_status"] = status
     return output
-
 
 def evaluate_probability_evolution(
     rows: Sequence[Mapping[str, Any]],
@@ -694,3 +722,129 @@ def evaluate_all_probability_versions(
         "deployment_calibrated": False,
         "decision_output": "NO_TRADE",
     }
+
+
+def adapt_forecast_ledger(
+    ledger: Mapping[str, Any], *, candidate_expert: str = "alpha_logistic_v1"
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Adapt the canonical Serevex forecast-ledger.v1 into this versioned probability contract."""
+    if not isinstance(ledger, Mapping) or ledger.get("schema_version") != "serevex.forecast-ledger.v1":
+        raise ProbabilityInputError("unsupported_forecast_ledger_schema")
+    metadata = ledger.get("metadata")
+    records = ledger.get("records")
+    if not isinstance(metadata, Mapping) or not isinstance(records, list) or not records:
+        raise ProbabilityInputError("forecast_ledger_metadata_or_records_invalid")
+    series_id = metadata.get("series_id", "")
+    instrument = str(series_id).split(":")[0] if isinstance(series_id, str) and series_id else "UNKNOWN"
+    target_spec = metadata.get("target_spec")
+    if not isinstance(target_spec, Mapping):
+        target_spec = {}
+    horizon = target_spec.get("horizon_bars_from_next_open")
+    if not _integer(horizon) or horizon < 1:
+        raise ProbabilityInputError("forecast_ledger_horizon_invalid")
+    target_id = metadata.get("target_id")
+    if not isinstance(target_id, str) or not target_id:
+        raise ProbabilityInputError("forecast_ledger_target_id_missing")
+    adapted: list[dict[str, Any]] = []
+    for pos, record in enumerate(records):
+        if not isinstance(record, Mapping):
+            raise ProbabilityInputError("forecast_ledger_record_not_mapping:" + str(pos))
+        experts = record.get("expert_probabilities")
+        if not isinstance(experts, Mapping):
+            experts = {}
+        index = record.get("decision_index")
+        regime_available = record.get("regime_available_index", record.get("state_tags_available_index"))
+        # Features are adapted according to the ledger's declared decision-time contract.
+        # Source-time semantics/provenance remain separately qualified in source_evidence.
+        feature_available = record.get("feature_available_index", record.get("state_tags_available_index", index))
+        adapted.append({
+            "decision_id": record.get("decision_id"),
+            "decision_index": index,
+            "target_id": target_id,
+            "instrument": instrument,
+            "horizon_bars": horizon,
+            "candidate_probability": experts.get(candidate_expert),
+            "baseline_probability": record.get("baseline_probability"),
+            "label": record.get("label"),
+            "label_mature": record.get("label_mature"),
+            "label_available_index": record.get("label_available_index"),
+            "regime": record.get("regime_id", UNKNOWN_REGIME),
+            "regime_available_index": regime_available,
+            "feature_available_index": feature_available,
+            "partition": record.get("partition"),
+        })
+    source_verification = metadata.get("source_verification")
+    if not isinstance(source_verification, Mapping):
+        source_verification = {}
+    source_evidence = {
+        "candidate_expert": candidate_expert,
+        "target_id": target_id,
+        "series_id": series_id,
+        "dataset_sha256": metadata.get("dataset_sha256"),
+        "source_lineage_sha256": metadata.get("source_lineage_sha256"),
+        "source_verification": dict(source_verification),
+        "source_timestamp_semantics_verified": metadata.get("source_timestamp_semantics_verified", False),
+        "historical_feature_availability_verified": metadata.get("historical_feature_availability_verified", False),
+        "broker_quote_basis_verified": metadata.get("broker_quote_basis_verified", False),
+        "provenance_note": "Ledger digest and declared time contracts do not independently verify publisher provenance, data rights, historical availability, or broker quote semantics.",
+    }
+    return adapted, source_evidence
+
+
+def evaluate_forecast_ledger_versions(
+    ledger: Mapping[str, Any],
+    *,
+    candidate_expert: str = "alpha_logistic_v1",
+    as_of_index: int | None = None,
+    config: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    rows, source_evidence = adapt_forecast_ledger(ledger, candidate_expert=candidate_expert)
+    suite = evaluate_all_probability_versions(rows, as_of_index=as_of_index, config=config)
+    return {
+        **suite,
+        "source_evidence": source_evidence,
+        "research_boundary": {
+            "source_qualified_for_training": False,
+            "predictive_skill_proven": False,
+            "independent_replication_complete": False,
+            "economic_utility_proven": False,
+            "model_validated": False,
+            "deployment_calibrated": False,
+            "live_signal_enabled": False,
+            "live_order_execution_enabled": False,
+            "decision_output": "NO_TRADE",
+        },
+    }
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Evaluate Serevex probability governance v4.0-v9.0 on a canonical forecast ledger")
+    parser.add_argument("--input", type=Path, required=True, help="JSON file with schema serevex.forecast-ledger.v1")
+    parser.add_argument("--output", type=Path, required=True, help="JSON comparison report")
+    parser.add_argument("--as-of-index", type=int, required=True, help="Exclusive underlying decision-bar cutoff")
+    parser.add_argument("--candidate-expert", default="alpha_logistic_v1")
+    args = parser.parse_args(argv)
+    try:
+        ledger = json.loads(args.input.read_text(encoding="utf-8"))
+        report = evaluate_forecast_ledger_versions(
+            ledger, candidate_expert=args.candidate_expert, as_of_index=args.as_of_index
+        )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
+        print(json.dumps({
+            "status": report["status"],
+            "protocol_version": report["protocol_version"],
+            "candidate_expert": args.candidate_expert,
+            "versions_evaluated": list(report["versions"]),
+            "source_qualified_for_training": False,
+            "decision_output": "NO_TRADE",
+            "report_path": str(args.output),
+        }, sort_keys=True))
+        return 0
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        parser.error(str(exc))
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
