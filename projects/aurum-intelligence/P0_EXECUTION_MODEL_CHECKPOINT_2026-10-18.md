@@ -1,0 +1,54 @@
+# P0 execution-accounting checkpoint — 2026-10-18
+
+Status: research-only changes on PR #164 branch; not merged to main.
+Decision gate: NO_TRADE; live order routing disabled.
+
+## Accounting increment
+- Added deterministic closed-trade accounting using entry/exit Bid/Ask snapshots.
+- Long uses Ask/Bid; short uses Bid/Ask. Spread is exposed for reconciliation and not charged twice.
+- Slippage, commission and signed swap are separate. Unknown material costs suppress net-PnL output; assumed costs remain estimates.
+- Currency conversion fails closed. Evidence refs are syntax-checked only and cannot independently establish broker authorization.
+- First hosted run exposed one assertion-format mismatch (-100 vs -100.0); assertion normalized on a new commit.
+
+## Quote-side replay increment
+- Added bracket-path replay for TP/SL outcomes using executable-side Bid/Ask OHLC.
+- Same-bar TP/SL collisions retain pessimistic/optimistic PnL bounds rather than deleting ambiguous outcomes.
+- Gap-through stops use the observed executable-side open; timeout exits use the executable-side close.
+- A missing bar inside the horizon fails closed. The replay does not invent tick order.
+- Added a large-scale runner that reuses a single acquired dataset snapshot, retains the prior benchmark report, cross-checks each directional outcome against the existing evaluator, and summarizes per-signal gross-R bounds across development/calibration/final chronology.
+- Local accounting plus quote-path suites: 27 tests passed; staged modules compile.
+- Hosted validation for this continuation is pending; no real-data replay result is yet claimed.
+
+## Boundaries and next gates
+- Hosted CI must pass on this commit, including the large real-data acquisition and 20,000 distinct timestamp path checks.
+- Public-source provenance and intended-use rights remain unverified.
+- Added-cost values in R are hypothetical; broker-specific commission, swap, slippage, latency and fill behavior remain absent.
+- This is not a portfolio backtest. Overlapping rule events are not simulated as simultaneous capital-aware positions.
+- No live signals, order routing, or profitability claims have been enabled.
+
+
+## 2026-10-18 — stop geometry audit finding and corrective gate
+
+- The first hosted full replay passed 40,000/40,000 legacy outcome-label cross-checks and reported 10,064 stop-loss-at-open paths. The report also showed feed close-spread median/P95 of 0.424/1.704 price units.
+- Review of the entry-side logic revealed that the outcome loop checked the entry candle's opposite quote against an ATR-anchored stop at the same entry timestamp. Where entry spread >= stop distance, the barrier is already crossed at the quote snapshot; counting it as an ordinary later stop-out mixes invalid bracket geometry into strategy outcomes.
+- Corrective change: exclude such anchors before sampling, add an explicit entry-spread/ATR population audit, and make the path primitive fail closed with invalid_stop_geometry_at_entry. Valid paths continue to require exact label agreement with the legacy evaluator; legacy false-valid immediate-stop labels are counted separately.
+- This is a methodological correction, not a strategy improvement claim. The economic replay must be rerun on the changed eligible-anchor sample. No live order routing or profitability claim.
+
+
+## 2026-10-18 — barrier arithmetic parity fix
+
+The first replay after stop-geometry filtering stopped on a single label disagreement. The new path evaluator had formed ATR barrier prices using Decimal arithmetic while the reference evaluator used floating-point arithmetic. At exact OHLC threshold equality, those different arithmetic paths can create different binary labels. Barrier-price formation now follows the reference evaluator's float operation order; reported PnL remains Decimal-based. Mismatch diagnostics now print the new and reference status/label plus target/stop values. Hosted full-data validation is required before considering the correction accepted.
+
+
+## 2026-10-18 — full hosted replay verification
+
+Latest corrected head `2cb6c3dc1eb1d48a2bcdbf8e0792f6e80bdec151` passed [hosted run #39057955872](https://github.com/orionrayy/ai-determinism-engine/actions/runs/39057955872). The run passed 153 unit/regression tests, 8 temporal-calibration tests and 240/240 synthetic contracts, then acquired the real public data and uploaded artifact #12110540720 (2,635,151 bytes; SHA-256 `7e192a620b75bf61c32d4d9daa4d3528dcdb8264b9c8e0b4a23a7ad05f10a7fe`).
+
+Post-correction replay results:
+- 1,313,280 Bid/Ask M1 candles over 30 months; 20,000 distinct anchors; 40,000 direction paths; 40,000 label cross-checks and zero mismatches.
+- Entry geometry audit rejected 217,544 of 875,611 contiguous ATR-valid candidate windows (24.8448%) where spread was >= the 1-ATR stop distance.
+- 53,129 fixed-rule signals; 10,637 in the final chronological holdout. All four fixed baselines have negative mean gross R and profit factor < 1 in the final holdout, before unmeasured execution costs. Full per-rule metrics and assumptions are in `P0_EXECUTION_REPLAY_RESULTS_2026-10-18.md`.
+- Large-scale probability Brier skill versus the global matured-label baseline remains negative in aggregate (-0.000802); final-holdout skill is only +0.000315.
+- External-context acquisition passed its bounded observation gate (141,020 records) but source-window completeness is PARTIAL; macro/news were ineligible, and the incremental COT score difference versus price-only has a paired 95% interval crossing zero.
+
+The result rejects the four tested fixed-rule baselines; it does not establish that every potential model fails. Continue NO_TRADE. The holdout metrics have been inspected and must not be reused to tune a model while still calling that holdout untouched.

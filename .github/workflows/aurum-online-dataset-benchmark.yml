@@ -1,0 +1,416 @@
+name: Aurum Online Dataset Benchmark
+
+on:
+  pull_request:
+    paths:
+      - "projects/aurum-intelligence/online-benchmark/**"
+      - "projects/aurum-intelligence/temporal-calibration-v1.3/**"
+      - "projects/aurum-intelligence/V1_3_1_IMPLEMENTATION_CHECKPOINT.md"
+      - ".github/workflows/aurum-online-dataset-benchmark.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurum-online-dataset-benchmark-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  online-dataset-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Install bounded Parquet reader for CC-BY tick audit
+        run: >-
+          python -m pip install --disable-pip-version-check --no-warn-script-location
+          "pandas==2.2.3" "pyarrow==21.0.0"
+      - name: Test temporal calibration component and validate 240 scenarios
+        working-directory: projects/aurum-intelligence/temporal-calibration-v1.3
+        run: |
+          python -m unittest -v
+          python run_calibration_contracts.py > /tmp/aurum-calibration-contracts.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          result = json.loads(Path('/tmp/aurum-calibration-contracts.json').read_text(encoding='utf-8'))
+          assert result['status'] == 'PASS', result
+          assert result['scenario_count'] == 240 and result['passed'] == 240 and result['failed'] == 0, result
+          assert result['synthetic_only'] is True, result
+          assert result['deployment_calibrated'] is False and result['live_signal_enabled'] is False, result
+          print(json.dumps(result, indent=2))
+          PY
+      - name: Unit-test parser, baselines and scenario contracts
+        working-directory: projects/aurum-intelligence/online-benchmark
+        run: python -m unittest -v
+      - name: Acquire current community dataset and benchmark
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/ci_benchmark.py
+          --output-dir /tmp/aurum-online-benchmark
+          --cases 50 --scenario-anchors 5 --min-rows 1000
+      - name: Audit third-source public Bid/Ask tick dataset
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/tick_bidask_benchmark_v1_0.py
+          --output-dir /tmp/aurum-online-benchmark
+      - name: Enforce live data and test-count requirements
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/online_dataset_benchmark.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          assert r['status'] == 'PASS', r
+          assert r['dataset']['rows'] >= 1000, r['dataset']
+          assert r['real_case_benchmark']['cases'] >= 50, r['real_case_benchmark']
+          assert r['real_case_benchmark']['evaluations'] >= 250, r['real_case_benchmark']
+          full = r['full_history_replay']
+          assert full['decision_opportunities'] == r['dataset']['rows'] - full['warmup_bars'] - 1, full
+          assert len(full['chronological_folds']) == 5, full
+          assert sum(f['opportunities'] for f in full['chronological_folds']) == full['decision_opportunities'], full
+          assert set(full['rules']) == {'last_return_sign', 'ema5_vs_ema10', 'mean_reversion_z10', 'prior20_range_breakout', 'flat_no_trade'}, full
+          prob = r['prequential_probability_diagnostics']
+          assert prob['status'] == 'DIAGNOSTIC_ONLY', prob
+          assert prob['predictions'] == r['dataset']['rows'] - 60 - 1, prob
+          assert not prob['validated_model'] and not prob['calibrated_model'], prob
+          assert len(prob['methods']) == 3, prob
+          for method in prob['methods'].values():
+              assert method['n'] == prob['predictions'], method
+              assert method['reliability']['ece_descriptive'] is not None, method
+              assert method['reliability']['mce_descriptive'] is not None, method
+          assert r['scenarios']['market_paths'] >= 200, r['scenarios']
+          assert r['scenarios']['market_failed'] == 0, r['scenarios']
+          assert r['scenarios']['software_scenarios'] >= 200, r['scenarios']
+          assert r['scenarios']['software_failed'] == 0, r['scenarios']
+          assert r['decision_output'] == 'NO_TRADE', r['decision_output']
+          cross = r['secondary_source_crosscheck']
+          assert cross['status'] in {'CROSS_SOURCE_DIAGNOSTIC_ONLY', 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED'}, cross
+          assert cross['common_timestamps'] >= 1000, cross
+          lag = cross['timestamp_offset_sensitivity']
+          assert lag['automatically_shifted_source_timestamps'] is False and lag['automatically_promoted_source'] is False, lag
+          assert lag['max_abs_offset_bars'] == 12 and lag['offsets_tested_bars'] == list(range(-12, 13)), lag
+          assert len(lag['results']) == 25, lag
+          assert isinstance(lag['best_candidate_at_scan_boundary'], bool), lag
+          assert 0.0 <= lag['relative_median_discrepancy_reduction_vs_zero_offset'] <= 1.0, lag
+          if cross['status'] == 'SOURCE_DISAGREEMENT_REVIEW_REQUIRED':
+              assert cross['source_disagreement_screen']['material_disagreement_flag'] is True, cross
+          else:
+              assert cross['source_disagreement_screen']['material_disagreement_flag'] is False, cross
+          assert cross['reference_only'] is True and cross['provider_provenance_independently_verified'] is False, cross
+          tp = r['tp_sl_evaluation_protocol']
+          assert tp['protocol_version'] == '1.4.0', tp
+          assert tp['status'] == 'DIAGNOSTIC_ONLY', tp
+          assert tp['eligible_decisions'] == r['dataset']['rows'] - 12 - 60, tp
+          assert tp['candidate_trade_events'] > 0, tp
+          assert tp['decision_output'] == 'NO_TRADE' and not tp['live_signal_enabled'], tp
+          assert set(tp['chronological_partitions']) == {'development', 'calibration', 'final_holdout'}, tp
+          assert tp['chronological_partitions']['calibration']['end_index_exclusive'] == tp['chronological_partitions']['final_holdout']['start_index'], tp
+          print(json.dumps({
+              'status': r['status'],
+              'dataset_rows': r['dataset']['rows'],
+              'dataset_sha256': r['source']['sha256'],
+              'real_cases': r['real_case_benchmark']['cases'],
+              'baseline_evaluations': r['real_case_benchmark']['evaluations'],
+              'full_history_decisions_per_rule': r['full_history_replay']['decision_opportunities'],
+              'chronological_folds': len(r['full_history_replay']['chronological_folds']),
+              'prequential_probability_predictions': r['prequential_probability_diagnostics']['predictions'],
+              'probability_diagnostics_status': r['prequential_probability_diagnostics']['status'],
+              'market_paths': r['scenarios']['market_paths'],
+              'market_passed': r['scenarios']['market_passed'],
+              'software_scenarios': r['scenarios']['software_scenarios'],
+              'software_passed': r['scenarios']['software_passed'],
+              'secondary_source_status': cross['status'],
+              'secondary_common_timestamps': cross['common_timestamps'],
+              'secondary_close_difference_p95_bps': cross['absolute_close_difference_basis_points']['p95'],
+              'secondary_return_correlation': cross['one_bar_return_correlation'],
+              'secondary_best_timestamp_offset_bars': lag['best_candidate_offset']['secondary_timestamp_offset_bars_for_diagnostic_only'],
+              'secondary_offset_reduction_fraction': lag['relative_median_discrepancy_reduction_vs_zero_offset'],
+              'secondary_potential_timestamp_alignment_mismatch': lag['potential_timestamp_alignment_mismatch'],
+              'secondary_best_offset_at_scan_boundary': lag['best_candidate_at_scan_boundary'],
+              'tp_sl_protocol_status': tp['status'],
+              'tp_sl_candidate_trade_events': tp['candidate_trade_events'],
+              'tp_sl_scored_binary_events': tp['scored_binary_events'],
+              'tp_sl_ambiguous_same_bar_events': tp['ambiguous_same_bar_events'],
+              'decision_output': r['decision_output']}, indent=2))
+          PY
+      - name: Run 700k M1 candles and 20k distinct real timestamp scenarios
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/execution_replay_benchmark_v1.py
+          --output-dir /tmp/aurum-online-benchmark/large-scale
+      - name: Enforce 700k-candle and 20k-real-scenario minimums
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          assert r['status'] == 'PASS', r
+          d = r['dataset']
+          c = r['scenario_contract']
+          e = r['prequential_probability_evaluation']
+          assert d['dataset_rows'] >= 700000, d
+          assert d['paired_valid_bid_ask_candles'] >= 700000, d
+          assert d['data_quality']['rows_mon_fri_utc'] >= 700000, d
+          assert d['data_quality']['weekday_active_nonflat_rows'] >= 700000, d
+          assert d['minimum_candles_required'] >= 700000, d
+          assert d['minimum_dataset_rows_required'] >= 20000, d
+          assert d['months_requested'] >= 24 and len(d['monthly_manifest']) >= 24, d
+          assert d['provider_provenance_independently_verified'] is False, d
+          assert d['upstream_data_rights_verified'] is False, d
+          assert c['selected_unique_anchor_timestamps'] >= 20000, c
+          assert c['selected_anchor_timestamps_with_valid_atr'] == c['selected_unique_anchor_timestamps'], c
+          assert c['anchor_contexts'] >= 20000, c
+          assert c['tp_sl_path_scenarios'] >= 20000, c
+          assert c['strategy_decision_slots'] >= 20000, c
+          assert sum(v['scenarios'] for v in c['scenario_outcome_counts'].values()) == c['tp_sl_path_scenarios'], c
+          assert e['binary_scored_strategy_events'] >= 20000, e
+          assert e['chronological_partitions']['final_holdout']['n'] >= 1000, e
+          assert e['chronological_partitions']['final_holdout']['final_test_priors_frozen'] is True, e
+          assert e['chronological_partitions']['final_holdout']['parameter_fitting_on_partition'] is False, e
+          assert e['aggregate']['reliability']['ece_descriptive'] is not None, e
+          assert e['aggregate']['constant_0_5_brier'] is not None, e
+          assert e['global_prequential_base_rate_baseline']['n'] == e['binary_scored_strategy_events'], e
+          assert e['aggregate']['brier_skill_vs_global_matured_label_baseline'] is not None, e
+          assert e['chronological_partitions']['final_holdout']['global_matured_label_baseline']['n'] == e['chronological_partitions']['final_holdout']['n'], e
+          assert e['moving_block_bootstrap_brier_improvement_vs_constant_0_5']['replicates'] == 250, e
+          assert e['moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate']['replicates'] == 250, e
+          assert r['artifact_policy'].startswith('Raw bid/ask OHLCV candles are never written'), r
+          assert r['raw_data_included_in_artifact'] is False, r
+          assert r['decision_output'] == 'NO_TRADE', r
+          assert r['deployment_calibrated'] is False and r['validated_model'] is False, r
+          assert r['live_signal_enabled'] is False, r
+          print(json.dumps({
+            'status': r['status'],
+            'dataset_rows': d['dataset_rows'],
+            'paired_bid_ask_candles': d['paired_valid_bid_ask_candles'],
+            'weekday_active_nonflat_candles': d['data_quality']['weekday_active_nonflat_rows'],
+            'months': d['months_requested'],
+            'distinct_real_scenario_timestamps': c['selected_unique_anchor_timestamps'],
+            'eligible_real_windows': c['eligible_real_contiguous_windows_with_valid_atr'],
+            'tp_sl_path_scenarios': c['tp_sl_path_scenarios'],
+            'strategy_signal_events_scored': e['binary_scored_strategy_events'],
+            'ambiguous_same_bar_events_excluded': e['ambiguous_same_bar_events_excluded'],
+            'prequential_brier': e['aggregate']['brier'],
+            'constant_0_5_brier': e['aggregate']['constant_0_5_brier'],
+            'global_matured_baseline_brier': e['global_prequential_base_rate_baseline']['brier'],
+            'skill_vs_global_matured_baseline': e['aggregate']['brier_skill_vs_global_matured_label_baseline'],
+            'brier_improvement_global_baseline_ci95': e['moving_block_bootstrap_brier_improvement_vs_global_prequential_base_rate']['ci95'],
+            'final_test_events': e['chronological_partitions']['final_holdout']['n'],
+            'final_test_priors_frozen': e['chronological_partitions']['final_holdout']['final_test_priors_frozen'],
+            'decision_output': r['decision_output']
+          }, indent=2))
+          PY
+      - name: Enforce quote-side execution replay contracts
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/large-scale/execution_replay_report.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          c = r['coverage']
+          assert r['status'] == 'DIAGNOSTIC_ONLY', r
+          assert r['decision_output'] == 'NO_TRADE', r
+          assert r['live_execution_authorized'] is False, r
+          assert r['validated_for_profitability'] is False and r['deployment_calibrated'] is False, r
+          assert r['dataset']['row_count'] >= 700000, r['dataset']
+          assert r['dataset']['provider_provenance_independently_verified'] is False, r['dataset']
+          assert r['dataset']['upstream_data_rights_verified'] is False, r['dataset']
+          assert c['unique_real_anchors'] >= 20000, c
+          assert c['path_outcomes_evaluated'] == c['unique_real_anchors'] * 2, c
+          assert c['legacy_label_crosschecks'] + c['invalid_stop_geometry_paths'] == c['path_outcomes_evaluated'], c
+          assert c['legacy_label_mismatches'] == 0, c
+          assert c['invalid_stop_geometry_paths'] == 0, c
+          geometry = c['entry_geometry_diagnostics']
+          assert geometry['candidate_contiguous_windows_with_valid_atr'] >= 20000, geometry
+          assert geometry['entry_geometry_infeasible_windows'] > 0, geometry
+          assert 0.0 < geometry['entry_geometry_infeasible_fraction'] < 1.0, geometry
+          assert geometry['entry_spread_to_atr_ratio']['p95'] > 0.0, geometry
+          assert c['legacy_invalid_geometry_stop_labels'] == c['invalid_stop_geometry_paths'], c
+          assert c['signal_events'] >= 5000, c
+          assert c['final_holdout_signal_events'] >= 1000, c
+          assert sum(c['path_status_counts_by_anchor_side'].values()) == c['path_outcomes_evaluated'], c
+          assert set(r['metrics_by_strategy']) == {'momentum_5', 'ema10_vs_ema30', 'mean_reversion_z20', 'range_breakout_20'}, r
+          cost = r['cost_sensitivity']
+          assert cost['broker_observed_cost'] is False and cost['net_account_currency_pnl_produced'] is False, cost
+          assert cost['additional_cost_grid_r'] == [0.0, 0.025, 0.05, 0.1], cost
+          for name, metric in r['metrics_by_strategy'].items():
+              for split in ('development', 'calibration', 'final_holdout'):
+                  assert split in metric, (name, metric)
+                  assert metric[split]['pessimistic_gross']['n'] == metric[split]['events'], (name, split, metric[split])
+                  assert metric[split]['optimistic_gross']['n'] == metric[split]['events'], (name, split, metric[split])
+          print(json.dumps({
+              'status': r['status'], 'decision_output': r['decision_output'],
+              'dataset_rows': c['dataset_rows'], 'unique_real_anchors': c['unique_real_anchors'],
+              'path_outcomes_evaluated': c['path_outcomes_evaluated'],
+              'legacy_label_crosschecks': c['legacy_label_crosschecks'],
+              'legacy_label_mismatches': c['legacy_label_mismatches'],
+              'entry_geometry_diagnostics': geometry,
+              'invalid_stop_geometry_paths': c['invalid_stop_geometry_paths'],
+              'signals_blocked_by_entry_geometry': c['signals_blocked_by_entry_geometry'],
+              'signal_events': c['signal_events'], 'final_holdout_signal_events': c['final_holdout_signal_events'],
+              'path_status_counts': c['path_status_counts_by_anchor_side'],
+              'cost_is_broker_observed': cost['broker_observed_cost'],
+              'net_account_currency_pnl_produced': cost['net_account_currency_pnl_produced']
+          }, indent=2))
+          PY
+      - name: Enforce third-source tick-data contract
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('/tmp/aurum-online-benchmark/tick_bidask_benchmark.json')
+          r = json.loads(path.read_text(encoding='utf-8'))
+          assert r['status'] == 'PASS', r
+          assert r['dataset']['license'] == 'CC-BY-4.0', r['dataset']
+          assert 'CarlosSilva1/xauusd-ticks' in r['dataset']['attribution'], r['dataset']
+          assert r['dataset']['rows'] >= 1000, r['dataset']
+          assert r['dataset']['bytes_downloaded'] <= 128 * 1024 * 1024, r['dataset']
+          assert r['dataset']['raw_tick_data_redistributed'] is False, r['dataset']
+          assert r['spread']['tick_count'] == r['dataset']['rows'], r['spread']
+          assert r['tick_quality']['non_finite_or_missing_rows'] == 0, r['tick_quality']
+          assert r['tick_quality']['non_positive_quote_count'] == 0, r['tick_quality']
+          assert r['tick_quality']['crossed_quote_count'] == 0, r['tick_quality']
+          c = r['cross_source_comparison']
+          assert c['status'] == 'THIRD_SOURCE_DIAGNOSTIC_ONLY', c
+          assert c['shared_timestamps'] >= 1000, c
+          assert c['automatic_timestamp_shift'] is False, c
+          assert c['automatic_price_rescale'] is False, c
+          assert c['automatic_source_promotion'] is False, c
+          assert set(c['basis_comparisons']) == {'bid', 'mid', 'ask'}, c
+          sc = r['secondary_community_comparison']
+          assert sc['status'] == 'THIRD_SOURCE_DIAGNOSTIC_ONLY', sc
+          assert sc['shared_timestamps'] >= 1000, sc
+          assert sc['automatic_timestamp_shift'] is False, sc
+          assert sc['automatic_price_rescale'] is False, sc
+          assert sc['automatic_source_promotion'] is False, sc
+          assert set(sc['basis_comparisons']) == {'bid', 'mid', 'ask'}, sc
+          lineage = r['data_lineage_diagnostic']
+          assert lineage['source_independence_verified'] is False, lineage
+          assert lineage['independent_source_confirmation'] is False, lineage
+          assert lineage['automatic_source_promotion'] is False, lineage
+          assert lineage['status'] in {
+            'INSUFFICIENT_OVERLAP_FOR_LINEAGE_DIAGNOSTIC',
+            'POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED',
+            'NO_NEAR_EXACT_OHLC_MATCH_EVIDENCE_NOT_PROOF_OF_INDEPENDENCE'
+          }, lineage
+          gates = r['source_qualification_gates']
+          assert set(gates) == {'primary_price', 'secondary_price', 'tick_bidask'}, gates
+          for source_id, gate in gates.items():
+            assert gate['research_qualification_status'] == 'REFERENCE_ONLY', (source_id, gate)
+            assert gate['execution_qualification_status'] == 'BLOCKED', (source_id, gate)
+            assert gate['source_promotion_allowed'] is False, (source_id, gate)
+            assert gate['live_execution_authorized'] is False, (source_id, gate)
+            assert len(gate['research_missing_evidence']) == 5, (source_id, gate)
+          assert r['decision_output'] == 'NO_TRADE', r
+          assert not r['validated_model'] and not r['calibrated_model'] and not r['live_signal_enabled'], r
+          print(json.dumps({
+            'status': r['status'],
+            'tick_rows': r['dataset']['rows'],
+            'parquet_parts': len(r['dataset']['files']),
+            'downloaded_bytes': r['dataset']['bytes_downloaded'],
+            'tick_m5_bars': c['tick_derived_m5_bars'],
+            'primary_overlap_bars': c['shared_timestamps'],
+            'secondary_overlap_bars': sc['shared_timestamps'],
+            'secondary_mid_close_difference_p95_bps': sc['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
+            'source_lineage_diagnostic': lineage['status'],
+            'secondary_exact_bid_ohlc_match_fraction': lineage['exact_ohlc_match_fraction'],
+            'source_independence_verified': lineage['source_independence_verified'],
+            'spread_median_price_units': r['spread']['spread_price_units']['median'],
+            'spread_p95_price_units': r['spread']['spread_price_units']['p95'],
+            'mid_close_difference_p95_bps': c['basis_comparisons']['mid']['absolute_close_difference_bps']['p95'],
+            'decision_output': r['decision_output']
+          }, indent=2))
+          PY
+      - name: Run real-data point-in-time external-context benchmark
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+        run: |
+          python projects/aurum-intelligence/online-benchmark/run_external_context_benchmark_v1.py \
+            --output /tmp/aurum-online-benchmark/external-context/external_context_benchmark.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.json')
+          r = json.loads(p.read_text(encoding='utf-8'))
+          assert r['decision_gate'] == 'NO_TRADE', r
+          assert r['deployment_calibrated'] is False and r['validated'] is False, r
+          assert r['live_signal_enabled'] is False, r
+          g = r['scale_gate']
+          assert g['observations'] >= 0 and g['target'] == 100000, g
+          assert g['passed'] is (g['observations'] >= g['target']), g
+          if g['status'] == 'NOT_MET':
+              assert g['passed'] is False, g
+          if g['passed']:
+              assert g['observations'] >= 100000, g
+          assert g['synthetic_or_duplicated_observations_added'] == 0, g
+          b = r['ablation_benchmark']
+          assert b['protocol']['holdout_used_for_selection'] is False, b['protocol']
+          assert b['protocol']['holdout_used_for_calibration'] is False, b['protocol']
+          assert b['protocol']['final_holdout_fraction'] == 0.20, b['protocol']
+          d = r['source_details']['price_dataset']
+          assert d['paired_valid_bid_ask_candles'] >= 700000, d
+          assert d['weekday_active_nonflat_rows'] >= 700000, d
+          assert r['price_label_audit']['candidate_anchors'] >= 20000, r['price_label_audit']
+          assert r['price_label_audit']['matured_binary_labels'] >= 1000, r['price_label_audit']
+          print(json.dumps({
+              'status': r['status'],
+              'decision_gate': r['decision_gate'],
+              'real_unique_gdelt_observations': g['observations'],
+              'context_scale_gate': g['status'],
+              'price_rows': d['paired_valid_bid_ask_candles'],
+              'valid_atr_anchors': r['price_label_audit']['candidate_anchors'],
+              'matured_unambiguous_labels': r['price_label_audit']['matured_binary_labels'],
+              'source_states': r['source_states_for_features'],
+              'ablations': {k: {'status': v.get('status'),
+                  'calibration_status': v.get('calibration_status'),
+                  'brier': v.get('metrics', {}).get('brier_score'),
+                  'brier_ci_vs_baseline': v.get('paired_moving_block_ci_vs_causal_baseline')}
+                  for k, v in b['ablations'].items()}
+          }, indent=2))
+          with open('/tmp/aurum-online-benchmark/external-context/external_context_benchmark.md', 'w', encoding='utf-8') as f:
+              f.write('# Aurum external-context point-in-time benchmark\n\n')
+              f.write(f"- Decision gate: {r['decision_gate']}\n")
+              f.write(f"- Real unique GDELT records: {g['observations']} / {g['target']} (scale: {g['status']})\n")
+              f.write(f"- Price rows: {d['paired_valid_bid_ask_candles']}; mature unambiguous labels: {r['price_label_audit']['matured_binary_labels']}\n")
+              f.write('\n| Ablation | Status | Calibration | Holdout Brier | Paired Brier improvement 95% interval |\n|---|---|---|---:|---|\n')
+              for name, a in b['ablations'].items():
+                  metric = a.get('metrics', {})
+                  ci = a.get('paired_moving_block_ci_vs_causal_baseline', {})
+                  interval = f"[{ci.get('lower_95')}, {ci.get('upper_95')}]" if ci else 'n/a'
+                  f.write(f"| {name} | {a.get('status')} | {a.get('calibration_status', 'n/a')} | {metric.get('brier_score', 'n/a')} | {interval} |\n")
+              f.write('\nPipeline success is not proof of data scale, calibrated edge, profitability, or deployment readiness.\n')
+          PY
+      - name: Add benchmark report to job summary
+        if: always()
+        run: |
+          if [ -f /tmp/aurum-calibration-contracts.json ]; then
+            echo "## Temporal calibration contract benchmark (synthetic only)" >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/aurum-calibration-contracts.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/online_dataset_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/online_dataset_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/tick_bidask_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/tick_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/large-scale/large_scale_bidask_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md ]; then
+            cat /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Upload audit and replay artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurum-online-dataset-benchmark-${{ github.run_id }}
+          path: |
+            /tmp/aurum-online-benchmark/
+            /tmp/aurum-calibration-contracts.json
+          if-no-files-found: warn
+          retention-days: 14

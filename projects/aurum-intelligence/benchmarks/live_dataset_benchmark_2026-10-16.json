@@ -1,0 +1,105 @@
+{
+  "project": "Aurum Intelligence",
+  "version": "1.1.0",
+  "verified_at": "2026-10-16T11:35:53+07:00",
+  "ci": {
+    "workflow": "Aurum Online Dataset Benchmark",
+    "run_id": 38851436990,
+    "run_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851436990",
+    "conclusion": "success",
+    "artifact_id": 12025522071,
+    "artifact_url": "https://github.com/orionrayy/ai-determinism-engine/actions/runs/38851436990/artifacts/12025522071",
+    "artifact_filename": "aurum-online-dataset-benchmark-38851436990.zip",
+    "artifact_bytes": 9208,
+    "artifact_sha256": "7c661df1afafc372fd2816f2074ceb05aa7af0f8c7a388e64f07aa6b4bc43ef9",
+    "artifact_retention_expires_at": "2026-10-30T04:35:53Z"
+  },
+  "dataset": {
+    "source_repository": "getdata-finance/xauusd-5m-ohlcv-metals-historical-data",
+    "url": "https://raw.githubusercontent.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/main/XAUUSD_5m.csv",
+    "license_reference": "https://github.com/getdata-finance/xauusd-5m-ohlcv-metals-historical-data/blob/main/LICENSE",
+    "license_verified_for_intended_use": false,
+    "bytes": 3070226,
+    "rows": 35954,
+    "sha256": "acb0d2f86b030a3ead93d92038ea27c21db6f5171acfec7a7c316faf90a9e3db",
+    "timestamp_start": "2026-03-26T02:30:00+00:00",
+    "timestamp_end": "2026-09-25T20:40:00+00:00",
+    "displayed_timestamp_offset": "+00:00",
+    "provider_timezone_and_broker_semantics_verified": false,
+    "median_interval_seconds": 300,
+    "intervals_over_600_seconds": 136,
+    "raw_dataset_committed": false
+  },
+  "historical_benchmark": {
+    "decision_cases": 50,
+    "baseline_evaluations": 250,
+    "cost_model": "assumed 0.30 price units spread + 0.10 slippage per active trade; not measured broker cost",
+    "baselines": [
+      {
+        "name": "last_return_sign",
+        "trades": 50,
+        "direction_accuracy": 0.52,
+        "net_pnl_units": -19.12,
+        "max_drawdown_units": 24.79
+      },
+      {
+        "name": "ema5_vs_ema10",
+        "trades": 50,
+        "direction_accuracy": 0.44,
+        "net_pnl_units": -52.1,
+        "max_drawdown_units": 62.61
+      },
+      {
+        "name": "mean_reversion_z10",
+        "trades": 30,
+        "direction_accuracy": 0.5333333333333333,
+        "net_pnl_units": -5.21,
+        "max_drawdown_units": 13.51
+      },
+      {
+        "name": "prior20_range_breakout",
+        "trades": 7,
+        "direction_accuracy": 0.7142857142857143,
+        "net_pnl_units": 2.37,
+        "max_drawdown_units": 6.41
+      },
+      {
+        "name": "flat_no_trade",
+        "trades": 0,
+        "direction_accuracy": null,
+        "net_pnl_units": 0,
+        "max_drawdown_units": 0
+      }
+    ]
+  },
+  "simulation": {
+    "market_path_cases": 1200,
+    "market_path_passed": 1200,
+    "market_path_failed": 0,
+    "anchor_windows": 5,
+    "scenario_archetypes": 12,
+    "variations_per_archetype_per_anchor": 20,
+    "software_robustness_cases": 240,
+    "software_robustness_passed": 240,
+    "software_robustness_failed": 0
+  },
+  "execution": {
+    "benchmark_runtime_ms": 458.588,
+    "test_suite": "6/6 online-runner tests passed",
+    "assertions": "PASS",
+    "output_decision": "NO_TRADE",
+    "predictive_model_validated": false,
+    "live_trading_enabled": false
+  },
+  "limitations": [
+    "50 selected timestamps are a sparse diagnostic sample and do not establish statistical significance",
+    "community OHLCV bars are not broker Bid/Ask, tick data, or actual fills",
+    "timestamp offset is present but upstream timezone semantics remain unverified",
+    "cost assumptions are not broker-observed and exclude full commission, swap and execution model detail",
+    "market simulations are synthetic counterfactual stress tests, not additional historical events",
+    "a positive result from seven breakout trades is too small to establish predictive edge",
+    "license scope for commercial/derivative use and redistribution has not been independently reviewed"
+  ],
+  "decision_gate": "NO_TRADE",
+  "source_promotion": "DS51 remains reference_only until rights/provenance review"
+}
