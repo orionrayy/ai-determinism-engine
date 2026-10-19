@@ -280,6 +280,19 @@ def _choose_weight(
 ) -> dict[str, Any]:
     candidates = [r for r in history if r.get("_candidate") is not None and _label(r) in (0, 1)]
     candidates.sort(key=lambda r: int(r["decision_index"]))
+    if not candidates:
+        return {
+            "weight": 0.0,
+            "status": "BASELINE_ONLY_INSUFFICIENT_EVIDENCE",
+            "selection_rows": 0,
+            "gate_rows": 0,
+            "selection_cutoff_index": None,
+            "selection_blocks": 0,
+            "gate_blocks": 0,
+            "selection_source_block_ids": [],
+            "gate_source_block_ids": [],
+            "candidate_count": len(BLEND_GRID) - 1,
+        }
     # Partition on an absolute source-index block boundary, never by filtered-row
     # rank: otherwise a single 12-bar scoring block could leak into both selection
     # and confirmation sets when signals are sparse.
