@@ -429,5 +429,54 @@ class TemporalSemanticContractTests(unittest.TestCase):
         )
         self.assertTrue(any("feature_dependency_cycle" in item for item in report["blockers"]), report)
 
+
+    def test_observed_after_decision_is_rejected_even_if_available_at_is_old(self):
+        fact = self.fact()
+        fact["observed_at"] = "2026-01-01T00:05:01Z"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("observed_after_decision_time", report["blockers"])
+        self.assertFalse(report["eligible_at_decision_time"])
+
+    def test_future_macro_observation_period_is_not_misclassified_as_known_ahead_event(self):
+        fact = self.fact()
+        fact["semantic_type"] = "macro_observation"
+        fact["event_time_role"] = "observation_period"
+        fact["event_time"] = "2026-01-01T12:00:00Z"
+        fact["quote_basis"] = "not_applicable"
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("event_time_after_decision_for_past_only_role", report["blockers"])
+
+    def test_parent_must_be_observed_before_derived_feature_is_available(self):
+        parent = self.parent_fact()
+        parent["observed_at"] = "2026-01-01T00:04:07Z"
+        fact = self.derived_fact()
+        fact["available_at"] = "2026-01-01T00:04:05Z"
+        fact["observed_at"] = "2026-01-01T00:04:08Z"
+        report = validate_feature_lineage(
+            [parent, fact],
+            decision_time="2026-01-01T00:05:00Z",
+        )
+        self.assertIn(
+            "row_1:parent_0:parent_not_observed_before_derived_feature_available",
+            report["blockers"],
+        )
+
+    def test_snapshot_integrates_lineage_and_fails_when_parent_is_missing(self):
+        fact = self.derived_fact()
+        report = validate_feature_batch(
+            [fact],
+            decision_time="2026-01-01T00:05:00Z",
+            required_feature_ids=["xau.ema.5"],
+        )
+        self.assertEqual(report["lineage_status"], "BLOCKED")
+        self.assertFalse(report["eligible_for_research_feature_snapshot"])
+        self.assertTrue(any("parent_fact_not_found_in_snapshot" in item for item in report["blockers"]))
+
+    def test_malformed_fit_scope_fails_closed_without_type_error(self):
+        fact = self.derived_fact()
+        fact["transform_fit_scope"] = {"bad": "scope"}
+        report = validate_feature_fact(fact, decision_time="2026-01-01T00:05:00Z")
+        self.assertIn("derived_feature_fit_scope_not_causal_or_unknown", report["blockers"])
+
 if __name__ == "__main__":
     unittest.main()
