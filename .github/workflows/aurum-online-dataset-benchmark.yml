@@ -138,6 +138,231 @@ jobs:
               'tp_sl_ambiguous_same_bar_events': tp['ambiguous_same_bar_events'],
               'decision_output': r['decision_output']}, indent=2))
           PY
+      - name: Run real OHLCV through integrated Serevex stages 1-3
+        working-directory: projects/aurum-intelligence/online-benchmark
+        run: |
+          python - <<'PY'
+          import hashlib
+          import json
+          from collections import Counter
+          from pathlib import Path
+
+          import ci_benchmark
+          import serevex_forecast_ledger_producer_v1 as producer
+          import serevex_stage123_integrated_v1 as integrated
+          import serevex_probability_evolution_v4_v9 as probability_evolution
+
+          payload = ci_benchmark.fetch()
+          rows = ci_benchmark.parse_csv(payload)
+          first_ts = rows[0]["timestamp"]
+          naive = first_ts.tzinfo is None or first_ts.utcoffset() is None
+          timestamp_policy = "assume_utc_for_diagnostic_only" if naive else "reject"
+          ledger, report = producer.run_end_to_end(
+              rows,
+              dataset_sha256=hashlib.sha256(payload).hexdigest(),
+              source_uri=ci_benchmark.SOURCE,
+              rule="last_return_sign",
+              side="long",
+              as_of_index=len(rows),
+              naive_timestamp_policy=timestamp_policy,
+              evidence_kind="real_market_research",
+              license_reference=ci_benchmark.LICENSE,
+              atlas_bootstrap_replicates=200,
+          )
+          checked = integrated.validate_forecast_ledger(ledger)
+          probability_evolution_report = probability_evolution.evaluate_forecast_ledger_versions(
+              ledger, candidate_expert="alpha_calibrated_logistic_v1", as_of_index=len(rows),
+              score_partition="final_holdout",
+          )
+          assert list(probability_evolution_report["versions"]) == list(probability_evolution.VERSION_ORDER), probability_evolution_report
+          assert probability_evolution_report["status"] == "RESEARCH_COMPARISON_NOT_PROMOTION", probability_evolution_report
+          assert probability_evolution_report["score_partition"] == "final_holdout", probability_evolution_report
+          cohort_row_counts = {version: item["scored_rows"] for version, item in probability_evolution_report["comparison"].items()}
+          assert len(set(cohort_row_counts.values())) == 1, cohort_row_counts
+          assert next(iter(cohort_row_counts.values())) > 0, cohort_row_counts
+          expected_forecast_identity = sorted(
+              [(record["decision_id"], record["decision_index"]) for record in ledger["records"]],
+              key=lambda identity: identity[1],
+          )
+          assert len(ledger["records"]) == len(probability_evolution_report["versions"]["9.0"]["forecasts"])
+          for version, result in probability_evolution_report["versions"].items():
+              evidence = result["evidence"]
+              assert evidence["decision_output"] == "NO_TRADE", (version, evidence)
+              assert evidence["model_validated"] is False, (version, evidence)
+              assert evidence["deployment_calibrated"] is False, (version, evidence)
+              assert evidence["score_partition"] == "final_holdout", (version, evidence)
+              assert evidence["scored_rows"] == next(iter(cohort_row_counts.values())), (version, cohort_row_counts)
+              assert evidence["forecast_rows_emitted"] == len(ledger["records"]), (version, evidence)
+              assert evidence["rows_at_or_after_as_of_excluded"] == 0, (version, evidence)
+              assert evidence["last_emitted_decision_index"] < len(rows), (version, evidence)
+              actual_forecast_identity = [
+                  (item["decision_id"], item["decision_index"]) for item in result["forecasts"]
+              ]
+              assert actual_forecast_identity == expected_forecast_identity, (version, "ledger_forecast_identity_mismatch")
+              assert all(item["decision_index"] < len(rows) for item in result["forecasts"]), version
+          assert probability_evolution_report["source_evidence"]["historical_feature_availability_verified"] is False
+          alpha = ledger["metadata"]["alpha_model_training"]
+          assert checked["contract_status"] == "PASS", checked
+          assert alpha["model_version"] == "serevex-alpha-logistic-v4-embargoed-dual-score-ood", alpha
+          assert alpha["status"] == "ALPHA_RESEARCH_TRAINED", alpha
+          assert alpha["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"] is False, alpha
+          assert alpha["training_policy"]["final_holdout_predictions_are_frozen"] is True, alpha
+          assert alpha["final_holdout_metrics"]["rows"] > 0, alpha
+          assert "probability_governor" in alpha, alpha
+          assert alpha["probability_governor"]["alpha_weight"] in (0.0, 0.1, 0.25, 0.5, 0.75, 1.0), alpha
+          assert "paired_brier_improvement_ci_vs_causal_baseline" in alpha["final_holdout_metrics"], alpha
+          assert "reliability_diagnostics" in alpha["final_holdout_metrics"], alpha
+          assert "out_of_domain_fallback_rate" in alpha["final_holdout_metrics"], alpha
+          assert alpha["probability_governor"]["status"] in (
+              "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
+              "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN",
+              "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN",
+          ), alpha
+          assert all("alpha_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
+          assert all("alpha_calibrated_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
+          assert all(
+              (0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
+              if row["partition"] == "final_holdout"
+              else row["alpha_model_out_of_domain_fraction"] is None
+              for row in ledger["records"]
+          )
+          assert report["status"] == "PASS_CONTRACT_DIAGNOSTIC_ONLY", report
+          assert report["stage_1_ledger_contract"] == "PASS", report
+          assert report["decision_output"] == "NO_TRADE", report
+          assert report["live_signal_enabled"] is False and report["live_order_execution_enabled"] is False, report
+          assert checked["all_source_verification_flags_true"] is False, checked
+          assert len(ledger["records"]) > 1000, checked
+          mixer = report["stage_3_delayed_feedback_mixer"]
+          assert mixer["status"] == "DIAGNOSTIC_ONLY", mixer
+          assert mixer["scored_rows"] > 0, mixer
+          assert mixer["rows_at_or_after_as_of_excluded"] == 0, mixer
+          atlas = report["stage_2_predictability_atlas"]
+          status_counts = dict(Counter(cell["status"] for cell in atlas["results"]))
+          probability_evolution_final_global_gate = {}
+          for version, result in probability_evolution_report["versions"].items():
+              global_trace = [
+                  item for item in result["policy_trace"] if item.get("pool") == "global"
+              ]
+              latest = global_trace[-1] if global_trace else {}
+              probability_evolution_final_global_gate[version] = {
+                  "decision_index": latest.get("decision_index"),
+                  "status": latest.get("status"),
+                  "confirmation_gate_status": latest.get("confirmation_gate_status"),
+                  "selection_candidate_diagnostics": latest.get("selection_candidate_diagnostics", []),
+              }
+          summary = {
+              "status": "PASS_REAL_DATA_LEDGER_AND_STAGES_1_3_CONTRACTS",
+              "evidence_kind": ledger["metadata"]["evidence_kind"],
+              "dataset_rows": len(rows),
+              "dataset_sha256": ledger["metadata"]["dataset_sha256"],
+              "source_uri": ledger["metadata"]["source_uri"],
+              "rule": ledger["metadata"]["rule"],
+              "side": ledger["metadata"]["side"],
+              "target_id": ledger["metadata"]["target_id"],
+              "timestamp_policy": ledger["metadata"]["source_timezone_policy"],
+              "source_timestamp_semantics_verified": ledger["metadata"]["source_timestamp_semantics_verified"],
+              "historical_feature_availability_verified": ledger["metadata"]["historical_feature_availability_verified"],
+              "license_reference_claim": ledger["metadata"]["license_reference_claim"],
+              "ledger_record_count": checked["record_count"],
+              "ledger_sha256": checked["ledger_sha256"],
+              "partition_counts": checked["partition_counts"],
+              "binary_matured_label_count_in_ledger": sum(1 for row in ledger["records"] if row["label_mature"] and row["label"] in (0, 1)),
+              "ambiguous_unresolved_label_count": sum(1 for row in ledger["records"] if row["label"] is None),
+              "atlas_hypothesis_family_size": atlas["hypothesis_family_size"],
+              "atlas_cell_status_counts": status_counts,
+              "mixer_scored_rows": mixer["scored_rows"],
+              "mixer_candidate_brier": mixer["candidate_brier"],
+              "mixer_baseline_brier": mixer["baseline_brier"],
+              "brier_skill_baseline_minus_mixer": mixer["brier_skill_baseline_minus_candidate"],
+              "mixer_final_weights_sha256": mixer["final_global_weights_sha256"],
+              "alpha_model_version": alpha["model_version"],
+              "alpha_model_status": alpha["status"],
+              "alpha_model_artifact_sha256": alpha["model_artifact_sha256"],
+              "alpha_selected_l2": alpha["selected_l2"],
+              "alpha_selection_status": alpha["selection_status"],
+              "alpha_training_rows": alpha["training_policy"]["final_model_train_rows"],
+              "alpha_calibration_rows": alpha["training_policy"]["calibration_rows"],
+              "alpha_holdout_rows": alpha["final_holdout_metrics"]["rows"],
+              "alpha_holdout_brier": alpha["final_holdout_metrics"]["alpha_brier_score"],
+              "alpha_baseline_holdout_brier": alpha["final_holdout_metrics"]["causal_baseline_brier_score"],
+              "alpha_brier_improvement_baseline_minus_alpha": alpha["final_holdout_metrics"]["brier_improvement_baseline_minus_alpha"],
+              "alpha_calibration_status": alpha["calibrator"]["status"],
+              "alpha_governor_status": alpha["probability_governor"]["status"],
+              "alpha_selected_blend_weight": alpha["probability_governor"]["alpha_weight"],
+              "alpha_governor_candidate_diagnostics": alpha["probability_governor"]["candidate_diagnostics"],
+              "alpha_ood_fallback_rate": alpha["final_holdout_metrics"]["out_of_domain_fallback_rate"],
+              "alpha_ood_fallback_rows": alpha["final_holdout_metrics"]["out_of_domain_fallback_rows"],
+              "alpha_blend_selection_rows": alpha["probability_governor"]["selection_rows"],
+              "alpha_raw_holdout_brier": alpha["final_holdout_metrics"]["raw_alpha_brier_score"],
+              "alpha_calibrated_holdout_brier": alpha["final_holdout_metrics"]["calibrated_alpha_brier_score"],
+              "alpha_raw_holdout_brier_ci_vs_baseline": alpha["final_holdout_metrics"]["raw_alpha_paired_brier_improvement_ci_vs_causal_baseline"]["ci95"],
+              "alpha_calibrated_holdout_brier_ci_vs_baseline": alpha["final_holdout_metrics"]["calibrated_alpha_paired_brier_improvement_ci_vs_causal_baseline"]["ci95"],
+              "alpha_raw_holdout_ece": alpha["final_holdout_metrics"]["raw_alpha_reliability_diagnostics"]["ece"],
+              "alpha_calibrated_holdout_ece": alpha["final_holdout_metrics"]["calibrated_alpha_reliability_diagnostics"]["ece"],
+              "alpha_raw_ood_guarded_holdout_brier": alpha["final_holdout_metrics"]["raw_alpha_with_ood_fallback_brier_score"],
+              "alpha_calibrated_ood_guarded_holdout_brier": alpha["final_holdout_metrics"]["calibrated_alpha_with_ood_fallback_brier_score"],
+              "alpha_raw_ood_guarded_holdout_log_loss": alpha["final_holdout_metrics"]["raw_alpha_with_ood_fallback_log_loss"],
+              "alpha_calibrated_ood_guarded_holdout_log_loss": alpha["final_holdout_metrics"]["calibrated_alpha_with_ood_fallback_log_loss"],
+              "alpha_raw_ood_guarded_brier_ci_vs_baseline": alpha["final_holdout_metrics"]["raw_alpha_with_ood_fallback_paired_brier_improvement_ci_vs_causal_baseline"]["ci95"],
+              "alpha_calibrated_ood_guarded_brier_ci_vs_baseline": alpha["final_holdout_metrics"]["calibrated_alpha_with_ood_fallback_paired_brier_improvement_ci_vs_causal_baseline"]["ci95"],
+              "alpha_calibrated_ood_guarded_ece": alpha["final_holdout_metrics"]["calibrated_alpha_with_ood_fallback_reliability_diagnostics"]["ece"],
+              "alpha_holdout_brier_ci_vs_baseline": alpha["final_holdout_metrics"]["paired_brier_improvement_ci_vs_causal_baseline"]["ci95"],
+              "alpha_holdout_ece": alpha["final_holdout_metrics"]["reliability_diagnostics"]["ece"],
+              "alpha_holdout_frozen": alpha["training_policy"]["final_holdout_predictions_are_frozen"],
+              "probability_evolution_status": probability_evolution_report["status"],
+              "probability_evolution_score_partition": probability_evolution_report["score_partition"],
+              "probability_evolution_expert": probability_evolution_report["source_evidence"]["candidate_expert"],
+              "probability_evolution_scored_rows": next(iter(cohort_row_counts.values())),
+              "probability_evolution_comparison": probability_evolution_report["comparison"],
+              "probability_evolution_final_global_gate_diagnostics": probability_evolution_final_global_gate,
+              "probability_evolution_trace_counts": {v: len(item["policy_trace"]) for v, item in probability_evolution_report["versions"].items()},
+              "probability_evolution_source_evidence": probability_evolution_report["source_evidence"],
+              "ledger_sha256": checked["ledger_sha256"],
+              "report_sha256": report["report_sha256"],
+              "source_verification": checked["source_verification"],
+              "model_validated": report["model_validated"],
+              "deployment_calibrated": report["deployment_calibrated"],
+              "live_signal_enabled": report["live_signal_enabled"],
+              "live_order_execution_enabled": report["live_order_execution_enabled"],
+              "decision_output": report["decision_output"],
+          }
+          output = Path("/tmp/aurum-online-benchmark/serevex-stage123")
+          output.mkdir(parents=True, exist_ok=True)
+          (output / "real_data_stage123_summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+          )
+          (output / "probability_evolution_v4_v9_report.json").write_text(
+              json.dumps(probability_evolution_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+          )
+          lines = [
+              "# Serevex real-data ledger and integrated stages 1–3",
+              "",
+              "Status: PASS_CONTRACT_DIAGNOSTIC_ONLY; decision output: NO_TRADE.",
+              "",
+              f"- Input rows: {summary['dataset_rows']}; dataset SHA-256: {summary['dataset_sha256']}",
+              f"- Cohort: {summary['rule']} / {summary['side']}; ledger records: {summary['ledger_record_count']}",
+              f"- Ledger SHA-256: {summary['ledger_sha256']}",
+              f"- Stage-3 scored rows: {summary['mixer_scored_rows']}",
+              f"- Baseline Brier: {summary['mixer_baseline_brier']}; mixer Brier: {summary['mixer_candidate_brier']}",
+              f"- Baseline-minus-mixer Brier skill: {summary['brier_skill_baseline_minus_mixer']}",
+              f"- Alpha training: {summary['alpha_model_status']}; fit rows: {summary['alpha_training_rows']}; calibration rows: {summary['alpha_calibration_rows']}",
+              f"- Alpha final-holdout Brier: {summary['alpha_holdout_brier']}; causal baseline Brier: {summary['alpha_baseline_holdout_brier']}; improvement: {summary['alpha_brier_improvement_baseline_minus_alpha']}",
+              f"- Alpha probability governor: {summary['alpha_governor_status']}; selected alpha blend weight: {summary['alpha_selected_blend_weight']}; blend calibration rows: {summary['alpha_blend_selection_rows']}",
+              f"- Alpha out-of-domain baseline fallbacks: {summary['alpha_ood_fallback_rows']} rows; rate: {summary['alpha_ood_fallback_rate']}",
+              f"- Alpha raw/calibrated holdout Brier: {summary['alpha_raw_holdout_brier']} / {summary['alpha_calibrated_holdout_brier']}; raw/cal ECE: {summary['alpha_raw_holdout_ece']} / {summary['alpha_calibrated_holdout_ece']}; raw/cal block CIs: {summary['alpha_raw_holdout_brier_ci_vs_baseline']} / {summary['alpha_calibrated_holdout_brier_ci_vs_baseline']}",
+              f"- Alpha raw/calibrated with OOD guard Brier: {summary['alpha_raw_ood_guarded_holdout_brier']} / {summary['alpha_calibrated_ood_guarded_holdout_brier']}; log-loss: {summary['alpha_raw_ood_guarded_holdout_log_loss']} / {summary['alpha_calibrated_ood_guarded_holdout_log_loss']}; calibrated ECE: {summary['alpha_calibrated_ood_guarded_ece']}; guarded CIs: {summary['alpha_raw_ood_guarded_brier_ci_vs_baseline']} / {summary['alpha_calibrated_ood_guarded_brier_ci_vs_baseline']}",
+              f"- Alpha calibration: {summary['alpha_calibration_status']}; frozen holdout model: {summary['alpha_holdout_frozen']}; artifact SHA-256: {summary['alpha_model_artifact_sha256']}",
+              f"- Probability evolution v4.0–v9.0: {summary['probability_evolution_status']}; score partition: {summary['probability_evolution_score_partition']}; expert: {summary['probability_evolution_expert']}; same-cohort scored rows: {summary['probability_evolution_scored_rows']}",
+              f"- Probability evolution full JSON: {output / 'probability_evolution_v4_v9_report.json'}",
+              f"- Probability evolution latest global selection/gate diagnostics: {json.dumps(probability_evolution_final_global_gate, sort_keys=True)}",
+              f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
+              f"- Producer report SHA-256: {summary['report_sha256']}",
+              "",
+              "All source verification and deployment authority flags remain false. This is a historical community OHLCV diagnostic, not proof of point-in-time source availability, source rights, predictive skill, or profitability.",
+          ]
+          (output / "real_data_stage123_summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
       - name: Run 700k M1 candles and 20k distinct real timestamp scenarios
         run: >-
           python projects/aurum-intelligence/online-benchmark/execution_replay_benchmark_v1.py
@@ -449,6 +674,9 @@ jobs:
           fi
           if [ -f /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/serevex-stage123/real_data_stage123_summary.md ]; then
+            cat /tmp/aurum-online-benchmark/serevex-stage123/real_data_stage123_summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
       - name: Upload audit and replay artifacts
         if: always()
