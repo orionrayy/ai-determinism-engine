@@ -106,6 +106,15 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertAlmostEqual(result["forecasts"][-1]["probability"], 0.5)
         self.assertEqual(result["forecasts"][-1]["status"], "BASELINE_FALLBACK_DUAL_SCORE_NOT_ESTABLISHED")
 
+    def test_all_adaptive_versions_fall_back_during_empty_matured_history(self):
+        rows = make_rows(24)
+        for version in ("5.0", "6.0", "7.0", "8.0", "9.0"):
+            result = evo.evaluate_probability_evolution(rows, version=version)
+            first = result["forecasts"][0]
+            self.assertEqual(first["probability"], first["baseline_probability"])
+            self.assertEqual(first["alpha_weight"], 0.0)
+            self.assertIn("BASELINE_ONLY_INSUFFICIENT_EVIDENCE", first["status"])
+
     def test_v50_selects_alpha_only_after_selection_and_later_gate(self):
         rows = make_rows(720)
         result = evo.evaluate_probability_evolution(rows, version="5.0")
