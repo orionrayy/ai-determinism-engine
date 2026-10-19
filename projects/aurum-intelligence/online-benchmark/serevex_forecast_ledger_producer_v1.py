@@ -35,7 +35,11 @@ EVENT_RISK_BUCKET = "unknown_no_event_calendar"
 EXPERT_SPECS: dict[str, dict[str, Any]] = {
     "alpha_logistic_v1": {"kind": "trained_logistic_alpha", "model_version": alpha_model.MODEL_VERSION,
         "features": list(alpha_model.FEATURE_NAMES), "fit": "development_then_model_selection_refit",
-        "calibration": "calibration_partition_only", "final_holdout": "frozen_model_and_calibrator"},
+        "calibration": "calibration_partition_only", "final_holdout": "frozen_model_calibrator_and_baseline_governor"},
+    "alpha_calibrated_logistic_v1": {"kind": "frozen_calibrated_alpha_candidate_before_baseline_shrinkage",
+        "model_version": alpha_model.MODEL_VERSION, "features": list(alpha_model.FEATURE_NAMES),
+        "fit": "development_then_model_selection_refit", "calibration": "calibration_partition_only",
+        "final_holdout": "frozen_calibrator_with_exact_causal_baseline_fallback_on_ood"},
     "constant_50pct": {"kind": "fixed_probability", "probability": 0.5},
     "rolling_matured_rate_288": {"kind": "laplace_rate", "cohort": "same_rule_side", "window_matured_labels": ROLLING_MATURED_EVENTS},
     "regime_matured_rate": {"kind": "laplace_rate", "cohort": "same_rule_side_and_regime", "min_support": MIN_CONDITIONAL_SUPPORT, "fallback": "expanding_baseline"},
@@ -442,7 +446,14 @@ def build_forecast_ledger(
         as_of_index=len(normalized_rows),
     )
     expert_hashes["alpha_logistic_v1"] = alpha_training["model_artifact_sha256"]
+    expert_hashes["alpha_calibrated_logistic_v1"] = _canonical_sha({
+        "model_artifact_sha256": alpha_training["model_artifact_sha256"],
+        "expert_id": "alpha_calibrated_logistic_v1",
+        "probability_path": "calibrator_output_before_baseline_shrinkage",
+        "final_holdout_ood_fallback": "exact_rowwise_causal_baseline",
+    })
     alpha_probabilities = alpha_training["predictions_by_decision_index"]
+    alpha_calibrated_probabilities = alpha_training["calibrated_alpha_predictions_by_decision_index"]
     alpha_forecast_stages = alpha_training["forecast_stage_by_decision_index"]
     alpha_summary = {
         key: value for key, value in alpha_training.items()
@@ -480,6 +491,12 @@ def build_forecast_ledger(
             })
         probabilities = dict(event["pre_alpha_expert_probabilities"])
         probabilities["alpha_logistic_v1"] = float(alpha_probabilities[str(index)])
+        # Separate the frozen-calibrator candidate from the legacy governed expert.
+        # Keep the final-holdout OOD guard: out-of-domain rows use the exact baseline.
+        calibrated_candidate = float(alpha_calibrated_probabilities[str(index)])
+        if alpha_training["forecast_policy_by_decision_index"][str(index)] == "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES":
+            calibrated_candidate = float(event["baseline_probability"])
+        probabilities["alpha_calibrated_logistic_v1"] = calibrated_candidate
         record = {
             "decision_id": _canonical_sha({
                 "series_id": series_id, "decision_index": index,
