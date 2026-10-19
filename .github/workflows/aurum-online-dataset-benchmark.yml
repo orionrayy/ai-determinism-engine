@@ -171,22 +171,34 @@ jobs:
           )
           checked = integrated.validate_forecast_ledger(ledger)
           probability_evolution_report = probability_evolution.evaluate_forecast_ledger_versions(
-              ledger, candidate_expert="alpha_logistic_v1", as_of_index=len(rows)
+              ledger, candidate_expert="alpha_logistic_v1", as_of_index=len(rows),
+              score_partition="final_holdout",
           )
           assert list(probability_evolution_report["versions"]) == list(probability_evolution.VERSION_ORDER), probability_evolution_report
           assert probability_evolution_report["status"] == "RESEARCH_COMPARISON_NOT_PROMOTION", probability_evolution_report
+          assert probability_evolution_report["score_partition"] == "final_holdout", probability_evolution_report
           cohort_row_counts = {version: item["scored_rows"] for version, item in probability_evolution_report["comparison"].items()}
           assert len(set(cohort_row_counts.values())) == 1, cohort_row_counts
+          assert next(iter(cohort_row_counts.values())) > 0, cohort_row_counts
+          expected_forecast_identity = sorted(
+              [(record["decision_id"], record["decision_index"]) for record in ledger["records"]],
+              key=lambda identity: identity[1],
+          )
           assert len(ledger["records"]) == len(probability_evolution_report["versions"]["9.0"]["forecasts"])
           for version, result in probability_evolution_report["versions"].items():
               evidence = result["evidence"]
               assert evidence["decision_output"] == "NO_TRADE", (version, evidence)
               assert evidence["model_validated"] is False, (version, evidence)
               assert evidence["deployment_calibrated"] is False, (version, evidence)
+              assert evidence["score_partition"] == "final_holdout", (version, evidence)
               assert evidence["scored_rows"] == next(iter(cohort_row_counts.values())), (version, cohort_row_counts)
               assert evidence["forecast_rows_emitted"] == len(ledger["records"]), (version, evidence)
               assert evidence["rows_at_or_after_as_of_excluded"] == 0, (version, evidence)
               assert evidence["last_emitted_decision_index"] < len(rows), (version, evidence)
+              actual_forecast_identity = [
+                  (item["decision_id"], item["decision_index"]) for item in result["forecasts"]
+              ]
+              assert actual_forecast_identity == expected_forecast_identity, (version, "ledger_forecast_identity_mismatch")
               assert all(item["decision_index"] < len(rows) for item in result["forecasts"]), version
           assert probability_evolution_report["source_evidence"]["historical_feature_availability_verified"] is False
           alpha = ledger["metadata"]["alpha_model_training"]
@@ -274,6 +286,7 @@ jobs:
               "alpha_holdout_ece": alpha["final_holdout_metrics"]["reliability_diagnostics"]["ece"],
               "alpha_holdout_frozen": alpha["training_policy"]["final_holdout_predictions_are_frozen"],
               "probability_evolution_status": probability_evolution_report["status"],
+              "probability_evolution_score_partition": probability_evolution_report["score_partition"],
               "probability_evolution_expert": probability_evolution_report["source_evidence"]["candidate_expert"],
               "probability_evolution_scored_rows": next(iter(cohort_row_counts.values())),
               "probability_evolution_comparison": probability_evolution_report["comparison"],
@@ -313,7 +326,7 @@ jobs:
               f"- Alpha out-of-domain baseline fallbacks: {summary['alpha_ood_fallback_rows']} rows; rate: {summary['alpha_ood_fallback_rate']}",
               f"- Alpha raw/calibrated holdout Brier: {summary['alpha_raw_holdout_brier']} / {summary['alpha_calibrated_holdout_brier']}; ECE: {summary['alpha_holdout_ece']}; paired Brier CI vs baseline: {summary['alpha_holdout_brier_ci_vs_baseline']}",
               f"- Alpha calibration: {summary['alpha_calibration_status']}; frozen holdout model: {summary['alpha_holdout_frozen']}; artifact SHA-256: {summary['alpha_model_artifact_sha256']}",
-              f"- Probability evolution v4.0–v9.0: {summary['probability_evolution_status']}; expert: {summary['probability_evolution_expert']}; same-cohort scored rows: {summary['probability_evolution_scored_rows']}",
+              f"- Probability evolution v4.0–v9.0: {summary['probability_evolution_status']}; score partition: {summary['probability_evolution_score_partition']}; expert: {summary['probability_evolution_expert']}; same-cohort scored rows: {summary['probability_evolution_scored_rows']}",
               f"- Probability evolution full JSON: {output / 'probability_evolution_v4_v9_report.json'}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
               f"- Producer report SHA-256: {summary['report_sha256']}",
