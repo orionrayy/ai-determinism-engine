@@ -709,11 +709,43 @@ def train_alpha_model(
     holdout_brier_interval = _paired_block_bootstrap_ci(
         holdout_rows, holdout_alpha, holdout_baseline,
     )
+    holdout_raw_brier_interval = _paired_block_bootstrap_ci(
+        holdout_rows, holdout_raw_alpha, holdout_baseline, seed=20261020,
+    )
+    holdout_calibrated_brier_interval = _paired_block_bootstrap_ci(
+        holdout_rows, holdout_calibrated_alpha, holdout_baseline, seed=20261021,
+    )
     holdout_reliability = _reliability_diagnostics(holdout_alpha, holdout_labels)
+    holdout_raw_reliability = _reliability_diagnostics(holdout_raw_alpha, holdout_labels)
+    holdout_calibrated_reliability = _reliability_diagnostics(
+        holdout_calibrated_alpha, holdout_labels
+    )
     holdout_ood_flags = [
         float(out_of_domain_fractions[str(int(row["decision_index"]))] or 0.0) >= OOD_MAX_FEATURE_FRACTION
         for row in holdout_rows
     ]
+    holdout_raw_ood_guarded = [
+        baseline if is_ood else raw
+        for baseline, raw, is_ood in zip(holdout_baseline, holdout_raw_alpha, holdout_ood_flags)
+    ]
+    holdout_calibrated_ood_guarded = [
+        baseline if is_ood else calibrated
+        for baseline, calibrated, is_ood in zip(
+            holdout_baseline, holdout_calibrated_alpha, holdout_ood_flags
+        )
+    ]
+    holdout_raw_ood_guarded_brier_interval = _paired_block_bootstrap_ci(
+        holdout_rows, holdout_raw_ood_guarded, holdout_baseline, seed=20261022,
+    )
+    holdout_calibrated_ood_guarded_brier_interval = _paired_block_bootstrap_ci(
+        holdout_rows, holdout_calibrated_ood_guarded, holdout_baseline, seed=20261023,
+    )
+    holdout_raw_ood_guarded_reliability = _reliability_diagnostics(
+        holdout_raw_ood_guarded, holdout_labels
+    )
+    holdout_calibrated_ood_guarded_reliability = _reliability_diagnostics(
+        holdout_calibrated_ood_guarded, holdout_labels
+    )
     holdout_ood_fraction_rate = (sum(holdout_ood_flags) / len(holdout_ood_flags)) if holdout_ood_flags else None
 
     calibration_labels_sha = _sha([
@@ -790,10 +822,27 @@ def train_alpha_model(
             "rows": len(holdout_rows),
             "raw_alpha_brier_score": raw_alpha_brier,
             "calibrated_alpha_brier_score": calibrated_alpha_brier,
+            "raw_alpha_paired_brier_improvement_ci_vs_causal_baseline": holdout_raw_brier_interval,
+            "calibrated_alpha_paired_brier_improvement_ci_vs_causal_baseline": holdout_calibrated_brier_interval,
+            "raw_alpha_reliability_diagnostics": holdout_raw_reliability,
+            "calibrated_alpha_reliability_diagnostics": holdout_calibrated_reliability,
+            "raw_alpha_with_ood_fallback_brier_score": _brier(holdout_raw_ood_guarded, holdout_labels),
+            "calibrated_alpha_with_ood_fallback_brier_score": _brier(holdout_calibrated_ood_guarded, holdout_labels),
+            "raw_alpha_with_ood_fallback_log_loss": _log_loss(holdout_raw_ood_guarded, holdout_labels),
+            "calibrated_alpha_with_ood_fallback_log_loss": _log_loss(holdout_calibrated_ood_guarded, holdout_labels),
+            "raw_alpha_with_ood_fallback_paired_brier_improvement_ci_vs_causal_baseline": holdout_raw_ood_guarded_brier_interval,
+            "calibrated_alpha_with_ood_fallback_paired_brier_improvement_ci_vs_causal_baseline": holdout_calibrated_ood_guarded_brier_interval,
+            "raw_alpha_with_ood_fallback_reliability_diagnostics": holdout_raw_ood_guarded_reliability,
+            "calibrated_alpha_with_ood_fallback_reliability_diagnostics": holdout_calibrated_ood_guarded_reliability,
             "alpha_brier_score": alpha_brier,
             "causal_baseline_brier_score": baseline_brier,
             "paired_brier_improvement_ci_vs_causal_baseline": holdout_brier_interval,
             "reliability_diagnostics": holdout_reliability,
+            "diagnostic_interpretation": (
+                "Raw, calibrated, and OOD-guarded candidate comparisons on the frozen final holdout are descriptive only. "
+                "They must not be used to retune features, calibration, or candidate choice on this same holdout; "
+                "repeat any proposed change on a later untouched window."
+            ),
             "out_of_domain_fallback_rows": sum(holdout_ood_flags),
             "out_of_domain_fallback_rate": holdout_ood_fraction_rate,
             "out_of_domain_policy": {
