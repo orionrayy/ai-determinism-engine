@@ -51,3 +51,8 @@ The example URI is illustrative. Supply the exact dataset, correct source URL an
 6. Independently review source provenance, usage rights, timestamps and broker representativeness.
 
 All output continues to enforce `NO_TRADE` and disabled live-signal/order flags.
+
+
+## Alpha probability v3 gates
+
+The calibration governor now screens candidate blend weights on paired Brier and log-loss gain, and requires positive gain in at least 70% of chronological non-overlapping calibration blocks for both metrics. Any failed score/stability gate leaves alpha weight zero. The frozen final-holdout predictor also falls back to the row-specific causal baseline when 25% or more of its features exceed four training-only standard deviations, or are missing/invalid. These gates are conservative heuristics, not proof of predictive edge.

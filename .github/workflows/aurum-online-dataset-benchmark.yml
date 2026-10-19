@@ -171,7 +171,7 @@ jobs:
           checked = integrated.validate_forecast_ledger(ledger)
           alpha = ledger["metadata"]["alpha_model_training"]
           assert checked["contract_status"] == "PASS", checked
-          assert alpha["model_version"] == "serevex-alpha-logistic-v2-baseline-governed", alpha
+          assert alpha["model_version"] == "serevex-alpha-logistic-v3-dual-score-ood-governed", alpha
           assert alpha["status"] == "ALPHA_RESEARCH_TRAINED", alpha
           assert alpha["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"] is False, alpha
           assert alpha["training_policy"]["final_holdout_predictions_are_frozen"] is True, alpha
@@ -180,7 +180,14 @@ jobs:
           assert alpha["probability_governor"]["alpha_weight"] in (0.0, 0.1, 0.25, 0.5, 0.75, 1.0), alpha
           assert "paired_brier_improvement_ci_vs_causal_baseline" in alpha["final_holdout_metrics"], alpha
           assert "reliability_diagnostics" in alpha["final_holdout_metrics"], alpha
+          assert "out_of_domain_fallback_rate" in alpha["final_holdout_metrics"], alpha
+          assert alpha["probability_governor"]["status"] in (
+              "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
+              "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN",
+              "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN",
+          ), alpha
           assert all("alpha_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
+          assert all(0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0 for row in ledger["records"])
           assert report["status"] == "PASS_CONTRACT_DIAGNOSTIC_ONLY", report
           assert report["stage_1_ledger_contract"] == "PASS", report
           assert report["decision_output"] == "NO_TRADE", report
@@ -232,6 +239,9 @@ jobs:
               "alpha_calibration_status": alpha["calibrator"]["status"],
               "alpha_governor_status": alpha["probability_governor"]["status"],
               "alpha_selected_blend_weight": alpha["probability_governor"]["alpha_weight"],
+              "alpha_governor_candidate_diagnostics": alpha["probability_governor"]["candidate_diagnostics"],
+              "alpha_ood_fallback_rate": alpha["final_holdout_metrics"]["out_of_domain_fallback_rate"],
+              "alpha_ood_fallback_rows": alpha["final_holdout_metrics"]["out_of_domain_fallback_rows"],
               "alpha_blend_selection_rows": alpha["probability_governor"]["selection_rows"],
               "alpha_raw_holdout_brier": alpha["final_holdout_metrics"]["raw_alpha_brier_score"],
               "alpha_calibrated_holdout_brier": alpha["final_holdout_metrics"]["calibrated_alpha_brier_score"],
@@ -266,6 +276,7 @@ jobs:
               f"- Alpha training: {summary['alpha_model_status']}; fit rows: {summary['alpha_training_rows']}; calibration rows: {summary['alpha_calibration_rows']}",
               f"- Alpha final-holdout Brier: {summary['alpha_holdout_brier']}; causal baseline Brier: {summary['alpha_baseline_holdout_brier']}; improvement: {summary['alpha_brier_improvement_baseline_minus_alpha']}",
               f"- Alpha probability governor: {summary['alpha_governor_status']}; selected alpha blend weight: {summary['alpha_selected_blend_weight']}; blend calibration rows: {summary['alpha_blend_selection_rows']}",
+              f"- Alpha out-of-domain baseline fallbacks: {summary['alpha_ood_fallback_rows']} rows; rate: {summary['alpha_ood_fallback_rate']}",
               f"- Alpha raw/calibrated holdout Brier: {summary['alpha_raw_holdout_brier']} / {summary['alpha_calibrated_holdout_brier']}; ECE: {summary['alpha_holdout_ece']}; paired Brier CI vs baseline: {summary['alpha_holdout_brier_ci_vs_baseline']}",
               f"- Alpha calibration: {summary['alpha_calibration_status']}; frozen holdout model: {summary['alpha_holdout_frozen']}; artifact SHA-256: {summary['alpha_model_artifact_sha256']}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",

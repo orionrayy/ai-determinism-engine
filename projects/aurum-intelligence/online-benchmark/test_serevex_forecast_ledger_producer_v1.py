@@ -67,14 +67,16 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
         metadata = ledger["metadata"]
         alpha_report = metadata["alpha_model_training"]
         self.assertIn("alpha_logistic_v1", metadata["registered_experts"])
-        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v2-baseline-governed")
+        self.assertEqual(alpha_report["model_version"], "serevex-alpha-logistic-v3-dual-score-ood-governed")
         self.assertEqual(alpha_report["status"], "ALPHA_RESEARCH_TRAINED")
         self.assertFalse(alpha_report["training_policy"]["final_holdout_labels_used_for_fit_or_calibration"])
         self.assertTrue(alpha_report["training_policy"]["final_holdout_predictions_are_frozen"])
         self.assertGreater(alpha_report["final_holdout_metrics"]["rows"], 0)
         self.assertIn("probability_governor", alpha_report)
+        self.assertIn("out_of_domain_fallback_rate", alpha_report["final_holdout_metrics"])
         for large_field in ("predictions_by_decision_index", "raw_predictions_by_decision_index",
-                            "calibrated_alpha_predictions_by_decision_index", "forecast_stage_by_decision_index"):
+                            "calibrated_alpha_predictions_by_decision_index", "out_of_domain_fractions_by_decision_index",
+                            "forecast_policy_by_decision_index", "forecast_stage_by_decision_index"):
             self.assertNotIn(large_field, alpha_report)
         self.assertIn(alpha_report["probability_governor"]["status"], (
             "BASELINE_ONLY_INSUFFICIENT_CALIBRATION_SUPPORT",
@@ -85,6 +87,8 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
             self.assertIn("alpha_logistic_v1", row["expert_probabilities"])
             self.assertEqual(len(row["feature_facts"]), len(producer.alpha_model.FEATURE_NAMES))
             self.assertEqual(row["alpha_model_artifact_sha256"], alpha_report["model_artifact_sha256"])
+            self.assertIn(row["alpha_model_forecast_policy"], ("ALPHA_ELIGIBLE", "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"))
+            self.assertTrue(0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
         checked = stage123.validate_forecast_ledger(ledger)
         self.assertEqual(checked["contract_status"], "PASS")
         self.assertFalse(checked["predictive_skill_proven"] if "predictive_skill_proven" in checked else False)

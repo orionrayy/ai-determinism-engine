@@ -1,4 +1,4 @@
-# Serevex Alpha Model v2 — Baseline-Governed Probabilities — Fit, Selection, Calibration and Holdout Contract
+# Serevex Alpha Model v3 — Dual-Score and Out-of-Domain Governed Probabilities — Fit, Selection, Calibration and Holdout Contract
 
 **Status:** implemented on the research branch; hosted validation is required.  
 **Runtime:** Python standard library only.  
@@ -38,3 +38,12 @@ The alpha forecast now has a conservative baseline-shrinkage stage. The calibrat
 If calibration support is inadequate or no alpha blend shows a positive conservative lower screen, the selected weight is exactly zero: the final-holdout alpha expert then emits the row-specific causal baseline, not an unsupported alpha estimate. When selected, the weight and calibrator are frozen before holdout; the baseline input remains point-in-time for each decision. The model artifact hash includes the calibration-fit and blend-selection label hashes and selected weight, but excludes final-holdout labels and metrics.
 
 Final-holdout reporting now includes raw alpha, calibrated alpha and governed blend Brier scores; log loss; a deterministic paired moving-block bootstrap interval for baseline-minus-governed-alpha Brier improvement; and a binned reliability/ECE diagnostic. The interval and ECE are descriptive diagnostics and do not replace independent replication or selection-bias correction.
+
+
+## Probability hardening v3
+
+The governor requires candidate alpha/baseline weights to pass both a conservative Brier-improvement screen and a log-loss-improvement screen. It also requires at least 70% of chronological non-overlapping calibration blocks to improve on the causal baseline for each score. An alpha candidate that wins one proper score but loses the other, or wins only through a small number of blocks, is rejected. The zero-weight baseline remains the fail-closed default.
+
+At final holdout, a training-scaler-only out-of-domain (OOD) diagnostic flags feature vectors with at least 25% of features beyond four training standard deviations (missing/invalid values also count). Flagged rows use the exact row-specific causal baseline regardless of the selected blend weight. The OOD gate uses features and training-only scaling, not holdout outcomes. Its holdout fallback rate and per-row diagnostics are reported.
+
+This improves conservatism but cannot prove statistical validity under arbitrary dependence or distribution shift; the block screen is heuristic. Final holdout remains read-only for post-prediction evaluation.

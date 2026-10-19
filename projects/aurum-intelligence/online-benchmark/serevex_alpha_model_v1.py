@@ -11,7 +11,7 @@ import math
 import random
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-alpha-logistic-v2-baseline-governed"
+MODEL_VERSION = "serevex-alpha-logistic-v3-dual-score-ood-governed"
 FEATURE_NAMES = (
     "atr_pct",
     "trend_efficiency",
@@ -34,6 +34,9 @@ BLEND_WEIGHTS = (0.0, 0.1, 0.25, 0.5, 0.75, 1.0)
 BLEND_BLOCK_SIZE = 12
 BLEND_MIN_BLOCKS = 8
 BLEND_CRITICAL_Z = 2.58
+MIN_POSITIVE_BLOCK_SHARE = 0.70
+OOD_Z_LIMIT = 4.0
+OOD_MAX_FEATURE_FRACTION = 0.25
 HOLDOUT_BLOCK_BOOTSTRAP_REPLICATES = 300
 
 
@@ -192,6 +195,54 @@ def _log_loss(predictions: Sequence[float], labels: Sequence[int]) -> float | No
     return total / len(labels)
 
 
+def _out_of_domain_fraction(model: Mapping[str, Any] | None, row: Mapping[str, Any], *, z_limit: float = OOD_Z_LIMIT) -> float:
+    """Training-only scaler based OOD diagnostic; current holdout labels are never involved."""
+    if model is None:
+        return 1.0
+    vector = _raw_vector(row)
+    means = model["means"]
+    scales = model["scales"]
+    flagged = 0
+    for value, mean, scale in zip(vector, means, scales):
+        if value is None or not math.isfinite(float(value)) or float(scale) <= 0.0:
+            flagged += 1
+            continue
+        z = abs((float(value) - float(mean)) / float(scale))
+        if not math.isfinite(z) or z > z_limit:
+            flagged += 1
+    return flagged / len(FEATURE_NAMES)
+
+
+def _binary_log_loss(probability: float, label: int) -> float:
+    p = min(max(float(probability), 1e-12), 1.0 - 1e-12)
+    return -(int(label) * math.log(p) + (1 - int(label)) * math.log(1.0 - p))
+
+
+def _block_stats(gains: Sequence[float], block_size: int, critical_z: float) -> dict[str, Any]:
+    block_means = [
+        sum(gains[i:i + block_size]) / block_size
+        for i in range(0, len(gains), block_size)
+    ]
+    mean_gain = sum(gains) / len(gains) if gains else 0.0
+    if len(block_means) >= 2:
+        block_mean = sum(block_means) / len(block_means)
+        variance = sum((x - block_mean) ** 2 for x in block_means) / (len(block_means) - 1)
+        se = math.sqrt(max(0.0, variance) / len(block_means))
+        lower = mean_gain - critical_z * se
+        positive_share = sum(x > 0.0 for x in block_means) / len(block_means)
+    else:
+        se = float("inf")
+        lower = float("-inf")
+        positive_share = 0.0
+    return {
+        "mean_gain": mean_gain,
+        "block_standard_error": se if math.isfinite(se) else None,
+        "conservative_lower_screen": lower if math.isfinite(lower) else None,
+        "independent_blocks": len(block_means),
+        "positive_block_share": positive_share,
+    }
+
+
 def _choose_baseline_shrinkage_weight(
     rows: Sequence[Mapping[str, Any]],
     calibrated_alpha_probabilities: Mapping[int, float],
@@ -221,8 +272,10 @@ def _choose_baseline_shrinkage_weight(
         "independent_block_count": len(ordered) // max(1, block_size),
         "critical_multiplier": critical_z,
         "family_size_nonzero_weights": len(BLEND_WEIGHTS) - 1,
+        "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
+        "dual_score_gate_required": ["brier", "log_loss"],
         "candidate_diagnostics": [],
-        "selected_by": "paired_brier_gain_vs_rowwise_causal_baseline",
+        "selected_by": "paired_brier_and_log_loss_gain_vs_rowwise_causal_baseline_with_block_stability",
     }
     full_blocks = len(ordered) // block_size if block_size > 0 else 0
     if block_size < 2 or len(ordered) < minimum_rows or full_blocks < minimum_blocks:
@@ -231,43 +284,53 @@ def _choose_baseline_shrinkage_weight(
     used = ordered[:full_blocks * block_size]
     candidates: list[dict[str, Any]] = []
     for weight in BLEND_WEIGHTS:
-        gains: list[float] = []
+        brier_gains: list[float] = []
+        logloss_gains: list[float] = []
         for row in used:
             index = int(row["decision_index"])
             y = int(row["label"])
             baseline = min(max(float(row.get("baseline_probability", 0.5)), 1e-6), 1.0 - 1e-6)
             alpha_p = min(max(float(calibrated_alpha_probabilities[index]), 1e-6), 1.0 - 1e-6)
             mixed = min(max((1.0 - weight) * baseline + weight * alpha_p, 1e-6), 1.0 - 1e-6)
-            gains.append((baseline - y) ** 2 - (mixed - y) ** 2)
-        block_means = [
-            sum(gains[i:i + block_size]) / block_size
-            for i in range(0, len(gains), block_size)
-        ]
-        mean_gain = sum(gains) / len(gains)
-        if len(block_means) >= 2:
-            block_mean = sum(block_means) / len(block_means)
-            variance = sum((x - block_mean) ** 2 for x in block_means) / (len(block_means) - 1)
-            se = math.sqrt(max(0.0, variance) / len(block_means))
-        else:
-            se = float("inf")
-        lower_screen = mean_gain - critical_z * se
+            brier_gains.append((baseline - y) ** 2 - (mixed - y) ** 2)
+            logloss_gains.append(_binary_log_loss(baseline, y) - _binary_log_loss(mixed, y))
+        brier = _block_stats(brier_gains, block_size, critical_z)
+        logloss = _block_stats(logloss_gains, block_size, critical_z)
+        eligible = bool(
+            weight > 0.0
+            and brier["conservative_lower_screen"] is not None
+            and logloss["conservative_lower_screen"] is not None
+            and float(brier["conservative_lower_screen"]) > 0.0
+            and float(logloss["conservative_lower_screen"]) > 0.0
+            and float(brier["positive_block_share"]) >= MIN_POSITIVE_BLOCK_SHARE
+            and float(logloss["positive_block_share"]) >= MIN_POSITIVE_BLOCK_SHARE
+        )
         candidates.append({
             "alpha_weight": weight,
-            "brier_improvement_baseline_minus_blend": mean_gain,
-            "block_standard_error": se if math.isfinite(se) else None,
-            "conservative_lower_screen": lower_screen if math.isfinite(lower_screen) else None,
-            "independent_blocks": len(block_means),
-            "eligible": bool(weight > 0.0 and math.isfinite(lower_screen) and lower_screen > 0.0),
+            "brier_improvement_baseline_minus_blend": brier["mean_gain"],
+            "brier_block_standard_error": brier["block_standard_error"],
+            "brier_conservative_lower_screen": brier["conservative_lower_screen"],
+            "brier_positive_block_share": brier["positive_block_share"],
+            "log_loss_improvement_baseline_minus_blend": logloss["mean_gain"],
+            "log_loss_block_standard_error": logloss["block_standard_error"],
+            "log_loss_conservative_lower_screen": logloss["conservative_lower_screen"],
+            "log_loss_positive_block_share": logloss["positive_block_share"],
+            "independent_blocks": min(brier["independent_blocks"], logloss["independent_blocks"]),
+            "eligible": eligible,
         })
-
     eligible = [x for x in candidates if x["eligible"]]
     if eligible:
-        selected = max(eligible, key=lambda x: (float(x["brier_improvement_baseline_minus_blend"]), -float(x["alpha_weight"])))
+        selected = max(eligible, key=lambda x: (
+            float(x["brier_improvement_baseline_minus_blend"]),
+            float(x["log_loss_improvement_baseline_minus_blend"]),
+            -float(x["alpha_weight"]),
+        ))
         base["alpha_weight"] = float(selected["alpha_weight"])
-        base["status"] = "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_CONSERVATIVE_SCREEN"
+        base["status"] = "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN"
     else:
         base["alpha_weight"] = 0.0
-        base["status"] = "BASELINE_ONLY_NO_CONFIRMED_CALIBRATION_GAIN"
+        base["status"] = "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN"
+
     base["candidate_diagnostics"] = candidates
     base["selection_rows_used"] = len(used)
     base["selection_labels_sha256"] = _sha([
@@ -525,11 +588,15 @@ def train_alpha_model(
 
     raw_predictions: dict[str, float] = {}
     calibrated_alpha_predictions: dict[str, float] = {}
+    out_of_domain_fractions: dict[str, float] = {}
+    forecast_policy_by_index: dict[str, str] = {}
     predictions: dict[str, float] = {}
     forecast_stages: dict[str, str] = {}
     for row in sorted(events, key=lambda r: int(r["decision_index"])):
         di = int(row["decision_index"])
         partition = row["partition"]
+        ood_fraction = _out_of_domain_fraction(final_model, row)
+        forecast_policy = "ALPHA_ELIGIBLE"
         if partition == "development":
             raw_probability = 0.5
             calibrated_probability = 0.5
@@ -551,12 +618,19 @@ def train_alpha_model(
             raw_probability = _predict_raw(final_model, row)
             calibrated_probability = _apply_calibrator(raw_probability, calibrator)
             baseline = min(max(float(row.get("baseline_probability", 0.5)), 1e-6), 1.0 - 1e-6)
-            probability = (1.0 - selected_alpha_weight) * baseline + selected_alpha_weight * calibrated_probability
-            stage = "FROZEN_FINAL_MODEL_CALIBRATOR_AND_BASELINE_GOVERNOR"
+            if ood_fraction >= OOD_MAX_FEATURE_FRACTION:
+                probability = baseline
+                forecast_policy = "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"
+                stage = "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"
+            else:
+                probability = (1.0 - selected_alpha_weight) * baseline + selected_alpha_weight * calibrated_probability
+                stage = "FROZEN_FINAL_MODEL_CALIBRATOR_AND_DUAL_SCORE_GOVERNOR"
         else:
             raise ValueError("alpha_unknown_partition:" + str(partition))
         raw_predictions[str(di)] = float(raw_probability)
         calibrated_alpha_predictions[str(di)] = float(calibrated_probability)
+        out_of_domain_fractions[str(di)] = float(ood_fraction)
+        forecast_policy_by_index[str(di)] = forecast_policy
         predictions[str(di)] = min(max(float(probability), 1e-6), 1.0 - 1e-6)
         forecast_stages[str(di)] = stage
 
@@ -586,6 +660,11 @@ def train_alpha_model(
         holdout_rows, holdout_alpha, holdout_baseline,
     )
     holdout_reliability = _reliability_diagnostics(holdout_alpha, holdout_labels)
+    holdout_ood_flags = [
+        out_of_domain_fractions[str(int(row["decision_index"]))] >= OOD_MAX_FEATURE_FRACTION
+        for row in holdout_rows
+    ]
+    holdout_ood_fraction_rate = (sum(holdout_ood_flags) / len(holdout_ood_flags)) if holdout_ood_flags else None
 
     calibration_labels_sha = _sha([
         [row.get("decision_id", row.get("decision_index")), int(row["label"])]
@@ -651,6 +730,13 @@ def train_alpha_model(
             "causal_baseline_brier_score": baseline_brier,
             "paired_brier_improvement_ci_vs_causal_baseline": holdout_brier_interval,
             "reliability_diagnostics": holdout_reliability,
+            "out_of_domain_fallback_rows": sum(holdout_ood_flags),
+            "out_of_domain_fallback_rate": holdout_ood_fraction_rate,
+            "out_of_domain_policy": {
+                "z_score_limit": OOD_Z_LIMIT,
+                "minimum_feature_fraction_to_fallback": OOD_MAX_FEATURE_FRACTION,
+                "fallback_probability": "exact_rowwise_causal_baseline",
+            },
             "brier_improvement_baseline_minus_alpha": (
                 None if alpha_brier is None or baseline_brier is None else baseline_brier - alpha_brier
             ),
@@ -668,6 +754,8 @@ def train_alpha_model(
         "predictions_by_decision_index": predictions,
         "raw_predictions_by_decision_index": raw_predictions,
         "calibrated_alpha_predictions_by_decision_index": calibrated_alpha_predictions,
+        "out_of_domain_fractions_by_decision_index": out_of_domain_fractions,
+        "forecast_policy_by_decision_index": forecast_policy_by_index,
         "forecast_stage_by_decision_index": forecast_stages,
         "model_validated": False,
         "deployment_calibrated": False,

@@ -93,7 +93,7 @@ class SerevexAlphaModelTests(unittest.TestCase):
         self.assertEqual(stages["5"], "DEVELOPMENT_COLD_START_BASELINE")
         self.assertEqual(stages["205"], "DEVELOPMENT_FIT_SCOUT_FIXED_BEFORE_MODEL_SELECTION")
         self.assertEqual(stages["285"], "REFIT_BEFORE_CALIBRATION_UNCALIBRATED")
-        self.assertEqual(stages["325"], "FROZEN_FINAL_MODEL_CALIBRATOR_AND_BASELINE_GOVERNOR")
+        self.assertEqual(stages["325"], "FROZEN_FINAL_MODEL_CALIBRATOR_AND_DUAL_SCORE_GOVERNOR")
 
     def test_probability_governor_defaults_to_exact_baseline_when_alpha_loses(self):
         rows = [
@@ -104,7 +104,7 @@ class SerevexAlphaModelTests(unittest.TestCase):
         alpha_probabilities = {i: 0.95 for i in range(120)}
         result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
         self.assertEqual(result["alpha_weight"], 0.0)
-        self.assertEqual(result["status"], "BASELINE_ONLY_NO_CONFIRMED_CALIBRATION_GAIN")
+        self.assertEqual(result["status"], "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN")
 
     def test_probability_governor_selects_alpha_when_gain_is_large_and_stable(self):
         rows = [
@@ -115,7 +115,7 @@ class SerevexAlphaModelTests(unittest.TestCase):
         alpha_probabilities = {i: (0.98 if i % 2 == 0 else 0.02) for i in range(240)}
         result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
         self.assertEqual(result["alpha_weight"], 1.0)
-        self.assertEqual(result["status"], "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_CONSERVATIVE_SCREEN")
+        self.assertEqual(result["status"], "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN")
 
     def test_probability_governor_fails_closed_on_insufficient_blocks(self):
         rows = [
@@ -136,6 +136,37 @@ class SerevexAlphaModelTests(unittest.TestCase):
         self.assertIn("reliability_diagnostics", metrics)
         self.assertEqual(metrics["reliability_diagnostics"]["rows"], metrics["rows"])
         self.assertEqual(result["probability_governor"]["alpha_weight"], 0.0)  # calibration slice has too few independent blocks
+
+    def test_out_of_domain_holdout_features_force_exact_baseline_fallback(self):
+        rows = make_events()
+        changed = copy.deepcopy(rows)
+        target = changed[325]
+        for feature in ("momentum_1_atr", "momentum_5_atr", "bar_range_to_atr"):
+            target["alpha_features"][feature] = 1e6
+        result = self.train(changed)
+        key = "325"
+        self.assertGreaterEqual(result["out_of_domain_fractions_by_decision_index"][key], alpha.OOD_MAX_FEATURE_FRACTION)
+        self.assertEqual(result["forecast_policy_by_decision_index"][key], "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES")
+        self.assertAlmostEqual(result["predictions_by_decision_index"][key], changed[325]["baseline_probability"], places=6)
+        self.assertGreaterEqual(result["final_holdout_metrics"]["out_of_domain_fallback_rows"], 1)
+
+    def test_dual_score_gate_disqualifies_extreme_alpha_weight(self):
+        rows = []
+        probabilities = {}
+        for i in range(240):
+            label = int(i % 2 == 0)
+            # Most forecasts are modestly informative, but a minority are catastrophically
+            # overconfident: Brier can stay positive while log-loss is damaged.
+            probability = 0.55 if label == 1 else 0.45
+            if i % 40 == 0:
+                probability = 0.000001 if label == 1 else 0.999999
+            rows.append({"decision_id": f"dual-{i}", "decision_index": i, "label_mature": True,
+                         "label": label, "baseline_probability": 0.5})
+            probabilities[i] = probability
+        result = alpha._choose_baseline_shrinkage_weight(rows, probabilities)
+        candidate_one = next(x for x in result["candidate_diagnostics"] if x["alpha_weight"] == 1.0)
+        self.assertFalse(candidate_one["eligible"])
+        self.assertLess(result["alpha_weight"], 1.0)
 
     def test_invalid_partition_timeline_fails_closed(self):
         with self.assertRaisesRegex(ValueError, "strictly_chronological"):
