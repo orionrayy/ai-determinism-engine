@@ -28,6 +28,8 @@ LEARNING_RATE = 0.05
 MAX_STEPS = 200
 MIN_CALIBRATION_SAMPLES = 100
 MIN_SCALE_RECORDS = 100_000
+MIN_CONTEXT_FAMILY_SUPPORT_ROWS = 30
+VALID_CONTEXT_SOURCE_STATES = frozenset({"PASS", "PARTIAL"})
 DEFAULT_PRICE_FEATURES = (
     "return_1", "return_3", "return_6", "return_12", "momentum_6",
     "atr_fraction", "atr_pct", "spread_fraction", "spread", "hour_sin",
@@ -376,6 +378,26 @@ def _calibration_status(fit: Mapping[str, Any]) -> str:
     }.get(status, status.upper())
 
 
+def _family_support(rows: Sequence[Mapping[str, Any]], family: str) -> dict[str, Any]:
+    """Count as-of-eligible development/calibration/holdout rows by context family."""
+    keys = CONTEXT_FEATURES[family]
+    per_feature = {
+        key: sum(_numeric(row, key, family) is not None for row in rows)
+        for key in keys
+    }
+    eligible_rows = sum(
+        any(_numeric(row, key, family) is not None for key in keys)
+        for row in rows
+    )
+    return {
+        "eligible_rows": eligible_rows,
+        "total_rows": len(rows),
+        "eligible_fraction": eligible_rows / len(rows) if rows else 0.0,
+        "eligible_values_by_feature": per_feature,
+        "minimum_eligible_rows_required": MIN_CONTEXT_FAMILY_SUPPORT_ROWS,
+    }
+
+
 def run_context_ablation_benchmark(
     rows: Sequence[Mapping[str, Any]], *,
     context_observation_count: int,
@@ -486,17 +508,68 @@ def run_context_ablation_benchmark(
 
     price_only_holdout_probabilities: list[float] | None = None
     for ablation_name, context_families in ABLATIONS.items():
+        requested_context_families = list(context_families)
         requested = list(candidate_price_keys)
-        for family in context_families:
+        for family in requested_context_families:
             requested.extend(CONTEXT_FEATURES[family])
         feature_keys, scaler = _fit_scaler(dev_rows, requested)
+        context_support = {
+            family: {
+                "development": _family_support(dev_rows, family),
+                "calibration": _family_support(cal_rows, family),
+                "holdout": _family_support(hold_rows, family),
+            }
+            for family in requested_context_families
+        }
+        requested_context_features = [
+            key for family in requested_context_families for key in CONTEXT_FEATURES[family]
+        ]
+        effective_context_feature_keys = [
+            key for key in feature_keys if _family_of_key(key) in requested_context_families
+        ]
+        missing_family_reasons: dict[str, list[str]] = {}
+        for family in requested_context_families:
+            reasons = []
+            declared_source_status = family_source_statuses.get(family)
+            if declared_source_status is not None and str(declared_source_status).upper() not in VALID_CONTEXT_SOURCE_STATES:
+                reasons.append("source_status_not_qualified_for_feature_use")
+            if not any(_family_of_key(key) == family for key in feature_keys):
+                reasons.append("no_eligible_feature_fitted_on_development")
+            for split in ("development", "calibration", "holdout"):
+                if context_support[family][split]["eligible_rows"] < MIN_CONTEXT_FAMILY_SUPPORT_ROWS:
+                    reasons.append(f"insufficient_{split}_support")
+            if reasons:
+                missing_family_reasons[family] = reasons
+        effective_context_families = [
+            family for family in requested_context_families if family not in missing_family_reasons
+        ]
+        omitted_context_families = [
+            family for family in requested_context_families if family in missing_family_reasons
+        ]
+        semantic_metadata = {
+            "requested_context_families": requested_context_families,
+            "effective_context_families": effective_context_families,
+            "omitted_context_families": omitted_context_families,
+            "requested_context_feature_keys": requested_context_features,
+            "effective_context_feature_keys": effective_context_feature_keys,
+            "omitted_context_feature_keys": [
+                key for key in requested_context_features if key not in effective_context_feature_keys
+            ],
+            "context_family_support_by_split": context_support,
+            "minimum_context_family_support_rows": MIN_CONTEXT_FAMILY_SUPPORT_ROWS,
+            "missing_context_family_reasons": missing_family_reasons,
+        }
         if not feature_keys:
-            report["ablations"][ablation_name] = {"status": "NOT_ELIGIBLE_NO_DEVELOPMENT_FEATURES"}
+            report["ablations"][ablation_name] = {
+                "status": "NOT_ELIGIBLE_NO_DEVELOPMENT_FEATURES",
+                **semantic_metadata,
+            }
             continue
-        context_requested = set(requested) & {key for values in CONTEXT_FEATURES.values() for key in values}
-        context_eligible = [key for key in feature_keys if key in context_requested]
-        if context_families and not context_eligible:
-            report["ablations"][ablation_name] = {"status": "NOT_ELIGIBLE_NO_CONTEXT_FEATURES_IN_DEVELOPMENT"}
+        if omitted_context_families:
+            report["ablations"][ablation_name] = {
+                "status": "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING",
+                **semantic_metadata,
+            }
             continue
         try:
             x_dev = _matrix(dev_rows, feature_keys, scaler)
@@ -571,7 +644,9 @@ def run_context_ablation_benchmark(
         report["ablations"][ablation_name] = {
             "status": "SCORED",
             "feature_keys": feature_keys,
-            "context_families": list(context_families),
+            # Compatibility field now reflects actually effective, not merely requested, families.
+            "context_families": effective_context_families,
+            **semantic_metadata,
             "scored_row_count": len(holdout),
             "scored_rows_sha256": row_hash,
             "labels_sha256": outcome_hash,

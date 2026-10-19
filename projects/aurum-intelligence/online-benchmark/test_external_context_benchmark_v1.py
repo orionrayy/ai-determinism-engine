@@ -107,6 +107,62 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
         self.assertEqual(report["scale_gate"]["observations"],99_999)
         self.assertFalse(report["scale_gate"]["passed"])
 
+    def test_combined_ablation_is_ineligible_when_requested_families_are_missing(self):
+        rows = make_rows()
+        for row in rows:
+            row["coverage_macro"] = "unknown"
+            row["feature_macro_level"] = None
+            row["feature_macro_change"] = None
+            row["coverage_news"] = "unknown"
+            for key in bench.CONTEXT_FEATURES["news"]:
+                row[key] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            bootstrap_replicates=40,
+        )
+        combined = report["ablations"]["price_combined"]
+        self.assertEqual(combined["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertEqual(combined["requested_context_families"], ["cot", "macro", "news"])
+        self.assertEqual(combined["effective_context_families"], ["cot"])
+        self.assertEqual(combined["omitted_context_families"], ["macro", "news"])
+        self.assertEqual(report["ablations"]["price_cot"]["status"], "SCORED")
+        self.assertNotIn("price_combined", report["summary"]["scored_ablations"])
+
+    def test_context_family_requires_support_in_development_calibration_and_holdout(self):
+        rows = make_rows()
+        for row in rows[984:]:
+            row["coverage_cot"] = "unknown"
+            row["feature_cot_net_position"] = None
+            row["feature_cot_net_position_change"] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            bootstrap_replicates=40,
+        )
+        combined = report["ablations"]["price_combined"]
+        self.assertEqual(combined["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertIn("cot", combined["omitted_context_families"])
+        self.assertIn(
+            "insufficient_holdout_support",
+            combined["missing_context_family_reasons"]["cot"],
+        )
+
+    def test_unqualified_declared_source_status_blocks_that_context_family(self):
+        report = bench.run_context_ablation_benchmark(
+            make_rows(), context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            source_statuses={"cot": "FAILED", "macro": "PASS", "news": "PASS"},
+            bootstrap_replicates=40,
+        )
+        combined = report["ablations"]["price_combined"]
+        self.assertEqual(combined["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertIn("cot", combined["omitted_context_families"])
+        self.assertIn(
+            "source_status_not_qualified_for_feature_use",
+            combined["missing_context_family_reasons"]["cot"],
+        )
+
     def test_report_never_enables_trading(self):
         report=bench.run_context_ablation_benchmark(make_rows(),context_observation_count=120_000,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
