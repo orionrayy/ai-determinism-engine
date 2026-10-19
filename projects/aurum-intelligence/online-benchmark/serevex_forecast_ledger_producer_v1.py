@@ -446,7 +446,7 @@ def build_forecast_ledger(
     alpha_forecast_stages = alpha_training["forecast_stage_by_decision_index"]
     alpha_summary = {
         key: value for key, value in alpha_training.items()
-        if key not in ("predictions_by_decision_index", "forecast_stage_by_decision_index")
+        if key not in ("predictions_by_decision_index", "raw_predictions_by_decision_index", "calibrated_alpha_predictions_by_decision_index", "forecast_stage_by_decision_index")
     }
 
     forecast_records: list[dict[str, Any]] = []
