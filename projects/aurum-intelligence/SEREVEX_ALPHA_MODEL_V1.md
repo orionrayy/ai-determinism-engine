@@ -29,3 +29,12 @@ From `projects/aurum-intelligence/online-benchmark`:
 
     python -m unittest -v test_serevex_alpha_model_v1.py
     python -m unittest -v test_serevex_forecast_ledger_producer_v1.py
+
+
+## Probability governor v2 update — 2026-10-19
+
+The alpha forecast now has a conservative baseline-shrinkage stage. The calibration partition is divided chronologically: an early portion fits Platt scaling, and a later disjoint portion selects a fixed convex blend weight from `{0, 0.1, 0.25, 0.5, 0.75, 1}`. Selection compares paired Brier loss against the causal baseline using non-overlapping chronological block means and a conservative 2.58-standard-error screen across nonzero candidates. This is an engineering guardrail, not a formal finite-sample significance guarantee.
+
+If calibration support is inadequate or no alpha blend shows a positive conservative lower screen, the selected weight is exactly zero: the final-holdout alpha expert then emits the row-specific causal baseline, not an unsupported alpha estimate. When selected, the weight and calibrator are frozen before holdout; the baseline input remains point-in-time for each decision. The model artifact hash includes the calibration-fit and blend-selection label hashes and selected weight, but excludes final-holdout labels and metrics.
+
+Final-holdout reporting now includes raw alpha, calibrated alpha and governed blend Brier scores; log loss; a deterministic paired moving-block bootstrap interval for baseline-minus-governed-alpha Brier improvement; and a binned reliability/ECE diagnostic. The interval and ECE are descriptive diagnostics and do not replace independent replication or selection-bias correction.
