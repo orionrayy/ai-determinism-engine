@@ -90,9 +90,20 @@ class SerevexForecastLedgerProducerTests(unittest.TestCase):
             if row["partition"] == "final_holdout":
                 self.assertIn(row["alpha_model_forecast_policy"], ("ALPHA_ELIGIBLE", "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES"))
                 self.assertTrue(0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
+                if row["alpha_model_forecast_policy"] == "BASELINE_FALLBACK_OUT_OF_DOMAIN_FEATURES":
+                    self.assertEqual(
+                        row["expert_probabilities"]["alpha_calibrated_logistic_v1"],
+                        row["baseline_probability"],
+                    )
             else:
                 self.assertEqual(row["alpha_model_forecast_policy"], "NOT_APPLICABLE_PRE_FINAL_HOLDOUT")
                 self.assertIsNone(row["alpha_model_out_of_domain_fraction"])
+                # Do not back-apply the final calibrator to its own calibration-fit
+                # rows; pre-holdout policy history must retain the forecast as issued.
+                self.assertEqual(
+                    row["expert_probabilities"]["alpha_calibrated_logistic_v1"],
+                    row["expert_probabilities"]["alpha_logistic_v1"],
+                )
         checked = stage123.validate_forecast_ledger(ledger)
         self.assertEqual(checked["contract_status"], "PASS")
         self.assertFalse(checked["predictive_skill_proven"] if "predictive_skill_proven" in checked else False)
