@@ -371,7 +371,6 @@ def train_alpha_model(
         "training_model": final_model,
         "calibrator": calibrator,
         "calibration_labels_sha256": calibration_labels_sha,
-        "as_of_index_for_metrics_only": as_of_index,
     }
     model_hash = _sha(model_payload)
     return {
