@@ -70,19 +70,21 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
 
     def test_future_feature_mutation_does_not_change_holdout_predictions(self):
         rows=make_rows()
-        boundary=rows[960]["decision_time"]
         for i,row in enumerate(rows):
-            if i>=960:
+            if i>=960 and i % 10 == 0:
                 row["context_available_at_by_family"]={"news":row["decision_time"]+timedelta(minutes=1)}
         report_a=bench.run_context_ablation_benchmark(rows,context_observation_count=120_000,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
         changed=make_rows()
         for i,row in enumerate(changed):
-            if i>=960:
+            if i>=960 and i % 10 == 0:
                 row["context_available_at_by_family"]={"news":row["decision_time"]+timedelta(minutes=1)}
+                # Mutate only rows whose news feature is explicitly unavailable at decision time.
                 row["feature_news_count_24h"]=999999.0
         report_b=bench.run_context_ablation_benchmark(changed,context_observation_count=120_000,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
+        self.assertEqual(report_a["ablations"]["price_news"]["status"], "SCORED")
+        self.assertEqual(report_b["ablations"]["price_news"]["status"], "SCORED")
         self.assertEqual(report_a["ablations"]["price_news"]["prediction_sha256"],
                          report_b["ablations"]["price_news"]["prediction_sha256"])
 
