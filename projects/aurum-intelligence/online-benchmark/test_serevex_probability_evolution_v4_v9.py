@@ -19,6 +19,7 @@ def make_rows(n=720, *, candidate_mode="strong", regimes=1):
         rows.append({
             "decision_id": f"row-{i}",
             "decision_index": i,
+            "partition": "final_holdout",
             "target_id": "tp-before-sl-h12",
             "instrument": "XAUUSD",
             "horizon_bars": 12,
@@ -74,6 +75,24 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertIsNone(result["evidence"]["last_emitted_decision_index"])
         self.assertEqual(result["evidence"]["scored_rows"], 0)
         self.assertEqual(result["evidence"]["decision_output"], "NO_TRADE")
+
+    def test_score_partition_filters_metrics_but_not_causal_forecast_stream(self):
+        rows = make_rows(40)
+        for row in rows:
+            row["partition"] = "development" if row["decision_index"] < 20 else "final_holdout"
+        result = evo.evaluate_probability_evolution(
+            rows, version="4.0", as_of_index=40, score_partition="final_holdout"
+        )
+        self.assertEqual(len(result["forecasts"]), 40)
+        self.assertEqual(result["evidence"]["forecast_rows_emitted"], 40)
+        self.assertEqual(result["evidence"]["score_partition"], "final_holdout")
+        self.assertEqual(result["evidence"]["scored_rows"], 19)
+        scored_indices = [
+            row["decision_index"] for row in rows
+            if row["partition"] == "final_holdout"
+            and row["label_mature"] and row["label_available_index"] < 40
+        ]
+        self.assertEqual(scored_indices, list(range(20, 39)))
 
     def test_future_feature_is_quarantined_and_baseline_is_used(self):
         rows = make_rows(10)
@@ -241,6 +260,8 @@ class ProbabilityEvolutionTests(unittest.TestCase):
             evo.evaluate_probability_evolution(make_rows(10), version="10.0")
         with self.assertRaisesRegex(evo.ProbabilityInputError, "unknown_policy_config"):
             evo.evaluate_probability_evolution(make_rows(10), config={"allow_live": True})
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "unsupported_score_partition"):
+            evo.evaluate_probability_evolution(make_rows(10), score_partition="live_trading")
 
     def test_non_mapping_rows_use_typed_input_error(self):
         with self.assertRaisesRegex(evo.ProbabilityInputError, "forecast_row_not_mapping"):
@@ -275,6 +296,7 @@ class ProbabilityEvolutionTests(unittest.TestCase):
                 {
                     "decision_id": f"ledger-{i}",
                     "decision_index": i,
+                    "partition": "final_holdout",
                     "label_available_index": i + 1,
                     "label": int(i % 2 == 0),
                     "label_mature": True,
@@ -293,12 +315,22 @@ class ProbabilityEvolutionTests(unittest.TestCase):
         self.assertEqual(len(rows), 40)
         self.assertEqual(rows[0]["candidate_probability"], 0.95)
         self.assertEqual(rows[0]["target_id"], ledger["metadata"]["target_id"])
+        self.assertEqual(
+            [(row["decision_id"], row["decision_index"]) for row in rows],
+            [(row["decision_id"], row["decision_index"]) for row in ledger["records"]],
+        )
         self.assertFalse(source["source_timestamp_semantics_verified"])
         report = evo.evaluate_forecast_ledger_versions(ledger, as_of_index=40)
         self.assertEqual(tuple(report["versions"]), evo.VERSION_ORDER)
+        self.assertEqual(report["score_partition"], "final_holdout")
         self.assertEqual(report["source_evidence"]["dataset_sha256"], "a" * 64)
         self.assertFalse(report["research_boundary"]["source_qualified_for_training"])
         self.assertEqual(report["decision_output"], "NO_TRADE")
+        self.assertEqual(
+            [row["decision_id"] for row in report["versions"]["9.0"]["forecasts"]],
+            [row["decision_id"] for row in ledger["records"]],
+        )
+        self.assertEqual(report["versions"]["9.0"]["evidence"]["scored_rows"], 39)
 
     def test_adapter_rejects_unknown_schema_and_missing_expert_falls_back(self):
         with self.assertRaisesRegex(evo.ProbabilityInputError, "unsupported_forecast_ledger_schema"):
