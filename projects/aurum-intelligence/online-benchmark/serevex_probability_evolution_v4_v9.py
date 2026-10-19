@@ -458,8 +458,38 @@ def _default_config(config: Mapping[str, Any] | None) -> dict[str, Any]:
     return out
 
 
+def _selection_summary(choice: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: choice.get(key)
+        for key in (
+            "weight", "status", "selection_rows", "gate_rows",
+            "selection_blocks", "gate_blocks", "candidate_count",
+        )
+    }
+
+
+def _trace_choice(
+    trace: list[dict[str, Any]], *, version: str, decision_index: int,
+    pool: str, choice: Mapping[str, Any], regime: str | None = None,
+) -> None:
+    selection = choice.get("selection_diagnostics")
+    gate = choice.get("gate_diagnostics")
+    trace.append({
+        "version": version,
+        "decision_index": decision_index,
+        "pool": pool,
+        "regime": regime,
+        **_selection_summary(choice),
+        "selection_brier_lower": selection.get("brier", {}).get("lower") if isinstance(selection, Mapping) else None,
+        "selection_log_loss_lower": selection.get("log_loss", {}).get("lower") if isinstance(selection, Mapping) else None,
+        "gate_brier_lower": gate.get("brier", {}).get("lower") if isinstance(gate, Mapping) else None,
+        "gate_log_loss_lower": gate.get("log_loss", {}).get("lower") if isinstance(gate, Mapping) else None,
+    })
+
+
 def _forecast_rows(
-    rows: Sequence[Mapping[str, Any]], *, version: str, config: Mapping[str, Any]
+    rows: Sequence[Mapping[str, Any]], *, version: str, config: Mapping[str, Any],
+    policy_trace: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     maturity_queue = sorted(
@@ -521,8 +551,10 @@ def _forecast_rows(
             global_key = ("global", bucket, gate_min)
             if global_key not in choice_cache:
                 choice_cache[global_key] = _choose_weight(history, config=config, min_gate_blocks=gate_min)
+                _trace_choice(policy_trace, version=version, decision_index=index,
+                              pool="global", choice=choice_cache[global_key])
             global_choice = choice_cache[global_key]
-            diagnostics["global_weight_selection"] = global_choice
+            diagnostics["global_weight_selection"] = _selection_summary(global_choice)
             weight = float(global_choice["weight"])
             status = str(global_choice["status"])
             if version in ("6.0", "7.0", "8.0", "9.0"):
@@ -532,8 +564,15 @@ def _forecast_rows(
                     choice_cache[local_key] = _regime_weight(
                         history, regime, global_choice, config=config, min_gate_blocks=gate_min
                     )
+                    _trace_choice(policy_trace, version=version, decision_index=index,
+                                  pool="regime", regime=regime, choice=choice_cache[local_key])
                 local_choice = choice_cache[local_key]
-                diagnostics["regime_weight_selection"] = local_choice
+                diagnostics["regime_weight_selection"] = {
+                    key: local_choice.get(key) for key in (
+                        "weight", "status", "regime_rows", "global_weight", "local_weight",
+                        "local_status", "shrinkage"
+                    )
+                }
                 weight = float(local_choice["weight"])
                 status = str(local_choice["status"])
             if version in ("7.0", "8.0", "9.0"):
@@ -541,13 +580,16 @@ def _forecast_rows(
                 # the selection segment. v7+ requires more independent blocks than v5/v6.
                 uncertainty_evidence = global_choice.get("gate_diagnostics")
                 if "regime_weight_selection" in diagnostics:
-                    local = diagnostics["regime_weight_selection"]
-                    if isinstance(local.get("local_diagnostics"), dict):
-                        uncertainty_evidence = local["local_diagnostics"].get("gate_diagnostics", uncertainty_evidence)
+                    local = choice_cache.get(("regime", str(row["_regime"]), bucket, gate_min), {})
+                    local_details = local.get("local_diagnostics") if isinstance(local, Mapping) else None
+                    if isinstance(local_details, Mapping):
+                        uncertainty_evidence = local_details.get("gate_diagnostics", uncertainty_evidence)
                 diagnostics["uncertainty_gate"] = {
                     "method": "held_out_chronological_block_lower_screen",
                     "minimum_independent_blocks": int(config["v7_min_gate_blocks"]),
-                    "evidence": uncertainty_evidence,
+                    "evidence": _selection_summary({"gate_blocks": uncertainty_evidence.get("blocks", 0) if isinstance(uncertainty_evidence, Mapping) else 0,
+                        "status": "AVAILABLE" if isinstance(uncertainty_evidence, Mapping) else "INSUFFICIENT",
+                        "weight": weight}) if isinstance(uncertainty_evidence, Mapping) else None,
                 }
                 if weight > 0.0 and (
                     not isinstance(uncertainty_evidence, dict)
@@ -617,7 +659,8 @@ def evaluate_probability_evolution(
     as_of = max_index + 1 if as_of_index is None else as_of_index
     if not _integer(as_of) or as_of < 0:
         raise ProbabilityInputError("invalid_as_of_index")
-    forecasts = _forecast_rows(normalized, version=version, config=settings)
+    policy_trace: list[dict[str, Any]] = []
+    forecasts = _forecast_rows(normalized, version=version, config=settings, policy_trace=policy_trace)
     forecast_by_id = {row["decision_id"]: row for row in forecasts}
     scored_rows: list[dict[str, Any]] = []
     for source in normalized:
@@ -678,6 +721,7 @@ def evaluate_probability_evolution(
         "status": "RESEARCH_DIAGNOSTIC_ONLY",
         "config": settings,
         "forecasts": forecasts,
+        "policy_trace": policy_trace,
         "evidence": evidence,
     }
 
