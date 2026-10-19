@@ -828,7 +828,7 @@ def evaluate_all_probability_versions(
 
 
 def adapt_forecast_ledger(
-    ledger: Mapping[str, Any], *, candidate_expert: str = "alpha_logistic_v1"
+    ledger: Mapping[str, Any], *, candidate_expert: str = "alpha_calibrated_logistic_v1"
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Adapt the canonical Serevex forecast-ledger.v1 into this versioned probability contract."""
     if not isinstance(ledger, Mapping) or ledger.get("schema_version") != "serevex.forecast-ledger.v1":
@@ -897,7 +897,7 @@ def adapt_forecast_ledger(
 def evaluate_forecast_ledger_versions(
     ledger: Mapping[str, Any],
     *,
-    candidate_expert: str = "alpha_logistic_v1",
+    candidate_expert: str = "alpha_calibrated_logistic_v1",
     as_of_index: int | None = None,
     config: Mapping[str, Any] | None = None,
     score_partition: str = "final_holdout",
@@ -924,11 +924,11 @@ def evaluate_forecast_ledger_versions(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Evaluate Serevex probability governance v4.0-v9.0 on a canonical forecast ledger")
+    parser = argparse.ArgumentParser(description="Evaluate Serevex probability governance v4.0-v9.0 on a calibrated pre-governor candidate from a canonical forecast ledger")
     parser.add_argument("--input", type=Path, required=True, help="JSON file with schema serevex.forecast-ledger.v1")
     parser.add_argument("--output", type=Path, required=True, help="JSON comparison report")
     parser.add_argument("--as-of-index", type=int, required=True, help="Exclusive underlying decision-bar cutoff")
-    parser.add_argument("--candidate-expert", default="alpha_logistic_v1")
+    parser.add_argument("--candidate-expert", default="alpha_calibrated_logistic_v1")
     parser.add_argument(
         "--score-partition", choices=SCORE_PARTITIONS, default="final_holdout",
         help="Partition for reported metrics; forecasts still run causally over all rows before the exclusive as-of cutoff",
