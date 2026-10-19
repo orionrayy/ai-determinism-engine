@@ -101,7 +101,7 @@ class SerevexAlphaModelTests(unittest.TestCase):
              "label": 0, "baseline_probability": 0.2}
             for i in range(240)
         ]
-        alpha_probabilities = {i: 0.95 for i in range(120)}
+        alpha_probabilities = {i: 0.95 for i in range(240)}
         result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
         self.assertEqual(result["alpha_weight"], 0.0)
         self.assertEqual(result["status"], "BASELINE_ONLY_NO_CONFIRMED_DUAL_SCORE_GAIN")
