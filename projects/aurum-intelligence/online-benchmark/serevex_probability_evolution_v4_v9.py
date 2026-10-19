@@ -30,6 +30,7 @@ DEFAULT_DRIFT_RECENT_BARS = 192
 DEFAULT_HISTORY_WINDOW = 720
 DEFAULT_WEIGHT_UPDATE_INTERVAL_BARS = 12
 UNKNOWN_REGIME = "__UNKNOWN__"
+SCORE_PARTITIONS = ("all_matured", "development", "model_selection", "calibration", "final_holdout")
 
 
 class ProbabilityInputError(ValueError):
@@ -679,10 +680,13 @@ def evaluate_probability_evolution(
     version: str = "9.0",
     as_of_index: int | None = None,
     config: Mapping[str, Any] | None = None,
+    score_partition: str = "all_matured",
 ) -> dict[str, Any]:
     """Run one version sequentially; every forecast sees only strictly matured prior labels."""
     if version not in VERSION_ORDER:
         raise ProbabilityInputError("unsupported_probability_version:" + str(version))
+    if not isinstance(score_partition, str) or score_partition not in SCORE_PARTITIONS:
+        raise ProbabilityInputError("unsupported_score_partition:" + str(score_partition))
     settings = _default_config(config)
     normalized = _normalize_rows(rows)
     max_index = max(int(r["decision_index"]) for r in normalized)
@@ -704,7 +708,13 @@ def evaluate_probability_evolution(
         ai = source.get("label_available_index")
         di = int(source["decision_index"])
         y = _label(source)
-        if source.get("label_mature") is True and _integer(ai) and ai < as_of and di < as_of and y in (0, 1):
+        in_scoring_partition = (
+            score_partition == "all_matured" or source.get("partition") == score_partition
+        )
+        if (
+            in_scoring_partition and source.get("label_mature") is True
+            and _integer(ai) and ai < as_of and di < as_of and y in (0, 1)
+        ):
             forecast = forecast_by_id.get(source["decision_id"])
             if forecast is None:
                 raise ProbabilityInputError("as_of_scored_row_missing_emitted_forecast:" + str(source["decision_id"]))
@@ -742,6 +752,7 @@ def evaluate_probability_evolution(
         "protocol": "serevex-probability-evolution-report",
         "version": version,
         "as_of_index": as_of,
+        "score_partition": score_partition,
         "scored_rows": len(scored_rows),
         "forecast_rows_emitted": len(forecasts),
         "rows_at_or_after_as_of_excluded": len(normalized) - len(point_in_time_rows),
@@ -774,11 +785,15 @@ def evaluate_all_probability_versions(
     *,
     as_of_index: int | None = None,
     config: Mapping[str, Any] | None = None,
+    score_partition: str = "all_matured",
 ) -> dict[str, Any]:
     """Evaluate all preregistered versions on the same row cohort; no version is auto-promoted."""
+    if not isinstance(score_partition, str) or score_partition not in SCORE_PARTITIONS:
+        raise ProbabilityInputError("unsupported_score_partition:" + str(score_partition))
     results = {
         version: evaluate_probability_evolution(
-            rows, version=version, as_of_index=as_of_index, config=config
+            rows, version=version, as_of_index=as_of_index, config=config,
+            score_partition=score_partition,
         )
         for version in VERSION_ORDER
     }
@@ -799,6 +814,7 @@ def evaluate_all_probability_versions(
     return {
         "protocol_version": "4.0_to_9.0",
         "status": "RESEARCH_COMPARISON_NOT_PROMOTION",
+        "score_partition": score_partition,
         "versions": results,
         "comparison": comparison,
         "promotion_rule": (
@@ -884,9 +900,12 @@ def evaluate_forecast_ledger_versions(
     candidate_expert: str = "alpha_logistic_v1",
     as_of_index: int | None = None,
     config: Mapping[str, Any] | None = None,
+    score_partition: str = "final_holdout",
 ) -> dict[str, Any]:
     rows, source_evidence = adapt_forecast_ledger(ledger, candidate_expert=candidate_expert)
-    suite = evaluate_all_probability_versions(rows, as_of_index=as_of_index, config=config)
+    suite = evaluate_all_probability_versions(
+        rows, as_of_index=as_of_index, config=config, score_partition=score_partition
+    )
     return {
         **suite,
         "source_evidence": source_evidence,
@@ -910,11 +929,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True, help="JSON comparison report")
     parser.add_argument("--as-of-index", type=int, required=True, help="Exclusive underlying decision-bar cutoff")
     parser.add_argument("--candidate-expert", default="alpha_logistic_v1")
+    parser.add_argument(
+        "--score-partition", choices=SCORE_PARTITIONS, default="final_holdout",
+        help="Partition for reported metrics; forecasts still run causally over all rows before the exclusive as-of cutoff",
+    )
     args = parser.parse_args(argv)
     try:
         ledger = json.loads(args.input.read_text(encoding="utf-8"))
         report = evaluate_forecast_ledger_versions(
-            ledger, candidate_expert=args.candidate_expert, as_of_index=args.as_of_index
+            ledger, candidate_expert=args.candidate_expert, as_of_index=args.as_of_index,
+            score_partition=args.score_partition,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
@@ -922,6 +946,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "status": report["status"],
             "protocol_version": report["protocol_version"],
             "candidate_expert": args.candidate_expert,
+            "score_partition": report["score_partition"],
             "versions_evaluated": list(report["versions"]),
             "source_qualified_for_training": False,
             "decision_output": "NO_TRADE",
