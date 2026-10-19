@@ -174,6 +174,47 @@ def validate_feature_fact(
         blockers.append("quote_basis_unknown")
     elif isinstance(semantic_type, str) and semantic_type in {"market_bar", "derived_market_feature"} and quote_basis not in {"bid", "ask", "mid", "last"}:
         blockers.append("market_feature_requires_explicit_quote_basis")
+    if semantic_type == "derived_market_feature":
+        parent_refs = fact.get("parent_feature_refs")
+        if (
+            isinstance(parent_refs, (str, bytes))
+            or not isinstance(parent_refs, Sequence)
+            or len(parent_refs) == 0
+        ):
+            blockers.append("derived_feature_parent_lineage_required")
+        elif any(not isinstance(item, Mapping) for item in parent_refs):
+            blockers.append("derived_feature_parent_reference_malformed")
+
+        fit_scope = fact.get("transform_fit_scope")
+        allowed_fit_scopes = {"stateless", "expanding_past_only", "rolling_past_only"}
+        if fit_scope not in allowed_fit_scopes:
+            blockers.append("derived_feature_fit_scope_not_causal_or_unknown")
+        elif fit_scope in {"expanding_past_only", "rolling_past_only"}:
+            try:
+                fit_cutoff = _aware_utc(fact.get("transform_fit_cutoff"), "transform_fit_cutoff")
+            except ValueError as exc:
+                fit_cutoff = None
+                blockers.append(str(exc))
+            if not _sha256_ok(fact.get("transform_fit_data_sha256")):
+                blockers.append("invalid_sha256:transform_fit_data_sha256")
+            if not _nonempty_string(fact.get("transform_fit_manifest_ref")):
+                blockers.append("transform_fit_manifest_reference_missing")
+            elif not (
+                fact["transform_fit_manifest_ref"].startswith("https://")
+                or fact["transform_fit_manifest_ref"].startswith("repo://")
+                or fact["transform_fit_manifest_ref"].startswith("evidence://")
+            ):
+                blockers.append("transform_fit_manifest_reference_invalid")
+
+            if fit_cutoff is not None and fit_cutoff > decision:
+                blockers.append("transform_fit_cutoff_after_decision")
+            if fit_cutoff is not None:
+                try:
+                    feature_available_for_fit = _aware_utc(fact.get("available_at"), "available_at")
+                    if fit_cutoff > feature_available_for_fit:
+                        blockers.append("transform_fit_cutoff_after_feature_available")
+                except ValueError:
+                    pass
 
     for key in ("source_sha256", "transform_sha256"):
         if key in fact and not _sha256_ok(fact.get(key)):
