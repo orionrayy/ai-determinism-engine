@@ -200,5 +200,85 @@ class ProbabilityEvolutionTests(unittest.TestCase):
             evo.evaluate_probability_evolution([None], version="4.0")
 
 
+    def test_matured_label_cannot_mature_on_or_before_its_decision(self):
+        rows = make_rows(20)
+        rows[5]["label_available_index"] = 5
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "label_maturity_not_after_decision"):
+            evo.evaluate_probability_evolution(rows, version="4.0")
+
+    def test_canonical_ledger_adapter_preserves_source_qualification_boundary(self):
+        ledger = {
+            "schema_version": "serevex.forecast-ledger.v1",
+            "metadata": {
+                "series_id": "XAUUSD:OHLCV:momentum_5:long:tp-before-sl",
+                "target_id": "xauusd:tp-before-sl:momentum_5:long:h12",
+                "target_spec": {"horizon_bars_from_next_open": 12},
+                "dataset_sha256": "a" * 64,
+                "source_lineage_sha256": "b" * 64,
+                "source_verification": {
+                    "provider_provenance_independently_verified": False,
+                    "data_rights_verified": False,
+                    "broker_feed_match_verified": False,
+                },
+                "source_timestamp_semantics_verified": False,
+                "historical_feature_availability_verified": False,
+                "broker_quote_basis_verified": False,
+            },
+            "records": [
+                {
+                    "decision_id": f"ledger-{i}",
+                    "decision_index": i,
+                    "label_available_index": i + 1,
+                    "label": int(i % 2 == 0),
+                    "label_mature": True,
+                    "regime_id": "regime-a",
+                    "regime_available_index": i,
+                    "state_tags_available_index": i,
+                    "baseline_probability": 0.5,
+                    "expert_probabilities": {
+                        "alpha_logistic_v1": 0.95 if i % 2 == 0 else 0.05
+                    },
+                }
+                for i in range(40)
+            ],
+        }
+        rows, source = evo.adapt_forecast_ledger(ledger)
+        self.assertEqual(len(rows), 40)
+        self.assertEqual(rows[0]["candidate_probability"], 0.95)
+        self.assertEqual(rows[0]["target_id"], ledger["metadata"]["target_id"])
+        self.assertFalse(source["source_timestamp_semantics_verified"])
+        report = evo.evaluate_forecast_ledger_versions(ledger, as_of_index=40)
+        self.assertEqual(tuple(report["versions"]), evo.VERSION_ORDER)
+        self.assertEqual(report["source_evidence"]["dataset_sha256"], "a" * 64)
+        self.assertFalse(report["research_boundary"]["source_qualified_for_training"])
+        self.assertEqual(report["decision_output"], "NO_TRADE")
+
+    def test_adapter_rejects_unknown_schema_and_missing_expert_falls_back(self):
+        with self.assertRaisesRegex(evo.ProbabilityInputError, "unsupported_forecast_ledger_schema"):
+            evo.adapt_forecast_ledger({"schema_version": "unknown", "metadata": {}, "records": []})
+        ledger = {
+            "schema_version": "serevex.forecast-ledger.v1",
+            "metadata": {
+                "series_id": "XAUUSD:OHLCV:rule:long",
+                "target_id": "target",
+                "target_spec": {"horizon_bars_from_next_open": 12},
+            },
+            "records": [{
+                "decision_id": "only",
+                "decision_index": 0,
+                "label": None,
+                "label_mature": False,
+                "label_available_index": 1,
+                "baseline_probability": 0.41,
+                "expert_probabilities": {},
+                "state_tags_available_index": 0,
+                "regime_available_index": 0,
+            }],
+        }
+        result = evo.evaluate_forecast_ledger_versions(ledger, as_of_index=2)
+        self.assertEqual(result["versions"]["9.0"]["forecasts"][0]["probability"], 0.41)
+        self.assertEqual(result["versions"]["9.0"]["forecasts"][0]["alpha_weight"], 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
