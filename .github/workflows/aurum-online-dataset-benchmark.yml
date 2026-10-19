@@ -171,7 +171,7 @@ jobs:
           )
           checked = integrated.validate_forecast_ledger(ledger)
           probability_evolution_report = probability_evolution.evaluate_forecast_ledger_versions(
-              ledger, candidate_expert="alpha_logistic_v1", as_of_index=len(rows),
+              ledger, candidate_expert="alpha_calibrated_logistic_v1", as_of_index=len(rows),
               score_partition="final_holdout",
           )
           assert list(probability_evolution_report["versions"]) == list(probability_evolution.VERSION_ORDER), probability_evolution_report
@@ -219,6 +219,7 @@ jobs:
               "CALIBRATION_BLOCK_SELECTED_ALPHA_WEIGHT_PASSES_DUAL_SCORE_STABILITY_SCREEN",
           ), alpha
           assert all("alpha_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
+          assert all("alpha_calibrated_logistic_v1" in row["expert_probabilities"] for row in ledger["records"])
           assert all(
               (0.0 <= row["alpha_model_out_of_domain_fraction"] <= 1.0)
               if row["partition"] == "final_holdout"
