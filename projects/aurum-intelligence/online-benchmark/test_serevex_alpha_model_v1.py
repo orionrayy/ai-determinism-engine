@@ -99,7 +99,7 @@ class SerevexAlphaModelTests(unittest.TestCase):
         rows = [
             {"decision_id": f"bad-{i}", "decision_index": i, "label_mature": True,
              "label": 0, "baseline_probability": 0.2}
-            for i in range(120)
+            for i in range(240)
         ]
         alpha_probabilities = {i: 0.95 for i in range(120)}
         result = alpha._choose_baseline_shrinkage_weight(rows, alpha_probabilities)
