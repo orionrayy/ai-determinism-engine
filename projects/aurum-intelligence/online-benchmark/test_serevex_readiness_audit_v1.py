@@ -89,6 +89,30 @@ class ReadinessAuditTests(unittest.TestCase):
         self.assertTrue(any("SOURCE_DISAGREEMENT_REVIEW_REQUIRED" in x for x in result["blockers_by_area"]["price_data"]))
         self.assertTrue(any("news_1h" in x for x in result["blockers_by_area"]["external_context"]))
 
+    def test_candidate_cannot_be_promoted_with_unqualified_price_source(self):
+        data = reports()
+        data["model"]["source_qualification"]["provenance_verified"] = False
+        result = audit.audit_reports(data)
+        self.assertIn(
+            "candidate_policy_promoted_while_price_sources_unqualified",
+            result["integrity_violations"],
+        )
+
+    def test_null_metrics_do_not_satisfy_fallback_identity(self):
+        data = reports()
+        data["model"]["model_selection_gate"] = {"passed": False, "status": "FAIL"}
+        data["model"]["calibration_gate"] = {
+            "passed": False, "status": "NOT_RUN_MODEL_SELECTION_GATE_FAILED"
+        }
+        data["model"]["final_holdout"]["policy"] = audit.BASELINE
+        data["model"]["final_holdout"]["policy_metrics"]["brier"] = None
+        data["model"]["final_holdout"]["baseline_metrics"]["brier"] = None
+        result = audit.audit_reports(data)
+        self.assertIn(
+            "fallback_metric_non_numeric:brier",
+            result["integrity_violations"],
+        )
+
     def test_missing_reports_fail_closed(self):
         result = audit.audit_reports({})
         self.assertEqual(result["overall_status"], "RESEARCH_ONLY_BLOCKED")
