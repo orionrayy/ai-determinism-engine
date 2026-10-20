@@ -150,7 +150,39 @@ class HierarchicalShrinkageV2Tests(unittest.TestCase):
         for name, part in report["partition_rows"].items():
             audit = part["block_audit"]
             self.assertFalse(audit["partial_or_boundary_crossing_blocks_used"])
-            self.assertEqual(part["block_purged_scored_rows"], audit["eligible_block_count"] * v2.BLOCK_SPAN)
+            self.assertFalse(audit["source_row_coverage_required"])
+            self.assertEqual(
+                part["block_purged_scored_rows"],
+                sum(audit["eligible_scored_row_counts"].values()),
+            )
+
+    def test_sparse_event_ledger_keeps_valid_source_time_blocks(self):
+        ledger = make_ledger(informative=False)
+        ledger["records"] = [
+            row for row in ledger["records"]
+            if int(row["decision_index"]) % 2 == 0
+        ]
+        refresh_causal_baseline(ledger)
+
+        report = self.evaluate(ledger)
+        for name, part in report["partition_rows"].items():
+            audit = part["block_audit"]
+            self.assertTrue(audit["event_cohort_is_sparse_by_design"])
+            self.assertFalse(audit["source_row_coverage_required"])
+            self.assertGreater(audit["eligible_block_count"], 0, name)
+            self.assertEqual(
+                part["block_purged_scored_rows"],
+                sum(audit["eligible_scored_row_counts"].values()),
+            )
+            self.assertTrue(all(count == 6 for count in audit["eligible_scored_row_counts"].values()))
+
+    def test_label_maturity_cannot_exceed_registered_horizon(self):
+        ledger = make_ledger(informative=False)
+        ledger["records"][100]["label_available_index"] = (
+            ledger["records"][100]["decision_index"] + v2.MAX_LABEL_HORIZON_BARS + 1
+        )
+        with self.assertRaisesRegex(ValueError, "label_maturity_exceeds_registered_horizon"):
+            self.evaluate(ledger)
 
 
 if __name__ == "__main__":

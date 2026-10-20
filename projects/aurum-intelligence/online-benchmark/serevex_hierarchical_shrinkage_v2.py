@@ -25,6 +25,7 @@ MIN_POSITIVE_SHARE = 0.70
 CRITICAL_Z = 2.58
 ECE_TOLERANCE = 0.015
 MIN_SUBGROUP_ROWS = 100
+MAX_LABEL_HORIZON_BARS = 12
 EPS = 1e-12
 PARTITIONS = ("development", "model_selection", "calibration", "final_holdout")
 
@@ -97,6 +98,8 @@ def _validate_records(ledger: Mapping[str, Any], as_of_index: int) -> list[dict[
         seen.add(index)
         if not _is_int(maturity) or maturity <= index:
             raise ValueError(f"label_maturity_must_follow_decision_at_{position}")
+        if maturity - index > MAX_LABEL_HORIZON_BARS:
+            raise ValueError(f"label_maturity_exceeds_registered_horizon_at_{position}")
         if row.get("partition") not in PARTITIONS:
             raise ValueError(f"invalid_partition_at_{position}")
         if not isinstance(row.get("label_mature"), bool):
@@ -232,39 +235,90 @@ def _metrics(rows: Sequence[Mapping[str, Any]], predictions: Sequence[float]) ->
 
 
 def _complete_block_rows(rows: Sequence[Mapping[str, Any]], partition: str, start: int, end: int):
-    """Only score 12 source bars when all 24 rows of the block belong to this partition."""
-    by_index = {int(row["decision_index"]): row for row in rows}
-    selected, block_audit, rejected = [], [], defaultdict(int)
-    block_ids = sorted({int(row["decision_index"]) // BLOCK_SIZE for row in rows
-                        if start <= int(row["decision_index"]) < end})
-    eligible_blocks = []
-    for block_id in block_ids:
+    """Score mature rule/side events in each block's first 12 source bars.
+
+    The forecast ledger is intentionally sparse: it contains an event only when the
+    registered rule/side produces a decision. Raw source bars with no such event are
+    not missing observations and must not invalidate an otherwise eligible block.
+    Each 24-bar source block is assigned wholly to one partition; its first 12 bars
+    are scored, and its final 12 bars are an embargo for the maximum 12-bar label
+    horizon.
+    """
+    events_by_block: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        index = int(row["decision_index"])
+        if start <= index < end:
+            events_by_block[index // BLOCK_SIZE].append(row)
+
+    selected: list[Mapping[str, Any]] = []
+    rejected: dict[str, int] = defaultdict(int)
+    eligible_blocks: list[int] = []
+    eligible_counts: dict[str, int] = {}
+    # Iterate source-time blocks, not ledger row positions. Empty blocks are useful
+    # diagnostics but contribute neither rows nor independent evidence.
+    first_block = max(0, start // BLOCK_SIZE)
+    last_block = max(first_block, (end - 1) // BLOCK_SIZE) if end > start else first_block - 1
+    for block_id in range(first_block, last_block + 1):
         first, stop = block_id * BLOCK_SIZE, (block_id + 1) * BLOCK_SIZE
         if first < start or stop > end:
             rejected["block_crosses_partition_boundary"] += 1
             continue
-        block = [by_index.get(i) for i in range(first, stop)]
-        if any(row is None for row in block):
-            rejected["missing_source_row"] += 1
+
+        block_events = events_by_block.get(block_id, [])
+        if not block_events:
+            rejected["no_rule_side_events_in_source_block"] += 1
             continue
-        if any(row["partition"] != partition for row in block):
+        if any(row["partition"] != partition for row in block_events):
             rejected["partition_tag_mismatch"] += 1
             continue
-        scored = block[:BLOCK_SPAN]
-        if any(not row["label_mature"] or row["label"] not in (0, 1) for row in scored):
-            rejected["immature_or_ambiguous_scored_label"] += 1
+
+        scored_events = [
+            row for row in block_events
+            if first <= int(row["decision_index"]) < first + BLOCK_SPAN
+        ]
+        if not scored_events:
+            rejected["no_events_in_scored_half"] += 1
             continue
-        if any(int(row["label_available_index"]) >= end for row in scored):
+
+        matured_events = [
+            row for row in scored_events
+            if row["label_mature"] is True and row["label"] in (0, 1)
+        ]
+        rejected["immature_or_ambiguous_events_excluded"] += len(scored_events) - len(matured_events)
+        if not matured_events:
+            rejected["no_matured_scored_events"] += 1
+            continue
+
+        # With a maximum target horizon of 12 bars, every score in the first half
+        # should mature before the 24-bar block ends. Fail closed if the ledger
+        # contradicts that protocol rather than weakening the embargo.
+        if any(int(row["label_available_index"]) >= stop for row in matured_events):
+            rejected["label_not_mature_before_block_end"] += 1
+            continue
+        if any(int(row["label_available_index"]) >= end for row in matured_events):
             rejected["label_not_mature_before_partition_cutoff"] += 1
             continue
-        selected.extend(scored)
+
+        selected.extend(matured_events)
         eligible_blocks.append(block_id)
-    block_audit = {"partition": partition, "start_index_inclusive": start, "end_index_exclusive": end,
-                   "block_size": BLOCK_SIZE, "scored_bars_per_block": BLOCK_SPAN,
-                   "embargo_bars_per_block": EMBARGO, "eligible_full_blocks": eligible_blocks,
-                   "eligible_block_count": len(eligible_blocks), "eligible_scored_rows": len(selected),
-                   "rejected_block_reason_counts": dict(sorted(rejected.items())),
-                   "partial_or_boundary_crossing_blocks_used": False}
+        eligible_counts[str(block_id)] = len(matured_events)
+
+    block_audit = {
+        "partition": partition,
+        "start_index_inclusive": start,
+        "end_index_exclusive": end,
+        "block_size": BLOCK_SIZE,
+        "scored_bars_per_block": BLOCK_SPAN,
+        "embargo_bars_per_block": EMBARGO,
+        "event_cohort_is_sparse_by_design": True,
+        "source_row_coverage_required": False,
+        "eligible_full_blocks": eligible_blocks,
+        "eligible_block_count": len(eligible_blocks),
+        "eligible_scored_row_counts": eligible_counts,
+        "eligible_scored_rows": len(selected),
+        "rejected_block_reason_counts": dict(sorted(rejected.items())),
+        "partial_or_boundary_crossing_blocks_used": False,
+    }
     return selected, block_audit
 
 
