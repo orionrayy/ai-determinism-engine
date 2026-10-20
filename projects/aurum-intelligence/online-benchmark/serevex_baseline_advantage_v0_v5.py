@@ -320,6 +320,7 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
 
     governor, forecasts = _Governor(expected), {}
     gate_counts, selected_counts, trace = defaultdict(int), defaultdict(int), []
+    trace_by_block = defaultdict(list)
     for row in records:
         di = int(row["decision_index"])
         governor.advance(di, forecasts)
@@ -331,6 +332,7 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
         gate_counts[gate["status"]] += 1
         selected_counts[selected] += 1
         trace.append([row.get("decision_id", di), di, selected, gate["status"], gate.get("independent_blocks", 0)])
+        trace_by_block[di // BLOCK_PERIOD].append(trace[-1])
         governor.queue(row)
 
     scored = [r for r in records if r.get("partition") == score_partition
@@ -379,10 +381,12 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
 
     baseline_ok = all(predictions["0.1"][i] == _clip(scored[i]["baseline_probability"]) for i in range(len(scored)))
     same_cohort = all(results[v]["rows"] == len(scored) for v in VERSION_ORDER)
+    trace_block_hashes = {str(k): _sha(v) for k, v in sorted(trace_by_block.items())}
     report_digest = _sha({"model_version": MODEL_VERSION, "as_of_index": as_of_index,
                           "score_partition": score_partition, "score_rows": len(scored), "prediction_hashes": hashes,
                           "selected_counts": dict(sorted(selected_counts.items())),
-                          "gate_status_counts": dict(sorted(gate_counts.items()))})
+                          "gate_status_counts": dict(sorted(gate_counts.items())),
+                          "selection_trace_block_sha256": trace_block_hashes})
     report = {
         "protocol_version": MODEL_VERSION, "version_order": list(VERSION_ORDER),
         "status": "BASELINE_PRESERVED_RESEARCH_ONLY", "score_partition": score_partition,
@@ -403,7 +407,8 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                 "fallback": "exact_rowwise_causal_baseline_v0.1",
                 "holdout_feedback_policy": "prior labels can update later decisions only after strict maturity; the online policy is fixed before scoring",
             },
-            "selection_trace_sha256": _sha(trace), "baseline_reproduction_verified": baseline_ok,
+            "selection_trace_sha256": _sha(trace), "selection_trace_block_sha256": trace_block_hashes,
+            "baseline_reproduction_verified": baseline_ok,
             "same_scored_cohort_verified": same_cohort, "future_label_used_for_own_decision": False,
         },
         "multi_calibration_audit": {
