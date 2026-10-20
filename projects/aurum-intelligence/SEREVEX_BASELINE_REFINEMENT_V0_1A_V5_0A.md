@@ -4,7 +4,7 @@
 
 ## Version reset and intent
 
-The new a-series resets the hypothesis labels. **v0.1a is the old v4.5 deterministic blend recipe**, not a declaration that v4.5 was validated or should replace the causal baseline. Its old final-holdout win was descriptive only: the paired source-time-block intervals crossed zero. The original expanding matured-label baseline remains separately represented as `CAUSAL_BASELINE` and is always the fallback.
+The new a-series resets the hypothesis labels. **v0.1a is the old v4.5 deterministic blend recipe**, not a declaration that v4.5 was validated or should replace the causal baseline. The legacy v4.5 recipe was selected after inspection of the prior final-holdout results; comparisons with v0.1a on that same cohort are post-selection and descriptive, not independent confirmation. Its earlier paired source-time-block intervals crossed zero. The original expanding matured-label baseline remains separately represented as `CAUSAL_BASELINE` and is always the fallback.
 
 ## Focused 50-checkpoint sequence
 

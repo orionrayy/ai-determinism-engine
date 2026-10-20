@@ -59,6 +59,7 @@ class BaselineRefinementTests(unittest.TestCase):
         self.assertFalse(report["validation"]["model_validated"])
         self.assertFalse(report["validation"]["live_signal_enabled"])
         self.assertFalse(report["validation"]["live_order_execution_enabled"])
+        self.assertIn("post-selection", report["version_reset_lineage"]["anchor_selection_caveat"].lower())
         self.assertFalse(report["prequential_governor"]["future_label_used_for_own_decision"])
         self.assertIs(report["prequential_governor"]["candidate_gate"]["final_holdout_used_for_static_parameter_selection"], False)
 
