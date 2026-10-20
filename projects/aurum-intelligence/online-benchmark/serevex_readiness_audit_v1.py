@@ -60,6 +60,17 @@ def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | 
             for key in SCORES:
                 if key not in baseline_metrics or key not in policy_metrics:
                     violations.append(f"fallback_metric_missing:{key}")
+                elif key == "rows" and (
+                    not isinstance(policy_metrics[key], int)
+                    or isinstance(policy_metrics[key], bool)
+                    or not isinstance(baseline_metrics[key], int)
+                    or isinstance(baseline_metrics[key], bool)
+                ):
+                    violations.append("fallback_row_count_not_integer")
+                elif key != "rows" and (
+                    not finite(policy_metrics[key]) or not finite(baseline_metrics[key])
+                ):
+                    violations.append(f"fallback_metric_non_numeric:{key}")
                 elif not same(policy_metrics[key], baseline_metrics[key]):
                     violations.append(f"fallback_policy_differs_from_baseline:{key}")
         required_safety = {
@@ -111,6 +122,8 @@ def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | 
         blockers["production"].append("model_or_profitability_not_validated:" + str(execution.get("status", "MISSING")))
     if execution.get("live_execution_authorized") is True:
         violations.append("research_report_claims_live_execution_authority")
+    if model and mp(mp(model.get("final_holdout"))).get("policy") != BASELINE and blockers["price_data"]:
+        violations.append("candidate_policy_promoted_while_price_sources_unqualified")
     for area in blockers:
         blockers[area] = sorted(set(blockers[area]))
     violations = sorted(set(violations))
