@@ -71,14 +71,14 @@ class BaselineAdvantageTests(unittest.TestCase):
         for row in changed["records"]:
             if row["decision_index"] >= cutoff:
                 row["label"] = 1 - row["label"]
-        prefix_a = evolution.evaluate_ledger(
-            {"records": original["records"][:cutoff]}, as_of_index=cutoff,
-            score_partition="development", bootstrap_replicates=200)
-        prefix_b = evolution.evaluate_ledger(
-            {"records": changed["records"][:cutoff]}, as_of_index=cutoff,
-            score_partition="development", bootstrap_replicates=200)
-        self.assertEqual(prefix_a["prequential_governor"]["selection_trace_sha256"],
-                         prefix_b["prequential_governor"]["selection_trace_sha256"])
+        full_a = evolution.evaluate_ledger(original, as_of_index=800, bootstrap_replicates=200)
+        full_b = evolution.evaluate_ledger(changed, as_of_index=800, bootstrap_replicates=200)
+        hashes_a = full_a["prequential_governor"]["selection_trace_block_sha256"]
+        hashes_b = full_b["prequential_governor"]["selection_trace_block_sha256"]
+        prefix_blocks = [key for key in hashes_a if int(key) * 24 + 24 <= cutoff]
+        self.assertTrue(prefix_blocks)
+        for key in prefix_blocks:
+            self.assertEqual(hashes_a[key], hashes_b[key], f"future label mutation leaked into earlier block {key}")
 
     def test_invalid_probabilities_and_duplicate_indices_fail_closed(self):
         rows = make_ledger(n=50)
