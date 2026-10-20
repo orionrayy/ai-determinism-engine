@@ -39,7 +39,10 @@ def make_ledger(n=800, informative=False):
 class BaselineAdvantageTests(unittest.TestCase):
     def test_versions_are_ordered_and_baseline_reproduces_exactly(self):
         report = evolution.evaluate_ledger(make_ledger(), as_of_index=800, bootstrap_replicates=200)
-        self.assertEqual(report["version_order"], ["0.1", "0.2", "0.3", "0.4", "0.5"])
+        self.assertEqual(report["version_order"], [f"{i / 10:.1f}" for i in range(1, 51)])
+        self.assertEqual(len(report["version_order"]), 50)
+        self.assertEqual(report["version_order"][0], "0.1")
+        self.assertEqual(report["version_order"][-1], "5.0")
         self.assertEqual(report["versions"]["0.1"]["brier"], 0.25)
         self.assertEqual(report["validation"]["baseline_reproduction"], "PASS")
         self.assertFalse(report["prequential_governor"]["future_label_used_for_own_decision"])
@@ -49,8 +52,8 @@ class BaselineAdvantageTests(unittest.TestCase):
     def test_stable_calibrated_specialist_can_be_selected(self):
         report = evolution.evaluate_ledger(make_ledger(informative=True), as_of_index=800, bootstrap_replicates=200)
         selected = report["prequential_governor"]["selected_version_counts"]
-        self.assertGreater(selected.get("0.2", 0) + selected.get("0.3", 0) + selected.get("0.4", 0), 0)
-        self.assertLess(report["versions"]["0.5"]["brier"], report["versions"]["0.1"]["brier"])
+        self.assertGreater(sum(selected.get(v, 0) for v in evolution.CANDIDATE_VERSIONS), 0)
+        self.assertLess(report["versions"]["5.0"]["brier"], report["versions"]["0.1"]["brier"])
 
     def test_bad_specialist_falls_back_exactly_to_baseline(self):
         rows = make_ledger(informative=False)
@@ -61,8 +64,8 @@ class BaselineAdvantageTests(unittest.TestCase):
                 "volatility_matured_rate": 0.99 if row["label"] == 0 else 0.01,
             }
         report = evolution.evaluate_ledger(rows, as_of_index=800, bootstrap_replicates=200)
-        self.assertEqual(report["versions"]["0.5"]["brier"], report["versions"]["0.1"]["brier"])
-        self.assertEqual(report["versions"]["0.5"]["log_loss"], report["versions"]["0.1"]["log_loss"])
+        self.assertEqual(report["versions"]["5.0"]["brier"], report["versions"]["0.1"]["brier"])
+        self.assertEqual(report["versions"]["5.0"]["log_loss"], report["versions"]["0.1"]["log_loss"])
 
     def test_future_label_mutations_cannot_change_prefix_selection(self):
         original = make_ledger(informative=True)
@@ -111,8 +114,8 @@ class BaselineAdvantageTests(unittest.TestCase):
         report = evolution.evaluate_ledger(make_ledger(informative=True), as_of_index=800, bootstrap_replicates=200)
         self.assertIn("multi_calibration_audit", report)
         self.assertIn("regime", report["multi_calibration_audit"]["scores_by_regime_and_volatility"])
-        self.assertIn("paired_block_interval_vs_baseline", report["versions"]["0.5"])
-        self.assertEqual(report["versions"]["0.5"]["paired_block_interval_vs_baseline"]["replicates"], 200)
+        self.assertIn("paired_block_interval_vs_baseline", report["versions"]["5.0"])
+        self.assertEqual(report["versions"]["5.0"]["paired_block_interval_vs_baseline"]["replicates"], 200)
         self.assertFalse(report["validation"]["model_validated"])
 
 
