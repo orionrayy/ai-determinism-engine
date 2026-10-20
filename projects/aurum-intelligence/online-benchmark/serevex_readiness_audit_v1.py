@@ -68,7 +68,7 @@ def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | 
             "live_order_execution_enabled": False,
         }
         for key, expected in required_safety.items():
-            if key not in model or model.get(key) is not expected:
+            if key not in model or model.get(key) != expected:
                 violations.append(f"unsafe_or_missing_authority_state:{key}")
     online = mp(reports.get("online_dataset"))
     if not online:
