@@ -90,6 +90,23 @@ class BaselineAdvantageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evolution.evaluate_ledger(rows, as_of_index=50, bootstrap_replicates=200)
 
+    def test_report_integrity_hash_binds_scored_labels(self):
+        original = make_ledger(informative=True)
+        altered = copy.deepcopy(original)
+        for row in altered["records"]:
+            if row["partition"] == "final_holdout" and row["label_available_index"] < 800:
+                row["label"] = 1 - row["label"]
+        report_a = evolution.evaluate_ledger(original, as_of_index=800, bootstrap_replicates=200)
+        report_b = evolution.evaluate_ledger(altered, as_of_index=800, bootstrap_replicates=200)
+        self.assertNotEqual(report_a["score_cohort_sha256"], report_b["score_cohort_sha256"])
+        self.assertNotEqual(report_a["report_sha256"], report_b["report_sha256"])
+
+    def test_label_maturity_cannot_precede_decision(self):
+        rows = make_ledger(n=50)
+        rows["records"][10]["label_available_index"] = 9
+        with self.assertRaises(ValueError):
+            evolution.evaluate_ledger(rows, as_of_index=50, bootstrap_replicates=200)
+
     def test_multi_calibration_and_embargoed_bootstrap_are_present(self):
         report = evolution.evaluate_ledger(make_ledger(informative=True), as_of_index=800, bootstrap_replicates=200)
         self.assertIn("multi_calibration_audit", report)
