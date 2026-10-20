@@ -1,0 +1,220 @@
+import copy
+import random
+import unittest
+
+import serevex_baseline_refinement_v0_1a_v5_0a as refinement
+import serevex_baseline_advantage_v0_v5 as legacy_baseline_advantage
+
+
+def make_ledger(n=2400, informative=True):
+    rng = random.Random(912037)
+    records = []
+    for i in range(n):
+        group_a = (i // 24) % 2 == 0
+        regime = "trend_up" if group_a else "trend_down"
+        volatility = "high" if group_a else "low"
+        if informative:
+            y = int(rng.random() < (0.90 if group_a else 0.10))
+            specialist = 0.90 if group_a else 0.10
+        else:
+            y = int(rng.random() < 0.5)
+            specialist = 0.50
+        records.append({
+            "decision_id": f"d{i}", "decision_index": i, "label_available_index": i + 12,
+            "label_available_time": i + 12, "label": y, "label_mature": True,
+            "partition": "development" if i < int(n * 0.5) else "final_holdout",
+            "baseline_probability": 0.55 if informative else 0.50,
+            "matured_label_count_before_decision": min(i, 288),
+            "conditional_regime_support_before_decision": min(i // 2, 500),
+            "conditional_volatility_support_before_decision": min(i // 2, 500),
+            "regime_id": regime, "state_tags": {"volatility_bucket": volatility},
+            "expert_probabilities": {
+                "rolling_matured_rate_288": specialist,
+                "regime_matured_rate": specialist,
+                "volatility_matured_rate": specialist,
+            },
+        })
+    return {"metadata": {"dataset_sha256": "synthetic-test-only"}, "records": records}
+
+
+class BaselineRefinementTests(unittest.TestCase):
+    def test_version_reset_maps_legacy_v45_recipe_to_v01a(self):
+        ledger = make_ledger(n=1000)
+        row = refinement._valid_records(ledger["records"], 1000)[500]
+        predictions = refinement._candidate_row(row)
+        self.assertEqual(refinement.VERSION_ORDER[0], "0.1a")
+        self.assertEqual(refinement.VERSION_ORDER[-1], "5.0a")
+        self.assertEqual(len(refinement.VERSION_ORDER), 50)
+        self.assertAlmostEqual(refinement.LEGACY_V45_SCALE, 19.0 / 36.0)
+        self.assertIn("0.1a", predictions)
+        self.assertEqual(refinement._version_spec(1)["renamed_from"], "legacy v4.5")
+        self.assertEqual(refinement._version_spec(1)["promotion_status"], "exploratory_anchor_not_validated")
+
+    def test_0_1a_prediction_manifest_is_bit_exact_legacy_v45(self):
+        ledger = make_ledger(n=360, informative=True)
+        for i, row in enumerate(ledger["records"]):
+            row["matured_label_count_before_decision"] = (i * 7) % 350
+            row["conditional_regime_support_before_decision"] = (i * 11) % 130
+            row["conditional_volatility_support_before_decision"] = (i * 17) % 80
+            row["expert_probabilities"] = {
+                "rolling_matured_rate_288": 0.05 + ((i * 37) % 89) / 100.0,
+                "regime_matured_rate": 0.07 + ((i * 19 + 11) % 83) / 100.0,
+                "volatility_matured_rate": 0.04 + ((i * 53 + 7) % 91) / 100.0,
+            }
+
+        legacy_rows = legacy_baseline_advantage._valid_records(ledger["records"], as_of_index=360)
+        refined_rows = refinement._valid_records(ledger["records"], as_of_index=360)
+        legacy_predictions = [legacy_baseline_advantage._candidates(row)["4.5"] for row in legacy_rows]
+        reset_predictions = [refinement._candidate_probability(row, 1) for row in refined_rows]
+        self.assertEqual(reset_predictions, legacy_predictions)
+
+        legacy_manifest = legacy_baseline_advantage._sha([
+            [row.get("decision_id", row["decision_index"]), prediction]
+            for row, prediction in zip(legacy_rows, legacy_predictions)
+        ])
+        reset_manifest = refinement._sha([
+            [row.get("decision_id", row["decision_index"]), prediction]
+            for row, prediction in zip(refined_rows, reset_predictions)
+        ])
+        self.assertEqual(reset_manifest, legacy_manifest)
+
+    def test_reproduces_causal_reference_and_no_trade_contract(self):
+        report = refinement.evaluate_ledger(make_ledger(n=1200, informative=False), as_of_index=1200, bootstrap_replicates=100)
+        self.assertEqual(report["version_order"], [f"{i / 10:.1f}a" for i in range(1, 51)])
+        self.assertEqual(len(report["versions"]), 50)
+        self.assertEqual(report["anchors"][refinement.CAUSAL_BASELINE]["brier"], 0.25)
+        self.assertEqual(report["validation"]["baseline_reproduction"], "PASS")
+        self.assertEqual(report["validation"]["prequential_maturity_window_reconciled"], "PASS")
+        self.assertEqual(report["validation"]["causal_baseline_fallback_exact"], "PASS")
+        fallback_audit = report["prequential_governor"]["baseline_fallback_audit"]
+        self.assertTrue(fallback_audit["fallback_probabilities_match_source_baseline_exactly"])
+        self.assertEqual(fallback_audit["baseline_selected_decision_count"],
+                         report["prequential_governor"]["selected_version_counts"][refinement.CAUSAL_BASELINE])
+        self.assertEqual(report["validation"]["decision_output"], "NO_TRADE")
+        self.assertFalse(report["validation"]["model_validated"])
+        self.assertFalse(report["validation"]["live_signal_enabled"])
+        self.assertFalse(report["validation"]["live_order_execution_enabled"])
+        self.assertIn("post-selection", report["version_reset_lineage"]["anchor_selection_caveat"].lower())
+        self.assertFalse(report["prequential_governor"]["future_label_used_for_own_decision"])
+        self.assertTrue(report["prequential_governor"]["incremental_audit"]["calibration_cohort_matches_dual_score_gate"])
+        incremental = report["prequential_governor"]["incremental_audit"]
+        self.assertEqual(incremental["calibration_rows_by_version"]["0.1a"], incremental["matured_scored_window_rows"])
+        self.assertIs(report["prequential_governor"]["candidate_gate"]["final_holdout_used_for_static_parameter_selection"], False)
+
+    def test_strong_causal_specialist_can_pass_governor_on_synthetic_data(self):
+        report = refinement.evaluate_ledger(make_ledger(n=2400, informative=True), as_of_index=2400, bootstrap_replicates=100)
+        selected = report["prequential_governor"]["selected_version_counts"]
+        self.assertGreater(sum(count for version, count in selected.items() if version in refinement.CANDIDATE_VERSIONS), 0)
+        self.assertGreater(report["prequential_governor"]["incremental_audit"]["selection_look_count"], 0)
+        self.assertTrue(report["prequential_governor"]["baseline_fallback_audit"]["fallback_probabilities_match_source_baseline_exactly"])
+        self.assertTrue(report["prequential_governor"]["incremental_audit"]["prequential_maturity_window_reconciled"])
+
+    def test_harmful_specialists_fall_back_to_exact_causal_baseline(self):
+        ledger = make_ledger(n=2400, informative=True)
+        for row in ledger["records"]:
+            group_a = (row["decision_index"] // 24) % 2 == 0
+            wrong = 0.10 if group_a else 0.90
+            row["expert_probabilities"] = {key: wrong for key in refinement.EXPERT_KEYS}
+        report = refinement.evaluate_ledger(ledger, as_of_index=2400, bootstrap_replicates=100)
+        selected = report["prequential_governor"]["selected_version_counts"]
+        self.assertNotIn("0.1a", selected)
+        self.assertGreater(selected.get(refinement.CAUSAL_BASELINE, 0), 0)
+        metrics = report["versions"][refinement.GOVERNED_VERSION]
+        baseline = report["anchors"][refinement.CAUSAL_BASELINE]
+        self.assertAlmostEqual(metrics["brier"], baseline["brier"], places=12)
+        self.assertAlmostEqual(metrics["log_loss"], baseline["log_loss"], places=12)
+        fallback_audit = report["prequential_governor"]["baseline_fallback_audit"]
+        self.assertTrue(fallback_audit["fallback_probabilities_match_source_baseline_exactly"])
+        self.assertTrue(fallback_audit["all_decisions_selected_causal_baseline"])
+        self.assertTrue(fallback_audit["all_governed_probabilities_match_source_baseline_exactly"])
+
+    def test_future_label_mutation_cannot_change_completed_prefix_trace(self):
+        original = make_ledger(n=1800, informative=True)
+        changed = copy.deepcopy(original)
+        cutoff = 1000
+        for row in changed["records"]:
+            if row["decision_index"] >= cutoff:
+                row["label"] = 1 - row["label"]
+        report_a = refinement.evaluate_ledger(original, as_of_index=1800, bootstrap_replicates=100)
+        report_b = refinement.evaluate_ledger(changed, as_of_index=1800, bootstrap_replicates=100)
+        traces_a = report_a["prequential_governor"]["selection_trace_block_sha256"]
+        traces_b = report_b["prequential_governor"]["selection_trace_block_sha256"]
+        prefix_blocks = [key for key in traces_a if (int(key) + 1) * refinement.BLOCK_PERIOD <= cutoff - refinement.EMBARGO_BARS]
+        self.assertTrue(prefix_blocks)
+        for key in prefix_blocks:
+            self.assertEqual(traces_a[key], traces_b[key], f"future label mutation changed earlier selection block {key}")
+
+    def test_nonfinite_expert_and_duplicate_indices_fail_closed(self):
+        ledger = make_ledger(n=50)
+        ledger["records"][4]["expert_probabilities"][refinement.EXPERT_KEYS[0]] = float("nan")
+        with self.assertRaises(ValueError):
+            refinement.evaluate_ledger(ledger, as_of_index=50, bootstrap_replicates=100)
+        ledger = make_ledger(n=50)
+        ledger["records"][5]["decision_index"] = ledger["records"][4]["decision_index"]
+        with self.assertRaises(ValueError):
+            refinement.evaluate_ledger(ledger, as_of_index=50, bootstrap_replicates=100)
+
+    def test_unavailable_label_cannot_hold_prior_source_block_open(self):
+        ledger = make_ledger(n=2400, informative=True)
+        # Decision 5 is in the scored source window. Its label is valid eventually,
+        # but unavailable before the last simulated decision; it must not count as
+        # an observation the prequential queue is expected to receive.
+        ledger["records"][5]["label_available_index"] = 5000
+        report = refinement.evaluate_ledger(ledger, as_of_index=2400, bootstrap_replicates=100)
+        incremental = report["prequential_governor"]["incremental_audit"]
+        expected = sum(
+            1 for row in ledger["records"]
+            if row["label_mature"] and row["label"] in (0, 1)
+            and row["label_available_index"] < incremental["last_decision_index"]
+            and row["decision_index"] % refinement.BLOCK_PERIOD < refinement.BLOCK_SPAN_BARS
+        )
+        self.assertEqual(incremental["expected_matured_source_window_rows"], expected)
+        self.assertEqual(incremental["observed_matured_source_window_rows"], expected)
+        self.assertTrue(incremental["prequential_maturity_window_reconciled"])
+        self.assertGreater(incremental["closed_independent_blocks"], 0)
+
+    def test_gate_is_cached_without_new_block_evidence(self):
+        governor = refinement._Governor({})
+        first = governor.select()
+        second = governor.select()
+        self.assertIs(first, second)
+        self.assertEqual(governor.selection_look_count, 0)
+        self.assertEqual(first["selected"], refinement.CAUSAL_BASELINE)
+
+    def test_paired_bootstrap_labels_full_and_source_window_estimands_separately(self):
+        rows, reference, candidate = [], [], []
+        for index in range(240):
+            source_window = index % refinement.BLOCK_PERIOD < refinement.BLOCK_SPAN_BARS
+            label = 0 if source_window else 1
+            rows.append({"decision_index": index, "label": label})
+            reference.append(0.50)
+            # Slight harm in scored source windows, strong gain in embargo windows:
+            # the full-cohort sign intentionally differs from the bootstrap estimand.
+            candidate.append(0.60 if source_window else 0.99)
+        report = refinement._paired_block_bootstrap(
+            rows, reference, candidate, replicates=100, seed=20261020,
+        )
+        self.assertEqual(report["scored_rows_full_cohort"], 240)
+        self.assertEqual(report["source_window_rows"], 120)
+        self.assertEqual(report["source_window_blocks"], 10)
+        self.assertGreater(report["full_cohort_brier_mean_improvement"], 0.0)
+        self.assertLess(report["brier_mean_improvement"], 0.0)
+        self.assertLess(report["brier_improvement_ci95"][1], 0.0)
+        self.assertEqual(report["bootstrap_point_estimand"], "equal_weight_mean_of_non_embargo_source_window_block_means")
+        self.assertEqual(report["bootstrap_resampling"], "shared_paired_block_indices_for_brier_and_log_loss")
+        self.assertEqual(report["blocks"], 10)
+        self.assertEqual(report["replicates"], 100)
+
+    def test_calibration_diagnostics_are_emitted_for_multiple_slices(self):
+        report = refinement.evaluate_ledger(make_ledger(n=1200, informative=True), as_of_index=1200, bootstrap_replicates=100)
+        self.assertIn("multi_calibration_audit", report)
+        self.assertIn("regime", report["multi_calibration_audit"]["scores_by_regime_and_volatility"])
+        self.assertIn("paired_block_interval_vs_causal_baseline", report["versions"]["4.5a"])
+        incremental = report["prequential_governor"]["incremental_audit"]
+        self.assertTrue(incremental["calibration_cohort_matches_dual_score_gate"])
+        self.assertEqual(incremental["calibration_rows_by_version"]["0.1a"], incremental["matured_scored_window_rows"])
+        self.assertEqual(report["versions"]["4.5a"]["paired_block_interval_vs_causal_baseline"]["replicates"], 100)
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

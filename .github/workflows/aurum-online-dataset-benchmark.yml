@@ -153,6 +153,7 @@ jobs:
           import serevex_probability_evolution_v4_v9 as probability_evolution
           import serevex_baseline_advantage_v0_v5 as baseline_advantage
           import serevex_hierarchical_shrinkage_v1 as hierarchical_shrinkage
+          import serevex_baseline_refinement_v0_1a_v5_0a as baseline_refinement
 
           payload = ci_benchmark.fetch()
           rows = ci_benchmark.parse_csv(payload)
@@ -179,6 +180,48 @@ jobs:
           baseline_advantage_report = baseline_advantage.evaluate_ledger(
               ledger, as_of_index=len(rows), score_partition="final_holdout", bootstrap_replicates=500,
           )
+          baseline_refinement_report = baseline_refinement.evaluate_ledger(
+              ledger, as_of_index=len(rows), score_partition="final_holdout", bootstrap_replicates=500,
+          )
+          legacy_v45 = baseline_advantage_report["versions"]["4.5"]
+          reset_v01a = baseline_refinement_report["versions"]["0.1a"]
+          assert baseline_refinement_report["score_cohort_sha256"] == baseline_advantage_report["score_cohort_sha256"], {
+              "refinement_cohort": baseline_refinement_report["score_cohort_sha256"],
+              "legacy_cohort": baseline_advantage_report["score_cohort_sha256"],
+          }
+          assert baseline_refinement_report["scored_rows"] == baseline_advantage_report["scored_rows"], {
+              "refinement_rows": baseline_refinement_report["scored_rows"],
+              "legacy_rows": baseline_advantage_report["scored_rows"],
+          }
+          assert baseline_refinement_report["prediction_hashes"]["0.1a"] == legacy_v45["prediction_manifest_sha256"], {
+              "v0.1a_prediction_manifest": baseline_refinement_report["prediction_hashes"]["0.1a"],
+              "legacy_v4.5_prediction_manifest": legacy_v45["prediction_manifest_sha256"],
+          }
+          assert reset_v01a["brier"] == legacy_v45["brier"], {"reset": reset_v01a["brier"], "legacy": legacy_v45["brier"]}
+          assert reset_v01a["log_loss"] == legacy_v45["log_loss"], {"reset": reset_v01a["log_loss"], "legacy": legacy_v45["log_loss"]}
+          print(json.dumps({"legacy_v4_5_to_v0_1a_exact_prediction_manifest": "PASS",
+                            "legacy_v45_prediction_manifest_sha256": legacy_v45["prediction_manifest_sha256"],
+                            "scored_rows": baseline_refinement_report["scored_rows"]}, sort_keys=True))
+          assert baseline_refinement_report["version_order"] == list(baseline_refinement.VERSION_ORDER), baseline_refinement_report
+          assert len(baseline_refinement_report["version_order"]) == 50, baseline_refinement_report
+          assert baseline_refinement_report["version_order"][0] == "0.1a", baseline_refinement_report
+          assert baseline_refinement_report["version_order"][-1] == "5.0a", baseline_refinement_report
+          assert baseline_refinement_report["status"] == "BASELINE_GOVERNED_RESEARCH_ONLY", baseline_refinement_report
+          assert baseline_refinement_report["protocol_version"] == "serevex-baseline-refinement-v5.0a.4", baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["incremental_audit"]["calibration_cohort_matches_dual_score_gate"] is True, baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["incremental_audit"]["prequential_maturity_window_reconciled"] is True, baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["baseline_fallback_audit"]["fallback_probabilities_match_source_baseline_exactly"] is True, baseline_refinement_report
+          assert baseline_refinement_report["validation"]["model_validated"] is False, baseline_refinement_report
+          assert baseline_refinement_report["validation"]["deployment_calibrated"] is False, baseline_refinement_report
+          assert baseline_refinement_report["validation"]["live_signal_enabled"] is False, baseline_refinement_report
+          assert baseline_refinement_report["validation"]["live_order_execution_enabled"] is False, baseline_refinement_report
+          assert baseline_refinement_report["multi_audit"]["bootstrap_estimand_alignment"]["brier_and_log_loss_share_resampled_block_indices"] is True, baseline_refinement_report
+          assert baseline_refinement_report["multi_audit"]["bootstrap_estimand_alignment"]["full_cohort_and_bootstrap_estimands_can_differ_in_sign"] is True, baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["baseline_reproduction_verified"] is True, baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["same_scored_cohort_verified"] is True, baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["future_label_used_for_own_decision"] is False, baseline_refinement_report
+          assert baseline_refinement_report["validation"]["decision_output"] == "NO_TRADE", baseline_refinement_report
+          assert baseline_refinement_report["scored_rows"] > 0, baseline_refinement_report
           eligible_count = len(rows) - producer.HORIZON_BARS - producer.WARMUP_BARS
           partition_ends = {
               "development": producer.WARMUP_BARS + int(eligible_count * 0.50),
@@ -238,6 +281,10 @@ jobs:
           alpha = ledger["metadata"]["alpha_model_training"]
           assert baseline_advantage_report["scored_rows"] == alpha["final_holdout_metrics"]["rows"], baseline_advantage_report
           assert abs(baseline_advantage_report["versions"]["0.1"]["brier"] - alpha["final_holdout_metrics"]["causal_baseline_brier_score"]) < 1e-12, (baseline_advantage_report, alpha)
+          assert baseline_refinement_report["scored_rows"] == alpha["final_holdout_metrics"]["rows"], baseline_refinement_report
+          assert abs(baseline_refinement_report["anchors"]["CAUSAL_BASELINE"]["brier"] - alpha["final_holdout_metrics"]["causal_baseline_brier_score"]) < 1e-12, (baseline_refinement_report, alpha)
+          assert baseline_refinement_report["anchors"]["CAUSAL_BASELINE"]["rows"] == baseline_refinement_report["scored_rows"], baseline_refinement_report
+          assert baseline_refinement_report["versions"]["5.0a"]["rows"] == baseline_refinement_report["scored_rows"], baseline_refinement_report
           assert checked["contract_status"] == "PASS", checked
           assert alpha["model_version"] == "serevex-alpha-logistic-v4-embargoed-dual-score-ood", alpha
           assert alpha["status"] == "ALPHA_RESEARCH_TRAINED", alpha
@@ -369,6 +416,23 @@ jobs:
               "baseline_advantage_gate_status_counts": baseline_advantage_report["prequential_governor"]["gate_status_counts"],
               "baseline_advantage_selection_trace_sha256": baseline_advantage_report["prequential_governor"]["selection_trace_sha256"],
               "baseline_advantage_validation": baseline_advantage_report["validation"],
+              "baseline_refinement_status": baseline_refinement_report["status"],
+              "baseline_refinement_protocol_version": baseline_refinement_report["protocol_version"],
+              "baseline_refinement_scored_rows": baseline_refinement_report["scored_rows"],
+              "baseline_refinement_comparison": {v: {
+                  "brier": item["brier"], "log_loss": item["log_loss"], "ece": item["calibration"]["ece"],
+                  "baseline_brier_gain": item["baseline_brier_gain"],
+                  "baseline_log_loss_improvement": item["baseline_log_loss_improvement"],
+                  "v0_1a_anchor_brier_gain": item["v0_1a_anchor_brier_gain"],
+                  "paired_block_interval_vs_causal_baseline": item["paired_block_interval_vs_causal_baseline"],
+                  "paired_block_interval_vs_v0_1a_anchor": item["paired_block_interval_vs_v0_1a_anchor"],
+                  "prediction_manifest_sha256": item["prediction_manifest_sha256"],
+              } for v, item in baseline_refinement_report["versions"].items()},
+              "baseline_refinement_selected_version_counts": baseline_refinement_report["prequential_governor"]["selected_version_counts"],
+              "baseline_refinement_gate_status_counts": baseline_refinement_report["prequential_governor"]["gate_status_counts"],
+              "baseline_refinement_selection_trace_sha256": baseline_refinement_report["prequential_governor"]["selection_trace_sha256"],
+              "baseline_refinement_validation": baseline_refinement_report["validation"],
+              "baseline_refinement_report_sha256": baseline_refinement_report["report_sha256"],
               "hierarchical_shrinkage_status": hierarchical_shrinkage_report["status"],
               "hierarchical_shrinkage_selected_candidate": hierarchical_shrinkage_report["development_selection"]["selected_candidate"],
               "hierarchical_shrinkage_model_selection_gate": hierarchical_shrinkage_report["model_selection_gate"]["status"],
@@ -402,6 +466,9 @@ jobs:
           (output / "serevex_baseline_advantage_v0_v5_report.json").write_text(
               json.dumps(baseline_advantage_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
           )
+          (output / "serevex_baseline_refinement_v0_1a_v5_0a_report.json").write_text(
+              json.dumps(baseline_refinement_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+          )
           (output / "serevex_hierarchical_shrinkage_v1_report.json").write_text(
               json.dumps(hierarchical_shrinkage_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
           )
@@ -428,6 +495,8 @@ jobs:
               f"- Probability evolution latest global selection/gate diagnostics: {json.dumps(probability_evolution_final_global_gate, sort_keys=True)}",
               f"- Baseline advantage evolution v0.1-v5.0: {summary['baseline_advantage_status']}; scored rows: {summary['baseline_advantage_scored_rows']}; selected variants: {json.dumps(summary['baseline_advantage_selected_version_counts'], sort_keys=True)}",
               f"- Baseline advantage comparison JSON: {output / 'serevex_baseline_advantage_v0_v5_report.json'}",
+              f"- Baseline refinement v0.1a-v5.0a: {summary['baseline_refinement_status']}; scored rows: {summary['baseline_refinement_scored_rows']}; selected versions: {json.dumps(summary['baseline_refinement_selected_version_counts'], sort_keys=True)}",
+              f"- Baseline refinement report SHA-256: {summary['baseline_refinement_report_sha256']}; JSON: {output / 'serevex_baseline_refinement_v0_1a_v5_0a_report.json'}",
               f"- Hierarchical shrinkage v1: {summary['hierarchical_shrinkage_status']}; frozen policy: {summary['hierarchical_shrinkage_final_policy']}; selection gate: {summary['hierarchical_shrinkage_model_selection_gate']}; calibration gate: {summary['hierarchical_shrinkage_calibration_gate']}",
               f"- Hierarchical shrinkage report JSON: {output / 'serevex_hierarchical_shrinkage_v1_report.json'}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
@@ -441,6 +510,14 @@ jobs:
           for version, metric in baseline_advantage_report["versions"].items():
               lines.append(f"| {version} | {metric['rows']} | {metric['brier']:.8f} | {metric['log_loss']:.8f} | {metric['calibration']['ece']:.8f} | {metric['baseline_brier_gain']:.8f} | {metric['baseline_log_loss_improvement']:.8f} |")
           lines.extend(["", f"- Governor selected counts: {json.dumps(baseline_advantage_report['prequential_governor']['selected_version_counts'], sort_keys=True)}", f"- Selection gate counts: {json.dumps(baseline_advantage_report['prequential_governor']['gate_status_counts'], sort_keys=True)}", "- v0.1 remains the exact causal baseline; specialists are eligible only after preregistered temporal dual-score and calibration gates. Research-only; no trading authorization."])
+          lines.extend(["", "## Serevex baseline refinement v0.1a-v5.0a", "",
+                        "| Version | Rows | Brier | Log loss | ECE | Gain vs causal Brier | Gain vs v0.1a Brier |",
+                        "|---|---:|---:|---:|---:|---:|---:|"])
+          for version, metric in baseline_refinement_report["versions"].items():
+              lines.append(f"| {version} | {metric['rows']} | {metric['brier']:.8f} | {metric['log_loss']:.8f} | {metric['calibration']['ece']:.8f} | {metric['baseline_brier_gain']:.8f} | {metric['v0_1a_anchor_brier_gain']:.8f} |")
+          lines.extend(["", f"- Governed selected versions: {json.dumps(baseline_refinement_report['prequential_governor']['selected_version_counts'], sort_keys=True)}",
+                        f"- Gate statuses: {json.dumps(baseline_refinement_report['prequential_governor']['gate_status_counts'], sort_keys=True)}",
+                        "- v0.1a aliases the legacy v4.5 blend recipe; CAUSAL_BASELINE remains the independent reference and exact fallback. Research-only; NO_TRADE.", ""])
           lines.extend(["", "## Serevex support-adaptive hierarchical shrinkage v1", "",
                         f"- Development-selected candidate: {json.dumps(hierarchical_shrinkage_report['development_selection']['selected_candidate'], sort_keys=True)}",
                         f"- Model-selection gate: {hierarchical_shrinkage_report['model_selection_gate']['status']}; calibration gate: {hierarchical_shrinkage_report['calibration_gate']['status']}",
