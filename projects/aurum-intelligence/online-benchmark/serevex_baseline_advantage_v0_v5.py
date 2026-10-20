@@ -25,9 +25,10 @@ BLOCK_PERIOD = BLOCK_SPAN_BARS + EMBARGO_BARS
 MIN_HISTORY_ROWS = 200
 MIN_BLOCKS = 8
 MIN_POSITIVE_BLOCK_SHARE = 0.70
-# 48 non-baseline candidates x two one-sided score tests; this is a conservative
-# familywise screen near 5% under a normal approximation, not a finite-sample guarantee.
-CRITICAL_Z = 3.35
+# Sequential Bonferroni alpha-spending across 48 candidates, two score endpoints,
+# and all future looks. The normal tail conversion is a screening approximation,
+# not a finite-sample confidence-sequence guarantee.
+FAMILYWISE_ALPHA = 0.05
 ECE_TOLERANCE = 0.015
 EPS = 1e-12
 
@@ -45,6 +46,25 @@ def _clip(p: float) -> float:
 def _sha(value: Any) -> str:
     raw = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
+
+
+def _sequential_critical_z(look_count: int, candidate_count: int) -> tuple[float, float, float]:
+    """Return z, per-look alpha and per-test alpha for summable alpha-spending."""
+    if not _is_int(look_count) or look_count < 1:
+        raise ValueError("look_count_must_be_positive_integer")
+    if not _is_int(candidate_count) or candidate_count < 1:
+        raise ValueError("candidate_count_must_be_positive_integer")
+    alpha_look = FAMILYWISE_ALPHA / (look_count * (look_count + 1.0))
+    alpha_per_test = alpha_look / (2.0 * candidate_count)
+    lo, hi = 0.0, 10.0
+    for _ in range(80):
+        mid = (lo + hi) / 2.0
+        tail = 0.5 * math.erfc(mid / math.sqrt(2.0))
+        if tail > alpha_per_test:
+            lo = mid
+        else:
+            hi = mid
+    return hi, alpha_look, alpha_per_test
 
 
 def _brier(p: float, y: int) -> float:
@@ -180,14 +200,14 @@ class _Moments:
         self.squares += float(value) ** 2
         self.positive += int(value > 0.0)
 
-    def stats(self) -> dict[str, Any]:
+    def stats(self, critical_z: float) -> dict[str, Any]:
         if self.n < MIN_BLOCKS:
             return {"blocks": self.n, "mean_gain": None, "standard_error": None, "lower_screen": None, "positive_block_share": None}
         mean = self.total / self.n
         variance = max(0.0, (self.squares - self.n * mean * mean) / (self.n - 1))
         se = math.sqrt(variance / self.n)
         return {"blocks": self.n, "mean_gain": mean, "standard_error": se,
-                "lower_screen": mean - CRITICAL_Z * se, "positive_block_share": self.positive / self.n}
+                "lower_screen": mean - critical_z * se, "positive_block_share": self.positive / self.n}
 
 
 class _CalibrationAccumulator:
@@ -222,6 +242,11 @@ class _Governor:
         self.cal = {v: _CalibrationAccumulator() for v in VERSION_ORDER}
         self.matured_scored = 0
         self.cursor = min(self.expected) if self.expected else 0
+        self.last_evaluated_blocks = -1
+        self.cached_gate: dict[str, Any] | None = None
+        self.selection_look_count = 0
+        self.last_critical_z: float | None = None
+        self.last_alpha_look: float | None = None
 
     def queue(self, row: Mapping[str, Any]) -> None:
         if row["label_mature"] and row["label"] in (0, 1):
@@ -264,32 +289,57 @@ class _Governor:
 
     def select(self) -> dict[str, Any]:
         nblocks = min(self.moments[v]["brier"].n for v in CANDIDATE_VERSIONS)
+        # Only re-test after a new closed source-time block adds evidence. This
+        # prevents repeated decisions on the same evidence snapshot.
+        if self.cached_gate is not None and nblocks == self.last_evaluated_blocks:
+            return self.cached_gate
+        self.last_evaluated_blocks = nblocks
         base_ece = self.cal[BASELINE_VERSION].ece()
         if self.matured_scored < MIN_HISTORY_ROWS or nblocks < MIN_BLOCKS:
-            return {"selected": BASELINE_VERSION, "status": "BASELINE_ONLY_INSUFFICIENT_MATURED_BLOCK_SUPPORT",
-                    "history_scored_rows": self.matured_scored, "independent_blocks": nblocks, "candidates": {}}
+            self.cached_gate = {
+                "selected": BASELINE_VERSION, "status": "BASELINE_ONLY_INSUFFICIENT_MATURED_BLOCK_SUPPORT",
+                "history_scored_rows": self.matured_scored, "independent_blocks": nblocks, "candidates": {},
+            }
+            return self.cached_gate
+
+        self.selection_look_count += 1
+        critical_z, alpha_look, alpha_per_test = _sequential_critical_z(
+            self.selection_look_count, len(CANDIDATE_VERSIONS))
+        self.last_critical_z, self.last_alpha_look = critical_z, alpha_look
         diagnostics, accepted = {}, []
         for version in CANDIDATE_VERSIONS:
-            brier = self.moments[version]["brier"].stats()
-            logloss = self.moments[version]["log_loss"].stats()
+            brier = self.moments[version]["brier"].stats(critical_z)
+            logloss = self.moments[version]["log_loss"].stats(critical_z)
             ece = self.cal[version].ece()
             ok = bool(brier["lower_screen"] is not None and logloss["lower_screen"] is not None
                       and brier["lower_screen"] > 0 and logloss["lower_screen"] > 0
                       and brier["positive_block_share"] >= MIN_POSITIVE_BLOCK_SHARE
                       and logloss["positive_block_share"] >= MIN_POSITIVE_BLOCK_SHARE
                       and ece is not None and base_ece is not None and ece <= base_ece + ECE_TOLERANCE)
-            diagnostics[version] = {"eligible": ok, "brier": brier, "log_loss": logloss,
-                                    "ece": ece, "baseline_ece": base_ece, "ece_tolerance": ECE_TOLERANCE,
-                                    "familywise_critical_z": CRITICAL_Z}
+            diagnostics[version] = {
+                "eligible": ok, "brier": brier, "log_loss": logloss, "ece": ece,
+                "baseline_ece": base_ece, "ece_tolerance": ECE_TOLERANCE,
+                "look_index": self.selection_look_count, "critical_z": critical_z,
+                "alpha_look": alpha_look, "alpha_per_one_sided_test": alpha_per_test,
+            }
             if ok:
                 accepted.append((min(brier["lower_screen"], logloss["lower_screen"]), version))
         if not accepted:
-            return {"selected": BASELINE_VERSION, "status": "BASELINE_ONLY_NO_CONFIRMED_PREQUENTIAL_DUAL_SCORE_GAIN",
-                    "history_scored_rows": self.matured_scored, "independent_blocks": nblocks, "candidates": diagnostics}
-        margin, selected = sorted(accepted, key=lambda x: (-x[0], int(x[1].replace(".", ""))))[0]
-        return {"selected": selected, "status": "SPECIALIST_PASSES_PREQUENTIAL_DUAL_SCORE_AND_CALIBRATION_GATE",
+            self.cached_gate = {
+                "selected": BASELINE_VERSION, "status": "BASELINE_ONLY_NO_CONFIRMED_PREQUENTIAL_DUAL_SCORE_GAIN",
                 "history_scored_rows": self.matured_scored, "independent_blocks": nblocks,
-                "joint_conservative_margin": margin, "candidates": diagnostics}
+                "look_index": self.selection_look_count, "critical_z": critical_z,
+                "alpha_look": alpha_look, "candidates": diagnostics,
+            }
+            return self.cached_gate
+        margin, selected = sorted(accepted, key=lambda x: (-x[0], int(x[1].replace(".", ""))))[0]
+        self.cached_gate = {
+            "selected": selected, "status": "SPECIALIST_PASSES_PREQUENTIAL_DUAL_SCORE_AND_CALIBRATION_GATE",
+            "history_scored_rows": self.matured_scored, "independent_blocks": nblocks,
+            "joint_conservative_margin": margin, "look_index": self.selection_look_count,
+            "critical_z": critical_z, "alpha_look": alpha_look, "candidates": diagnostics,
+        }
+        return self.cached_gate
 
 
 def _paired_block_bootstrap(rows: Sequence[Mapping[str, Any]], base: Sequence[float], candidate: Sequence[float],
@@ -438,12 +488,20 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
             "gate_status_counts": dict(sorted(gate_counts.items())),
             "incremental_audit": {"matured_scored_window_rows": governor.matured_scored,
                                   "closed_independent_blocks": min(governor.moments[v]["brier"].n for v in CANDIDATE_VERSIONS),
+                                  "selection_look_count": governor.selection_look_count,
+                                  "last_critical_z": governor.last_critical_z,
+                                  "last_alpha_look": governor.last_alpha_look,
                                   "calibration_rows_by_version": {k: v.rows for k, v in governor.cal.items()}},
             "candidate_gate": {
                 "matured_labels_only": True, "strict_maturity_cutoff": "label_available_index < current_decision_index",
                 "source_scoring_window_bars": BLOCK_SPAN_BARS, "target_horizon_embargo_bars": EMBARGO_BARS,
                 "minimum_matured_scored_rows": MIN_HISTORY_ROWS, "minimum_independent_blocks": MIN_BLOCKS,
-                "critical_multiplier": CRITICAL_Z, "familywise_one_sided_score_tests": 2 * len(CANDIDATE_VERSIONS),
+                "familywise_alpha": FAMILYWISE_ALPHA,
+                "candidate_count": len(CANDIDATE_VERSIONS),
+                "one_sided_score_tests_per_look": 2 * len(CANDIDATE_VERSIONS),
+                "sequential_look_rule": "alpha_look(k)=0.05/(k*(k+1)); sum_k alpha_look(k)=0.05",
+                "selection_look_count": governor.selection_look_count,
+                "last_critical_z": governor.last_critical_z,
                 "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
                 "dual_score_required": ["brier", "log_loss"], "max_ece_degradation": ECE_TOLERANCE,
                 "fallback": "exact_rowwise_causal_baseline_v0.1",
