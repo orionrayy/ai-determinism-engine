@@ -18,6 +18,10 @@ def make_rows(n=1200):
             "price_return_1":math.sin(i*0.17),"price_return_3":math.cos(i*0.07),
             "coverage_cot":"available","feature_cot_net_position":float((i%17)-8),
             "feature_cot_net_position_change":math.sin(i*0.031),
+            "feature_cot_net_position_oi_fraction":math.sin(i*0.019),
+            "feature_cot_managed_money_imbalance":math.cos(i*0.027),
+            "feature_cot_net_position_oi_change":math.sin(i*0.013),
+            "feature_cot_open_interest_change_fraction":math.cos(i*0.011),
             "coverage_macro":"available","feature_macro_level":100+math.sin(i*0.013),
             "feature_macro_change":math.cos(i*0.021),
             "coverage_news":"available_zero_events" if i%7==0 else "available",
@@ -164,8 +168,8 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
         rows = make_rows()
         for row in rows[984:]:
             row["coverage_cot"] = "unknown"
-            row["feature_cot_net_position"] = None
-            row["feature_cot_net_position_change"] = None
+            for key in bench.CONTEXT_FEATURES["cot"]:
+                row[key] = None
         report = bench.run_context_ablation_benchmark(
             rows, context_observation_count=120_000,
             price_feature_keys=("price_return_1", "price_return_3"),
@@ -209,6 +213,8 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
         cot=report["ablations"]["price_cot"]
         self.assertEqual(price["status"],"SCORED")
         self.assertEqual(cot["status"],"SCORED")
+        self.assertIn("feature_cot_net_position_oi_fraction", cot["effective_context_feature_keys"])
+        self.assertIn("feature_cot_managed_money_imbalance", cot["effective_context_feature_keys"])
         self.assertEqual(price["scored_rows_sha256"],cot["scored_rows_sha256"])
         self.assertEqual(price["labels_sha256"],cot["labels_sha256"])
         self.assertEqual(cot["paired_moving_block_ci_vs_price_only"]["comparison_reference"],"price_only")

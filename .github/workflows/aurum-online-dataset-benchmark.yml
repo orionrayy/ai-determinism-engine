@@ -153,6 +153,7 @@ jobs:
           import serevex_probability_evolution_v4_v9 as probability_evolution
           import serevex_baseline_advantage_v0_v5 as baseline_advantage
           import serevex_hierarchical_shrinkage_v1 as hierarchical_shrinkage
+          import serevex_hierarchical_shrinkage_v2 as hierarchical_shrinkage_v2
           import serevex_baseline_refinement_v0_1a_v5_0a as baseline_refinement
 
           payload = ci_benchmark.fetch()
@@ -241,6 +242,19 @@ jobs:
           assert hierarchical_shrinkage_report["promotion"]["final_holdout_changes_candidate_choice"] is False, hierarchical_shrinkage_report
           assert hierarchical_shrinkage_report["decision_output"] == "NO_TRADE", hierarchical_shrinkage_report
           assert hierarchical_shrinkage_report["final_holdout"]["rows"] > 0, hierarchical_shrinkage_report
+          hierarchical_shrinkage_v2_report = hierarchical_shrinkage_v2.evaluate_ledger(
+              ledger, as_of_index=len(rows), partition_end_indices=partition_ends,
+              bootstrap_replicates=500,
+          )
+          assert hierarchical_shrinkage_v2_report["candidate_grid"]["count"] == 48, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["baseline_reproduction_audit"]["verified"] is True, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["final_holdout"]["rows"] > 0, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["final_holdout"]["policy"] in {"0.1b", "hierarchical_candidate"}, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["decision_output"] == "NO_TRADE", hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["model_validated"] is False, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["deployment_calibrated"] is False, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["live_signal_enabled"] is False, hierarchical_shrinkage_v2_report
+          assert hierarchical_shrinkage_v2_report["live_order_execution_enabled"] is False, hierarchical_shrinkage_v2_report
           assert baseline_advantage_report["version_order"] == list(baseline_advantage.VERSION_ORDER), baseline_advantage_report
           assert len(baseline_advantage_report["version_order"]) == 50, baseline_advantage_report
           assert baseline_advantage_report["version_order"][0] == "0.1", baseline_advantage_report
@@ -445,6 +459,18 @@ jobs:
               "hierarchical_shrinkage_shadow_log_loss": hierarchical_shrinkage_report["final_holdout"]["frozen_candidate_shadow_metrics"]["log_loss"],
               "hierarchical_shrinkage_policy_log_loss": hierarchical_shrinkage_report["final_holdout"]["policy_metrics"]["log_loss"],
               "hierarchical_shrinkage_report_sha256": hierarchical_shrinkage_report["report_sha256"],
+              "hierarchical_shrinkage_v2_status": hierarchical_shrinkage_v2_report["status"],
+              "hierarchical_shrinkage_v2_candidate": hierarchical_shrinkage_v2_report["development_selection"]["selected_candidate"],
+              "hierarchical_shrinkage_v2_model_selection_gate": hierarchical_shrinkage_v2_report["model_selection_gate"]["status"],
+              "hierarchical_shrinkage_v2_calibration_gate": hierarchical_shrinkage_v2_report["calibration_gate"]["status"],
+              "hierarchical_shrinkage_v2_final_policy": hierarchical_shrinkage_v2_report["final_holdout"]["policy"],
+              "hierarchical_shrinkage_v2_holdout_rows": hierarchical_shrinkage_v2_report["final_holdout"]["rows"],
+              "hierarchical_shrinkage_v2_baseline_brier": hierarchical_shrinkage_v2_report["final_holdout"]["baseline_metrics"]["brier"],
+              "hierarchical_shrinkage_v2_candidate_brier": hierarchical_shrinkage_v2_report["final_holdout"]["candidate_shadow_metrics"]["brier"],
+              "hierarchical_shrinkage_v2_policy_brier": hierarchical_shrinkage_v2_report["final_holdout"]["policy_metrics"]["brier"],
+              "hierarchical_shrinkage_v2_baseline_log_loss": hierarchical_shrinkage_v2_report["final_holdout"]["baseline_metrics"]["log_loss"],
+              "hierarchical_shrinkage_v2_candidate_log_loss": hierarchical_shrinkage_v2_report["final_holdout"]["candidate_shadow_metrics"]["log_loss"],
+              "hierarchical_shrinkage_v2_policy_log_loss": hierarchical_shrinkage_v2_report["final_holdout"]["policy_metrics"]["log_loss"],
               "probability_evolution_source_evidence": probability_evolution_report["source_evidence"],
               "ledger_sha256": checked["ledger_sha256"],
               "report_sha256": report["report_sha256"],
@@ -471,6 +497,9 @@ jobs:
           )
           (output / "serevex_hierarchical_shrinkage_v1_report.json").write_text(
               json.dumps(hierarchical_shrinkage_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
+          )
+          (output / "serevex_hierarchical_shrinkage_v2_report.json").write_text(
+              json.dumps(hierarchical_shrinkage_v2_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
           )
           lines = [
               "# Serevex real-data ledger and integrated stages 1–3",
@@ -499,6 +528,10 @@ jobs:
               f"- Baseline refinement report SHA-256: {summary['baseline_refinement_report_sha256']}; JSON: {output / 'serevex_baseline_refinement_v0_1a_v5_0a_report.json'}",
               f"- Hierarchical shrinkage v1: {summary['hierarchical_shrinkage_status']}; frozen policy: {summary['hierarchical_shrinkage_final_policy']}; selection gate: {summary['hierarchical_shrinkage_model_selection_gate']}; calibration gate: {summary['hierarchical_shrinkage_calibration_gate']}",
               f"- Hierarchical shrinkage report JSON: {output / 'serevex_hierarchical_shrinkage_v1_report.json'}",
+              f"- Hierarchical shrinkage v2: {summary['hierarchical_shrinkage_v2_status']}; candidate: {json.dumps(summary['hierarchical_shrinkage_v2_candidate'], sort_keys=True)}; model-selection gate: {summary['hierarchical_shrinkage_v2_model_selection_gate']}; calibration gate: {summary['hierarchical_shrinkage_v2_calibration_gate']}; final policy: {summary['hierarchical_shrinkage_v2_final_policy']}",
+              f"- V2 final-holdout Brier baseline/shadow/policy: {summary['hierarchical_shrinkage_v2_baseline_brier']:.8f} / {summary['hierarchical_shrinkage_v2_candidate_brier']:.8f} / {summary['hierarchical_shrinkage_v2_policy_brier']:.8f}",
+              f"- V2 final-holdout log-loss baseline/shadow/policy: {summary['hierarchical_shrinkage_v2_baseline_log_loss']:.8f} / {summary['hierarchical_shrinkage_v2_candidate_log_loss']:.8f} / {summary['hierarchical_shrinkage_v2_policy_log_loss']:.8f}",
+              f"- Hierarchical shrinkage v2 report JSON: {output / 'serevex_hierarchical_shrinkage_v2_report.json'}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
               f"- Producer report SHA-256: {summary['report_sha256']}",
               "",

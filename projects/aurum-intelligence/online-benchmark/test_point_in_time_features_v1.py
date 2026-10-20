@@ -37,6 +37,33 @@ class PointInTimeFeatureTests(unittest.TestCase):
             [obs("cftc-cot","x",self.t-timedelta(minutes=1),5,"conservative_proxy")])[0]
         self.assertEqual(row["availability_proxy_count"],1)
 
+    def test_cot_normalized_position_features_use_only_available_reports(self):
+        earlier_decision = self.t - timedelta(hours=12)
+        prior = obs(
+            "cftc-cot", "cot-prior", self.t - timedelta(days=2), 40.0,
+            attrs={"long_managed_money": 70.0, "short_managed_money": 30.0, "open_interest": 200.0},
+        )
+        current = obs(
+            "cftc-cot", "cot-current", self.t - timedelta(hours=1), 60.0,
+            attrs={"long_managed_money": 100.0, "short_managed_money": 40.0, "open_interest": 280.0},
+        )
+        rows = features.build_asof_features(
+            [
+                {"decision_id": "before-current-release", "decision_time": earlier_decision},
+                {"decision_id": "after-current-release", "decision_time": self.t},
+            ],
+            [current, prior],
+        )
+        before, after = rows
+        self.assertAlmostEqual(before["feature_cot_net_position_oi_fraction"], 0.2)
+        self.assertAlmostEqual(before["feature_cot_managed_money_imbalance"], 0.4)
+        self.assertIsNone(before["feature_cot_net_position_oi_change"])
+        self.assertIsNone(before["feature_cot_open_interest_change_fraction"])
+        self.assertAlmostEqual(after["feature_cot_net_position_oi_fraction"], 60.0 / 280.0)
+        self.assertAlmostEqual(after["feature_cot_managed_money_imbalance"], 60.0 / 140.0)
+        self.assertAlmostEqual(after["feature_cot_net_position_oi_change"], 60.0 / 280.0 - 0.2)
+        self.assertAlmostEqual(after["feature_cot_open_interest_change_fraction"], 0.4)
+
     def test_deduplicated_news_counts_first_available_time_only(self):
         a=obs("gdelt-gkg","news-a",self.t-timedelta(minutes=10),-1,attrs={"document_sha256":"d"*64,"themes":("ECON_GOLD",),"tone":-1})
         b=obs("gdelt-gkg","news-b",self.t-timedelta(minutes=5),-1,attrs={"document_sha256":"d"*64,"themes":("ECON_GOLD",),"tone":-1})
