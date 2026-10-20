@@ -178,6 +178,16 @@ class ReadinessAuditTests(unittest.TestCase):
         self.assertFalse(result["research_candidate_review_eligible"])
         self.assertTrue(any("SOURCE_DISAGREEMENT_REVIEW_REQUIRED" in x for x in result["blockers_by_area"]["price_data"]))
 
+    def test_dataset_hash_mismatch_is_an_integrity_violation(self):
+        data = reports()
+        data["model"]["source_qualification"]["dataset_sha256"] = "b" * 64
+        result = audit.audit_reports(data)
+        self.assertIn(
+            "model_ledger_dataset_hash_differs_from_online_benchmark",
+            result["integrity_violations"],
+        )
+        self.assertEqual(result["overall_status"], "INTEGRITY_VIOLATION")
+
     def test_missing_required_source_names_are_blockers(self):
         data = reports()
         data["online_dataset"]["source_qualification_gates"] = {
