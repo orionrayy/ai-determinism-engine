@@ -72,6 +72,9 @@ class HierarchicalShrinkageTests(unittest.TestCase):
         self.assertFalse(report["development_selection"]["model_selection_labels_used_for_selection"])
         self.assertFalse(report["development_selection"]["calibration_labels_used_for_selection"])
         self.assertTrue(report["causal_contracts"]["baseline_reproduced_exactly"])
+        audit = report["causal_contracts"]["baseline_reproduction_audit"]
+        self.assertTrue(audit["verified"])
+        self.assertEqual(audit["rows_checked"], len(report_ledger["records"]) if False else 4988)
         self.assertEqual(report["decision_output"], "NO_TRADE")
         self.assertFalse(report["validation"]["model_validated"] if "validation" in report else report["model_validated"])
         self.assertEqual(report["final_holdout"]["rows"], report["partition_rows"]["final_holdout"])
