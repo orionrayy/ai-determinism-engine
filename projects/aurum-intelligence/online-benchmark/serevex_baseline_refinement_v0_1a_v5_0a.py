@@ -675,7 +675,7 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                       "promotion_status": "exploratory_anchor_not_validated"},
             "causal_reference": "original expanding matured-label baseline, retained outside the a-series",
             "legacy_v45_arithmetic_order": "preserve original left-to-right baseline-plus-specialists IEEE-754 evaluation",
-            "legacy_v45_alias_exact_manifest_required_in_integrated_workflow": true,
+            "legacy_v45_alias_exact_manifest_required_in_integrated_workflow": True,
             "anchor_selection_caveat": "The legacy v4.5 recipe was selected after inspecting the prior final-holdout results. Comparisons against v0.1a on that same historical cohort are post-selection and descriptive, not independent confirmatory evidence.",
             "governed_version": "5.0a", "fixed_hypothesis_count": len(FIXED_VERSIONS),
             "prequential_candidate_count": len(CANDIDATE_VERSIONS),
