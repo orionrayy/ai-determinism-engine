@@ -94,8 +94,8 @@ def _valid_records(records: Sequence[Mapping[str, Any]], as_of_index: int) -> li
         if di in seen:
             raise ValueError(f"duplicate_decision_index_{di}")
         seen.add(di)
-        if not _is_int(mi) or mi < 0:
-            raise ValueError(f"invalid_label_available_index_at_{pos}")
+        if not _is_int(mi) or mi < di:
+            raise ValueError(f"label_available_index_must_be_integer_and_not_precede_decision_at_{pos}")
         if not isinstance(row.get("label_mature"), bool):
             raise ValueError(f"label_mature_must_be_boolean_at_{pos}")
         y = row.get("label")
@@ -382,15 +382,24 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
     baseline_ok = all(predictions["0.1"][i] == _clip(scored[i]["baseline_probability"]) for i in range(len(scored)))
     same_cohort = all(results[v]["rows"] == len(scored) for v in VERSION_ORDER)
     trace_block_hashes = {str(k): _sha(v) for k, v in sorted(trace_by_block.items())}
+    score_cohort_sha256 = _sha([
+        [r.get("decision_id", r["decision_index"]), int(r["decision_index"]),
+         int(r["label_available_index"]), int(r["label"])]
+        for r in scored
+    ])
+    version_metrics_sha256 = _sha(results)
     report_digest = _sha({"model_version": MODEL_VERSION, "as_of_index": as_of_index,
-                          "score_partition": score_partition, "score_rows": len(scored), "prediction_hashes": hashes,
+                          "score_partition": score_partition, "score_rows": len(scored),
+                          "score_cohort_sha256": score_cohort_sha256,
+                          "prediction_hashes": hashes, "version_metrics_sha256": version_metrics_sha256,
                           "selected_counts": dict(sorted(selected_counts.items())),
                           "gate_status_counts": dict(sorted(gate_counts.items())),
                           "selection_trace_block_sha256": trace_block_hashes})
     report = {
         "protocol_version": MODEL_VERSION, "version_order": list(VERSION_ORDER),
-        "status": "BASELINE_PRESERVED_RESEARCH_ONLY", "score_partition": score_partition,
+        "status": "BASELINE_GOVERNED_RESEARCH_ONLY", "score_partition": score_partition,
         "as_of_index_exclusive": as_of_index, "scored_rows": len(scored), "versions": results,
+        "score_cohort_sha256": score_cohort_sha256, "version_metrics_sha256": version_metrics_sha256,
         "prequential_governor": {
             "status": "FIXED_PROTOCOL_PREQUENTIAL_SELECTION",
             "selected_version_counts": dict(sorted(selected_counts.items())),
