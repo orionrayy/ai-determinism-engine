@@ -167,6 +167,8 @@ def audit_reports(
             blockers["price_data"].append(f"online_source_not_qualified:{name}:{gate.get('research_qualification_status', 'MISSING')}")
         if gate.get("source_promotion_allowed") is not True:
             blockers["price_data"].append(f"online_source_promotion_not_authorized:{name}")
+        if gate.get("live_execution_authorized") is True:
+            violations.append(f"source_gate_claims_live_execution_authority:online:{name}")
     if not tick:
         blockers["price_data"].append("tick_bidask_benchmark_missing")
     tick_gates = mp(tick.get("source_qualification_gates"))
@@ -181,6 +183,8 @@ def audit_reports(
             blockers["price_data"].append(f"tick_source_not_qualified:{name}:{gate.get('research_qualification_status', 'MISSING')}")
         if gate.get("source_promotion_allowed") is not True:
             blockers["price_data"].append(f"tick_source_promotion_not_authorized:{name}")
+        if gate.get("live_execution_authorized") is True:
+            violations.append(f"source_gate_claims_live_execution_authority:tick:{name}")
     lineage = mp(tick.get("data_lineage_diagnostic"))
     if lineage.get("source_independence_verified") is not True:
         blockers["price_data"].append("tick_source_independence_unverified:" + str(lineage.get("status", "MISSING")))
@@ -308,7 +312,8 @@ def audit_reports(
     all_blockers = [f"{area}:{item}" for area, items in blockers.items() for item in items]
     select_ok = mp(model.get("model_selection_gate")).get("passed") is True if model else False
     calibration_ok = mp(model.get("calibration_gate")).get("passed") is True if model else False
-    review_ok = bool(model) and select_ok and calibration_ok and not blockers["model"] and not blockers["price_data"] and not violations
+    review_ok = (bool(model) and select_ok and calibration_ok and not blockers["model"]
+                 and not blockers["price_data"] and not blockers["external_context"] and not violations)
     overall = "INTEGRITY_VIOLATION" if violations else ("RESEARCH_ONLY_BLOCKED" if all_blockers else "RESEARCH_CANDIDATE_ELIGIBLE_FOR_INDEPENDENT_REVIEW")
     return {
         "schema_version": "serevex-readiness-audit-v1",
