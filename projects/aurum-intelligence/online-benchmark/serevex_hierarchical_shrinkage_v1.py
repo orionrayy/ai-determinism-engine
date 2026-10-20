@@ -380,6 +380,7 @@ def evaluate_ledger(
             "selection_partition": "development", "selection_order": "Brier gain, then log-loss improvement, then smaller cap, then larger k",
         },
         "development_selection": {
+            "selection_partition": "development",
             "selected_candidate": spec, "selected_candidate_metrics": winner["metrics"],
             "baseline_metrics": dev_base_metrics,
             "selected_candidate_brier_gain": winner["baseline_brier_gain"],
