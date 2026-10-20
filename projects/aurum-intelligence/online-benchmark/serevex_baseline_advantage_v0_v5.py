@@ -14,16 +14,20 @@ import random
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-baseline-advantage-v0.5"
-VERSION_ORDER = ("0.1", "0.2", "0.3", "0.4", "0.5")
+MODEL_VERSION = "serevex-baseline-advantage-v5.0"
+VERSION_ORDER = tuple(f"{i / 10:.1f}" for i in range(1, 51))
 BASELINE_VERSION = "0.1"
+FINAL_GOVERNED_VERSION = "5.0"
+CANDIDATE_VERSIONS = VERSION_ORDER[1:-1]
 BLOCK_SPAN_BARS = 12
 EMBARGO_BARS = 12
 BLOCK_PERIOD = BLOCK_SPAN_BARS + EMBARGO_BARS
 MIN_HISTORY_ROWS = 200
 MIN_BLOCKS = 8
 MIN_POSITIVE_BLOCK_SHARE = 0.70
-CRITICAL_Z = 2.58
+# 48 non-baseline candidates x two one-sided score tests; this is a conservative
+# familywise screen near 5% under a normal approximation, not a finite-sample guarantee.
+CRITICAL_Z = 3.35
 ECE_TOLERANCE = 0.015
 EPS = 1e-12
 
@@ -121,21 +125,47 @@ def _valid_records(records: Sequence[Mapping[str, Any]], as_of_index: int) -> li
 
 
 def _candidates(row: Mapping[str, Any]) -> dict[str, float]:
-    base, exp = _clip(row["baseline_probability"]), row["expert_probabilities"]
+    """Generate 0.2–4.9 as a monotone research ladder; v0.1 is untouched."""
+    base = _clip(row["baseline_probability"])
+    exp = row["expert_probabilities"]
     n_roll = min(int(row.get("matured_label_count_before_decision", 0)), 288)
-    # v0.2: expanding prior plus capped recency correction.
-    w_roll = 0.0 if n_roll < 24 else min(0.80, (n_roll - 24) / (n_roll + 40.0))
-    v02 = _clip(base + w_roll * (exp["rolling_matured_rate_288"] - base))
-    # v0.3: shrink conditional rates; total specialist weight is bounded at 0.8.
     n_reg = int(row.get("conditional_regime_support_before_decision", 0))
     n_vol = int(row.get("conditional_volatility_support_before_decision", 0))
-    w_reg = min(0.45, 0.60 * n_reg / (n_reg + 80.0)) if n_reg else 0.0
-    w_vol = min(0.35, 0.48 * n_vol / (n_vol + 80.0)) if n_vol else 0.0
-    v03 = _clip(base + w_reg * (exp["regime_matured_rate"] - base)
-                + w_vol * (exp["volatility_matured_rate"] - base))
-    # v0.4: conservative ensemble remains explicitly anchored to the causal prior.
-    v04 = _clip(0.55 * base + 0.25 * v02 + 0.20 * v03)
-    return {"0.1": base, "0.2": v02, "0.3": v03, "0.4": v04}
+    # Shrink any specialist's influence when its support is small.
+    roll_conf = min(1.0, n_roll / 40.0)
+    reg_conf = min(1.0, n_reg / 40.0)
+    vol_conf = min(1.0, n_vol / 40.0)
+    rolling = _clip(exp["rolling_matured_rate_288"])
+    regime = _clip(exp["regime_matured_rate"])
+    volatility = _clip(exp["volatility_matured_rate"])
+    candidates = {"0.1": base}
+    for step in range(2, 50):  # v0.2 ... v4.9, 48 progressively varied hypotheses
+        if step <= 20:
+            # v0.2–v2.0: progressively increase the capped rolling-rate contribution.
+            t = (step - 2) / 18.0
+            w_roll, w_reg, w_vol = 0.04 + 0.68 * t, 0.0, 0.0
+        elif step <= 30:
+            # v2.1–v3.0: add regime evidence while retaining substantial global/rolling mass.
+            t = (step - 20) / 10.0
+            w_roll, w_reg, w_vol = 0.72 - 0.10 * t, 0.35 * t, 0.0
+        elif step <= 40:
+            # v3.1–v4.0: add volatility conditioning under an explicit total-weight cap.
+            t = (step - 30) / 10.0
+            w_roll, w_reg, w_vol = 0.62 - 0.22 * t, 0.35, 0.25 * t
+        else:
+            # v4.1–v4.9: walk specialist mass back toward baseline to test robust shrinkage.
+            t = (step - 40) / 9.0
+            specialist_scale = 1.0 - 0.85 * t
+            w_roll, w_reg, w_vol = 0.40 * specialist_scale, 0.35 * specialist_scale, 0.25 * specialist_scale
+        w_roll *= roll_conf
+        w_reg *= reg_conf
+        w_vol *= vol_conf
+        total = w_roll + w_reg + w_vol
+        if total > 1.0 + 1e-12:
+            raise ValueError("candidate_specialist_weights_exceed_one")
+        p = ((1.0 - total) * base + w_roll * rolling + w_reg * regime + w_vol * volatility)
+        candidates[f"{step / 10:.1f}"] = _clip(p)
+    return candidates
 
 
 class _Moments:
@@ -188,8 +218,8 @@ class _Governor:
         self.pending: list[tuple[int, int, dict[str, Any]]] = []
         self.open: dict[int, dict[str, list[float]]] = defaultdict(dict)
         self.processed: dict[int, int] = defaultdict(int)
-        self.moments = {v: {"brier": _Moments(), "log_loss": _Moments()} for v in ("0.2", "0.3", "0.4")}
-        self.cal = {v: _CalibrationAccumulator() for v in ("0.1", "0.2", "0.3", "0.4")}
+        self.moments = {v: {"brier": _Moments(), "log_loss": _Moments()} for v in CANDIDATE_VERSIONS}
+        self.cal = {v: _CalibrationAccumulator() for v in VERSION_ORDER}
         self.matured_scored = 0
         self.cursor = min(self.expected) if self.expected else 0
 
@@ -206,7 +236,7 @@ class _Governor:
         self.matured_scored += 1
         block = di // BLOCK_PERIOD
         dest = self.open.setdefault(block, {})
-        for version in ("0.2", "0.3", "0.4"):
+        for version in CANDIDATE_VERSIONS:
             p0, p1 = forecast["0.1"], forecast[version]
             val = dest.setdefault(version, [0.0, 0.0, 0.0])
             val[0] += _brier(p0, y) - _brier(p1, y)
@@ -225,7 +255,7 @@ class _Governor:
             if self.processed.get(block, 0) < expected:
                 break
             data = self.open.get(block, {})
-            for version in ("0.2", "0.3", "0.4"):
+            for version in CANDIDATE_VERSIONS:
                 vals = data.get(version)
                 if vals and vals[2]:
                     self.moments[version]["brier"].add(vals[0] / vals[2])
@@ -233,13 +263,13 @@ class _Governor:
             self.cursor += 1
 
     def select(self) -> dict[str, Any]:
-        nblocks = min(self.moments[v]["brier"].n for v in ("0.2", "0.3", "0.4"))
-        base_ece = self.cal["0.1"].ece()
+        nblocks = min(self.moments[v]["brier"].n for v in CANDIDATE_VERSIONS)
+        base_ece = self.cal[BASELINE_VERSION].ece()
         if self.matured_scored < MIN_HISTORY_ROWS or nblocks < MIN_BLOCKS:
-            return {"selected": "0.1", "status": "BASELINE_ONLY_INSUFFICIENT_MATURED_BLOCK_SUPPORT",
+            return {"selected": BASELINE_VERSION, "status": "BASELINE_ONLY_INSUFFICIENT_MATURED_BLOCK_SUPPORT",
                     "history_scored_rows": self.matured_scored, "independent_blocks": nblocks, "candidates": {}}
         diagnostics, accepted = {}, []
-        for version in ("0.2", "0.3", "0.4"):
+        for version in CANDIDATE_VERSIONS:
             brier = self.moments[version]["brier"].stats()
             logloss = self.moments[version]["log_loss"].stats()
             ece = self.cal[version].ece()
@@ -249,11 +279,12 @@ class _Governor:
                       and logloss["positive_block_share"] >= MIN_POSITIVE_BLOCK_SHARE
                       and ece is not None and base_ece is not None and ece <= base_ece + ECE_TOLERANCE)
             diagnostics[version] = {"eligible": ok, "brier": brier, "log_loss": logloss,
-                                    "ece": ece, "baseline_ece": base_ece, "ece_tolerance": ECE_TOLERANCE}
+                                    "ece": ece, "baseline_ece": base_ece, "ece_tolerance": ECE_TOLERANCE,
+                                    "familywise_critical_z": CRITICAL_Z}
             if ok:
                 accepted.append((min(brier["lower_screen"], logloss["lower_screen"]), version))
         if not accepted:
-            return {"selected": "0.1", "status": "BASELINE_ONLY_NO_CONFIRMED_PREQUENTIAL_DUAL_SCORE_GAIN",
+            return {"selected": BASELINE_VERSION, "status": "BASELINE_ONLY_NO_CONFIRMED_PREQUENTIAL_DUAL_SCORE_GAIN",
                     "history_scored_rows": self.matured_scored, "independent_blocks": nblocks, "candidates": diagnostics}
         margin, selected = sorted(accepted, key=lambda x: (-x[0], int(x[1].replace(".", ""))))[0]
         return {"selected": selected, "status": "SPECIALIST_PASSES_PREQUENTIAL_DUAL_SCORE_AND_CALIBRATION_GATE",
@@ -327,7 +358,7 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
         preds = _candidates(row)
         gate = governor.select()
         selected = gate["selected"]
-        preds["0.5"] = preds[selected]
+        preds[FINAL_GOVERNED_VERSION] = preds[selected]
         forecasts[di] = preds
         gate_counts[gate["status"]] += 1
         selected_counts[selected] += 1
@@ -402,16 +433,18 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
         "score_cohort_sha256": score_cohort_sha256, "version_metrics_sha256": version_metrics_sha256,
         "prequential_governor": {
             "status": "FIXED_PROTOCOL_PREQUENTIAL_SELECTION",
+            "registered_candidate_versions": list(CANDIDATE_VERSIONS),
             "selected_version_counts": dict(sorted(selected_counts.items())),
             "gate_status_counts": dict(sorted(gate_counts.items())),
             "incremental_audit": {"matured_scored_window_rows": governor.matured_scored,
-                                  "closed_independent_blocks": min(governor.moments[v]["brier"].n for v in ("0.2", "0.3", "0.4")),
+                                  "closed_independent_blocks": min(governor.moments[v]["brier"].n for v in CANDIDATE_VERSIONS),
                                   "calibration_rows_by_version": {k: v.rows for k, v in governor.cal.items()}},
             "candidate_gate": {
                 "matured_labels_only": True, "strict_maturity_cutoff": "label_available_index < current_decision_index",
                 "source_scoring_window_bars": BLOCK_SPAN_BARS, "target_horizon_embargo_bars": EMBARGO_BARS,
                 "minimum_matured_scored_rows": MIN_HISTORY_ROWS, "minimum_independent_blocks": MIN_BLOCKS,
-                "critical_multiplier": CRITICAL_Z, "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
+                "critical_multiplier": CRITICAL_Z, "familywise_one_sided_score_tests": 2 * len(CANDIDATE_VERSIONS),
+                "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
                 "dual_score_required": ["brier", "log_loss"], "max_ece_degradation": ECE_TOLERANCE,
                 "fallback": "exact_rowwise_causal_baseline_v0.1",
                 "holdout_feedback_policy": "prior labels can update later decisions only after strict maturity; the online policy is fixed before scoring",
