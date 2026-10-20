@@ -255,6 +255,7 @@ def _complete_block_rows(rows: Sequence[Mapping[str, Any]], partition: str, star
     })
     eligible_blocks: list[int] = []
     cohort: list[dict[str, Any]] = []
+    eligible_scored_row_counts: dict[str, int] = {}
     rejected: dict[str, int] = defaultdict(int)
 
     for block_id in candidate_blocks:
@@ -296,6 +297,7 @@ def _complete_block_rows(rows: Sequence[Mapping[str, Any]], partition: str, star
 
         cohort.extend(score_events)
         eligible_blocks.append(block_id)
+        eligible_scored_row_counts[str(block_id)] = len(score_events)
 
     audit = {
         "partition": partition,
@@ -308,8 +310,11 @@ def _complete_block_rows(rows: Sequence[Mapping[str, Any]], partition: str, star
         "eligible_full_blocks": eligible_blocks,
         "eligible_block_count": len(eligible_blocks),
         "eligible_scored_rows": len(cohort),
+        "eligible_scored_row_counts": eligible_scored_row_counts,
         "rejected_block_reason_counts": dict(sorted(rejected.items())),
+        "event_cohort_is_sparse_by_design": True,
         "ledger_is_sparse_event_stream": True,
+        "source_row_coverage_required": False,
         "resolved_scored_events_only": True,
         "unresolved_events_excluded_from_metrics": True,
         "partial_or_boundary_crossing_blocks_used": False,
@@ -446,7 +451,17 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int,
     calibration = block_cohorts["calibration"]
     holdout = ordinary_cohorts["final_holdout"]
     if not dev or not selection or not calibration or not holdout:
-        raise ValueError("all_partitions_require_matured_rows_and_final_holdout")
+        availability = {
+            name: {
+                "block_purged_rows": len(block_cohorts[name]),
+                "eligible_blocks": block_audits[name]["eligible_block_count"],
+                "rejected_reasons": block_audits[name]["rejected_block_reason_counts"],
+                "ordinary_matured_rows": len(ordinary_cohorts[name]),
+            }
+            for name in PARTITIONS
+        }
+        raise ValueError("all_partitions_require_matured_rows_and_final_holdout:" +
+                         json.dumps(availability, sort_keys=True))
 
     baseline_dev = [_clip(row["baseline_probability"]) for row in dev]
     baseline_metrics = _metrics(dev, baseline_dev)
