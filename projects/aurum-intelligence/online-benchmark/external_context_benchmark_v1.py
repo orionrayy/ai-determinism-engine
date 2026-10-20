@@ -29,6 +29,10 @@ MAX_STEPS = 200
 MIN_CALIBRATION_SAMPLES = 100
 MIN_SCALE_RECORDS = 100_000
 MIN_CONTEXT_FAMILY_SUPPORT_ROWS = 30
+# A context value is not a usable historical feature merely because 30 points exist.
+# Require the individual feature to be point-in-time eligible on most decisions in
+# every chronological split; otherwise median imputation would mask source gaps.
+MIN_CONTEXT_FEATURE_COVERAGE_FRACTION = 0.80
 VALID_CONTEXT_SOURCE_STATES = frozenset({"PASS", "PARTIAL"})
 DEFAULT_PRICE_FEATURES = (
     "return_1", "return_3", "return_6", "return_12", "momentum_6",
@@ -501,6 +505,8 @@ def run_context_ablation_benchmark(
             "price_features": candidate_price_keys,
             "context_features": {k: list(v) for k, v in CONTEXT_FEATURES.items()},
             "min_platt_calibration_samples": MIN_CALIBRATION_SAMPLES,
+            "minimum_context_feature_coverage_fraction": MIN_CONTEXT_FEATURE_COVERAGE_FRACTION,
+            "minimum_context_feature_support_rows_per_split": MIN_CONTEXT_FAMILY_SUPPORT_ROWS,
         },
         "scale_gate": scale_gate,
         "source_statuses": family_source_statuses,
@@ -542,6 +548,11 @@ def run_context_ablation_benchmark(
             if all(
                 context_support[_family_of_key(key)][split]["eligible_values_by_feature"].get(key, 0)
                 >= MIN_CONTEXT_FAMILY_SUPPORT_ROWS
+                and context_support[_family_of_key(key)][split]["total_rows"] > 0
+                and (
+                    context_support[_family_of_key(key)][split]["eligible_values_by_feature"].get(key, 0)
+                    / context_support[_family_of_key(key)][split]["total_rows"]
+                ) >= MIN_CONTEXT_FEATURE_COVERAGE_FRACTION
                 for split in ("development", "calibration", "holdout")
             )
         ]
@@ -558,10 +569,16 @@ def run_context_ablation_benchmark(
             if declared_source_status is not None and str(declared_source_status).upper() not in VALID_CONTEXT_SOURCE_STATES:
                 reasons.append("source_status_not_qualified_for_feature_use")
             if not any(_family_of_key(key) == family for key in context_features_meeting_split_support):
-                reasons.append("no_context_feature_meets_minimum_support_across_splits")
+                reasons.append("no_context_feature_meets_minimum_support_and_coverage_across_splits")
             for split in ("development", "calibration", "holdout"):
-                if context_support[family][split]["eligible_rows"] < MIN_CONTEXT_FAMILY_SUPPORT_ROWS:
+                split_support = context_support[family][split]
+                if split_support["eligible_rows"] < MIN_CONTEXT_FAMILY_SUPPORT_ROWS:
                     reasons.append(f"insufficient_{split}_support")
+                if (
+                    split_support["total_rows"] <= 0
+                    or split_support["eligible_fraction"] < MIN_CONTEXT_FEATURE_COVERAGE_FRACTION
+                ):
+                    reasons.append(f"insufficient_{split}_coverage_fraction")
             if reasons:
                 missing_family_reasons[family] = reasons
         effective_context_families = [
@@ -581,6 +598,7 @@ def run_context_ablation_benchmark(
             ],
             "context_family_support_by_split": context_support,
             "minimum_context_family_support_rows": MIN_CONTEXT_FAMILY_SUPPORT_ROWS,
+            "minimum_context_feature_coverage_fraction": MIN_CONTEXT_FEATURE_COVERAGE_FRACTION,
             "missing_context_family_reasons": missing_family_reasons,
         }
         if not feature_keys:

@@ -34,10 +34,19 @@ def reports():
         "secondary_crosscheck": {"status": "PASS", "dataset_sha256": secondary_hash,
                                  "timestamp_semantics_verified": True,
                                  "provider_provenance_independently_verified": True, "intended_use_rights_verified": True},
-        "external_context": {"temporal_feature_coverage": {k: {"eligible_rows": 1000, "total_rows": 1000, "coverage_fraction": 1.0, "status": "PASS"}
-                                                             for k in ("news_1h", "news_24h", "macro")}},
+        "external_context": {
+            "temporal_feature_coverage": {k: {"eligible_rows": 1000, "total_rows": 1000, "coverage_fraction": 1.0, "status": "PASS"}
+                                         for k in ("news_1h", "news_24h", "macro")},
+            "decision_gate": "NO_TRADE", "validated": False,
+            "deployment_calibrated": False, "live_signal_enabled": False,
+            "ablation_benchmark": {"ablations": {"price_only": {
+                "status": "SCORED", "scored_rows_sha256": "c" * 64,
+                "labels_sha256": "d" * 64, "effective_context_families": [],
+                "omitted_context_families": [],
+            }}},
+        },
         "execution_replay": {"status": "VALIDATED", "validated_model": True, "validated_for_profitability": True,
-                             "live_execution_authorized": False},
+                             "decision_output": "NO_TRADE", "live_execution_authorized": False},
     }
 
 class ReadinessAuditTests(unittest.TestCase):
@@ -204,6 +213,52 @@ class ReadinessAuditTests(unittest.TestCase):
             result["integrity_violations"],
         )
         self.assertEqual(result["overall_status"], "INTEGRITY_VIOLATION")
+
+    def test_candidate_holdout_score_bundles_must_use_same_rows_and_labels(self):
+        data = reports()
+        data["model"]["final_holdout"]["policy_metrics"]["rows"] = 499
+        data["model"]["final_holdout"]["policy_metrics"]["positive_rate"] = 0.34
+        result = audit.audit_reports(data)
+        self.assertIn("holdout_row_count_mismatch", result["integrity_violations"])
+        self.assertIn("holdout_label_rate_mismatch", result["integrity_violations"])
+
+    def test_context_ablation_cannot_score_a_sparse_feature_family(self):
+        data = reports()
+        data["external_context"]["ablation_benchmark"]["ablations"]["price_news"] = {
+            "status": "SCORED", "scored_rows_sha256": "c" * 64,
+            "labels_sha256": "d" * 64, "effective_context_families": ["news"],
+            "omitted_context_families": [],
+            "context_family_support_by_split": {
+                "news": {
+                    split: {"total_rows": 1000, "eligible_values_by_feature": {"feature_news_count_1h": 10}}
+                    for split in ("development", "calibration", "holdout")
+                }
+            },
+            "paired_moving_block_ci_vs_price_only": {
+                "comparison_reference": "price_only", "lower_95": -0.01,
+                "upper_95": 0.02, "replicates": 40,
+            },
+        }
+        result = audit.audit_reports(data)
+        self.assertIn(
+            "context_ablation_scored_below_feature_coverage_floor:price_news:news:holdout",
+            result["integrity_violations"],
+        )
+
+    def test_coverage_counts_and_fraction_must_reconcile(self):
+        data = reports()
+        data["external_context"]["temporal_feature_coverage"]["news_1h"]["coverage_fraction"] = 0.5
+        result = audit.audit_reports(data)
+        self.assertIn("temporal_coverage_fraction_mismatch:news_1h", result["integrity_violations"])
+        self.assertTrue(any("temporal_coverage_not_passed:news_1h" in x
+                            for x in result["blockers_by_area"]["external_context"]))
+
+    def test_execution_report_cannot_enable_live_authority(self):
+        data = reports()
+        data["execution_replay"]["live_execution_authorized"] = True
+        result = audit.audit_reports(data)
+        self.assertIn("unsafe_execution_authority_state", result["integrity_violations"])
+        self.assertFalse(result["production_authorized"])
 
     def test_missing_required_source_names_are_blockers(self):
         data = reports()
