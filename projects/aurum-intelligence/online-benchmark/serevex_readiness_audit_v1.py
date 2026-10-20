@@ -23,9 +23,24 @@ def same(a: Any, b: Any, tol: float = 1e-12) -> bool:
         return abs(float(a) - float(b)) <= tol
     return a == b
 
-def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | None = None) -> dict[str, Any]:
+def audit_reports(
+    reports: Mapping[str, Any],
+    input_sha256: Mapping[str, str] | None = None,
+    input_errors: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
     blockers = {"model": [], "price_data": [], "external_context": [], "production": []}
     violations: list[str] = []
+    error_area = {
+        "model": "model",
+        "online_dataset": "price_data",
+        "tick_bidask": "price_data",
+        "secondary_crosscheck": "price_data",
+        "external_context": "external_context",
+        "execution_replay": "production",
+    }
+    for artifact, reason in (input_errors or {}).items():
+        area = error_area.get(artifact, "production")
+        blockers[area].append(f"benchmark_artifact_unreadable:{artifact}:{reason}")
     model = mp(reports.get("model"))
     if not model:
         blockers["model"].append("required_hierarchical_shrinkage_v2_report_missing")
@@ -84,7 +99,13 @@ def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | 
     online = mp(reports.get("online_dataset"))
     if not online:
         blockers["price_data"].append("online_dataset_benchmark_missing")
-    for name, raw in mp(online.get("source_qualification_gates")).items():
+    online_gates = mp(online.get("source_qualification_gates"))
+    if not online_gates:
+        blockers["price_data"].append("online_source_qualification_gates_missing")
+    for required_name in ("primary_price", "secondary_price"):
+        if required_name not in online_gates:
+            blockers["price_data"].append(f"online_required_source_gate_missing:{required_name}")
+    for name, raw in online_gates.items():
         gate = mp(raw)
         if gate.get("research_qualification_status") != "QUALIFIED":
             blockers["price_data"].append(f"online_source_not_qualified:{name}:{gate.get('research_qualification_status', 'MISSING')}")
@@ -93,10 +114,18 @@ def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | 
     tick = mp(reports.get("tick_bidask"))
     if not tick:
         blockers["price_data"].append("tick_bidask_benchmark_missing")
-    for name, raw in mp(tick.get("source_qualification_gates")).items():
+    tick_gates = mp(tick.get("source_qualification_gates"))
+    if not tick_gates:
+        blockers["price_data"].append("tick_source_qualification_gates_missing")
+    for required_name in ("primary_price", "secondary_price", "tick_bidask"):
+        if required_name not in tick_gates:
+            blockers["price_data"].append(f"tick_required_source_gate_missing:{required_name}")
+    for name, raw in tick_gates.items():
         gate = mp(raw)
         if gate.get("research_qualification_status") != "QUALIFIED":
             blockers["price_data"].append(f"tick_source_not_qualified:{name}:{gate.get('research_qualification_status', 'MISSING')}")
+        if gate.get("source_promotion_allowed") is not True:
+            blockers["price_data"].append(f"tick_source_promotion_not_authorized:{name}")
     lineage = mp(tick.get("data_lineage_diagnostic"))
     if lineage.get("source_independence_verified") is not True:
         blockers["price_data"].append("tick_source_independence_unverified:" + str(lineage.get("status", "MISSING")))
@@ -145,6 +174,7 @@ def audit_reports(reports: Mapping[str, Any], input_sha256: Mapping[str, str] | 
         "blockers_by_area": blockers, "blocker_count": len(all_blockers),
         "integrity_violations": violations, "integrity_violation_count": len(violations),
         "input_sha256": dict(sorted((input_sha256 or {}).items())),
+        "input_errors": dict(sorted((input_errors or {}).items())),
         "policy_note": "Passing permits independent research review only; it never authorizes deployment, live signals, or orders.",
     }
 
@@ -181,7 +211,7 @@ def run_audit(benchmark_dir: Path, output_dir: Path) -> dict[str, Any]:
         "external_context": "external-context/external_context_benchmark.json",
         "execution_replay": "large-scale/execution_replay_report.json",
     }
-    reports, hashes = {}, {}
+    reports, hashes, errors = {}, {}, {}
     output_dir.mkdir(parents=True, exist_ok=True)
     for key, relative in spec.items():
         path = benchmark_dir / relative
@@ -190,8 +220,12 @@ def run_audit(benchmark_dir: Path, output_dir: Path) -> dict[str, Any]:
             continue
         raw = path.read_bytes()
         hashes[key] = hashlib.sha256(raw).hexdigest()
-        reports[key] = json.loads(raw.decode("utf-8"))
-    result = audit_reports(reports, hashes)
+        try:
+            reports[key] = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            reports[key] = None
+            errors[key] = "invalid_json_or_encoding"
+    result = audit_reports(reports, hashes, errors)
     (output_dir / "serevex_readiness_audit.json").write_text(json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8")
     (output_dir / "readiness_summary.md").write_text(render_markdown(result), encoding="utf-8")
     return result
