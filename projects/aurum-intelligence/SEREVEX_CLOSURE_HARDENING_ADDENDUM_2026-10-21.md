@@ -20,6 +20,11 @@ The known news coverage (~1.03% for 1-hour windows and ~0.50% for 24-hour window
 
 The change is accepted only if the full online-benchmark unit-test suite and the hosted end-to-end workflow pass, the generated readiness artifact contains no integrity violations, and current missing evidence remains visible as blockers. A successful workflow confirms the audit ran correctly; it does not confirm predictive skill or profitability.
 
+## Source-license cross-check
+
+- The public GetData repository and the Sai310421 repository each expose an MIT `LICENSE` file. That text licenses the repository's “Software” and associated documentation; it does not explicitly state that the underlying market-data observations are free of upstream rights restrictions. The price data therefore remains `REFERENCE_ONLY` until data-specific rights/provenance evidence is established.
+- Sai310421's README explicitly labels its OHLCV as *mid-quote*, excluding broker spread, slippage and swap. The tick dataset card describes reconstructed broker Bid/Ask prices and declares CC-BY-4.0. This declared uploader license is useful metadata, but it does not independently explain why 4,391 of 4,392 overlapping Bid bars exactly match the alleged mid-quote feed. That basis/lineage discrepancy remains a hard blocker; do not relabel, shift, adjust, or promote either series to force agreement.
+
 ## Still blocked by evidence outside code control
 
 - Independently verifiable license/intended-use rights, publisher provenance, time-zone/bar conventions, and broker quote equivalence for each market dataset.
