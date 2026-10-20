@@ -178,7 +178,10 @@ jobs:
           baseline_advantage_report = baseline_advantage.evaluate_ledger(
               ledger, as_of_index=len(rows), score_partition="final_holdout", bootstrap_replicates=500,
           )
-          assert baseline_advantage_report["version_order"] == ["0.1", "0.2", "0.3", "0.4", "0.5"], baseline_advantage_report
+          assert baseline_advantage_report["version_order"] == list(baseline_advantage.VERSION_ORDER), baseline_advantage_report
+          assert len(baseline_advantage_report["version_order"]) == 50, baseline_advantage_report
+          assert baseline_advantage_report["version_order"][0] == "0.1", baseline_advantage_report
+          assert baseline_advantage_report["version_order"][-1] == "5.0", baseline_advantage_report
           assert baseline_advantage_report["status"] == "BASELINE_GOVERNED_RESEARCH_ONLY", baseline_advantage_report
           assert baseline_advantage_report["prequential_governor"]["baseline_reproduction_verified"] is True, baseline_advantage_report
           assert baseline_advantage_report["prequential_governor"]["same_scored_cohort_verified"] is True, baseline_advantage_report
