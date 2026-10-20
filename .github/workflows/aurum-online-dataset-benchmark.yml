@@ -854,6 +854,12 @@ jobs:
               f.write('\nPositive Δ means reference Brier minus model Brier, so positive favors the model. The price-only interval compares context and price-only predictions on identical holdout rows and labels; an interval spanning zero is inconclusive. An ineligible ablation has no numeric result.\n')
               f.write('\nPipeline success is not proof of data scale, calibrated edge, profitability, or deployment readiness.\n')
           PY
+      - name: Audit Serevex model, source, context, and execution readiness
+        if: always()
+        run: >-
+          python projects/aurum-intelligence/online-benchmark/serevex_readiness_audit_v1.py
+          --benchmark-dir /tmp/aurum-online-benchmark
+          --output-dir /tmp/aurum-online-benchmark/serevex-readiness
       - name: Add benchmark report to job summary
         if: always()
         run: |
@@ -872,6 +878,9 @@ jobs:
           fi
           if [ -f /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md ]; then
             cat /tmp/aurum-online-benchmark/external-context/external_context_benchmark.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f /tmp/aurum-online-benchmark/serevex-readiness/readiness_summary.md ]; then
+            cat /tmp/aurum-online-benchmark/serevex-readiness/readiness_summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
           if [ -f /tmp/aurum-online-benchmark/serevex-stage123/real_data_stage123_summary.md ]; then
             cat /tmp/aurum-online-benchmark/serevex-stage123/real_data_stage123_summary.md >> "$GITHUB_STEP_SUMMARY"
