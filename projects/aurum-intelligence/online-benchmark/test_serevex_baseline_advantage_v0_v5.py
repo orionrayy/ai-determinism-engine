@@ -110,6 +110,25 @@ class BaselineAdvantageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             evolution.evaluate_ledger(rows, as_of_index=50, bootstrap_replicates=200)
 
+    def test_sequential_alpha_spending_tightens_for_later_looks(self):
+        z1, alpha1, _ = evolution._sequential_critical_z(1, len(evolution.CANDIDATE_VERSIONS))
+        z2, alpha2, _ = evolution._sequential_critical_z(2, len(evolution.CANDIDATE_VERSIONS))
+        z10, _, _ = evolution._sequential_critical_z(10, len(evolution.CANDIDATE_VERSIONS))
+        self.assertGreater(z2, z1)
+        self.assertGreater(z10, z2)
+        self.assertGreater(alpha1, alpha2)
+        spent = sum(0.05 / (k * (k + 1.0)) for k in range(1, 10000))
+        self.assertLessEqual(spent, 0.05)
+        self.assertGreater(spent, 0.0499)
+
+    def test_selection_gate_is_cached_until_new_block_evidence(self):
+        governor = evolution._Governor({})
+        first = governor.select()
+        second = governor.select()
+        self.assertIs(first, second)
+        self.assertEqual(governor.selection_look_count, 0)
+        self.assertEqual(first["selected"], "0.1")
+
     def test_multi_calibration_and_embargoed_bootstrap_are_present(self):
         report = evolution.evaluate_ledger(make_ledger(informative=True), as_of_index=800, bootstrap_replicates=200)
         self.assertIn("multi_calibration_audit", report)
