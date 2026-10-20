@@ -25,9 +25,13 @@ This is a controlled set of candidate policies, not fifty claims of increasing s
 - **Causal integrity:** labels affect later decisions only when `label_available_index < current_decision_index`; duplicate indices, malformed maturity flags, non-finite probabilities, and malformed support counts fail closed.
 - **Selection:** 48 candidates require lower screening bounds above zero on both Brier and log-loss versus both the exact causal baseline and the v0.1a anchor. At least 70% of source-time blocks must be positive. Repeated selection looks use summable alpha-spending; the governor re-checks only every eight new closed blocks to reduce redundant work.
 - **Calibration:** reliability bins, ECE, maximum bin gaps and regime/volatility slices are audited. ECE against a constant global-prevalence baseline is reported but is not the sole acceptance gate because a condition-aware probability model can improve proper scoring rules while being less globally flat. ECE must not degrade beyond tolerance against v0.1a, and dual-score superiority is still required against both references.
-- **Uncertainty:** paired 12-bar source spans with 12-bar embargo are bootstrapped on the identical holdout cohort. Intervals remain diagnostic rather than universal finite-sample guarantees.
+- **Uncertainty:** paired 12-bar source spans with 12-bar embargo are bootstrapped on the same eligible source-window rows for each reference/candidate comparison. The full-holdout point estimate uses all scored holdout rows, while the bootstrap interval excludes embargo-window rows and equally weights eligible source blocks; those estimates can differ, even in sign. The report now emits both estimands, row/block counts, and uses identical resampled block indices for Brier and log-loss. Intervals remain diagnostic rather than universal finite-sample guarantees.
 - **Reproducibility:** dataset/ledger cohort, forecast manifests, metric aggregates, selection trace and reports receive SHA-256 hashes.
 - **No-trade authority:** the gate cannot authorize deployment, live signals, or order execution. No static parameter is selected from aggregate final-holdout scores; only matured prior observations can affect a later prequential decision.
+
+## Audit correction (v5.0a.1)
+
+The first full-data audit revealed that full-holdout point estimates and source-window bootstrap means could have opposite signs because embargo-window rows were excluded only from the bootstrap. That was an estimand-alignment/reporting defect, not proof that either estimate is correct. v5.0a.1 emits full-cohort and source-window/block-weighted gains separately and shares resampled block indices across Brier and log-loss. Promotion remains blocked unless the interval-aligned lower bounds, data qualification, and independent replication gates pass.
 
 ## Interpretation boundary
 

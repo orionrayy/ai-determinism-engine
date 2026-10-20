@@ -16,7 +16,7 @@ import random
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-baseline-refinement-v5.0a"
+MODEL_VERSION = "serevex-baseline-refinement-v5.0a.1"
 VERSION_ORDER = tuple(f"{i / 10:.1f}a" for i in range(1, 51))
 ANCHOR_VERSION = "0.1a"
 GOVERNED_VERSION = "5.0a"
@@ -428,42 +428,86 @@ def _metric(rows: Sequence[Mapping[str, Any]], predictions: Sequence[float]) -> 
 
 def _paired_block_bootstrap(rows: Sequence[Mapping[str, Any]], reference: Sequence[float], candidate: Sequence[float],
                             *, replicates: int, seed: int) -> dict[str, Any]:
+    """Bootstrap paired model gains on non-embargo source windows.
+
+    Full-cohort point estimates and source-window bootstrap estimates are different
+    estimands by design; both are emitted explicitly so their signs are not conflated.
+    Each replicate uses the same sampled block indices for Brier and log-loss.
+    """
     if len(rows) != len(reference) or len(rows) != len(candidate):
         raise ValueError("bootstrap_input_lengths_must_match")
-    if reference == candidate:
-        return {"status": "IDENTICAL_REFERENCE", "blocks": 0, "replicates": 0,
-                "brier_improvement_ci95": [0.0, 0.0], "log_loss_improvement_ci95": [0.0, 0.0],
-                "brier_mean_improvement": 0.0, "log_loss_mean_improvement": 0.0}
+    full_brier_diffs: list[float] = []
+    full_loss_diffs: list[float] = []
+    source_brier_diffs: list[float] = []
+    source_loss_diffs: list[float] = []
     brier_by_block: dict[int, list[float]] = defaultdict(list)
     loss_by_block: dict[int, list[float]] = defaultdict(list)
     for row, reference_p, candidate_p in zip(rows, reference, candidate):
+        label = int(row["label"])
         index = int(row["decision_index"])
+        brier_gain = _brier(reference_p, label) - _brier(candidate_p, label)
+        loss_gain = _log_loss(reference_p, label) - _log_loss(candidate_p, label)
+        full_brier_diffs.append(brier_gain)
+        full_loss_diffs.append(loss_gain)
         if index % BLOCK_PERIOD >= BLOCK_SPAN_BARS:
             continue
-        label, block = int(row["label"]), index // BLOCK_PERIOD
-        brier_by_block[block].append(_brier(reference_p, label) - _brier(candidate_p, label))
-        loss_by_block[block].append(_log_loss(reference_p, label) - _log_loss(candidate_p, label))
-    brier_blocks = [sum(values) / len(values) for _, values in sorted(brier_by_block.items()) if values]
-    loss_blocks = [sum(values) / len(values) for _, values in sorted(loss_by_block.items()) if values]
-    count = min(len(brier_blocks), len(loss_blocks))
+        block = index // BLOCK_PERIOD
+        source_brier_diffs.append(brier_gain)
+        source_loss_diffs.append(loss_gain)
+        brier_by_block[block].append(brier_gain)
+        loss_by_block[block].append(loss_gain)
+
+    paired_block_means: list[tuple[float, float]] = []
+    for block in sorted(set(brier_by_block) & set(loss_by_block)):
+        brier_values, loss_values = brier_by_block[block], loss_by_block[block]
+        if brier_values and loss_values:
+            paired_block_means.append((sum(brier_values) / len(brier_values),
+                                       sum(loss_values) / len(loss_values)))
+    count = len(paired_block_means)
+    source_rows = len(source_brier_diffs)
+    report_base = {
+        "scored_rows_full_cohort": len(rows),
+        "source_window_rows": source_rows,
+        "source_window_blocks": count,
+        "full_cohort_brier_mean_improvement": sum(full_brier_diffs) / len(full_brier_diffs) if full_brier_diffs else None,
+        "full_cohort_log_loss_mean_improvement": sum(full_loss_diffs) / len(full_loss_diffs) if full_loss_diffs else None,
+        "source_window_row_weighted_brier_mean_improvement": (
+            sum(source_brier_diffs) / source_rows if source_rows else None),
+        "source_window_row_weighted_log_loss_mean_improvement": (
+            sum(source_loss_diffs) / source_rows if source_rows else None),
+        "bootstrap_point_estimand": "equal_weight_mean_of_non_embargo_source_window_block_means",
+        "bootstrap_resampling": "shared_paired_block_indices_for_brier_and_log_loss",
+    }
+    if list(reference) == list(candidate):
+        return {**report_base, "status": "IDENTICAL_REFERENCE", "blocks": 0, "replicates": 0,
+                "brier_improvement_ci95": [0.0, 0.0], "log_loss_improvement_ci95": [0.0, 0.0],
+                "brier_mean_improvement": 0.0, "log_loss_mean_improvement": 0.0}
     if count < MIN_BLOCKS:
-        return {"status": "INSUFFICIENT_EMBARGOED_BLOCK_SUPPORT", "blocks": count, "replicates": 0,
-                "brier_improvement_ci95": None, "log_loss_improvement_ci95": None,
+        return {**report_base, "status": "INSUFFICIENT_EMBARGOED_BLOCK_SUPPORT", "blocks": count,
+                "replicates": 0, "brier_improvement_ci95": None, "log_loss_improvement_ci95": None,
                 "brier_mean_improvement": None, "log_loss_mean_improvement": None}
+
+    brier_blocks = [pair[0] for pair in paired_block_means]
+    loss_blocks = [pair[1] for pair in paired_block_means]
+    block_means_brier = sum(brier_blocks) / count
+    block_means_loss = sum(loss_blocks) / count
     rng = random.Random(seed)
-    boot_brier = sorted(sum(brier_blocks[rng.randrange(len(brier_blocks))] for _ in brier_blocks) / len(brier_blocks)
-                        for _ in range(replicates))
-    boot_loss = sorted(sum(loss_blocks[rng.randrange(len(loss_blocks))] for _ in loss_blocks) / len(loss_blocks)
-                       for _ in range(replicates))
+    boot_brier, boot_loss = [], []
+    for _ in range(replicates):
+        sampled = [rng.randrange(count) for _ in range(count)]
+        boot_brier.append(sum(brier_blocks[index] for index in sampled) / count)
+        boot_loss.append(sum(loss_blocks[index] for index in sampled) / count)
+    boot_brier.sort()
+    boot_loss.sort()
     lower, upper = int(0.025 * replicates), min(replicates - 1, int(0.975 * replicates))
-    return {"status": "DIAGNOSTIC_PAIRED_SOURCE_TIME_BLOCK_BOOTSTRAP", "blocks": count,
-            "replicates": replicates, "brier_mean_improvement": sum(brier_blocks) / len(brier_blocks),
+    return {**report_base, "status": "DIAGNOSTIC_PAIRED_SOURCE_TIME_BLOCK_BOOTSTRAP",
+            "blocks": count, "replicates": replicates,
+            "brier_mean_improvement": block_means_brier,
             "brier_improvement_ci95": [boot_brier[lower], boot_brier[upper]],
-            "log_loss_mean_improvement": sum(loss_blocks) / len(loss_blocks),
+            "log_loss_mean_improvement": block_means_loss,
             "log_loss_improvement_ci95": [boot_loss[lower], boot_loss[upper]],
             "block_span_bars": BLOCK_SPAN_BARS, "embargo_bars": EMBARGO_BARS, "seed": seed,
-            "interpretation": "Positive gains favor the candidate; intervals are diagnostic, not universal finite-sample guarantees."}
-
+            "interpretation": "Intervals estimate the equal-weight mean gain on non-embargo source windows. Full-cohort gains are reported separately and may differ, including in sign; these are diagnostic intervals, not universal finite-sample guarantees."}
 
 def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partition: str = "final_holdout",
                     bootstrap_replicates: int = 500) -> dict[str, Any]:
@@ -636,7 +680,16 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
             "chronological_order_normalized": True,
             "source_time_block_bootstrap": {"block_span_bars": BLOCK_SPAN_BARS, "embargo_bars": EMBARGO_BARS,
                                             "replicates": bootstrap_replicates,
-                                            "interpretation": "paired diagnostic bootstrap; not a universal finite-sample guarantee"},
+                                            "interpretation": "paired diagnostic bootstrap on non-embargo source windows; not a universal finite-sample guarantee"},
+            "bootstrap_estimand_alignment": {
+                "full_cohort_gain_fields": ["baseline_brier_gain", "baseline_log_loss_improvement"],
+                "interval_aligned_gain_fields": ["paired_block_interval_vs_causal_baseline.brier_mean_improvement",
+                                                  "paired_block_interval_vs_causal_baseline.log_loss_mean_improvement"],
+                "bootstrap_cohort": "mature scored rows with decision_index % 24 < 12; embargo-window rows are excluded",
+                "weighting": "equal weight per source-window block for interval point estimate",
+                "brier_and_log_loss_share_resampled_block_indices": True,
+                "full_cohort_and_bootstrap_estimands_can_differ_in_sign": True
+            },
             "source_provenance_independently_verified": False,
             "historical_feature_availability_verified": False,
             "broker_quote_equivalence_verified": False,

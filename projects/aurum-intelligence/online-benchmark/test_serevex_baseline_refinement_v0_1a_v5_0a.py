@@ -117,6 +117,30 @@ class BaselineRefinementTests(unittest.TestCase):
         self.assertEqual(governor.selection_look_count, 0)
         self.assertEqual(first["selected"], refinement.CAUSAL_BASELINE)
 
+    def test_paired_bootstrap_labels_full_and_source_window_estimands_separately(self):
+        rows, reference, candidate = [], [], []
+        for index in range(240):
+            source_window = index % refinement.BLOCK_PERIOD < refinement.BLOCK_SPAN_BARS
+            label = 0 if source_window else 1
+            rows.append({"decision_index": index, "label": label})
+            reference.append(0.50)
+            # Slight harm in scored source windows, strong gain in embargo windows:
+            # the full-cohort sign intentionally differs from the bootstrap estimand.
+            candidate.append(0.60 if source_window else 0.99)
+        report = refinement._paired_block_bootstrap(
+            rows, reference, candidate, replicates=100, seed=20261020,
+        )
+        self.assertEqual(report["scored_rows_full_cohort"], 240)
+        self.assertEqual(report["source_window_rows"], 120)
+        self.assertEqual(report["source_window_blocks"], 10)
+        self.assertGreater(report["full_cohort_brier_mean_improvement"], 0.0)
+        self.assertLess(report["brier_mean_improvement"], 0.0)
+        self.assertLess(report["brier_improvement_ci95"][1], 0.0)
+        self.assertEqual(report["bootstrap_point_estimand"], "equal_weight_mean_of_non_embargo_source_window_block_means")
+        self.assertEqual(report["bootstrap_resampling"], "shared_paired_block_indices_for_brier_and_log_loss")
+        self.assertEqual(report["blocks"], 10)
+        self.assertEqual(report["replicates"], 100)
+
     def test_calibration_diagnostics_are_emitted_for_multiple_slices(self):
         report = refinement.evaluate_ledger(make_ledger(n=1200, informative=True), as_of_index=1200, bootstrap_replicates=100)
         self.assertIn("multi_calibration_audit", report)
