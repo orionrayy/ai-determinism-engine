@@ -55,6 +55,12 @@ class BaselineRefinementTests(unittest.TestCase):
         self.assertEqual(len(report["versions"]), 50)
         self.assertEqual(report["anchors"][refinement.CAUSAL_BASELINE]["brier"], 0.25)
         self.assertEqual(report["validation"]["baseline_reproduction"], "PASS")
+        self.assertEqual(report["validation"]["prequential_maturity_window_reconciled"], "PASS")
+        self.assertEqual(report["validation"]["causal_baseline_fallback_exact"], "PASS")
+        fallback_audit = report["prequential_governor"]["baseline_fallback_audit"]
+        self.assertTrue(fallback_audit["fallback_probabilities_match_source_baseline_exactly"])
+        self.assertEqual(fallback_audit["baseline_selected_decision_count"],
+                         report["prequential_governor"]["selected_version_counts"][refinement.CAUSAL_BASELINE])
         self.assertEqual(report["validation"]["decision_output"], "NO_TRADE")
         self.assertFalse(report["validation"]["model_validated"])
         self.assertFalse(report["validation"]["live_signal_enabled"])
@@ -71,6 +77,8 @@ class BaselineRefinementTests(unittest.TestCase):
         selected = report["prequential_governor"]["selected_version_counts"]
         self.assertGreater(sum(count for version, count in selected.items() if version in refinement.CANDIDATE_VERSIONS), 0)
         self.assertGreater(report["prequential_governor"]["incremental_audit"]["selection_look_count"], 0)
+        self.assertTrue(report["prequential_governor"]["baseline_fallback_audit"]["fallback_probabilities_match_source_baseline_exactly"])
+        self.assertTrue(report["prequential_governor"]["incremental_audit"]["prequential_maturity_window_reconciled"])
 
     def test_harmful_specialists_fall_back_to_exact_causal_baseline(self):
         ledger = make_ledger(n=2400, informative=True)
@@ -86,6 +94,10 @@ class BaselineRefinementTests(unittest.TestCase):
         baseline = report["anchors"][refinement.CAUSAL_BASELINE]
         self.assertAlmostEqual(metrics["brier"], baseline["brier"], places=12)
         self.assertAlmostEqual(metrics["log_loss"], baseline["log_loss"], places=12)
+        fallback_audit = report["prequential_governor"]["baseline_fallback_audit"]
+        self.assertTrue(fallback_audit["fallback_probabilities_match_source_baseline_exactly"])
+        self.assertTrue(fallback_audit["all_decisions_selected_causal_baseline"])
+        self.assertTrue(fallback_audit["all_governed_probabilities_match_source_baseline_exactly"])
 
     def test_future_label_mutation_cannot_change_completed_prefix_trace(self):
         original = make_ledger(n=1800, informative=True)
@@ -112,6 +124,25 @@ class BaselineRefinementTests(unittest.TestCase):
         ledger["records"][5]["decision_index"] = ledger["records"][4]["decision_index"]
         with self.assertRaises(ValueError):
             refinement.evaluate_ledger(ledger, as_of_index=50, bootstrap_replicates=100)
+
+    def test_unavailable_label_cannot_hold_prior_source_block_open(self):
+        ledger = make_ledger(n=2400, informative=True)
+        # Decision 5 is in the scored source window. Its label is valid eventually,
+        # but unavailable before the last simulated decision; it must not count as
+        # an observation the prequential queue is expected to receive.
+        ledger["records"][5]["label_available_index"] = 5000
+        report = refinement.evaluate_ledger(ledger, as_of_index=2400, bootstrap_replicates=100)
+        incremental = report["prequential_governor"]["incremental_audit"]
+        expected = sum(
+            1 for row in ledger["records"]
+            if row["label_mature"] and row["label"] in (0, 1)
+            and row["label_available_index"] < incremental["last_decision_index"]
+            and row["decision_index"] % refinement.BLOCK_PERIOD < refinement.BLOCK_SPAN_BARS
+        )
+        self.assertEqual(incremental["expected_matured_source_window_rows"], expected)
+        self.assertEqual(incremental["observed_matured_source_window_rows"], expected)
+        self.assertTrue(incremental["prequential_maturity_window_reconciled"])
+        self.assertGreater(incremental["closed_independent_blocks"], 0)
 
     def test_gate_is_cached_without_new_block_evidence(self):
         governor = refinement._Governor({})

@@ -16,7 +16,7 @@ import random
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-baseline-refinement-v5.0a.2"
+MODEL_VERSION = "serevex-baseline-refinement-v5.0a.3"
 VERSION_ORDER = tuple(f"{i / 10:.1f}a" for i in range(1, 51))
 ANCHOR_VERSION = "0.1a"
 GOVERNED_VERSION = "5.0a"
@@ -524,10 +524,16 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
     if not records:
         raise ValueError("empty_forecast_ledger")
 
+    last_decision_index = max(int(row["decision_index"]) for row in records)
     expected: dict[int, int] = defaultdict(int)
     for row in records:
         index = int(row["decision_index"])
-        if row["label_mature"] and row["label"] in (0, 1) and index % BLOCK_PERIOD < BLOCK_SPAN_BARS:
+        # A label whose availability lies beyond the final decision cannot ever
+        # enter this run's causal queue. Excluding it from expected support prevents
+        # it from permanently holding an earlier source block open.
+        if (row["label_mature"] and row["label"] in (0, 1)
+                and int(row["label_available_index"]) < last_decision_index
+                and index % BLOCK_PERIOD < BLOCK_SPAN_BARS):
             expected[index // BLOCK_PERIOD] += 1
     governor, forecasts = _Governor(expected), {}
     gate_counts, selected_counts, trace = defaultdict(int), defaultdict(int), []
@@ -545,6 +551,28 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
         trace.append([row.get("decision_id", index), index, selected, gate["status"], gate.get("independent_blocks", 0)])
         trace_by_block[index // BLOCK_PERIOD].append(trace[-1])
         governor.queue(row)
+
+    expected_source_window_rows = sum(expected.values())
+    maturity_window_reconciled = governor.matured_scored == expected_source_window_rows
+    selection_by_index = {int(entry[1]): entry[2] for entry in trace}
+    baseline_fallback_rows = [
+        row for row in records
+        if selection_by_index[int(row["decision_index"])] == CAUSAL_BASELINE
+    ]
+    baseline_fallback_exact = bool(baseline_fallback_rows) and all(
+        forecasts[int(row["decision_index"])][GOVERNED_VERSION] == _clip(row["baseline_probability"])
+        for row in baseline_fallback_rows
+    )
+    all_decisions_selected_baseline = len(baseline_fallback_rows) == len(records)
+    all_governed_probabilities_match_baseline = all(
+        forecasts[int(row["decision_index"])][GOVERNED_VERSION] == _clip(row["baseline_probability"])
+        for row in records
+    )
+    baseline_fallback_manifest = _sha([
+        [row.get("decision_id", row["decision_index"]), int(row["decision_index"]),
+         forecasts[int(row["decision_index"])][GOVERNED_VERSION], _clip(row["baseline_probability"])]
+        for row in baseline_fallback_rows
+    ])
 
     scored = [row for row in records if row.get("partition") == score_partition
               and int(row["decision_index"]) < as_of_index
@@ -597,7 +625,10 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                                             for version in audit_versions}
                 slices[dimension][group][CAUSAL_BASELINE] = _metric(subset, [base_predictions[position] for position in positions])
 
-    baseline_reproduction = all(base_predictions[pos] == _clip(scored[pos]["baseline_probability"]) for pos in range(len(scored)))
+    baseline_reference_normalization = all(
+        base_predictions[pos] == _clip(scored[pos]["baseline_probability"]) for pos in range(len(scored))
+    )
+    baseline_reproduction = baseline_reference_normalization and baseline_fallback_exact
     same_cohort = all(metrics[version]["rows"] == len(scored) for version in VERSION_ORDER)
     score_cohort_sha = _sha([[row.get("decision_id", row["decision_index"]), int(row["decision_index"]),
                               int(row["label_available_index"]), int(row["label"])] for row in scored])
@@ -606,7 +637,14 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
     report_digest = _sha({"model_version": MODEL_VERSION, "score_partition": score_partition,
                           "score_cohort_sha256": score_cohort_sha, "prediction_hashes": prediction_hashes,
                           "metrics_sha256": metric_hash, "selection_trace_block_sha256": trace_block_hashes,
-                          "selected_counts": dict(sorted(selected_counts.items()))})
+                          "selected_counts": dict(sorted(selected_counts.items())),
+                          "expected_source_window_rows": expected_source_window_rows,
+                          "observed_source_window_rows": governor.matured_scored,
+                          "maturity_window_reconciled": maturity_window_reconciled,
+                          "baseline_fallback_manifest_sha256": baseline_fallback_manifest,
+                          "baseline_fallback_exact": baseline_fallback_exact,
+                          "all_decisions_selected_baseline": all_decisions_selected_baseline,
+                          "all_governed_probabilities_match_baseline": all_governed_probabilities_match_baseline})
 
     calibration_cohort_matches = (
         governor.base_cal.rows == governor.matured_scored
@@ -640,7 +678,18 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
             "selected_version_counts": dict(sorted(selected_counts.items())),
             "gate_status_counts": dict(sorted(gate_counts.items())),
             "registered_candidate_versions": list(CANDIDATE_VERSIONS),
+            "baseline_fallback_audit": {
+                "baseline_selected_decision_count": len(baseline_fallback_rows),
+                "fallback_probabilities_match_source_baseline_exactly": baseline_fallback_exact,
+                "all_decisions_selected_causal_baseline": all_decisions_selected_baseline,
+                "all_governed_probabilities_match_source_baseline_exactly": all_governed_probabilities_match_baseline,
+                "fallback_prediction_manifest_sha256": baseline_fallback_manifest,
+            },
             "incremental_audit": {"matured_scored_window_rows": governor.matured_scored,
+                                   "expected_matured_source_window_rows": expected_source_window_rows,
+                                   "observed_matured_source_window_rows": governor.matured_scored,
+                                   "last_decision_index": last_decision_index,
+                                   "prequential_maturity_window_reconciled": maturity_window_reconciled,
                                    "closed_independent_blocks": min(governor.moments[version][CAUSAL_BASELINE]["brier"].n
                                                                      for version in CANDIDATE_VERSIONS),
                                    "selection_look_count": governor.selection_look_count,
@@ -671,6 +720,9 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
             "selection_trace_sha256": _sha(trace),
             "selection_trace_block_sha256": trace_block_hashes,
             "baseline_reproduction_verified": baseline_reproduction,
+            "baseline_reference_normalization_verified": baseline_reference_normalization,
+            "baseline_fallback_prediction_reproduction_verified": baseline_fallback_exact,
+            "prequential_maturity_window_reconciled": maturity_window_reconciled,
             "same_scored_cohort_verified": same_cohort,
             "future_label_used_for_own_decision": False,
         },
@@ -686,9 +738,13 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
             "input_contract": "PASS" if baseline_reproduction else "FAIL",
             "all_versions_same_scored_cohort": same_cohort,
             "prequential_calibration_cohort_matches_dual_score_cohort": calibration_cohort_matches,
+            "prequential_maturity_window_reconciled": maturity_window_reconciled,
+            "causal_baseline_fallback_exact": baseline_fallback_exact,
+            "baseline_fallback_prediction_manifest_sha256": baseline_fallback_manifest,
             "score_cohort_sha256": score_cohort_sha,
             "unique_decision_indices": len({row["decision_index"] for row in records}) == len(records),
             "chronological_order_normalized": True,
+            "expected_source_window_maturity_reconciled": maturity_window_reconciled,
             "source_time_block_bootstrap": {"block_span_bars": BLOCK_SPAN_BARS, "embargo_bars": EMBARGO_BARS,
                                             "replicates": bootstrap_replicates,
                                             "interpretation": "paired diagnostic bootstrap on non-embargo source windows; not a universal finite-sample guarantee"},
@@ -709,12 +765,16 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                        "identical_scored_cohort": "PASS" if same_cohort else "FAIL",
                        "strict_maturity_filter_in_gate": True,
                        "prequential_calibration_cohort_matches_dual_score_gate": "PASS" if calibration_cohort_matches else "FAIL",
+                       "prequential_maturity_window_reconciled": "PASS" if maturity_window_reconciled else "FAIL",
+                       "causal_baseline_fallback_exact": "PASS" if baseline_fallback_exact else "FAIL",
                        "holdout_scores_used_to_choose_static_parameters": False,
                        "live_trade_authority": False, "decision_output": "NO_TRADE",
                        "model_validated": False, "deployment_calibrated": False,
                        "live_signal_enabled": False, "live_order_execution_enabled": False},
         "report_sha256": report_digest,
     }
-    if not baseline_reproduction or not same_cohort or not calibration_cohort_matches:
-        raise ValueError("baseline_reproduction_or_same_cohort_or_calibration_cohort_contract_failed")
+    if (not baseline_reproduction or not same_cohort or not calibration_cohort_matches
+            or not maturity_window_reconciled or not baseline_fallback_exact
+            or (all_decisions_selected_baseline and not all_governed_probabilities_match_baseline)):
+        raise ValueError("baseline_fallback_or_maturity_or_cohort_contract_failed")
     return report
