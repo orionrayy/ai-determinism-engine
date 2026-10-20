@@ -7,6 +7,7 @@ import serevex_readiness_audit_v1 as audit
 def reports():
     metrics = {"brier": 0.20, "log_loss": 0.60, "ece": 0.01, "positive_rate": 0.35, "rows": 500}
     dataset_hash = "a" * 64
+    secondary_hash = "b" * 64
     model = {
         "source_qualification": {**dict.fromkeys(audit.MODEL_SOURCE_FIELDS, True), "dataset_sha256": dataset_hash},
         "baseline_reproduction_audit": {"verified": True, "maximum_absolute_error": 0.0},
@@ -21,13 +22,19 @@ def reports():
                     for n in ("primary_price", "secondary_price", "tick_bidask")}
     return {
         "model": model,
-        "online_dataset": {"source": {"sha256": dataset_hash}, "source_qualification_gates": source_gates},
+        "online_dataset": {
+            "source": {"sha256": dataset_hash},
+            "source_qualification_gates": source_gates,
+            "secondary_source_crosscheck": {"dataset_sha256": secondary_hash},
+        },
         "tick_bidask": {"primary_dataset": {"sha256": dataset_hash},
+                        "secondary_dataset": {"sha256": secondary_hash},
                         "source_qualification_gates": {n: {"research_qualification_status": "QUALIFIED", "source_promotion_allowed": True} for n in source_gates},
                         "data_lineage_diagnostic": {"status": "PASS", "source_independence_verified": True}},
-        "secondary_crosscheck": {"status": "PASS", "timestamp_semantics_verified": True,
+        "secondary_crosscheck": {"status": "PASS", "dataset_sha256": secondary_hash,
+                                 "timestamp_semantics_verified": True,
                                  "provider_provenance_independently_verified": True, "intended_use_rights_verified": True},
-        "external_context": {"temporal_feature_coverage": {k: {"eligible_rows": 1000, "total_rows": 1000, "coverage_fraction": 1.0}
+        "external_context": {"temporal_feature_coverage": {k: {"eligible_rows": 1000, "total_rows": 1000, "coverage_fraction": 1.0, "status": "PASS"}
                                                              for k in ("news_1h", "news_24h", "macro")}},
         "execution_replay": {"status": "VALIDATED", "validated_model": True, "validated_for_profitability": True,
                              "live_execution_authorized": False},
@@ -177,6 +184,15 @@ class ReadinessAuditTests(unittest.TestCase):
         self.assertFalse(result["production_authorized"])
         self.assertFalse(result["research_candidate_review_eligible"])
         self.assertTrue(any("SOURCE_DISAGREEMENT_REVIEW_REQUIRED" in x for x in result["blockers_by_area"]["price_data"]))
+
+    def test_secondary_dataset_hashes_must_bind_across_reports(self):
+        data = reports()
+        data["tick_bidask"]["secondary_dataset"]["sha256"] = "c" * 64
+        result = audit.audit_reports(data)
+        self.assertIn(
+            "secondary_dataset_hash_mismatch_across_reports",
+            result["integrity_violations"],
+        )
 
     def test_dataset_hash_mismatch_is_an_integrity_violation(self):
         data = reports()
