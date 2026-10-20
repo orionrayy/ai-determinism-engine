@@ -16,7 +16,7 @@ import random
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-baseline-refinement-v5.0a.1"
+MODEL_VERSION = "serevex-baseline-refinement-v5.0a.2"
 VERSION_ORDER = tuple(f"{i / 10:.1f}a" for i in range(1, 51))
 ANCHOR_VERSION = "0.1a"
 GOVERNED_VERSION = "5.0a"
@@ -311,12 +311,14 @@ class _Governor:
 
     def _observe(self, row: Mapping[str, Any], forecasts: Mapping[str, float]) -> None:
         index, label = int(row["decision_index"]), int(row["label"])
+        # Calibration eligibility must match the score-comparison cohort: only
+        # matured labels in non-embargo source windows can affect the online gate.
+        if index % BLOCK_PERIOD >= BLOCK_SPAN_BARS:
+            return
         base_probability = _clip(row["baseline_probability"])
         self.base_cal.add(base_probability, label)
         for version in FIXED_VERSIONS:
             self.cal[version].add(forecasts[version], label)
-        if index % BLOCK_PERIOD >= BLOCK_SPAN_BARS:
-            return
         self.matured_scored += 1
         block = index // BLOCK_PERIOD
         for version in CANDIDATE_VERSIONS:
@@ -606,6 +608,11 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                           "metrics_sha256": metric_hash, "selection_trace_block_sha256": trace_block_hashes,
                           "selected_counts": dict(sorted(selected_counts.items()))})
 
+    calibration_cohort_matches = (
+        governor.base_cal.rows == governor.matured_scored
+        and all(accumulator.rows == governor.matured_scored for accumulator in governor.cal.values())
+    )
+
     report = {
         "protocol_version": MODEL_VERSION,
         "version_order": list(VERSION_ORDER),
@@ -639,7 +646,8 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                                    "selection_look_count": governor.selection_look_count,
                                    "last_critical_z": governor.last_critical_z,
                                    "last_alpha_look": governor.last_alpha_look,
-                                   "calibration_rows_by_version": {key: value.rows for key, value in governor.cal.items()}},
+                                   "calibration_rows_by_version": {key: value.rows for key, value in governor.cal.items()},
+                                   "calibration_cohort_matches_dual_score_gate": calibration_cohort_matches},
             "candidate_gate": {"matured_labels_only": True,
                                "strict_maturity_cutoff": "label_available_index < current_decision_index",
                                "source_scoring_window_bars": BLOCK_SPAN_BARS,
@@ -652,6 +660,7 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
                                "selection_look_rule": "alpha_look(k)=0.05/(k*(k+1)); sum_k alpha_look(k)=0.05",
                                "selection_look_block_interval": SELECTION_LOOK_BLOCK_INTERVAL,
                                "minimum_positive_block_share": MIN_POSITIVE_BLOCK_SHARE,
+                               "calibration_gate_evidence": "matured non-embargo source-window labels; same cohort as Brier/log-loss screens",
                                "dual_reference_required": [CAUSAL_BASELINE, ANCHOR_VERSION],
                                "dual_score_required": ["brier", "log_loss"],
                                "max_ece_degradation": ECE_TOLERANCE,
@@ -676,6 +685,7 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
         "multi_audit": {
             "input_contract": "PASS" if baseline_reproduction else "FAIL",
             "all_versions_same_scored_cohort": same_cohort,
+            "prequential_calibration_cohort_matches_dual_score_cohort": calibration_cohort_matches,
             "score_cohort_sha256": score_cohort_sha,
             "unique_decision_indices": len({row["decision_index"] for row in records}) == len(records),
             "chronological_order_normalized": True,
@@ -698,12 +708,13 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
         "validation": {"baseline_reproduction": "PASS" if baseline_reproduction else "FAIL",
                        "identical_scored_cohort": "PASS" if same_cohort else "FAIL",
                        "strict_maturity_filter_in_gate": True,
+                       "prequential_calibration_cohort_matches_dual_score_gate": "PASS" if calibration_cohort_matches else "FAIL",
                        "holdout_scores_used_to_choose_static_parameters": False,
                        "live_trade_authority": False, "decision_output": "NO_TRADE",
                        "model_validated": False, "deployment_calibrated": False,
                        "live_signal_enabled": False, "live_order_execution_enabled": False},
         "report_sha256": report_digest,
     }
-    if not baseline_reproduction or not same_cohort:
-        raise ValueError("baseline_reproduction_or_same_cohort_contract_failed")
+    if not baseline_reproduction or not same_cohort or not calibration_cohort_matches:
+        raise ValueError("baseline_reproduction_or_same_cohort_or_calibration_cohort_contract_failed")
     return report

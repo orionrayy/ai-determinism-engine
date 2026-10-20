@@ -188,7 +188,8 @@ jobs:
           assert baseline_refinement_report["version_order"][0] == "0.1a", baseline_refinement_report
           assert baseline_refinement_report["version_order"][-1] == "5.0a", baseline_refinement_report
           assert baseline_refinement_report["status"] == "BASELINE_GOVERNED_RESEARCH_ONLY", baseline_refinement_report
-          assert baseline_refinement_report["protocol_version"] == "serevex-baseline-refinement-v5.0a.1", baseline_refinement_report
+          assert baseline_refinement_report["protocol_version"] == "serevex-baseline-refinement-v5.0a.2", baseline_refinement_report
+          assert baseline_refinement_report["prequential_governor"]["incremental_audit"]["calibration_cohort_matches_dual_score_gate"] is True, baseline_refinement_report
           assert baseline_refinement_report["multi_audit"]["bootstrap_estimand_alignment"]["brier_and_log_loss_share_resampled_block_indices"] is True, baseline_refinement_report
           assert baseline_refinement_report["multi_audit"]["bootstrap_estimand_alignment"]["full_cohort_and_bootstrap_estimands_can_differ_in_sign"] is True, baseline_refinement_report
           assert baseline_refinement_report["prequential_governor"]["baseline_reproduction_verified"] is True, baseline_refinement_report

@@ -61,6 +61,9 @@ class BaselineRefinementTests(unittest.TestCase):
         self.assertFalse(report["validation"]["live_order_execution_enabled"])
         self.assertIn("post-selection", report["version_reset_lineage"]["anchor_selection_caveat"].lower())
         self.assertFalse(report["prequential_governor"]["future_label_used_for_own_decision"])
+        self.assertTrue(report["prequential_governor"]["incremental_audit"]["calibration_cohort_matches_dual_score_gate"])
+        incremental = report["prequential_governor"]["incremental_audit"]
+        self.assertEqual(incremental["calibration_rows_by_version"]["0.1a"], incremental["matured_scored_window_rows"])
         self.assertIs(report["prequential_governor"]["candidate_gate"]["final_holdout_used_for_static_parameter_selection"], False)
 
     def test_strong_causal_specialist_can_pass_governor_on_synthetic_data(self):
@@ -147,6 +150,9 @@ class BaselineRefinementTests(unittest.TestCase):
         self.assertIn("multi_calibration_audit", report)
         self.assertIn("regime", report["multi_calibration_audit"]["scores_by_regime_and_volatility"])
         self.assertIn("paired_block_interval_vs_causal_baseline", report["versions"]["4.5a"])
+        incremental = report["prequential_governor"]["incremental_audit"]
+        self.assertTrue(incremental["calibration_cohort_matches_dual_score_gate"])
+        self.assertEqual(incremental["calibration_rows_by_version"]["0.1a"], incremental["matured_scored_window_rows"])
         self.assertEqual(report["versions"]["4.5a"]["paired_block_interval_vs_causal_baseline"]["replicates"], 100)
 
 
