@@ -95,6 +95,7 @@ class ReadinessAuditTests(unittest.TestCase):
         data["tick_bidask"]["data_lineage_diagnostic"]["source_independence_verified"] = False
         data["secondary_crosscheck"]["status"] = "SOURCE_DISAGREEMENT_REVIEW_REQUIRED"
         data["external_context"]["temporal_feature_coverage"]["news_1h"]["coverage_fraction"] = 0.02
+        data["external_context"]["temporal_feature_coverage"]["news_1h"]["status"] = "PARTIAL"
         result = audit.audit_reports(data)
         self.assertTrue(any("primary_price" in x for x in result["blockers_by_area"]["price_data"]))
         self.assertTrue(any("source_independence_unverified" in x for x in result["blockers_by_area"]["price_data"]))
