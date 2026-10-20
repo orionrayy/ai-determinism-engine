@@ -152,7 +152,6 @@ jobs:
           import serevex_stage123_integrated_v1 as integrated
           import serevex_probability_evolution_v4_v9 as probability_evolution
           import serevex_baseline_advantage_v0_v5 as baseline_advantage
-          import serevex_baseline_advantage_v0_v5 as baseline_advantage
 
           payload = ci_benchmark.fetch()
           rows = ci_benchmark.parse_csv(payload)
@@ -180,17 +179,7 @@ jobs:
               ledger, as_of_index=len(rows), score_partition="final_holdout", bootstrap_replicates=500,
           )
           assert baseline_advantage_report["version_order"] == ["0.1", "0.2", "0.3", "0.4", "0.5"], baseline_advantage_report
-          assert baseline_advantage_report["status"] == "BASELINE_PRESERVED_RESEARCH_ONLY", baseline_advantage_report
-          assert baseline_advantage_report["prequential_governor"]["baseline_reproduction_verified"] is True, baseline_advantage_report
-          assert baseline_advantage_report["prequential_governor"]["same_scored_cohort_verified"] is True, baseline_advantage_report
-          assert baseline_advantage_report["prequential_governor"]["future_label_used_for_own_decision"] is False, baseline_advantage_report
-          assert baseline_advantage_report["validation"]["decision_output"] == "NO_TRADE", baseline_advantage_report
-          assert baseline_advantage_report["scored_rows"] > 0, baseline_advantage_report
-          baseline_advantage_report = baseline_advantage.evaluate_ledger(
-              ledger, as_of_index=len(rows), score_partition="final_holdout", bootstrap_replicates=500,
-          )
-          assert baseline_advantage_report["version_order"] == ["0.1", "0.2", "0.3", "0.4", "0.5"], baseline_advantage_report
-          assert baseline_advantage_report["status"] == "BASELINE_PRESERVED_RESEARCH_ONLY", baseline_advantage_report
+          assert baseline_advantage_report["status"] == "BASELINE_GOVERNED_RESEARCH_ONLY", baseline_advantage_report
           assert baseline_advantage_report["prequential_governor"]["baseline_reproduction_verified"] is True, baseline_advantage_report
           assert baseline_advantage_report["prequential_governor"]["same_scored_cohort_verified"] is True, baseline_advantage_report
           assert baseline_advantage_report["prequential_governor"]["future_label_used_for_own_decision"] is False, baseline_advantage_report
@@ -224,8 +213,6 @@ jobs:
               assert all(item["decision_index"] < len(rows) for item in result["forecasts"]), version
           assert probability_evolution_report["source_evidence"]["historical_feature_availability_verified"] is False
           alpha = ledger["metadata"]["alpha_model_training"]
-          assert baseline_advantage_report["scored_rows"] == alpha["final_holdout_metrics"]["rows"], baseline_advantage_report
-          assert abs(baseline_advantage_report["versions"]["0.1"]["brier"] - alpha["final_holdout_metrics"]["causal_baseline_brier_score"]) < 1e-12, (baseline_advantage_report, alpha)
           assert baseline_advantage_report["scored_rows"] == alpha["final_holdout_metrics"]["rows"], baseline_advantage_report
           assert abs(baseline_advantage_report["versions"]["0.1"]["brier"] - alpha["final_holdout_metrics"]["causal_baseline_brier_score"]) < 1e-12, (baseline_advantage_report, alpha)
           assert checked["contract_status"] == "PASS", checked
@@ -357,21 +344,6 @@ jobs:
               "baseline_advantage_gate_status_counts": baseline_advantage_report["prequential_governor"]["gate_status_counts"],
               "baseline_advantage_selection_trace_sha256": baseline_advantage_report["prequential_governor"]["selection_trace_sha256"],
               "baseline_advantage_validation": baseline_advantage_report["validation"],
-              "baseline_advantage_status": baseline_advantage_report["status"],
-              "baseline_advantage_protocol_version": baseline_advantage_report["protocol_version"],
-              "baseline_advantage_scored_rows": baseline_advantage_report["scored_rows"],
-              "baseline_advantage_comparison": {v: {
-                  "brier": item["brier"], "log_loss": item["log_loss"], "ece": item["calibration"]["ece"],
-                  "baseline_brier_gain": item["baseline_brier_gain"],
-                  "baseline_log_loss_improvement": item["baseline_log_loss_improvement"],
-                  "ece_delta_vs_baseline": item["ece_delta_vs_baseline"],
-                  "paired_block_interval_vs_baseline": item["paired_block_interval_vs_baseline"],
-                  "prediction_manifest_sha256": item["prediction_manifest_sha256"],
-              } for v, item in baseline_advantage_report["versions"].items()},
-              "baseline_advantage_selected_version_counts": baseline_advantage_report["prequential_governor"]["selected_version_counts"],
-              "baseline_advantage_gate_status_counts": baseline_advantage_report["prequential_governor"]["gate_status_counts"],
-              "baseline_advantage_selection_trace_sha256": baseline_advantage_report["prequential_governor"]["selection_trace_sha256"],
-              "baseline_advantage_validation": baseline_advantage_report["validation"],
               "probability_evolution_source_evidence": probability_evolution_report["source_evidence"],
               "ledger_sha256": checked["ledger_sha256"],
               "report_sha256": report["report_sha256"],
@@ -389,9 +361,6 @@ jobs:
           )
           (output / "probability_evolution_v4_v9_report.json").write_text(
               json.dumps(probability_evolution_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
-          )
-          (output / "serevex_baseline_advantage_v0_v5_report.json").write_text(
-              json.dumps(baseline_advantage_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
           )
           (output / "serevex_baseline_advantage_v0_v5_report.json").write_text(
               json.dumps(baseline_advantage_report, indent=2, sort_keys=True, allow_nan=False) + "\n", encoding="utf-8"
@@ -419,19 +388,11 @@ jobs:
               f"- Probability evolution latest global selection/gate diagnostics: {json.dumps(probability_evolution_final_global_gate, sort_keys=True)}",
               f"- Baseline advantage evolution v0.1-v5.0: {summary['baseline_advantage_status']}; scored rows: {summary['baseline_advantage_scored_rows']}; selected variants: {json.dumps(summary['baseline_advantage_selected_version_counts'], sort_keys=True)}",
               f"- Baseline advantage comparison JSON: {output / 'serevex_baseline_advantage_v0_v5_report.json'}",
-              f"- Baseline advantage evolution v0.1-v5.0: {summary['baseline_advantage_status']}; scored rows: {summary['baseline_advantage_scored_rows']}; selected variants: {json.dumps(summary['baseline_advantage_selected_version_counts'], sort_keys=True)}",
-              f"- Baseline advantage comparison JSON: {output / 'serevex_baseline_advantage_v0_v5_report.json'}",
               f"- Atlas cells by status: {json.dumps(status_counts, sort_keys=True)}",
               f"- Producer report SHA-256: {summary['report_sha256']}",
               "",
               "All source verification and deployment authority flags remain false. This is a historical community OHLCV diagnostic, not proof of point-in-time source availability, source rights, predictive skill, or profitability.",
           ]
-          lines.extend(["", "## Serevex baseline advantage v0.1–v5.0", "",
-                        "| Version | Rows | Brier | Log loss | ECE | Brier gain vs baseline | Log-loss improvement |",
-                        "|---|---:|---:|---:|---:|---:|---:|"])
-          for version, metric in baseline_advantage_report["versions"].items():
-              lines.append(f"| {version} | {metric['rows']} | {metric['brier']:.8f} | {metric['log_loss']:.8f} | {metric['calibration']['ece']:.8f} | {metric['baseline_brier_gain']:.8f} | {metric['baseline_log_loss_improvement']:.8f} |")
-          lines.extend(["", f"- Governor selected counts: {json.dumps(baseline_advantage_report['prequential_governor']['selected_version_counts'], sort_keys=True)}", f"- Selection gate counts: {json.dumps(baseline_advantage_report['prequential_governor']['gate_status_counts'], sort_keys=True)}", "- v0.1 remains the exact causal baseline; specialists are eligible only after preregistered temporal dual-score and calibration gates. Research-only; no trading authorization."])
           lines.extend(["", "## Serevex baseline advantage v0.1–v5.0", "",
                         "| Version | Rows | Brier | Log loss | ECE | Brier gain vs baseline | Log-loss improvement |",
                         "|---|---:|---:|---:|---:|---:|---:|"])
