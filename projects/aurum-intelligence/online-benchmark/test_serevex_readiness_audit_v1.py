@@ -229,8 +229,10 @@ class ReadinessAuditTests(unittest.TestCase):
             "labels_sha256": "d" * 64, "effective_context_families": ["news"],
             "omitted_context_families": [],
             "context_family_support_by_split": {
-                split: {"total_rows": 1000, "eligible_values_by_feature": {"feature_news_count_1h": 10}}
-                for split in ("development", "calibration", "holdout")
+                "news": {
+                    split: {"total_rows": 1000, "eligible_values_by_feature": {"feature_news_count_1h": 10}}
+                    for split in ("development", "calibration", "holdout")
+                }
             },
             "paired_moving_block_ci_vs_price_only": {
                 "comparison_reference": "price_only", "lower_95": -0.01,
@@ -255,7 +257,7 @@ class ReadinessAuditTests(unittest.TestCase):
         data = reports()
         data["execution_replay"]["live_execution_authorized"] = True
         result = audit.audit_reports(data)
-        self.assertIn("unsafe_or_missing_execution_authority_state", result["integrity_violations"])
+        self.assertIn("unsafe_execution_authority_state", result["integrity_violations"])
         self.assertFalse(result["production_authorized"])
 
     def test_missing_required_source_names_are_blockers(self):
