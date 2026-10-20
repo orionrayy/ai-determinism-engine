@@ -855,6 +855,7 @@ jobs:
               f.write('\nPipeline success is not proof of data scale, calibrated edge, profitability, or deployment readiness.\n')
           PY
       - name: Audit Serevex model, source, context, and execution readiness
+        if: always()
         run: >-
           python projects/aurum-intelligence/online-benchmark/serevex_readiness_audit_v1.py
           --benchmark-dir /tmp/aurum-online-benchmark
