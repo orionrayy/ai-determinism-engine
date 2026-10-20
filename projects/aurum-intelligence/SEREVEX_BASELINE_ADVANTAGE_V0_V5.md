@@ -1,47 +1,49 @@
 # Serevex Baseline-Advantage Evolution v0.1–v5.0
 
-**Status:** research-only; baseline retained as the exact champion/fallback. This proposal does not authorize trades.
+**Status:** research-only; v0.1 remains the exact causal champion/fallback. This evolution does not authorize trades.
 
 ## Objective
 
-The preceding v4.0–v9.0 real-data benchmark showed that the alpha candidate did not clear a conservative paired Brier + log-loss gate. The proper next step is not to relax the gate. This evolution tests whether the properties of the causal Laplace baseline—maturity-safe updates, prevalence tracking, low-variance shrinkage, support-aware conditioning and abstention when evidence is insufficient—can be improved in small, falsifiable steps.
+The real-data v4.0–v9.0 benchmark showed that the alpha candidate did not clear the paired Brier + log-loss gate; the blend governor therefore selected weight 0.0. The correct follow-up is not to relax that gate. This experiment isolates the baseline's durable advantages—maturity-safe prevalence tracking, low-variance probability shrinkage, support-aware conditioning, stable probabilities and abstention when evidence is insufficient—and tests them through a reproducible ladder of **50 checkpoints**, from v0.1 to v5.0.
 
-The versions are deterministic evaluation policies over the existing forecast ledger. They do not modify the target definition, signal routing, or live trading path.
+The numbered variants are deterministic policies over the same causal forecast ledger. They are hypotheses for controlled ablation, not fifty claims of increasing accuracy or fifty separately trained models. They do not modify the target definition, Telegram decision path, broker routing or live-trading authority.
 
-## Version ladder
+## Fifty-checkpoint ladder
 
-| Version | Hypothesis under test | Policy |
-|---|---|---|
-| v0.1 | The reference forecast is hard to beat when specialist evidence is weak. | Exact row-wise causal expanding Laplace baseline; always retained. |
-| v0.2 | Recent matured outcomes may add a small amount of adaptive information without discarding the global prior. | Bounded blend towards the causal 288-matured-label rolling-rate expert; the rolling influence increases gradually after a minimum support threshold. |
-| v0.3 | Regime and volatility conditioning may help only when those conditional cohorts have enough matured observations. | Shrink regime and volatility rates towards v0.1 using support-dependent weights; specialist influence is capped. |
-| v0.4 | A conservative combination may stabilize specialist estimates. | Baseline-anchored combination of v0.1, v0.2 and v0.3. |
-| v0.5 | A specialist should be used only after evidence from earlier, matured observations supports it. | Prequential governor compares candidates with v0.1 on source-time blocks, requires both Brier and log-loss improvements, block stability, adequate support and bounded ECE degradation; otherwise it emits the exact row-wise v0.1 forecast. |
+| Range | Hypothesis and policy family |
+|---|---|
+| **v0.1** | Exact row-wise causal expanding Laplace baseline. Its probabilities are the unmodified reference and must reproduce exactly. |
+| **v0.2–v2.0** | Nineteen progressive variants increase the bounded contribution of the causal rolling 288-matured-label rate, from a small blend toward a capped contribution. |
+| **v2.1–v3.0** | Ten variants gradually introduce regime-conditioned matured rates while retaining a global/rolling component and shrinking on limited regime support. |
+| **v3.1–v4.0** | Ten variants gradually introduce volatility-conditioned rates; their combined specialist weights are bounded so the baseline remains the residual prior. |
+| **v4.1–v4.9** | Nine robust-shrinkage variants progressively reduce specialist mass again, explicitly testing whether a more conservative mixture is more stable than a heavily conditioned one. |
+| **v5.0** | The final prequential governor. At each decision it may select one of v0.2–v4.9 only from evidence already matured before that decision. Otherwise it emits the exact v0.1 forecast. |
 
-These versions are a controlled research ladder, not five claims of increasing accuracy. v0.2–v0.4 weights are initial, explicit engineering hypotheses and remain subject to ablation. If they do not improve on the same-cohort benchmark, do not tune them against the final holdout. Design another preregistered experiment on development/calibration data.
+These are deterministic policy-family checkpoints. Passing a later version number does not imply a better model. If no variant beats v0.1 under the preregistered gates, v5.0 retaining v0.1 is the intended correct outcome—not a performance improvement.
 
 ## Multi-check, multi-audit and multi-calibration
 
-1. **Input contract:** validate indices, unique decision positions, binary matured labels, finite probabilities and valid expert mappings. Reject malformed inputs rather than silently repairing them.
-2. **Point-in-time boundary:** an outcome may update the selector only if label_available_index is strictly less than the current decision index. Its own decision can never use its own future outcome.
-3. **Same-cohort audit:** score v0.1–v0.5 on exactly the same final-holdout decision identities and labels; persist prediction-manifest hashes.
-4. **Maturity/block audit:** score 12 source bars, then embargo 12 bars for uncertainty summaries. Count independent source-time blocks, not adjacent event rows as independent evidence.
-5. **Dual-score gate:** require the conservative block-mean lower screens for both Brier improvement and log-loss improvement to be positive; require at least 70% positive blocks for both. Inadequate support forces v0.1.
-6. **Calibration audit:** report equal-width ten-bin ECE and maximum bin gap, plus subgroup Brier/log loss/reliability by the preregistered regime and volatility bucket. Keep subgroup results descriptive when support is low. A candidate may not worsen accumulated prequential ECE by more than 0.015 relative to v0.1 to pass the gate.
-7. **Uncertainty:** compute paired source-time-block bootstrap intervals with a fixed seed and report block count and replicate count. Intervals are diagnostic and are not exact finite-sample guarantees.
-8. **Causal regression tests:** test deterministic hashes, missing-support fallback, harmful-specialist rejection, acceptance of a controlled synthetic informative specialist, duplicates/malformed inputs failing closed, and invariance of earlier complete block-selection hashes when labels after the cutoff are mutated.
-9. **Authority guard:** maintain NO_TRADE; validated-model/deployment-calibration statuses remain false, and live signal/order execution remains disabled.
+1. **Input contract:** validate unique decision indices, integer maturity indices that do not precede decisions, binary labels only when matured, finite probabilities and valid expert mappings. Reject malformed input rather than silently repairing it.
+2. **Point-in-time boundary:** an outcome may update the governor only if its label-availability index is strictly less than the current decision index. A forecast cannot use its own future outcome.
+3. **Same-cohort audit:** score all 50 checkpoints on identical final-holdout decision identities and mature labels; persist per-version forecast-manifest hashes, a scored-cohort hash, a metrics hash and a report hash that binds cohort labels and measured results.
+4. **Maturity/block audit:** summarize 12 source bars, followed by a 12-bar embargo, to reduce overlap between target horizons. Treat source-time blocks—not adjacent event rows—as the units for uncertainty screens.
+5. **Multiple-candidate correction:** v5.0 evaluates 48 candidate policies and two loss endpoints. The conservative critical multiplier is 3.35 for this one-sided multi-comparison screen. This is a normal-approximation guardrail, not a formal finite-sample guarantee.
+6. **Dual-score gate:** both the Brier-improvement and log-loss-improvement lower screens must be positive; at least 70% of eligible blocks must be positive for each metric; at least 200 matured scoring-window rows and eight blocks are required. If no candidate passes, fall back to v0.1.
+7. **Calibration audit:** report ten-bin ECE and maximum bin gap plus subgroup Brier, log loss and reliability diagnostics by regime and volatility bucket. A candidate cannot pass if its accumulated prequential ECE is more than 0.015 worse than v0.1. Sparse subgroup values remain descriptive, not proof of conditional calibration.
+8. **Uncertainty and manifests:** compute paired source-time-block bootstrap intervals with fixed per-version seeds. Hash prediction manifests, the cohort including labels, block-level selection traces and the resulting metrics for reproducibility. Intervals are diagnostic; they are not exact finite-sample guarantees.
+9. **Causal regression tests:** test exact baseline reproduction, specialist rejection under harmful predictions, acceptance of a genuinely informative synthetic specialist, strict maturity, future-label mutation invariance, report-integrity hashes, duplicate/malformed input rejection and the permanent NO_TRADE boundary.
+10. **Authority guard:** NO_TRADE remains enforced; validated-model/deployment-calibration statuses stay false, and live signal/order execution stays disabled.
 
 ## Reading results
 
-- Positive Brier/log-loss improvement means the candidate's loss is lower than the baseline's loss under the report's sign convention.
-- A nonpositive lower confidence screen, unstable block share or excess ECE degradation means the candidate is not eligible to replace v0.1.
-- If v0.5 selects v0.1 for every decision, that is a correct safety outcome but **not** an improvement claim.
-- A lower holdout point score without a suitable paired interval and an untouched independent replication is not sufficient evidence of skill.
-- Better probability scores do not establish positive net returns. Costs, executable broker quotes, fills, portfolio exposure, source provenance, source rights and historical feature availability require separate qualification.
+- Positive Brier or log-loss improvement means the candidate's loss is lower than the baseline under the report's sign convention.
+- A nonpositive conservative lower screen, unstable block share, insufficient support or excess ECE degradation makes a candidate ineligible.
+- If v5.0 selects v0.1 on every decision, it has correctly preserved the baseline; that result must not be reported as specialist skill.
+- An improved holdout point estimate without paired block evidence and independent untouched replication is not sufficient evidence of predictive skill.
+- Better probability scores do not establish positive net returns. Costs, executable broker quotes, fills, portfolio exposure, provenance, data-use rights and historical feature availability require separate qualification.
 
 ## Experiment scope and limitations
 
-This module evaluates the supplied ledger and depends on the upstream producer's stated reference-only OHLCV assumptions. It cannot independently establish the truth of source timestamps, market-data rights, source independence or broker quote equivalence. The online governor is a prequential research comparison; a final-holdout aggregate still needs untouched replication before it supports a scientific or economic claim.
+This evaluator consumes the upstream forecast ledger and inherits its reference-only OHLCV assumptions. It cannot independently prove source authenticity, data rights, source independence, source timestamp semantics, historical feature availability or broker quote equivalence. The v5.0 online governor is a prequential policy evaluation: it may use a prior label only after that label has matured, but the aggregate holdout result still needs replication on a new untouched chronological cohort.
 
-**Acceptance condition:** retain v0.1 unless a candidate passes the preregistered dual-score, block-stability, support and calibration gates, and then confirms that advantage on a new untouched chronological cohort. No live trading authorization is part of this experiment.
+**Acceptance condition:** retain v0.1 until a variant clears the preregistered support, multi-candidate dual-score, stability and calibration gates and replicates on a later independent cohort. No live-trading authorization is included.
