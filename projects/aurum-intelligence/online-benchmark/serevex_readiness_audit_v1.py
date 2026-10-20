@@ -10,7 +10,6 @@ MODEL_SOURCE_FIELDS = (
     "historical_feature_availability_verified", "broker_quote_equivalence_verified",
 )
 SCORES = ("brier", "log_loss", "ece", "positive_rate", "rows")
-MIN_CONTEXT_COVERAGE = 0.95
 
 def mp(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
@@ -115,6 +114,18 @@ def audit_reports(
         violations.append("model_ledger_dataset_hash_differs_from_online_benchmark")
     if _hashlike(tick_primary_hash) and _hashlike(online_hash) and tick_primary_hash != online_hash:
         violations.append("tick_audit_primary_dataset_hash_differs_from_online_benchmark")
+    secondary = mp(reports.get("secondary_crosscheck"))
+    secondary_hashes = {
+        "online": mp(online.get("secondary_source_crosscheck")).get("dataset_sha256"),
+        "tick": mp(tick.get("secondary_dataset")).get("sha256"),
+        "crosscheck": secondary.get("dataset_sha256"),
+    }
+    for label, digest in secondary_hashes.items():
+        if not _hashlike(digest):
+            blockers["price_data"].append(f"secondary_dataset_sha256_missing_or_invalid:{label}")
+    valid_secondary_hashes = {digest for digest in secondary_hashes.values() if _hashlike(digest)}
+    if len(valid_secondary_hashes) > 1:
+        violations.append("secondary_dataset_hash_mismatch_across_reports")
     online_gates = mp(online.get("source_qualification_gates"))
     if not online_gates:
         blockers["price_data"].append("online_source_qualification_gates_missing")
@@ -144,7 +155,6 @@ def audit_reports(
     lineage = mp(tick.get("data_lineage_diagnostic"))
     if lineage.get("source_independence_verified") is not True:
         blockers["price_data"].append("tick_source_independence_unverified:" + str(lineage.get("status", "MISSING")))
-    secondary = mp(reports.get("secondary_crosscheck"))
     if not secondary:
         blockers["price_data"].append("secondary_source_crosscheck_missing")
     elif (secondary.get("status") != "PASS" or secondary.get("timestamp_semantics_verified") is not True
@@ -157,8 +167,16 @@ def audit_reports(
     for key in ("news_1h", "news_24h", "macro"):
         feature = mp(mp(context.get("temporal_feature_coverage")).get(key))
         coverage, eligible, total = feature.get("coverage_fraction"), feature.get("eligible_rows"), feature.get("total_rows")
-        if not finite(coverage) or float(coverage) < MIN_CONTEXT_COVERAGE or not finite(eligible) or not finite(total) or float(total) <= 0:
-            blockers["external_context"].append(f"temporal_coverage_insufficient:{key}:{eligible}/{total}")
+        feature_status = feature.get("status")
+        if (
+            not finite(coverage) or float(coverage) < 0 or float(coverage) > 1
+            or feature_status != "PASS"
+            or not finite(eligible) or float(eligible) < 1
+            or not finite(total) or float(total) <= 0
+        ):
+            blockers["external_context"].append(
+                f"temporal_coverage_not_passed:{key}:{feature_status}:{eligible}/{total}"
+            )
     execution = mp(reports.get("execution_replay"))
     if not execution:
         blockers["production"].append("execution_replay_report_missing")
