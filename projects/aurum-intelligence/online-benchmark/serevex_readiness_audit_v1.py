@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any, Mapping
 
 BASELINE = "0.1b"
+MIN_EXTERNAL_CONTEXT_COVERAGE_FRACTION = 0.80
+MIN_CONTEXT_FEATURE_COVERAGE_FRACTION = 0.80
 MODEL_SOURCE_FIELDS = (
     "provenance_verified", "data_rights_verified", "timestamp_semantics_verified",
     "historical_feature_availability_verified", "broker_quote_equivalence_verified",
@@ -68,9 +70,36 @@ def audit_reports(
         if not select_ok and calibration.get("status") not in (None, "NOT_RUN_MODEL_SELECTION_GATE_FAILED"):
             violations.append("calibration_gate_ran_after_model_selection_failure")
         final = mp(model.get("final_holdout"))
+        baseline_metrics, policy_metrics = mp(final.get("baseline_metrics")), mp(final.get("policy_metrics"))
+        # Validate both score bundles even when a candidate passed its research gates.
+        # Otherwise a malformed or mismatched final cohort could look review-ready.
+        for label, metrics in (("baseline", baseline_metrics), ("policy", policy_metrics)):
+            for key in SCORES:
+                if key not in metrics:
+                    violations.append(f"holdout_metric_missing:{label}:{key}")
+                    continue
+                value = metrics[key]
+                if key == "rows":
+                    if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+                        violations.append(f"holdout_row_count_invalid:{label}")
+                elif not finite(value):
+                    violations.append(f"holdout_metric_non_numeric:{label}:{key}")
+                elif key in ("brier", "ece", "positive_rate") and not 0.0 <= float(value) <= 1.0:
+                    violations.append(f"holdout_metric_out_of_range:{label}:{key}")
+                elif key == "log_loss" and float(value) < 0.0:
+                    violations.append(f"holdout_metric_out_of_range:{label}:{key}")
+        if (isinstance(baseline_metrics.get("rows"), int)
+                and not isinstance(baseline_metrics.get("rows"), bool)
+                and isinstance(policy_metrics.get("rows"), int)
+                and not isinstance(policy_metrics.get("rows"), bool)
+                and baseline_metrics.get("rows") != policy_metrics.get("rows")):
+            violations.append("holdout_row_count_mismatch")
+        if (finite(baseline_metrics.get("positive_rate"))
+                and finite(policy_metrics.get("positive_rate"))
+                and not same(baseline_metrics.get("positive_rate"), policy_metrics.get("positive_rate"))):
+            violations.append("holdout_label_rate_mismatch")
         if final.get("final_holdout_can_change_candidate_choice") is not False:
             violations.append("final_holdout_is_not_locked_against_candidate_selection")
-        baseline_metrics, policy_metrics = mp(final.get("baseline_metrics")), mp(final.get("policy_metrics"))
         policy_is_baseline = final.get("policy") == BASELINE
         if not (select_ok and calibration_ok) and not policy_is_baseline:
             violations.append("candidate_policy_promoted_without_both_research_gates")
@@ -155,6 +184,8 @@ def audit_reports(
     lineage = mp(tick.get("data_lineage_diagnostic"))
     if lineage.get("source_independence_verified") is not True:
         blockers["price_data"].append("tick_source_independence_unverified:" + str(lineage.get("status", "MISSING")))
+    if lineage.get("source_independence_verified") is True and "REVIEW_REQUIRED" in str(lineage.get("status", "")):
+        violations.append("tick_lineage_status_conflicts_with_independence_claim")
     if not secondary:
         blockers["price_data"].append("secondary_source_crosscheck_missing")
     elif (secondary.get("status") != "PASS" or secondary.get("timestamp_semantics_verified") is not True
@@ -164,26 +195,111 @@ def audit_reports(
     context = mp(reports.get("external_context"))
     if not context:
         blockers["external_context"].append("external_context_benchmark_missing")
+    context_totals: set[int] = set()
     for key in ("news_1h", "news_24h", "macro"):
         feature = mp(mp(context.get("temporal_feature_coverage")).get(key))
         coverage, eligible, total = feature.get("coverage_fraction"), feature.get("eligible_rows"), feature.get("total_rows")
         feature_status = feature.get("status")
+        counts_valid = (
+            isinstance(eligible, int) and not isinstance(eligible, bool) and eligible >= 0
+            and isinstance(total, int) and not isinstance(total, bool) and total > 0
+            and eligible <= total
+        )
+        if counts_valid:
+            context_totals.add(total)
+            recomputed = eligible / total
+            if not finite(coverage) or abs(float(coverage) - recomputed) > 1e-9:
+                violations.append(f"temporal_coverage_fraction_mismatch:{key}")
+        else:
+            blockers["external_context"].append(f"temporal_coverage_counts_invalid:{key}:{eligible}/{total}")
         if (
             not finite(coverage) or float(coverage) < 0 or float(coverage) > 1
             or feature_status != "PASS"
-            or not finite(eligible) or float(eligible) < 1
-            or not finite(total) or float(total) <= 0
+            or not counts_valid
+            or (finite(coverage) and float(coverage) < MIN_EXTERNAL_CONTEXT_COVERAGE_FRACTION)
         ):
             blockers["external_context"].append(
                 f"temporal_coverage_not_passed:{key}:{feature_status}:{eligible}/{total}"
             )
+        if feature_status == "PASS" and finite(coverage) and float(coverage) < MIN_EXTERNAL_CONTEXT_COVERAGE_FRACTION:
+            violations.append(f"temporal_coverage_pass_claim_below_policy_floor:{key}")
+    if len(context_totals) > 1:
+        violations.append("temporal_feature_coverage_row_denominators_mismatch")
+    context_safety = {
+        "decision_gate": "NO_TRADE", "validated": False,
+        "deployment_calibrated": False, "live_signal_enabled": False,
+    }
+    for key, expected in context_safety.items():
+        if key not in context or context.get(key) != expected:
+            violations.append(f"unsafe_or_missing_external_context_authority_state:{key}")
+    ablation_report = mp(context.get("ablation_benchmark"))
+    ablations = mp(ablation_report.get("ablations"))
+    if not ablations:
+        blockers["external_context"].append("context_ablation_report_missing_or_empty")
+    if mp(ablations.get("price_only")).get("status") != "SCORED":
+        blockers["external_context"].append("price_only_context_ablation_missing_or_not_scored")
+    scored_hashes: set[tuple[str, str]] = set()
+    for ablation_name, raw_ablation in ablations.items():
+        ablation = mp(raw_ablation)
+        if ablation.get("status") != "SCORED":
+            continue
+        row_hash, label_hash = ablation.get("scored_rows_sha256"), ablation.get("labels_sha256")
+        if not _hashlike(row_hash) or not _hashlike(label_hash):
+            violations.append(f"context_ablation_scored_hash_missing_or_invalid:{ablation_name}")
+        else:
+            scored_hashes.add((row_hash, label_hash))
+        if ablation_name == "price_only":
+            continue
+        effective_families = ablation.get("effective_context_families")
+        omitted_families = ablation.get("omitted_context_families", [])
+        if not isinstance(effective_families, list) or not effective_families:
+            violations.append(f"context_ablation_scored_without_effective_context_family:{ablation_name}")
+            continue
+        if omitted_families:
+            violations.append(f"context_ablation_scored_with_omitted_required_family:{ablation_name}")
+        supports = mp(ablation.get("context_family_support_by_split"))
+        for family in effective_families:
+            for split in ("development", "calibration", "holdout"):
+                split_support = mp(mp(supports.get(family)).get(split))
+                eligible_values = mp(split_support.get("eligible_values_by_feature"))
+                total_rows = split_support.get("total_rows")
+                if not isinstance(total_rows, int) or isinstance(total_rows, bool) or total_rows <= 0:
+                    violations.append(f"context_ablation_split_denominator_invalid:{ablation_name}:{family}:{split}")
+                    continue
+                if not isinstance(eligible_values, Mapping) or not eligible_values:
+                    violations.append(f"context_ablation_feature_support_missing:{ablation_name}:{family}:{split}")
+                    continue
+                supported = False
+                for feature_count in eligible_values.values():
+                    if (isinstance(feature_count, int) and not isinstance(feature_count, bool)
+                            and feature_count >= 30 and feature_count / total_rows >= MIN_CONTEXT_FEATURE_COVERAGE_FRACTION):
+                        supported = True
+                        break
+                if not supported:
+                    violations.append(f"context_ablation_scored_below_feature_coverage_floor:{ablation_name}:{family}:{split}")
+        paired = mp(ablation.get("paired_moving_block_ci_vs_price_only"))
+        if (paired.get("comparison_reference") != "price_only"
+                or not finite(paired.get("lower_95")) or not finite(paired.get("upper_95"))
+                or float(paired.get("lower_95")) > float(paired.get("upper_95"))
+                or not isinstance(paired.get("replicates"), int)
+                or isinstance(paired.get("replicates"), bool)
+                or paired.get("replicates", 0) < 20):
+            violations.append(f"context_ablation_paired_comparison_invalid:{ablation_name}")
+    if len(scored_hashes) > 1:
+        violations.append("context_ablations_not_scored_on_identical_rows_and_labels")
     execution = mp(reports.get("execution_replay"))
     if not execution:
         blockers["production"].append("execution_replay_report_missing")
     elif execution.get("validated_for_profitability") is not True or execution.get("validated_model") is not True:
         blockers["production"].append("model_or_profitability_not_validated:" + str(execution.get("status", "MISSING")))
-    if execution.get("live_execution_authorized") is True:
-        violations.append("research_report_claims_live_execution_authority")
+    if execution:
+        if execution.get("decision_output") != "NO_TRADE":
+            violations.append("unsafe_or_missing_execution_decision_output")
+        if execution.get("live_execution_authorized") is not False:
+            violations.append("unsafe_or_missing_execution_authority_state")
+        for key in ("live_signal_enabled", "live_order_execution_enabled", "production_authorized"):
+            if execution.get(key) is True:
+                violations.append(f"research_report_claims_unsafe_execution_authority:{key}")
     if model and mp(mp(model.get("final_holdout"))).get("policy") != BASELINE and blockers["price_data"]:
         violations.append("candidate_policy_promoted_while_price_sources_unqualified")
     for area in blockers:
