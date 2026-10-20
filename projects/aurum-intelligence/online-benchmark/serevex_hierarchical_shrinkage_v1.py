@@ -94,6 +94,50 @@ def _records(raw_records: Sequence[Mapping[str, Any]], as_of_index: int) -> list
     return sorted(result, key=lambda r: int(r["decision_index"]))
 
 
+def _verify_causal_baseline(rows: Sequence[Mapping[str, Any]], *, tolerance: float = 1e-12) -> dict[str, Any]:
+    """Recompute the expanding Laplace prior from strictly matured prior labels.
+
+    A claimed baseline-reproduction flag must be calculated from the actual ledger,
+    not asserted as a constant. Decision order and label-maturity order are separate.
+    """
+    maturity_queue = sorted(
+        (row for row in rows
+         if row.get("label_mature") is True and row.get("label") in (0, 1)
+         and int(row["label_available_index"]) > int(row["decision_index"])),
+        key=lambda row: (int(row["label_available_index"]), int(row["decision_index"])),
+    )
+    pointer = 0
+    matured_labels: list[int] = []
+    max_error = 0.0
+    first_mismatch = None
+    for row in rows:
+        decision_index = int(row["decision_index"])
+        while (pointer < len(maturity_queue)
+               and int(maturity_queue[pointer]["label_available_index"]) < decision_index):
+            matured_labels.append(int(maturity_queue[pointer]["label"]))
+            pointer += 1
+        expected = (sum(matured_labels) + 1.0) / (len(matured_labels) + 2.0)
+        actual = float(row["baseline_probability"])
+        error = abs(actual - expected)
+        max_error = max(max_error, error)
+        if error > tolerance and first_mismatch is None:
+            first_mismatch = {
+                "decision_index": decision_index,
+                "actual_baseline": actual,
+                "recomputed_baseline": expected,
+                "absolute_error": error,
+                "matured_prior_label_count": len(matured_labels),
+            }
+    return {
+        "verified": first_mismatch is None,
+        "rows_checked": len(rows),
+        "tolerance": tolerance,
+        "maximum_absolute_error": max_error,
+        "first_mismatch": first_mismatch,
+        "protocol": "expanding_laplace_rate_using_label_available_index_strictly_less_than_decision_index",
+    }
+
+
 def _candidate_probability(row: Mapping[str, Any], spec: Mapping[str, Any]) -> float:
     base = _clip(row["baseline_probability"])
     expert = str(spec["expert"])
@@ -304,6 +348,10 @@ def evaluate_ledger(
     if not (0 < ends["development"] < ends["model_selection"] < ends["calibration"] < ends["final_holdout"] == as_of_index):
         raise ValueError("partition_end_indices_must_be_strictly_chronological_and_end_at_asof")
     rows = _records(ledger["records"], as_of_index)
+    baseline_reproduction = _verify_causal_baseline(rows)
+    if not baseline_reproduction["verified"]:
+        mismatch = baseline_reproduction["first_mismatch"]
+        raise ValueError("causal_baseline_reproduction_failed:" + json.dumps(mismatch, sort_keys=True))
     dev = _scored_rows(rows, "development", ends["development"])
     model_selection = _scored_rows(rows, "model_selection", ends["model_selection"])
     calibration = _scored_rows(rows, "calibration", ends["calibration"])
@@ -416,7 +464,9 @@ def evaluate_ledger(
         },
         "causal_contracts": {
             "strict_label_maturity": "label_available_index < current decision index in producer; scoring partitions also require label availability before each cutoff",
-            "candidate_support_is_predecision_metadata": True, "baseline_reproduced_exactly": True,
+            "candidate_support_is_predecision_metadata": True,
+            "baseline_reproduced_exactly": baseline_reproduction["verified"],
+            "baseline_reproduction_audit": baseline_reproduction,
             "same_final_holdout_cohort": True, "future_holdout_labels_used_to_choose_parameters": False,
         },
     }
