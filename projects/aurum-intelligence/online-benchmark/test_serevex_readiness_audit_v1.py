@@ -210,6 +210,7 @@ class ReadinessAuditTests(unittest.TestCase):
         data["online_dataset"]["source_qualification_gates"] = {
             "primary_price": {"research_qualification_status": "QUALIFIED", "source_promotion_allowed": True}
         }
+        data["tick_bidask"]["source_qualification_gates"].pop("tick_bidask")
         result = audit.audit_reports(data)
         self.assertTrue(any("online_required_source_gate_missing:secondary_price" == x for x in result["blockers_by_area"]["price_data"]))
         self.assertTrue(any("tick_required_source_gate_missing:tick_bidask" == x for x in result["blockers_by_area"]["price_data"]))
