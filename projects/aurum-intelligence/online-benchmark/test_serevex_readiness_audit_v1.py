@@ -1,4 +1,7 @@
+import json
+import tempfile
 import unittest
+from pathlib import Path
 import serevex_readiness_audit_v1 as audit
 
 def reports():
@@ -112,6 +115,87 @@ class ReadinessAuditTests(unittest.TestCase):
             "fallback_metric_non_numeric:brier",
             result["integrity_violations"],
         )
+
+    def test_artifact_shaped_baseline_only_result_is_a_blocked_research_result(self):
+        data = reports()
+        model = data["model"]
+        model["status"] = "BASELINE_ONLY_MODEL_SELECTION_GATE_FAILED"
+        model["source_qualification"] = {
+            "provenance_verified": False,
+            "data_rights_verified": False,
+            "timestamp_semantics_verified": False,
+            "historical_feature_availability_verified": False,
+            "broker_quote_equivalence_verified": False,
+            "dataset_sha256": "a" * 64,
+        }
+        model["model_selection_gate"] = {"passed": False, "status": "DUAL_SCORE_GATE_FAILED"}
+        model["calibration_gate"] = {"passed": False, "status": "NOT_RUN_MODEL_SELECTION_GATE_FAILED"}
+        model["final_holdout"]["policy"] = "0.1b"
+        model["final_holdout"]["policy_metrics"] = dict(model["final_holdout"]["baseline_metrics"])
+        data["online_dataset"]["source_qualification_gates"]["primary_price"] = {
+            "research_qualification_status": "REFERENCE_ONLY",
+            "execution_qualification_status": "BLOCKED",
+            "source_promotion_allowed": False,
+        }
+        data["online_dataset"]["source_qualification_gates"]["secondary_price"] = {
+            "research_qualification_status": "REFERENCE_ONLY",
+            "execution_qualification_status": "BLOCKED",
+            "source_promotion_allowed": False,
+        }
+        for gate in data["tick_bidask"]["source_qualification_gates"].values():
+            gate["research_qualification_status"] = "REFERENCE_ONLY"
+            gate["source_promotion_allowed"] = False
+        data["tick_bidask"]["data_lineage_diagnostic"] = {
+            "status": "POTENTIAL_SHARED_LINEAGE_OR_PRICE_BASIS_MISLABEL_REVIEW_REQUIRED",
+            "source_independence_verified": False,
+        }
+        data["secondary_crosscheck"] = {
+            "status": "SOURCE_DISAGREEMENT_REVIEW_REQUIRED",
+            "timestamp_semantics_verified": False,
+            "provider_provenance_independently_verified": False,
+            "intended_use_rights_verified": False,
+        }
+        for key, fraction in (("news_1h", 205 / 19894), ("news_24h", 100 / 19894), ("macro", 0.0)):
+            data["external_context"]["temporal_feature_coverage"][key] = {
+                "coverage_fraction": fraction,
+                "eligible_rows": round(fraction * 19894),
+                "total_rows": 19894,
+                "status": "PARTIAL" if fraction else "NOT_MET",
+            }
+        data["execution_replay"] = {
+            "status": "DIAGNOSTIC_ONLY",
+            "validated_model": False,
+            "validated_for_profitability": False,
+            "live_execution_authorized": False,
+        }
+        result = audit.audit_reports(data)
+        self.assertEqual(result["overall_status"], "RESEARCH_ONLY_BLOCKED")
+        self.assertEqual(result["model_candidate_status"], "BASELINE_ONLY")
+        self.assertEqual(result["integrity_violation_count"], 0)
+        self.assertFalse(result["production_authorized"])
+        self.assertFalse(result["research_candidate_review_eligible"])
+        self.assertTrue(any("SOURCE_DISAGREEMENT_REVIEW_REQUIRED" in x for x in result["blockers_by_area"]["price_data"]))
+
+    def test_missing_required_source_names_are_blockers(self):
+        data = reports()
+        data["online_dataset"]["source_qualification_gates"] = {
+            "primary_price": {"research_qualification_status": "QUALIFIED", "source_promotion_allowed": True}
+        }
+        result = audit.audit_reports(data)
+        self.assertTrue(any("online_required_source_gate_missing:secondary_price" == x for x in result["blockers_by_area"]["price_data"]))
+        self.assertTrue(any("tick_required_source_gate_missing:tick_bidask" == x for x in result["blockers_by_area"]["price_data"]))
+
+    def test_malformed_artifact_is_recorded_instead_of_crashing(self):
+        with tempfile.TemporaryDirectory() as root:
+            benchmark_dir = Path(root) / "input"
+            output_dir = Path(root) / "output"
+            benchmark_dir.mkdir()
+            (benchmark_dir / "online_dataset_benchmark.json").write_text("{not json", encoding="utf-8")
+            result = audit.run_audit(benchmark_dir, output_dir)
+            self.assertEqual(result["input_errors"]["online_dataset"], "invalid_json_or_encoding")
+            self.assertTrue(any("benchmark_artifact_unreadable:online_dataset" in x for x in result["blockers_by_area"]["price_data"]))
+            self.assertTrue((output_dir / "serevex_readiness_audit.json").is_file())
+            self.assertTrue((output_dir / "readiness_summary.md").is_file())
 
     def test_missing_reports_fail_closed(self):
         result = audit.audit_reports({})
