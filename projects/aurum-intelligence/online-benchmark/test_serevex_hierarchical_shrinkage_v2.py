@@ -131,7 +131,7 @@ class HierarchicalShrinkageV2Tests(unittest.TestCase):
 
     def test_partition_labels_must_match_frozen_index_ranges(self):
         ledger = make_ledger(informative=False)
-        ledger["records"][1300]["partition"] = "development"
+        ledger["records"][2500]["partition"] = "development"
         with self.assertRaisesRegex(ValueError, "partition_tag_disagrees"):
             self.evaluate(ledger)
 
