@@ -23,6 +23,9 @@ def same(a: Any, b: Any, tol: float = 1e-12) -> bool:
         return abs(float(a) - float(b)) <= tol
     return a == b
 
+def _hashlike(value: Any) -> bool:
+    return isinstance(value, str) and len(value) == 64 and all(ch in "0123456789abcdef" for ch in value.lower())
+
 def audit_reports(
     reports: Mapping[str, Any],
     input_sha256: Mapping[str, str] | None = None,
@@ -68,10 +71,11 @@ def audit_reports(
         final = mp(model.get("final_holdout"))
         if final.get("final_holdout_can_change_candidate_choice") is not False:
             violations.append("final_holdout_is_not_locked_against_candidate_selection")
-        if not (select_ok and calibration_ok):
-            if final.get("policy") != BASELINE:
-                violations.append("candidate_policy_promoted_without_both_research_gates")
-            baseline_metrics, policy_metrics = mp(final.get("baseline_metrics")), mp(final.get("policy_metrics"))
+        baseline_metrics, policy_metrics = mp(final.get("baseline_metrics")), mp(final.get("policy_metrics"))
+        policy_is_baseline = final.get("policy") == BASELINE
+        if not (select_ok and calibration_ok) and not policy_is_baseline:
+            violations.append("candidate_policy_promoted_without_both_research_gates")
+        if policy_is_baseline or not (select_ok and calibration_ok):
             for key in SCORES:
                 if key not in baseline_metrics or key not in policy_metrics:
                     violations.append(f"fallback_metric_missing:{key}")
@@ -99,6 +103,17 @@ def audit_reports(
     online = mp(reports.get("online_dataset"))
     if not online:
         blockers["price_data"].append("online_dataset_benchmark_missing")
+    model_hash = mp(mp(model.get("source_qualification"))).get("dataset_sha256") if model else None
+    online_hash = mp(online.get("source")).get("sha256")
+    tick_primary_hash = mp(tick.get("primary_dataset")).get("sha256") if tick else None
+    if not _hashlike(model_hash):
+        blockers["price_data"].append("model_dataset_sha256_missing_or_invalid")
+    if not _hashlike(online_hash):
+        blockers["price_data"].append("online_dataset_sha256_missing_or_invalid")
+    if _hashlike(model_hash) and _hashlike(online_hash) and model_hash != online_hash:
+        violations.append("model_ledger_dataset_hash_differs_from_online_benchmark")
+    if _hashlike(tick_primary_hash) and _hashlike(online_hash) and tick_primary_hash != online_hash:
+        violations.append("tick_audit_primary_dataset_hash_differs_from_online_benchmark")
     online_gates = mp(online.get("source_qualification_gates"))
     if not online_gates:
         blockers["price_data"].append("online_source_qualification_gates_missing")
@@ -217,12 +232,13 @@ def run_audit(benchmark_dir: Path, output_dir: Path) -> dict[str, Any]:
         path = benchmark_dir / relative
         if not path.is_file():
             reports[key] = None
+            errors[key] = "missing_artifact"
             continue
         raw = path.read_bytes()
         hashes[key] = hashlib.sha256(raw).hexdigest()
         try:
             reports[key] = json.loads(raw.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             reports[key] = None
             errors[key] = "invalid_json_or_encoding"
     result = audit_reports(reports, hashes, errors)
@@ -237,7 +253,7 @@ def main() -> int:
     args = parser.parse_args()
     result = run_audit(args.benchmark_dir, args.output_dir)
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 2 if result["integrity_violations"] else 0
+    return 2 if result["integrity_violations"] or result["input_errors"] else 0
 
 if __name__ == "__main__":
     raise SystemExit(main())
