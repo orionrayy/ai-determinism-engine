@@ -37,7 +37,11 @@ DEFAULT_PRICE_FEATURES = (
     "close_return_1", "close_return_3", "close_return_12", "rsi_14",
 )
 CONTEXT_FEATURES = {
-    "cot": ("feature_cot_net_position", "feature_cot_net_position_change"),
+    "cot": (
+        "feature_cot_net_position", "feature_cot_net_position_change",
+        "feature_cot_net_position_oi_fraction", "feature_cot_managed_money_imbalance",
+        "feature_cot_net_position_oi_change", "feature_cot_open_interest_change_fraction",
+    ),
     "macro": ("feature_macro_level", "feature_macro_change"),
     "news": (
         "feature_news_count_1h", "feature_news_count_24h", "feature_news_tone_mean_24h",

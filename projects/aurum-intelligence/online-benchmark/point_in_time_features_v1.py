@@ -138,6 +138,45 @@ def _news_deduplicate(rows: Sequence[ExternalObservation]) -> tuple[list[Externa
     return unique, removed
 
 
+def _cot_position_stats(item: ExternalObservation | None) -> dict[str, float | None]:
+    """Return stable, size-normalized COT positions for one already-available report."""
+    result: dict[str, float | None] = {
+        "net_oi_fraction": None,
+        "managed_money_imbalance": None,
+        "open_interest": None,
+    }
+    if item is None or item.value is None:
+        return result
+    try:
+        net = float(item.value)
+    except (TypeError, ValueError, OverflowError):
+        return result
+    if not math.isfinite(net):
+        return result
+
+    def finite_attribute(name: str) -> float | None:
+        raw = item.attributes.get(name)
+        if isinstance(raw, bool) or raw is None:
+            return None
+        try:
+            value = float(raw)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return value if math.isfinite(value) else None
+
+    open_interest = finite_attribute("open_interest")
+    long_position = finite_attribute("long_managed_money")
+    short_position = finite_attribute("short_managed_money")
+    if open_interest is not None and open_interest > 0:
+        result["open_interest"] = open_interest
+        result["net_oi_fraction"] = net / open_interest
+    if (long_position is not None and short_position is not None
+            and long_position >= 0 and short_position >= 0
+            and long_position + short_position > 0):
+        result["managed_money_imbalance"] = net / (long_position + short_position)
+    return result
+
+
 def build_asof_features(
     decision_rows: Sequence[Mapping[str, object]],
     observations: Sequence[ExternalObservation],
@@ -300,6 +339,22 @@ def build_asof_features(
         out["feature_cot_net_position_change"] = (
             float(latest_cot.value) - float(prior_cot.value)
             if latest_cot is not None and prior_cot is not None else None
+        )
+        latest_cot_stats = _cot_position_stats(latest_cot)
+        prior_cot_stats = _cot_position_stats(prior_cot)
+        out["feature_cot_net_position_oi_fraction"] = latest_cot_stats["net_oi_fraction"]
+        out["feature_cot_managed_money_imbalance"] = latest_cot_stats["managed_money_imbalance"]
+        out["feature_cot_net_position_oi_change"] = (
+            float(latest_cot_stats["net_oi_fraction"]) - float(prior_cot_stats["net_oi_fraction"])
+            if latest_cot_stats["net_oi_fraction"] is not None
+            and prior_cot_stats["net_oi_fraction"] is not None else None
+        )
+        current_oi = latest_cot_stats["open_interest"]
+        prior_oi = prior_cot_stats["open_interest"]
+        out["feature_cot_open_interest_change_fraction"] = (
+            (float(current_oi) - float(prior_oi)) / float(prior_oi)
+            if current_oi is not None and prior_oi is not None and float(prior_oi) > 0
+            else None
         )
         out["feature_macro_level"] = sum(latest_macro_values) / len(latest_macro_values) if latest_macro_values else None
         out["feature_macro_change"] = sum(macro_changes) / len(macro_changes) if macro_changes else None
