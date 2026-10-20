@@ -60,6 +60,39 @@ def make_ledger(n=5000, informative=True):
     return {"metadata": {"dataset_sha256": "synthetic-test-only"}, "records": records}
 
 
+def refresh_causal_estimators(ledger):
+    """Recompute baseline/specialist priors after test-only label perturbations."""
+    records = ledger["records"]
+
+    def laplace(values):
+        return (sum(int(value) for value in values) + 1.0) / (len(values) + 2.0)
+
+    for position, row in enumerate(records):
+        decision_index = int(row["decision_index"])
+        matured = [
+            prior for prior in records[:position]
+            if prior["label_mature"] is True and prior["label"] in (0, 1)
+            and int(prior["label_available_index"]) < decision_index
+        ]
+        all_labels = [int(prior["label"]) for prior in matured]
+        rolling_labels = all_labels[-288:]
+        regime_labels = [int(prior["label"]) for prior in matured
+                         if prior["regime_id"] == row["regime_id"]]
+        volatility_labels = [int(prior["label"]) for prior in matured
+                             if prior["state_tags"]["volatility_bucket"] == row["state_tags"]["volatility_bucket"]]
+        baseline = laplace(all_labels)
+        row["baseline_probability"] = baseline
+        row["matured_label_count_before_decision"] = len(all_labels)
+        row["conditional_regime_support_before_decision"] = len(regime_labels)
+        row["conditional_volatility_support_before_decision"] = len(volatility_labels)
+        row["expert_probabilities"] = {
+            "rolling_matured_rate_288": laplace(rolling_labels),
+            "regime_matured_rate": laplace(regime_labels) if len(regime_labels) >= 20 else baseline,
+            "volatility_matured_rate": laplace(volatility_labels) if len(volatility_labels) >= 20 else baseline,
+        }
+    return ledger
+
+
 class HierarchicalShrinkageTests(unittest.TestCase):
     def test_development_selects_then_two_disjoint_gates_precede_holdout(self):
         ledger = make_ledger(informative=True)
@@ -99,6 +132,7 @@ class HierarchicalShrinkageTests(unittest.TestCase):
         for row in changed["records"]:
             if row["partition"] != "development":
                 row["label"] = 1 - row["label"]
+        refresh_causal_estimators(changed)
         a = shrinkage.evaluate_ledger(original, as_of_index=5000,
                                       partition_end_indices=PARTITION_ENDS, bootstrap_replicates=200)
         b = shrinkage.evaluate_ledger(changed, as_of_index=5000,
@@ -115,6 +149,7 @@ class HierarchicalShrinkageTests(unittest.TestCase):
         for row in changed["records"]:
             if row["partition"] == "final_holdout":
                 row["label"] = 1 - row["label"]
+        refresh_causal_estimators(changed)
         a = shrinkage.evaluate_ledger(original, as_of_index=5000,
                                       partition_end_indices=PARTITION_ENDS, bootstrap_replicates=200)
         b = shrinkage.evaluate_ledger(changed, as_of_index=5000,
