@@ -128,6 +128,30 @@ class ExternalContextBenchmarkTests(unittest.TestCase):
             10,
         )
 
+    def test_sparse_news_context_is_ineligible_even_when_raw_records_are_abundant(self):
+        rows = make_rows()
+        for row in rows:
+            row["coverage_news"] = "incomplete_source_window"
+            row["coverage_news_1h"] = "incomplete_source_window"
+            row["coverage_news_24h"] = "incomplete_source_window"
+            for key in bench.CONTEXT_FEATURES["news"]:
+                row[key] = None
+        report = bench.run_context_ablation_benchmark(
+            rows, context_observation_count=120_000,
+            price_feature_keys=("price_return_1", "price_return_3"),
+            bootstrap_replicates=40,
+        )
+        news = report["ablations"]["price_news"]
+        self.assertEqual(news["status"], "NOT_ELIGIBLE_REQUIRED_CONTEXT_FAMILY_MISSING")
+        self.assertIn("news", news["omitted_context_families"])
+        self.assertIn(
+            "no_context_feature_meets_minimum_support_and_coverage_across_splits",
+            news["missing_context_family_reasons"]["news"],
+        )
+        self.assertEqual(
+            report["protocol"]["minimum_context_feature_coverage_fraction"], 0.80
+        )
+
     def test_low_count_calibration_is_flagged(self):
         report=bench.run_context_ablation_benchmark(make_rows(500),context_observation_count=50,
             price_feature_keys=("price_return_1","price_return_3"),bootstrap_replicates=40)
