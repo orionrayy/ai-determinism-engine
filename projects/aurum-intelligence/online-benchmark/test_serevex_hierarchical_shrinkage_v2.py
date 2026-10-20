@@ -5,10 +5,10 @@ import unittest
 import serevex_hierarchical_shrinkage_v2 as v2
 
 
-ENDS = {"development": 1200, "model_selection": 1680, "calibration": 1920, "final_holdout": 2400}
+ENDS = {"development": 2400, "model_selection": 3360, "calibration": 3840, "final_holdout": 4800}
 
 
-def make_ledger(n=2400, informative=True, seed=20261020):
+def make_ledger(n=4800, informative=True, seed=20261020):
     rng = random.Random(seed)
     rows = []
     prior_labels = []
@@ -49,10 +49,24 @@ def make_ledger(n=2400, informative=True, seed=20261020):
     return {"metadata": {"dataset_sha256": "synthetic-only-test"}, "records": rows}
 
 
+def refresh_causal_baseline(ledger):
+    import heapq
+    pending, total, positive = [], 0, 0
+    for row in ledger["records"]:
+        index = int(row["decision_index"])
+        while pending and pending[0][0] < index:
+            _, label = heapq.heappop(pending)
+            total += 1
+            positive += label
+        row["baseline_probability"] = (positive + 1.0) / (total + 2.0)
+        if row["label_mature"] and row["label"] in (0, 1):
+            heapq.heappush(pending, (int(row["label_available_index"]), int(row["label"])))
+
+
 class HierarchicalShrinkageV2Tests(unittest.TestCase):
     def evaluate(self, ledger):
         return v2.evaluate_ledger(
-            ledger, as_of_index=2400, partition_end_indices=ENDS, bootstrap_replicates=200
+            ledger, as_of_index=4800, partition_end_indices=ENDS, bootstrap_replicates=200
         )
 
     def test_grid_and_version_contract(self):
@@ -104,6 +118,7 @@ class HierarchicalShrinkageV2Tests(unittest.TestCase):
         for row in changed["records"]:
             if row["partition"] == "final_holdout":
                 row["label"] = 1 - row["label"]
+        refresh_causal_baseline(changed)
         a, b = self.evaluate(original), self.evaluate(changed)
         self.assertEqual(a["development_selection"]["selection_sha256"],
                          b["development_selection"]["selection_sha256"])
