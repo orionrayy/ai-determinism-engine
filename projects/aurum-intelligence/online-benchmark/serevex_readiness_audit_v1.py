@@ -101,6 +101,7 @@ def audit_reports(
             if key not in model or model.get(key) != expected:
                 violations.append(f"unsafe_or_missing_authority_state:{key}")
     online = mp(reports.get("online_dataset"))
+    tick = mp(reports.get("tick_bidask"))
     if not online:
         blockers["price_data"].append("online_dataset_benchmark_missing")
     model_hash = mp(mp(model.get("source_qualification"))).get("dataset_sha256") if model else None
@@ -126,7 +127,6 @@ def audit_reports(
             blockers["price_data"].append(f"online_source_not_qualified:{name}:{gate.get('research_qualification_status', 'MISSING')}")
         if gate.get("source_promotion_allowed") is not True:
             blockers["price_data"].append(f"online_source_promotion_not_authorized:{name}")
-    tick = mp(reports.get("tick_bidask"))
     if not tick:
         blockers["price_data"].append("tick_bidask_benchmark_missing")
     tick_gates = mp(tick.get("source_qualification_gates"))
