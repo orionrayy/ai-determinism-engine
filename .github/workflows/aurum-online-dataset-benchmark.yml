@@ -183,12 +183,31 @@ jobs:
           baseline_refinement_report = baseline_refinement.evaluate_ledger(
               ledger, as_of_index=len(rows), score_partition="final_holdout", bootstrap_replicates=500,
           )
+          legacy_v45 = baseline_advantage_report["versions"]["4.5"]
+          reset_v01a = baseline_refinement_report["versions"]["0.1a"]
+          assert baseline_refinement_report["score_cohort_sha256"] == baseline_advantage_report["score_cohort_sha256"], {
+              "refinement_cohort": baseline_refinement_report["score_cohort_sha256"],
+              "legacy_cohort": baseline_advantage_report["score_cohort_sha256"],
+          }
+          assert baseline_refinement_report["scored_rows"] == baseline_advantage_report["scored_rows"], {
+              "refinement_rows": baseline_refinement_report["scored_rows"],
+              "legacy_rows": baseline_advantage_report["scored_rows"],
+          }
+          assert baseline_refinement_report["prediction_hashes"]["0.1a"] == legacy_v45["prediction_manifest_sha256"], {
+              "v0.1a_prediction_manifest": baseline_refinement_report["prediction_hashes"]["0.1a"],
+              "legacy_v4.5_prediction_manifest": legacy_v45["prediction_manifest_sha256"],
+          }
+          assert reset_v01a["brier"] == legacy_v45["brier"], {"reset": reset_v01a["brier"], "legacy": legacy_v45["brier"]}
+          assert reset_v01a["log_loss"] == legacy_v45["log_loss"], {"reset": reset_v01a["log_loss"], "legacy": legacy_v45["log_loss"]}
+          print(json.dumps({"legacy_v4_5_to_v0_1a_exact_prediction_manifest": "PASS",
+                            "legacy_v45_prediction_manifest_sha256": legacy_v45["prediction_manifest_sha256"],
+                            "scored_rows": baseline_refinement_report["scored_rows"]}, sort_keys=True))
           assert baseline_refinement_report["version_order"] == list(baseline_refinement.VERSION_ORDER), baseline_refinement_report
           assert len(baseline_refinement_report["version_order"]) == 50, baseline_refinement_report
           assert baseline_refinement_report["version_order"][0] == "0.1a", baseline_refinement_report
           assert baseline_refinement_report["version_order"][-1] == "5.0a", baseline_refinement_report
           assert baseline_refinement_report["status"] == "BASELINE_GOVERNED_RESEARCH_ONLY", baseline_refinement_report
-          assert baseline_refinement_report["protocol_version"] == "serevex-baseline-refinement-v5.0a.3", baseline_refinement_report
+          assert baseline_refinement_report["protocol_version"] == "serevex-baseline-refinement-v5.0a.4", baseline_refinement_report
           assert baseline_refinement_report["prequential_governor"]["incremental_audit"]["calibration_cohort_matches_dual_score_gate"] is True, baseline_refinement_report
           assert baseline_refinement_report["prequential_governor"]["incremental_audit"]["prequential_maturity_window_reconciled"] is True, baseline_refinement_report
           assert baseline_refinement_report["prequential_governor"]["baseline_fallback_audit"]["fallback_probabilities_match_source_baseline_exactly"] is True, baseline_refinement_report

@@ -3,6 +3,7 @@ import random
 import unittest
 
 import serevex_baseline_refinement_v0_1a_v5_0a as refinement
+import serevex_baseline_advantage_v0_v5 as legacy_baseline_advantage
 
 
 def make_ledger(n=2400, informative=True):
@@ -48,6 +49,34 @@ class BaselineRefinementTests(unittest.TestCase):
         self.assertIn("0.1a", predictions)
         self.assertEqual(refinement._version_spec(1)["renamed_from"], "legacy v4.5")
         self.assertEqual(refinement._version_spec(1)["promotion_status"], "exploratory_anchor_not_validated")
+
+    def test_0_1a_prediction_manifest_is_bit_exact_legacy_v45(self):
+        ledger = make_ledger(n=360, informative=True)
+        for i, row in enumerate(ledger["records"]):
+            row["matured_label_count_before_decision"] = (i * 7) % 350
+            row["conditional_regime_support_before_decision"] = (i * 11) % 130
+            row["conditional_volatility_support_before_decision"] = (i * 17) % 80
+            row["expert_probabilities"] = {
+                "rolling_matured_rate_288": 0.05 + ((i * 37) % 89) / 100.0,
+                "regime_matured_rate": 0.07 + ((i * 19 + 11) % 83) / 100.0,
+                "volatility_matured_rate": 0.04 + ((i * 53 + 7) % 91) / 100.0,
+            }
+
+        legacy_rows = legacy_baseline_advantage._valid_records(ledger["records"], as_of_index=360)
+        refined_rows = refinement._valid_records(ledger["records"], as_of_index=360)
+        legacy_predictions = [legacy_baseline_advantage._candidates(row)["4.5"] for row in legacy_rows]
+        reset_predictions = [refinement._candidate_probability(row, 1) for row in refined_rows]
+        self.assertEqual(reset_predictions, legacy_predictions)
+
+        legacy_manifest = legacy_baseline_advantage._sha([
+            [row.get("decision_id", row["decision_index"]), prediction]
+            for row, prediction in zip(legacy_rows, legacy_predictions)
+        ])
+        reset_manifest = refinement._sha([
+            [row.get("decision_id", row["decision_index"]), prediction]
+            for row, prediction in zip(refined_rows, reset_predictions)
+        ])
+        self.assertEqual(reset_manifest, legacy_manifest)
 
     def test_reproduces_causal_reference_and_no_trade_contract(self):
         report = refinement.evaluate_ledger(make_ledger(n=1200, informative=False), as_of_index=1200, bootstrap_replicates=100)

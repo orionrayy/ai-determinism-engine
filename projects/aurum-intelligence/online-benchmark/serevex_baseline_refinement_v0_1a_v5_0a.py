@@ -16,7 +16,7 @@ import random
 from collections import defaultdict
 from typing import Any, Mapping, Sequence
 
-MODEL_VERSION = "serevex-baseline-refinement-v5.0a.3"
+MODEL_VERSION = "serevex-baseline-refinement-v5.0a.4"
 VERSION_ORDER = tuple(f"{i / 10:.1f}a" for i in range(1, 51))
 ANCHOR_VERSION = "0.1a"
 GOVERNED_VERSION = "5.0a"
@@ -199,9 +199,25 @@ def _candidate_probability(row: Mapping[str, Any], step: int) -> float:
     supports = [int(row.get(key, 0)) for key in SUPPORT_KEYS]
     spec = _version_spec(step)
     if step == 1:
-        confidences = [min(1.0, n / 40.0) for n in supports]
-        weights = [LEGACY_V45_SCALE * share * conf for share, conf in zip(SPECIALIST_SHARES, confidences)]
-    elif 2 <= step <= 10:
+        # Preserve the original v4.5 operation order. Algebraically equivalent
+        # sum regrouping changes a few IEEE-754 bits and breaks the legacy row hash.
+        n_roll = min(supports[0], 288)
+        roll_conf = min(1.0, n_roll / 40.0)
+        reg_conf = min(1.0, supports[1] / 40.0)
+        vol_conf = min(1.0, supports[2] / 40.0)
+        specialist_scale = 1.0 - 0.85 * ((45 - 40) / 9.0)
+        w_roll, w_reg, w_vol = 0.40 * specialist_scale, 0.35 * specialist_scale, 0.25 * specialist_scale
+        w_roll *= roll_conf
+        w_reg *= reg_conf
+        w_vol *= vol_conf
+        total = w_roll + w_reg + w_vol
+        if total < -EPS or total > 1.0 + EPS:
+            raise ValueError("legacy_v45_specialist_weights_out_of_bounds")
+        legacy_probability = (
+            (1.0 - total) * base + w_roll * experts[0] + w_reg * experts[1] + w_vol * experts[2]
+        )
+        return _clip(legacy_probability)
+    if 2 <= step <= 10:
         k = spec["support_k"]
         confidences = [n / (n + k) if n else 0.0 for n in supports]
         weights = [LEGACY_V45_SCALE * share * conf for share, conf in zip(SPECIALIST_SHARES, confidences)]
@@ -658,6 +674,8 @@ def evaluate_ledger(ledger: Mapping[str, Any], *, as_of_index: int, score_partit
             "0.1a": {"renamed_from": "legacy v4.5", "meaning": "same deterministic blend recipe, new experimental lineage",
                       "promotion_status": "exploratory_anchor_not_validated"},
             "causal_reference": "original expanding matured-label baseline, retained outside the a-series",
+            "legacy_v45_arithmetic_order": "preserve original left-to-right baseline-plus-specialists IEEE-754 evaluation",
+            "legacy_v45_alias_exact_manifest_required_in_integrated_workflow": true,
             "anchor_selection_caveat": "The legacy v4.5 recipe was selected after inspecting the prior final-holdout results. Comparisons against v0.1a on that same historical cohort are post-selection and descriptive, not independent confirmatory evidence.",
             "governed_version": "5.0a", "fixed_hypothesis_count": len(FIXED_VERSIONS),
             "prequential_candidate_count": len(CANDIDATE_VERSIONS),
