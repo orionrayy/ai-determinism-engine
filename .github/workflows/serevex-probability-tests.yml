@@ -15,6 +15,8 @@ on:
       - "projects/aurum-intelligence/online-benchmark/test_serevex_baseline_advantage_v0_v5.py"
       - "projects/aurum-intelligence/online-benchmark/serevex_hierarchical_shrinkage_v1.py"
       - "projects/aurum-intelligence/online-benchmark/test_serevex_hierarchical_shrinkage_v1.py"
+      - "projects/aurum-intelligence/online-benchmark/serevex_hierarchical_shrinkage_v2.py"
+      - "projects/aurum-intelligence/online-benchmark/test_serevex_hierarchical_shrinkage_v2.py"
       - "projects/aurum-intelligence/online-benchmark/serevex_baseline_refinement_v0_1a_v5_0a.py"
       - "projects/aurum-intelligence/online-benchmark/test_serevex_baseline_refinement_v0_1a_v5_0a.py"
       - "projects/aurum-intelligence/SEREVEX_BASELINE_ADVANTAGE_V0_V5.md"
@@ -44,7 +46,7 @@ jobs:
       - name: Compile probabilistic method modules
         working-directory: projects/aurum-intelligence/online-benchmark
         run: |
-          python -m py_compile serevex_alpha_model_v1.py serevex_forecast_ledger_producer_v1.py serevex_stage123_integrated_v1.py serevex_probability_evolution_v4_v9.py test_serevex_probability_evolution_v4_v9.py serevex_baseline_advantage_v0_v5.py test_serevex_baseline_advantage_v0_v5.py serevex_hierarchical_shrinkage_v1.py test_serevex_hierarchical_shrinkage_v1.py serevex_baseline_refinement_v0_1a_v5_0a.py test_serevex_baseline_refinement_v0_1a_v5_0a.py
+          python -m py_compile serevex_alpha_model_v1.py serevex_forecast_ledger_producer_v1.py serevex_stage123_integrated_v1.py serevex_probability_evolution_v4_v9.py test_serevex_probability_evolution_v4_v9.py serevex_baseline_advantage_v0_v5.py test_serevex_baseline_advantage_v0_v5.py serevex_hierarchical_shrinkage_v1.py test_serevex_hierarchical_shrinkage_v1.py serevex_hierarchical_shrinkage_v2.py test_serevex_hierarchical_shrinkage_v2.py serevex_baseline_refinement_v0_1a_v5_0a.py test_serevex_baseline_refinement_v0_1a_v5_0a.py
       - name: Test probabilistic method and integrated stage contracts
         working-directory: projects/aurum-intelligence/online-benchmark
-        run: python -m unittest -v test_serevex_alpha_model_v1.py test_serevex_forecast_ledger_producer_v1.py test_serevex_stage123_integrated_v1.py test_serevex_probability_evolution_v4_v9.py test_serevex_baseline_advantage_v0_v5.py test_serevex_hierarchical_shrinkage_v1.py test_serevex_baseline_refinement_v0_1a_v5_0a.py
+        run: python -m unittest -v test_serevex_alpha_model_v1.py test_serevex_forecast_ledger_producer_v1.py test_serevex_stage123_integrated_v1.py test_serevex_probability_evolution_v4_v9.py test_serevex_baseline_advantage_v0_v5.py test_serevex_hierarchical_shrinkage_v1.py test_serevex_hierarchical_shrinkage_v2.py test_serevex_baseline_refinement_v0_1a_v5_0a.py
