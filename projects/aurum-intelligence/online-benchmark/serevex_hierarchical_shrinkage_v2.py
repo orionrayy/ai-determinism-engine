@@ -235,92 +235,86 @@ def _metrics(rows: Sequence[Mapping[str, Any]], predictions: Sequence[float]) ->
 
 
 def _complete_block_rows(rows: Sequence[Mapping[str, Any]], partition: str, start: int, end: int):
-    """Score mature rule/side events in each block's first 12 source bars.
+    """Score sparse event records only inside complete 24-bar source-time blocks.
 
-    The forecast ledger is intentionally sparse: it contains an event only when the
-    registered rule/side produces a decision. Raw source bars with no such event are
-    not missing observations and must not invalidate an otherwise eligible block.
-    Each 24-bar source block is assigned wholly to one partition; its first 12 bars
-    are scored, and its final 12 bars are an embargo for the maximum 12-bar label
-    horizon.
+    The ledger is event-driven: an absolute bar without a signal has no record.
+    Therefore a valid source block must not require one ledger row per candle.
+    A block is eligible only when its 24-bar time span lies wholly inside one
+    frozen partition; only resolved events in the first 12 bars are scored.
+    The following 12 bars remain embargoed from scoring.
     """
-    events_by_block: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
+    by_block: dict[int, list[Mapping[str, Any]]] = defaultdict(list)
     for row in rows:
         index = int(row["decision_index"])
-        if start <= index < end:
-            events_by_block[index // BLOCK_SIZE].append(row)
+        by_block[index // BLOCK_SIZE].append(row)
 
-    selected: list[Mapping[str, Any]] = []
-    rejected: dict[str, int] = defaultdict(int)
+    candidate_blocks = sorted({
+        int(row["decision_index"]) // BLOCK_SIZE
+        for row in rows
+        if start <= int(row["decision_index"]) < end
+    })
     eligible_blocks: list[int] = []
-    eligible_counts: dict[str, int] = {}
-    # Iterate source-time blocks, not ledger row positions. Empty blocks are useful
-    # diagnostics but contribute neither rows nor independent evidence.
-    first_block = max(0, start // BLOCK_SIZE)
-    last_block = max(first_block, (end - 1) // BLOCK_SIZE) if end > start else first_block - 1
-    for block_id in range(first_block, last_block + 1):
-        first, stop = block_id * BLOCK_SIZE, (block_id + 1) * BLOCK_SIZE
+    cohort: list[dict[str, Any]] = []
+    rejected: dict[str, int] = defaultdict(int)
+
+    for block_id in candidate_blocks:
+        first = block_id * BLOCK_SIZE
+        stop = first + BLOCK_SIZE
         if first < start or stop > end:
             rejected["block_crosses_partition_boundary"] += 1
             continue
 
-        block_events = events_by_block.get(block_id, [])
-        if not block_events:
-            rejected["no_rule_side_events_in_source_block"] += 1
-            continue
-        if any(row["partition"] != partition for row in block_events):
-            rejected["partition_tag_mismatch"] += 1
+        block_events = by_block.get(block_id, [])
+        if any(row.get("partition") != partition for row in block_events):
+            rejected["partition_tag_mismatch_in_full_block"] += 1
             continue
 
-        scored_events = [
+        source_events = [
             row for row in block_events
-            if first <= int(row["decision_index"]) < first + BLOCK_SPAN
+            if int(row["decision_index"]) < first + BLOCK_SPAN
         ]
-        if not scored_events:
-            rejected["no_events_in_scored_half"] += 1
-            continue
-
-        matured_events = [
-            row for row in scored_events
-            if row["label_mature"] is True and row["label"] in (0, 1)
+        unresolved = [
+            row for row in source_events
+            if not row["label_mature"] or row["label"] not in (0, 1)
         ]
-        rejected["immature_or_ambiguous_events_excluded"] += len(scored_events) - len(matured_events)
-        if not matured_events:
-            rejected["no_matured_scored_events"] += 1
-            continue
-
-        # With a maximum target horizon of 12 bars, every score in the first half
-        # should mature before the 24-bar block ends. Fail closed if the ledger
-        # contradicts that protocol rather than weakening the embargo.
-        if any(int(row["label_available_index"]) >= stop for row in matured_events):
-            rejected["label_not_mature_before_block_end"] += 1
-            continue
-        if any(int(row["label_available_index"]) >= end for row in matured_events):
+        resolved = [
+            row for row in source_events
+            if row["label_mature"] and row["label"] in (0, 1)
+        ]
+        late_labels = [
+            row for row in resolved
+            if int(row["label_available_index"]) >= end
+        ]
+        if late_labels:
             rejected["label_not_mature_before_partition_cutoff"] += 1
             continue
 
-        selected.extend(matured_events)
-        eligible_blocks.append(block_id)
-        eligible_counts[str(block_id)] = len(matured_events)
+        score_events = [dict(row) for row in resolved]
+        if not score_events:
+            rejected["no_resolved_scored_event_in_source_window"] += 1
+            continue
 
-    block_audit = {
+        cohort.extend(score_events)
+        eligible_blocks.append(block_id)
+
+    audit = {
         "partition": partition,
         "start_index_inclusive": start,
         "end_index_exclusive": end,
         "block_size": BLOCK_SIZE,
         "scored_bars_per_block": BLOCK_SPAN,
         "embargo_bars_per_block": EMBARGO,
-        "event_cohort_is_sparse_by_design": True,
-        "source_row_coverage_required": False,
+        "candidate_full_blocks": len(candidate_blocks),
         "eligible_full_blocks": eligible_blocks,
         "eligible_block_count": len(eligible_blocks),
-        "eligible_scored_row_counts": eligible_counts,
-        "eligible_scored_rows": len(selected),
+        "eligible_scored_rows": len(cohort),
         "rejected_block_reason_counts": dict(sorted(rejected.items())),
+        "ledger_is_sparse_event_stream": True,
+        "resolved_scored_events_only": True,
+        "unresolved_events_excluded_from_metrics": True,
         "partial_or_boundary_crossing_blocks_used": False,
     }
-    return selected, block_audit
-
+    return cohort, audit
 
 def _block_gains(rows: Sequence[Mapping[str, Any]], baseline: Sequence[float], candidate: Sequence[float]) -> dict[str, Any]:
     if len(rows) != len(baseline) or len(rows) != len(candidate):
