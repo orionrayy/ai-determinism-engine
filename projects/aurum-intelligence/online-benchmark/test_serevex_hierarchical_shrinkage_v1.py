@@ -62,8 +62,9 @@ def make_ledger(n=5000, informative=True):
 
 class HierarchicalShrinkageTests(unittest.TestCase):
     def test_development_selects_then_two_disjoint_gates_precede_holdout(self):
+        ledger = make_ledger(informative=True)
         report = shrinkage.evaluate_ledger(
-            make_ledger(informative=True), as_of_index=5000,
+            ledger, as_of_index=5000,
             partition_end_indices=PARTITION_ENDS, bootstrap_replicates=200,
         )
         self.assertEqual(report["candidate_grid"]["candidate_count"], 18)
@@ -74,7 +75,7 @@ class HierarchicalShrinkageTests(unittest.TestCase):
         self.assertTrue(report["causal_contracts"]["baseline_reproduced_exactly"])
         audit = report["causal_contracts"]["baseline_reproduction_audit"]
         self.assertTrue(audit["verified"])
-        self.assertEqual(audit["rows_checked"], len(report_ledger["records"]) if False else 4988)
+        self.assertEqual(audit["rows_checked"], len(ledger["records"]))
         self.assertEqual(report["decision_output"], "NO_TRADE")
         self.assertFalse(report["validation"]["model_validated"] if "validation" in report else report["model_validated"])
         self.assertEqual(report["final_holdout"]["rows"], report["partition_rows"]["final_holdout"])
@@ -123,6 +124,25 @@ class HierarchicalShrinkageTests(unittest.TestCase):
         self.assertEqual(a["calibration_gate"], b["calibration_gate"])
         self.assertNotEqual(a["final_holdout"]["frozen_candidate_shadow_metrics"]["brier"],
                             b["final_holdout"]["frozen_candidate_shadow_metrics"]["brier"])
+
+    def test_baseline_is_recomputed_from_strictly_matured_prior_labels(self):
+        ledger = make_ledger(informative=True)
+        report = shrinkage.evaluate_ledger(
+            ledger, as_of_index=5000,
+            partition_end_indices=PARTITION_ENDS, bootstrap_replicates=200,
+        )
+        audit = report["causal_contracts"]["baseline_reproduction_audit"]
+        self.assertTrue(audit["verified"])
+        self.assertIsNone(audit["first_mismatch"])
+        self.assertLessEqual(audit["maximum_absolute_error"], audit["tolerance"])
+
+        corrupted = copy.deepcopy(ledger)
+        corrupted["records"][200]["baseline_probability"] = 0.99
+        with self.assertRaisesRegex(ValueError, "causal_baseline_reproduction_failed"):
+            shrinkage.evaluate_ledger(
+                corrupted, as_of_index=5000,
+                partition_end_indices=PARTITION_ENDS, bootstrap_replicates=200,
+            )
 
     def test_invalid_maturity_and_partition_boundaries_fail_closed(self):
         ledger = make_ledger(n=500)
