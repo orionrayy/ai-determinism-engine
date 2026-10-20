@@ -234,8 +234,10 @@ def audit_reports(
         "deployment_calibrated": False, "live_signal_enabled": False,
     }
     for key, expected in context_safety.items():
-        if key not in context or context.get(key) != expected:
-            violations.append(f"unsafe_or_missing_external_context_authority_state:{key}")
+        if key not in context:
+            blockers["external_context"].append(f"external_context_authority_state_missing:{key}")
+        elif context.get(key) != expected:
+            violations.append(f"unsafe_external_context_authority_state:{key}")
     ablation_report = mp(context.get("ablation_benchmark"))
     ablations = mp(ablation_report.get("ablations"))
     if not ablations:
@@ -297,10 +299,14 @@ def audit_reports(
     elif execution.get("validated_for_profitability") is not True or execution.get("validated_model") is not True:
         blockers["production"].append("model_or_profitability_not_validated:" + str(execution.get("status", "MISSING")))
     if execution:
-        if execution.get("decision_output") != "NO_TRADE":
-            violations.append("unsafe_or_missing_execution_decision_output")
-        if execution.get("live_execution_authorized") is not False:
-            violations.append("unsafe_or_missing_execution_authority_state")
+        if "decision_output" not in execution:
+            blockers["production"].append("execution_decision_output_missing")
+        elif execution.get("decision_output") != "NO_TRADE":
+            violations.append("unsafe_execution_decision_output")
+        if "live_execution_authorized" not in execution:
+            blockers["production"].append("execution_authority_state_missing")
+        elif execution.get("live_execution_authorized") is not False:
+            violations.append("unsafe_execution_authority_state")
         for key in ("live_signal_enabled", "live_order_execution_enabled", "production_authorized"):
             if execution.get(key) is True:
                 violations.append(f"research_report_claims_unsafe_execution_authority:{key}")
