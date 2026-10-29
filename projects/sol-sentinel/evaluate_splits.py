@@ -112,6 +112,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--daily-loss-fraction", type=float, default=0.03)
     parser.add_argument("--entry-fee-bps", type=float, default=10.555)
     parser.add_argument("--exit-fee-bps", type=float, default=31.555)
+    parser.add_argument("--spread-bps-round-trip", type=float, default=10.0)
     parser.add_argument("--slippage-bps-per-side", type=float, default=10.0)
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
@@ -124,7 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         initial_capital_idr=args.initial_capital_idr, risk_fraction=args.risk_fraction,
         max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
         entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
-        slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
+        spread_bps_round_trip=args.spread_bps_round_trip, slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
         minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
         target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
     )
