@@ -69,14 +69,14 @@ class DataAndIndicatorTests(unittest.TestCase):
 
 class BacktestAndLedgerTests(unittest.TestCase):
     def test_gap_through_stop_fills_at_open_not_stop_price(self):
-        bar = engine.Bar(open_time_ms=BASE_MS + ONE_MINUTE_MS, open=95.0, high=100.0, low=94.0, close=96.0, volume=10.0, close_time_ms=BASE_MS + 2 * ONE_MINUTE_MS - 1)
+        bar = engine.Bar(open_time_ms=BASE_MS + 60_000, open=95.0, high=100.0, low=94.0, close=96.0, volume=10.0, close_time_ms=BASE_MS + 120_000 - 1)
         reason, reference = engine.resolve_exit(bar, stop_price=98.0, target_price=105.0, bars_held=1, maximum_hold_bars=30)
         self.assertEqual(reason, "stop_loss")
         self.assertEqual(reference, bar.open)
         self.assertLess(reference, 98.0)
 
     def test_same_bar_stop_and_target_uses_conservative_stop(self):
-        bar = engine.Bar(open_time_ms=BASE_MS + ONE_MINUTE_MS, open=100.0, high=106.0, low=97.0, close=102.0, volume=10.0, close_time_ms=BASE_MS + 2 * ONE_MINUTE_MS - 1)
+        bar = engine.Bar(open_time_ms=BASE_MS + 60_000, open=100.0, high=106.0, low=97.0, close=102.0, volume=10.0, close_time_ms=BASE_MS + 120_000 - 1)
         reason, reference = engine.resolve_exit(bar, stop_price=98.0, target_price=105.0, bars_held=1, maximum_hold_bars=30)
         self.assertEqual(reason, "stop_and_target_same_bar_stop_first")
         self.assertEqual(reference, 98.0)
