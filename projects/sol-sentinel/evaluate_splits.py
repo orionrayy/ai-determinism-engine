@@ -58,8 +58,13 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "period_start", "period_end", "bars_1m", "initial_equity_idr",
         "final_equity_idr", "net_pnl_idr", "net_return_pct",
-        "signal_evaluations", "signal_warmup_bars", "signal_candidates", "signal_rejection_counts",
-        "closed_trades", "win_rate_pct", "profit_factor", "max_drawdown_pct",
+        "signal_evaluations", "signal_warmup_bars", "signal_candidates", "post_warmup_signal_evaluations",
+        "signal_filter_rejection_events", "signal_rejection_counts", "signal_rejection_combinations",
+        "entry_order_attempts", "simulated_entry_fills", "entry_size_rejections", "entry_size_rejection_counts",
+        "daily_loss_lock_blocked_bars", "positions_opened", "positions_closed", "closed_trades",
+        "gross_profit_idr", "gross_loss_idr", "average_win_idr", "average_loss_idr",
+        "expectancy_net_per_trade_idr", "gross_pnl_before_exchange_fees_idr", "average_hold_bars",
+        "win_rate_pct", "profit_factor", "max_drawdown_pct",
         "total_fees_idr", "total_execution_friction_idr", "daily_loss_lock_events",
     )
     return {key: report[key] for key in keys}
@@ -122,6 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--slippage-bps-per-side", type=float, default=10.0)
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
+    parser.add_argument("--minimum-order-notional-idr", type=float, default=30_000.0)
     parser.add_argument("--stop-atr-multiple", type=float, default=1.0)
     parser.add_argument("--target-atr-multiple", type=float, default=1.5)
     parser.add_argument("--maximum-hold-bars", type=int, default=30)
@@ -141,7 +147,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
             spread_bps_round_trip=args.spread_bps_round_trip,
             slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
-            minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
+            minimum_relative_volume=args.minimum_relative_volume,
+            minimum_order_notional_idr=args.minimum_order_notional_idr,
+            stop_atr_multiple=args.stop_atr_multiple,
             target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
         )
         config.validate()

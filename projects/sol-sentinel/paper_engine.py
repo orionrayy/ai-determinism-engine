@@ -46,6 +46,7 @@ class BacktestConfig:
     slippage_bps_per_side: float = 10.0
     minimum_net_edge_bps: float = 25.0
     minimum_relative_volume: float = 1.5
+    minimum_order_notional_idr: float = 30_000.0
     stop_atr_multiple: float = 1.0
     target_atr_multiple: float = 1.5
     maximum_hold_bars: int = 30
@@ -61,7 +62,7 @@ class BacktestConfig:
             value = getattr(self, name)
             if not math.isfinite(value) or not 0 < value < 1:
                 raise ValueError(f"{name} must be between 0 and 1")
-        for name in ("entry_fee_bps", "exit_fee_bps", "spread_bps_round_trip", "slippage_bps_per_side", "minimum_net_edge_bps", "minimum_relative_volume"):
+        for name in ("entry_fee_bps", "exit_fee_bps", "spread_bps_round_trip", "slippage_bps_per_side", "minimum_net_edge_bps", "minimum_relative_volume", "minimum_order_notional_idr"):
             value = getattr(self, name)
             if not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be finite and >= 0")
@@ -69,6 +70,20 @@ class BacktestConfig:
             raise ValueError("quote_to_idr_source must be a non-empty source label")
         if self.maximum_hold_bars != int(self.maximum_hold_bars):
             raise ValueError("maximum_hold_bars must be an integer")
+
+ 
+def notional_meets_minimum(quantity: float, price: float, minimum_notional_idr: float) -> bool:
+    """Fail closed when a simulated order has invalid size, price, or notional."""
+    try:
+        q, p, minimum = float(quantity), float(price), float(minimum_notional_idr)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if not all(math.isfinite(value) for value in (q, p, minimum)):
+        return False
+    if q <= 0 or p <= 0 or minimum < 0:
+        return False
+    notional = q * p
+    return math.isfinite(notional) and notional >= minimum
 
 
 @dataclass
@@ -376,6 +391,12 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
     signal_candidates = 0
     signal_warmup_bars = 0
     signal_rejection_counts: dict[str, int] = {}
+    signal_rejection_combinations: dict[str, int] = {}
+    entry_order_attempts = 0
+    simulated_entry_fills = 0
+    entry_size_rejections = 0
+    entry_size_rejection_counts: dict[str, int] = {}
+    daily_loss_lock_blocked_bars = 0
 
     for index, bar in enumerate(bars):
         day = datetime.fromtimestamp(bar.open_time_ms / 1000, timezone.utc).date().isoformat()
@@ -386,6 +407,7 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
 
         # Execute a candidate only on the next candle's open; never fill using the signal candle close.
         if pending is not None and position is None:
+            entry_order_attempts += 1
             signal_index, signal_atr = pending
             pending = None
             reference = bar.open
@@ -402,10 +424,11 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
             qty_by_exposure = equity_at_open * config.max_exposure_fraction / entry_fill
             qty_by_cash = cash / (entry_fill * (1.0 + config.entry_fee_bps / 10_000.0))
             quantity = min(qty_by_risk, qty_by_exposure, qty_by_cash)
-            if quantity > 0 and math.isfinite(quantity):
+            if notional_meets_minimum(quantity, entry_fill, config.minimum_order_notional_idr):
                 entry_fee = quantity * entry_fill * config.entry_fee_bps / 10_000.0
                 cash -= quantity * entry_fill + entry_fee
                 total_entry_fees += entry_fee
+                simulated_entry_fills += 1
                 position = Position(
                     signal_time_ms=bars[signal_index].close_time_ms,
                     entry_time_ms=bar.open_time_ms,
@@ -417,6 +440,15 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
                     target_price=entry_fill + signal_atr * config.target_atr_multiple,
                     entry_atr=signal_atr,
                 )
+            else:
+                entry_size_rejections += 1
+                notional = quantity * entry_fill if math.isfinite(quantity) and quantity > 0 else float("nan")
+                reason_size = (
+                    "minimum_order_notional"
+                    if math.isfinite(notional) and notional >= 0 and notional < config.minimum_order_notional_idr
+                    else "invalid_or_nonpositive_simulated_quantity"
+                )
+                entry_size_rejection_counts[reason_size] = entry_size_rejection_counts.get(reason_size, 0) + 1
 
         # Conservative OHLC fill model: if stop and target both touch in one candle, assume stop first.
         exit_reason: str | None = None
@@ -483,9 +515,13 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
                 signal_candidates += 1
                 pending = (index, current_atr)
             else:
+                if reason:
+                    signal_rejection_combinations[reason] = signal_rejection_combinations.get(reason, 0) + 1
                 for reject_reason in reason.split(","):
                     if reject_reason:
                         signal_rejection_counts[reject_reason] = signal_rejection_counts.get(reject_reason, 0) + 1
+        elif index < len(bars) - 1 and position is None and daily_locked:
+            daily_loss_lock_blocked_bars += 1
 
     # Force-close an open simulated position at the last observed close; this is an explicit end-of-data assumption.
     if position is not None:
@@ -528,6 +564,11 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
     for value in trade_pnls:
         current_losing_streak = current_losing_streak + 1 if value < 0 else 0
         max_consecutive_losses = max(max_consecutive_losses, current_losing_streak)
+    gross_trade_pnls = [float(trade.get("pnl_before_exchange_fees_idr", 0.0)) for trade in trades]
+    gross_pnl_before_exchange_fees = sum(gross_trade_pnls)
+    gross_profit = sum(value for value in gross_trade_pnls if value > 0)
+    gross_loss = abs(sum(value for value in gross_trade_pnls if value < 0))
+    average_hold_bars = (sum(int(trade.get("bars_held", 0)) for trade in trades) / len(trades)) if trades else None
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -554,9 +595,26 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "signal_evaluations": signal_evaluations,
         "signal_warmup_bars": signal_warmup_bars,
         "signal_candidates": signal_candidates,
+        "post_warmup_signal_evaluations": max(0, signal_evaluations - signal_warmup_bars),
+        "signal_filter_rejection_events": sum(signal_rejection_counts.values()),
         "signal_rejection_counts": dict(sorted(signal_rejection_counts.items())),
+        "signal_rejection_combinations": dict(sorted(signal_rejection_combinations.items())),
+        "entry_order_attempts": entry_order_attempts,
+        "simulated_entry_fills": simulated_entry_fills,
+        "entry_size_rejections": entry_size_rejections,
+        "entry_size_rejection_counts": dict(sorted(entry_size_rejection_counts.items())),
+        "daily_loss_lock_blocked_bars": daily_loss_lock_blocked_bars,
+        "positions_opened": simulated_entry_fills,
+        "positions_closed": len(trades),
         "closed_trades": len(trades),
-        "win_rate_pct": (len(wins) / len(trades) * 100.0) if trades else 0.0,
+        "gross_profit_idr": gross_profit,
+        "gross_loss_idr": gross_loss,
+        "average_win_idr": (sum(wins) / len(wins)) if wins else None,
+        "average_loss_idr": (sum(losses) / len(losses)) if losses else None,
+        "expectancy_net_per_trade_idr": (sum(trade_pnls) / len(trade_pnls)) if trade_pnls else None,
+        "gross_pnl_before_exchange_fees_idr": gross_pnl_before_exchange_fees,
+        "average_hold_bars": average_hold_bars,
+        "win_rate_pct": (len(wins) / len(trades) * 100.0) if trades else None,
         "profit_factor": profit_factor,
         "max_drawdown_pct": max_drawdown_fraction * 100.0,
         "max_consecutive_losses": max_consecutive_losses,
@@ -566,6 +624,7 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "total_execution_friction_idr": sum(float(trade.get("execution_friction_cost_idr", 0.0)) for trade in trades),
         "modeled_spread_bps_round_trip": config.spread_bps_round_trip,
         "modeled_slippage_bps_per_side": config.slippage_bps_per_side,
+        "minimum_order_notional_idr": config.minimum_order_notional_idr,
         "daily_loss_lock_events": lock_events,
         "trades": trades,
         "equity_curve": curve,
@@ -680,6 +739,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--slippage-bps-per-side", type=float, default=10.0, help="assumption per side")
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
+    parser.add_argument("--minimum-order-notional-idr", type=float, default=30_000.0,
+                        help="modeled venue minimum order notional in IDR (default Reku Pro reference)")
     parser.add_argument("--stop-atr-multiple", type=float, default=1.0)
     parser.add_argument("--target-atr-multiple", type=float, default=1.5)
     parser.add_argument("--maximum-hold-bars", type=int, default=30)
@@ -700,7 +761,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
             spread_bps_round_trip=args.spread_bps_round_trip,
             slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
-            minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
+            minimum_relative_volume=args.minimum_relative_volume,
+            minimum_order_notional_idr=args.minimum_order_notional_idr,
+            stop_atr_multiple=args.stop_atr_multiple,
             target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
         )
         config.validate()
@@ -720,7 +783,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         summary = {key: report[key] for key in (
             "mode", "execution_enabled", "run_id", "period_start", "period_end", "bars_1m",
             "initial_equity_idr", "final_equity_idr", "net_pnl_idr", "net_return_pct",
-            "closed_trades", "win_rate_pct", "profit_factor", "max_drawdown_pct",
+            "signal_evaluations", "signal_warmup_bars", "signal_candidates",
+            "post_warmup_signal_evaluations", "signal_filter_rejection_events", "signal_rejection_counts",
+            "signal_rejection_combinations", "entry_order_attempts", "simulated_entry_fills",
+            "entry_size_rejections", "entry_size_rejection_counts", "daily_loss_lock_blocked_bars",
+            "closed_trades", "gross_profit_idr", "gross_loss_idr", "average_win_idr",
+            "average_loss_idr", "expectancy_net_per_trade_idr", "average_hold_bars",
+            "win_rate_pct", "profit_factor", "max_drawdown_pct",
             "total_fees_idr", "total_execution_friction_idr", "daily_loss_lock_events", "ledger_path",
         ) if key in report}
         summary["warning"] = "OFFLINE BACKTEST ONLY — no orders placed; no future return implied."

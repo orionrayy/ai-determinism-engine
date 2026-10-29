@@ -17,6 +17,9 @@ class CostSensitivityTests(unittest.TestCase):
         self.assertEqual(pro.entry_fee_bps + pro.exit_fee_bps, 42.11)
         self.assertEqual(pro.spread_bps_round_trip, 10.0)
         self.assertEqual(pro.slippage_bps_per_side, 10.0)
+        self.assertEqual(pro.minimum_order_notional_idr, 30_000.0)
+        lightning = scenarios["reku_lightning_fee_only_floor"][1]
+        self.assertEqual(lightning.minimum_order_notional_idr, 5_000.0)
 
     def test_scenarios_are_predeclared_and_not_auto_selected(self):
         scenarios = build_scenarios(BacktestConfig())

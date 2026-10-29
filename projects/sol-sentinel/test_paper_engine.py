@@ -77,6 +77,17 @@ class DataAndIndicatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "spread_bps_round_trip"):
             engine.BacktestConfig(spread_bps_round_trip=-1.0).validate()
 
+    def test_config_rejects_negative_minimum_order_notional(self):
+        with self.assertRaisesRegex(ValueError, "minimum_order_notional_idr"):
+            engine.BacktestConfig(minimum_order_notional_idr=-1.0).validate()
+
+    def test_minimum_order_notional_rejects_invalid_and_under_minimum_orders(self):
+        self.assertTrue(engine.notional_meets_minimum(0.02, 1_800_000.0, 30_000.0))
+        self.assertFalse(engine.notional_meets_minimum(0.01, 1_800_000.0, 30_000.0))
+        self.assertFalse(engine.notional_meets_minimum(0.0, 1_800_000.0, 30_000.0))
+        self.assertFalse(engine.notional_meets_minimum(float("nan"), 1_800_000.0, 30_000.0))
+        self.assertFalse(engine.notional_meets_minimum(1.0, float("inf"), 30_000.0))
+
     def test_csv_reader_rejects_gaps(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bars.csv"
@@ -129,7 +140,16 @@ class BacktestAndLedgerTests(unittest.TestCase):
         self.assertGreater(report["bars_15m_complete"], 30)
         self.assertGreater(report["signal_evaluations"], 0)
         self.assertEqual(report["signal_candidates"], 0)
+        self.assertEqual(report["entry_order_attempts"], 0)
+        self.assertEqual(report["simulated_entry_fills"], 0)
+        self.assertEqual(report["positions_opened"], 0)
+        self.assertEqual(report["positions_closed"], 0)
+        self.assertIsNone(report["expectancy_net_per_trade_idr"])
+        self.assertIsNone(report["win_rate_pct"])
+        self.assertIsNone(report["profit_factor"])
         self.assertGreater(sum(report["signal_rejection_counts"].values()), 0)
+        self.assertGreater(report["signal_filter_rejection_events"], 0)
+        self.assertTrue(report["signal_rejection_combinations"])
         self.assertIn("1m_volume_confirmation_missing", report["signal_rejection_counts"])
 
     def test_persisting_same_run_is_idempotent(self):

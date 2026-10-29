@@ -148,19 +148,28 @@ def parse_orderbook(payload: Any) -> dict[str, Any]:
     return parsed
 
 
-def spread_metrics(bid: float, ask: float) -> dict[str, float]:
-    if not math.isfinite(bid) or not math.isfinite(ask) or bid <= 0 or ask <= 0:
+def spread_metrics(bid: Any, ask: Any) -> dict[str, float]:
+    # Numeric strings are accepted for API compatibility; booleans are not prices.
+    if isinstance(bid, bool) or isinstance(ask, bool):
+        raise ValueError("Bid and ask must be numeric finite positive prices")
+    try:
+        bid_value = float(bid)
+        ask_value = float(ask)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError("Bid and ask must be numeric finite positive prices") from exc
+    if not math.isfinite(bid_value) or not math.isfinite(ask_value) or bid_value <= 0 or ask_value <= 0:
         raise ValueError("Bid and ask must be finite positive prices")
-    if ask < bid:
+    if ask_value < bid_value:
         raise ValueError("Reku quotes are crossed (ask < bid); reject snapshot")
-    mid = (bid + ask) / 2.0
-    spread = ask - bid
+    # Half-sum avoids overflow from bid + ask when both prices are finite and large.
+    mid = bid_value / 2.0 + ask_value / 2.0
+    spread = ask_value - bid_value
+    spread_bps = (spread / mid) * 10_000.0
+    if not math.isfinite(mid) or mid <= 0 or not math.isfinite(spread_bps):
+        raise ValueError("Bid/ask spread calculation is outside the finite numeric range")
     return {
-        "bid_idr": bid,
-        "ask_idr": ask,
-        "mid_idr": mid,
-        "spread_idr": spread,
-        "spread_bps": (spread / mid) * 10_000.0,
+        "bid_idr": bid_value, "ask_idr": ask_value,
+        "mid_idr": mid, "spread_idr": spread, "spread_bps": spread_bps,
     }
 
 
@@ -315,7 +324,7 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
         raise ValueError("Reku price response contains an invalid IDR close")
 
     bidask = find_bidask(request_json("/bidask"), symbol)
-    direct_spread = spread_metrics(float(bidask.get("bid", 0)), float(bidask.get("ask", 0)))
+    direct_spread = spread_metrics(bidask.get("bid", 0), bidask.get("ask", 0))
 
     orderbook_status = "OK"
     orderbook_error = None

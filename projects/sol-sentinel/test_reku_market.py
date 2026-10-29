@@ -1,4 +1,5 @@
 import io
+import math
 import time
 import unittest
 import urllib.error
@@ -41,6 +42,45 @@ class RekuMarketParserTests(unittest.TestCase):
     def test_crossed_quotes_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "crossed"):
             market.spread_metrics(101.0, 100.0)
+
+    def test_spread_metrics_uses_midpoint_denominator_on_live_like_quote(self):
+        bid, ask = 1_835_000.0, 1_840_000.0
+        result = market.spread_metrics(bid, ask)
+        expected_mid = (bid + ask) / 2.0
+        expected_bps = ((ask - bid) / expected_mid) * 10_000.0
+        self.assertEqual(result["mid_idr"], expected_mid)
+        self.assertEqual(result["spread_idr"], ask - bid)
+        self.assertAlmostEqual(result["spread_bps"], expected_bps, places=12)
+
+    def test_spread_metrics_rejects_nonpositive_quotes(self):
+        for bid, ask in ((0.0, 1.0), (-1.0, 1.0), (1.0, 0.0), (1.0, -1.0)):
+            with self.subTest(bid=bid, ask=ask):
+                with self.assertRaisesRegex(ValueError, "finite positive"):
+                    market.spread_metrics(bid, ask)
+
+    def test_spread_metrics_rejects_missing_nonnumeric_nonfinite_and_boolean_quotes(self):
+        quotes = (
+            (None, 101.0), (99.0, None), ("not-a-price", 101.0), (99.0, "bad"),
+            (float("nan"), 101.0), (99.0, float("inf")), (float("-inf"), 101.0), (True, 101.0),
+        )
+        for bid, ask in quotes:
+            with self.subTest(bid=bid, ask=ask):
+                with self.assertRaisesRegex(ValueError, "Bid and ask"):
+                    market.spread_metrics(bid, ask)
+
+    def test_spread_metrics_accepts_zero_spread_and_numeric_strings(self):
+        same = market.spread_metrics(100.0, 100.0)
+        self.assertEqual(same["spread_idr"], 0.0)
+        self.assertEqual(same["spread_bps"], 0.0)
+        self.assertEqual(market.spread_metrics("99.0", "101.0")["spread_bps"], 200.0)
+
+    def test_spread_metrics_handles_extreme_finite_magnitudes(self):
+        huge = market.spread_metrics(1.0e308, 1.0e308)
+        self.assertEqual(huge["mid_idr"], 1.0e308)
+        self.assertEqual(huge["spread_bps"], 0.0)
+        tiny = market.spread_metrics(1.0e-300, 1.01e-300)
+        self.assertTrue(math.isfinite(tiny["spread_bps"]))
+        self.assertGreater(tiny["spread_bps"], 0.0)
 
     def test_parse_chart_payload_sorts_deduplicates_and_parses_ohlcv(self):
         now_ms = 1_800_000_000_000

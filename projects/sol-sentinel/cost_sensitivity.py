@@ -69,22 +69,22 @@ def build_scenarios(base: BacktestConfig, observed_spread_bps: float | None = No
         (
             "reku_pro_baseline",
             "Published Reku Pro fee components + 10 bps round-trip spread and 10 bps slippage per side (spread/slippage are assumptions).",
-            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=10.0, slippage_bps_per_side=10.0),
+            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=10.0, slippage_bps_per_side=10.0, minimum_order_notional_idr=30_000.0),
         ),
         (
             "reku_pro_lower_friction_assumption",
             "Same published Reku Pro fees + hypothetical 5 bps round-trip spread and 5 bps slippage per side; not measured or guaranteed.",
-            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=5.0, slippage_bps_per_side=5.0),
+            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=5.0, slippage_bps_per_side=5.0, minimum_order_notional_idr=30_000.0),
         ),
         (
             "reku_pro_fee_only_floor",
             "Mathematical lower bound using Reku Pro fee components but zero spread/slippage; not executable or realistic.",
-            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=0.0, slippage_bps_per_side=0.0),
+            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=0.0, slippage_bps_per_side=0.0, minimum_order_notional_idr=30_000.0),
         ),
         (
             "reku_lightning_fee_only_floor",
             "Mathematical fee floor using published Lightning fee components; assumes zero quote spread/slippage, which is not realistic or verified.",
-            replace(base, entry_fee_bps=0.555, exit_fee_bps=21.555, spread_bps_round_trip=0.0, slippage_bps_per_side=0.0),
+            replace(base, entry_fee_bps=0.555, exit_fee_bps=21.555, spread_bps_round_trip=0.0, slippage_bps_per_side=0.0, minimum_order_notional_idr=5_000.0),
         ),
     ]
     if observed_spread_bps is not None:
@@ -93,7 +93,7 @@ def build_scenarios(base: BacktestConfig, observed_spread_bps: float | None = No
         scenarios.append((
             "reku_pro_current_spread_reference",
             "Published Reku Pro fees + latest direct Reku SOL/IDR bid/ask spread held constant over this historical window for sensitivity only; 10 bps slippage per side remains an assumption. Not a historical spread series.",
-            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=observed_spread_bps, slippage_bps_per_side=10.0),
+            replace(base, entry_fee_bps=10.555, exit_fee_bps=31.555, spread_bps_round_trip=observed_spread_bps, slippage_bps_per_side=10.0, minimum_order_notional_idr=30_000.0),
         ))
     return scenarios
 
@@ -113,13 +113,28 @@ def summarize_scenario(name: str, description: str, config: BacktestConfig, repo
         "exit_fee_bps": config.exit_fee_bps,
         "spread_bps_round_trip": config.spread_bps_round_trip,
         "slippage_bps_per_side": config.slippage_bps_per_side,
+        "minimum_order_notional_idr": config.minimum_order_notional_idr,
         "modeled_round_trip_cost_bps": total_cost_bps,
         "minimum_gross_move_bps_in_signal_gate": total_cost_bps + config.minimum_net_edge_bps,
         "signal_evaluations": report["signal_evaluations"],
         "signal_warmup_bars": report["signal_warmup_bars"],
         "signal_candidates": report["signal_candidates"],
+        "post_warmup_signal_evaluations": report["post_warmup_signal_evaluations"],
+        "signal_filter_rejection_events": report["signal_filter_rejection_events"],
         "signal_rejection_counts": report["signal_rejection_counts"],
+        "signal_rejection_combinations": report["signal_rejection_combinations"],
+        "entry_order_attempts": report["entry_order_attempts"],
+        "simulated_entry_fills": report["simulated_entry_fills"],
+        "entry_size_rejections": report["entry_size_rejections"],
+        "entry_size_rejection_counts": report["entry_size_rejection_counts"],
+        "daily_loss_lock_blocked_bars": report["daily_loss_lock_blocked_bars"],
         "closed_trades": report["closed_trades"],
+        "gross_profit_idr": report["gross_profit_idr"],
+        "gross_loss_idr": report["gross_loss_idr"],
+        "average_win_idr": report["average_win_idr"],
+        "average_loss_idr": report["average_loss_idr"],
+        "expectancy_net_per_trade_idr": report["expectancy_net_per_trade_idr"],
+        "average_hold_bars": report["average_hold_bars"],
         "initial_equity_idr": report["initial_equity_idr"],
         "final_equity_idr": report["final_equity_idr"],
         "net_pnl_idr": report["net_pnl_idr"],
