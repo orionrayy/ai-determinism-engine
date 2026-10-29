@@ -66,3 +66,8 @@ The repository is public. Do not commit wallet seed phrases, private keys, API s
 ## Automated historical research
 
 The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can capture a bounded public candle window, run the offline backtest, and evaluate fixed parameters on chronological 60/20/20 splits. It is research automation only, not a live trading bot. Because GitHub requires `workflow_dispatch` and scheduled workflows to exist on the default branch, the workflow must be merged to the default branch before it can be run manually from Actions or execute on its daily schedule. Artifacts are retained for seven days.
+
+
+## Currency consistency
+
+The scanner's market feed is SOLUSDT but the paper engine's reference capital is IDR. The history capture records a dated daily USD/IDR reference, and the simulator converts OHLC prices to IDR before calculating quantity, stop/target levels and nominal P&L. This is a unit-conversion proxy, not a live Reku price; USDT/USD basis and intra-window FX variation are not modeled. The engine fails closed if FX metadata is absent or stale unless a verified manual rate is supplied.
