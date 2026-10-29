@@ -201,7 +201,7 @@ class DoajByIssnTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             registry = registry_file(Path(tmp))
 
-            def opener(_request, _timeout):
+            def opener(_request, timeout):
                 return FakeResponse(oversized)
 
             with patch.object(harvest.time, "monotonic", side_effect=[0, 2, 4]):
