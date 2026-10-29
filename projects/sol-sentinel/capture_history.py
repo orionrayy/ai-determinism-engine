@@ -15,7 +15,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-BASE = "https://api.binance.com/api/v3/klines"
+BASE = "https://data-api.binance.vision/api/v3/klines"
 INTERVAL_MS = {"1m": 60_000, "5m": 300_000, "15m": 900_000}
 USER_AGENT = "sol-sentinel-history/0.1 read-only"
 
@@ -42,7 +42,7 @@ def fetch_page(symbol: str, interval: str, start_ms: int, end_ms: int) -> list:
         except urllib.error.HTTPError as exc:
             last_error = exc
             if exc.code not in (418, 429, 500, 502, 503, 504):
-                raise
+                raise RuntimeError(f"HTTP {exc.code} from {exc.url}: {exc.reason}") from exc
             retry_after = exc.headers.get("Retry-After")
             try:
                 delay = min(5.0, max(0.5, float(retry_after))) if retry_after else 0.5 * (2 ** attempt)
