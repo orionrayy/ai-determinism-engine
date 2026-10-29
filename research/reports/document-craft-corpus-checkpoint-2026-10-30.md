@@ -2,7 +2,7 @@
 
 ## Status yang dapat dibuktikan
 
-Korpus saat ini memiliki **6 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 494. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
+Korpus saat ini memiliki **7 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 493. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
 
 | Genre | Dokumen lolos gate |
 |---|---:|
@@ -16,10 +16,10 @@ Korpus saat ini memiliki **6 dokumen individual yang lolos gate provenance dan h
 | Laporan kegiatan | 0 |
 | Laporan kerja/profesional | 0 |
 | Operasional/administratif | 0 |
-| Workbook Excel | 0 |
+| Workbook Excel | 1 |
 | Genre lain — panduan profesional/operasional | 1 |
 
-Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest juga menyimpan dua catatan partial (laporan PKL dan KIAN) serta satu lead XLSX metadata-only; ketiganya **tidak dihitung** ke angka 5/500.
+Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest juga menyimpan dua catatan partial (laporan PKL dan KIAN) serta satu lead XLSX metadata-only; item parsial/metadata-only tersebut **tidak dihitung** ke angka 7/500.
 
 ## Sampel yang sudah diverifikasi
 
@@ -93,17 +93,24 @@ The literature chapter is technology-specific (BISINDO, computer vision, MediaPi
 
 A structural QA flag is preserved: the table of contents has a PDF bookmark artifact (“Error! Bookmark not defined”) next to the originality statement; the list of figures also appears to include a numbering/page-order mismatch. These source-specific issues should become QA checks, not patterns to imitate. Rendered visual inspection was not completed for this item, so no claims are made about font, color, margin, or image-rendering quality. Student ID and private acknowledgements are not retained; technical performance claims have not been independently reproduced.
 
+
+**24-hour Raw OCV Relaxation Dataset for Rechargeable Batteries with Different Chemistries (XLSX workbook)** — VOICILA Iulian-Teodor, ENACHE Bogdan-Adrian, VILCIU Irina, and SERITAN George-Calin; National University of Science and Technology POLITEHNICA Bucharest. Pinned repository workbook: https://github.com/BulyK47/battery-datasets/blob/ec8f3f3bc0898bb440432cb11a434250d6bcbb0c/ocv-relaxation-24h/ocv_relaxation_24h.xlsx. License at the same pinned source: https://github.com/BulyK47/battery-datasets/blob/ec8f3f3bc0898bb440432cb11a434250d6bcbb0c/LICENSE (CC BY 4.0); dataset DOI: https://doi.org/10.21227/651q-8v82. The workbook was downloaded by CI from the pinned commit and structurally parsed; binary size is 466,798 bytes and SHA-256 is `9b8c541675256c08c24cc6ebeb486a46d07c533a70bf4dabcca4955dba90e08a`.
+
+The OOXML inspector found 17 visible worksheets: a metadata sheet `Header` plus 16 charge/discharge data sheets. All 16 data sheets have 1,442 row elements; the APR sheets have dimensions A1:G1442, the BSE sheets A1:D1442, and the other 12 sheets A1:B1442. `Header` has dimension A1:N101, 101 row elements, 546 non-empty cells and 23 merged ranges. The workbook has 0 hidden sheets, 0 formula cells and 0 table parts, plus 24 cellXfs and 8 borders. The publisher README describes Timestamp [h] and OCV voltage columns and 30 measurement traces across eight batteries and six chemistry families. Only structure/counts/hash were retained; no cell values were exported.
+
+This sample broadens Excel evidence to a genuine experimental-data workbook. It is **not** evidence for formulas, print layout, chart quality or operational/business workbook conventions. Visual inspection in an Excel UI/print preview was not performed, and the scientific validity of the battery measurements was not independently reproduced.
+
 ## Partial and metadata-only leads (not counted toward the target)
 
 - **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
 - **Asuhan Keperawatan pada Klien Harga Diri Rendah dengan Penerapan Terapi Kognitif** — STIKes Muhammadiyah Ciamis repository, 2022. Public files include cover/approval/abstract/Chapter I/bibliography under a file-level Creative Commons Attribution notice; the clinical case and discussion chapters are restricted. Privacy and version-of-license review remain pending. No patient-level facts are retained. The record contributes **zero** to eligibility.
 - **ABK Sekdin.xlsx — Analisis Beban Kerja Sekertaris Dinas Sosial Kabupaten Karanganyar** — official Portal Data Jawa Tengah resource declares CC BY at metadata level, but download requests to two listed hosts returned HTTP 403. No worksheet, formula, formatting, hidden-sheet, or cell-content claims have been made. It remains metadata-only and contributes **zero** to eligibility.
 
-## Apa yang dapat disimpulkan dari lima sampel
+## Sampel 7 — workbook data eksperimen baterai, CC BY 4.0
 
 Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat memperlihatkan variasi dalam satu tradisi publikasi tetapi belum menjadi tiga source family independen. Sebagian ciri berulang—metadata DOI dan lisensi di halaman awal, satu kolom serif, catatan bernomor, bagian referensi dan deklarasi penerbitan—masuk akal diuji sebagai hipotesis untuk artikel-artikel jurnal tersebut. Adanya bagian recommendation yang terpisah pada salah satu artikel serta perbedaan heading/topik memperlihatkan bahwa urutan bab tidak boleh dipaksakan sebagai template universal.
 
-Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Enam sampel masih tidak memberi bukti tentang norma LP/asuhan keperawatan, laporan PKL, laporan kegiatan, maupun workbook Excel: saat ini belum ada item eligible pada genre tersebut. Satu skripsi UIN Ar-Raniry hanya menambah satu contoh pada genre tesis di satu universitas/disiplin.
+Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Tujuh sampel tetap belum memberi bukti tentang norma LP/asuhan keperawatan, PKL lengkap, praktikum, laporan kegiatan, laporan kerja/profesional, atau workbook operasional/administratif berformula. Satu workbook Excel yang eligible adalah dataset eksperimental terukur dan tidak mewakili laporan keuangan, HR, anggaran atau spreadsheet operasional. Dua skripsi UIN Ar-Raniry berasal dari universitas yang sama tetapi program/topik berbeda; keduanya tidak menjadi dua institusi independen.
 
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
 
