@@ -818,6 +818,14 @@ def resolve_input_market_metadata(
         if not isinstance(loaded, dict):
             raise ValueError("capture metadata sidecar must be a JSON object")
         metadata = loaded
+        status = metadata.get("data_status")
+        if status is not None and status != "OK":
+            raise ValueError(f"capture metadata is not usable: data_status={status}")
+        expected_digest = metadata.get("csv_sha256") or metadata.get("dataset_sha256")
+        if expected_digest:
+            actual_digest = hashlib.sha256(Path(csv_path).expanduser().read_bytes()).hexdigest()
+            if not isinstance(expected_digest, str) or actual_digest.lower() != expected_digest.strip().lower():
+                raise ValueError("capture metadata SHA-256 does not match the input CSV")
 
     raw_venue = metadata.get("venue")
     raw_symbol = metadata.get("pair") or metadata.get("symbol")
