@@ -124,7 +124,7 @@ class AdapterContractTests(unittest.TestCase):
         )
         requests = []
         payload = {
-            "buy": [["1809000", "0.1"], ["1810000", "0.2"], ["bad", "1"]],
+            "buy": [["1809000", "0.1"], ["1810000", "0.2"]],
             "sell": [["1820000", "0.1"], ["1815000", "0.3"]],
         }
         def fake_transport(url, timeout):
@@ -228,7 +228,7 @@ class AdapterContractTests(unittest.TestCase):
         with self.assertRaisesRegex(a.AdapterContractError, "venue=INDODAX"):
             adapter.get_quote(spec)
         good_spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 9, 0)
-        with self.assertRaisesRegex(a.VenueDataError, "no valid sell"):
+        with self.assertRaisesRegex(a.VenueDataError, "invalid sell level"):
             a.IndodaxPublicMarketDataAdapter(
                 transport=lambda *_: {"buy": [["1810000", "0.2"]], "sell": [["bad", "0.3"]]}
             ).get_quote(good_spec)
@@ -278,6 +278,25 @@ class AdapterContractTests(unittest.TestCase):
         self.assertTrue(decision.approved_for_planning)
         self.assertEqual(decision.estimated_amount_received, Decimal("0.098"))
         self.assertFalse(decision.transfer_sent)
+
+
+    def test_indodax_public_depth_rejects_mismatched_pair_id_before_network(self):
+        spec = a.MarketSpec("INDODAX", "SOL/IDR", "ethidr", "SOL", "IDR", "1000", "0.000001", "10000", 9, 0)
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: self.fail("network call must not happen"))
+        with self.assertRaisesRegex(a.AdapterContractError, "does not match"):
+            adapter.get_quote(spec)
+
+    def test_transfer_fee_equal_to_amount_is_rejected_as_zero_remainder(self):
+        route = a.TransferRoute(
+            "Reku", "Indodax", "SOL", "Solana", "Solana",
+            Decimal("0.01"), Decimal("0.1"), Decimal("0"),
+            source_network_verified=True, destination_network_verified=True,
+            cost_verified_at=NOW,
+        )
+        decision = a.assess_transfer_route(route, Decimal("0.1"), now=NOW)
+        self.assertIn("no_transfer_value_remaining", decision.reasons)
+        self.assertFalse(decision.approved_for_planning)
+        self.assertEqual(decision.estimated_amount_received, Decimal("0"))
 
     def test_transfer_route_rejects_network_mismatch_and_under_minimum(self):
         route = a.TransferRoute(
