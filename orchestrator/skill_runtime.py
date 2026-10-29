@@ -177,12 +177,15 @@ def _node_values(node: Any) -> tuple[str, str, str, str, str]:
     values = getattr(node, "input", {})
     if not isinstance(values, dict):
         values = {}
+    raw_instruction = str(values.get("instruction") or "")
+    # Exclude previously injected skill guidance from future routing decisions.
+    original_instruction = raw_instruction.split("\n\n[VERIFIED REPOSITORY SKILL CONTEXT:", 1)[0]
     return (
         str(getattr(node, "tool", "") or "").strip().lower(),
         str(getattr(node, "capability", "") or "").strip().lower(),
         str(getattr(node, "agent_role", "") or "").strip().lower(),
         str(getattr(node, "id", "") or "").strip(),
-        str(values.get("instruction") or "").strip().lower(),
+        original_instruction.strip().lower(),
     )
 
 
@@ -252,18 +255,24 @@ def apply_skill_routing(
     node_list = list(nodes)
     routes: list[dict[str, Any]] = []
     mixed_routes = len(selected) > 1
+    # Resolve every target from the original instructions before mutating any node.
+    eligible_by_skill: dict[str, list[Any]] = {}
+    for skill_id in selected:
+        eligible = [
+            n for n in node_list
+            if _node_matches_skill(n, skill_id, mixed_routes=mixed_routes)
+        ]
+        eligible.sort(key=lambda n: (str(getattr(n, "id", "")), str(getattr(n, "tool", ""))))
+        if not eligible and not mixed_routes:
+            fallback = [n for n in node_list if _node_values(n)[0] in _LLM_TOOLS]
+            fallback.sort(key=lambda n: (str(getattr(n, "id", "")), str(getattr(n, "tool", ""))))
+            eligible = fallback[:1]
+        eligible_by_skill[skill_id] = eligible
+
     for skill_id in selected:
         entry = entries[skill_id]
         manifest = manifests[skill_id]
-        eligible = [n for n in node_list if _node_matches_skill(n, skill_id, mixed_routes=mixed_routes)]
-        eligible.sort(key=lambda n: (str(getattr(n, "id", "")), str(getattr(n, "tool", ""))))
-        if not eligible and not mixed_routes:
-            fallback = [
-                n for n in node_list
-                if _node_values(n)[0] in _LLM_TOOLS
-            ]
-            fallback.sort(key=lambda n: (str(getattr(n, "id", "")), str(getattr(n, "tool", ""))))
-            eligible = fallback[:1]
+        eligible = eligible_by_skill[skill_id]
         attached: list[str] = []
         for node in eligible:
             target_input = getattr(node, "input", None)
