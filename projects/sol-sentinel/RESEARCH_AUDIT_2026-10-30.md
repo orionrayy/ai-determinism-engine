@@ -193,9 +193,9 @@ This addendum supersedes earlier branch-head and CI fields where they differ; th
 - Implementation branch current head at this checkpoint: `0b5dac9f3ac64c1753437fcc4afe96b8171cc079`.
 - PR #178 remains open and draft, not merged: https://github.com/orionrayy/ai-determinism-engine/pull/178.
 - Current compare against main: `diverged`, 175 commits ahead / 2 behind, common base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`, 29 changed files. Do not rebase or merge blindly; this branch includes a large project history.
-- Current feature-branch CI: SOL Sentinel Tests runs #293/#294 on head `0b5dac9f...`, both passed: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936825849 and https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936815027.
+- Current feature-branch CI: SOL Sentinel Tests runs #294/#295 on head `0b5dac9f...`, both passed: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936825849 and https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936815027.
 - The suite comprises 88 discovered `test_*` methods by source count at this head. GitHub Actions confirms the compile and unittest-discovery steps succeeded. The log output was not retrieved directly by the API connector, so the 88 number is independently derived from checked test source files, not copied from the runner summary.
-- The previous 79-test run #284 is historical; #293/#294 are the latest verification for the quote-probe patch and updated Termux runbook/workflow.
+- The previous 79-test run #284 is historical; #294/#295 are the latest verification for the quote-probe patch and updated Termux runbook/workflow.
 - Latest research workflow #27 remains on earlier source commit `833e57a13022c3efe6ff5115df2b2e0697072817`; no fresh backtest on the newly changed head is claimed. The dataset SHA remains `6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14` for that historical run.
 
 ### New read-only Jupiter probe
