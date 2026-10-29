@@ -93,3 +93,13 @@ The detailed conversational decision timeline, APIs/repositories, GitHub tool in
 Successful 30-day research run `40914239047` captured 43,200 public Binance SOLUSDT 1m candles with a dated USD/IDR reference. Baseline/60-20-20 segments had no trades. Initial sensitivity run `40915191550` found no trades with the Reku Pro fee reference even at the Pro fee-only floor. A theoretical Lightning fee-only floor (zero spread/slippage) made 10 simulated trades but lost about IDR 3,893 (-1.30%). This theoretical floor omits quote friction and is not a live scenario.
 
 The later expanded-statistics run `40915499872` failed closed because Frankfurter timed out. The FX reference fetcher now has bounded retries and passing offline tests; retry-enabled full pipeline run `40916209196` was in progress at the last read. Recheck the final result before updating status. No live trade, wallet operation or actual target attainment has occurred.
+
+
+## Latest checkpoint — 2026-10-30 WIB
+
+SOL Sentinel's public-only research pipeline now has verified current Reku market-data handling:
+- Latest CI [40921862301](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921862301) passed 63 offline tests.
+- Research run [40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237) completed successfully with a 30-day, 43,200-candle Binance SOLUSDT pipeline and artifact [12918995790](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237/artifacts/12918995790).
+- Reku order book now uses the verified public query `symbol=SOL_IDR`; the snapshot probe returned 40 levels per side and 27.210884 bps spread. Public chart uses 5m first because f=1 returned HTTP 500.
+- The legacy Reku `/activitytrans` route returned HTTP 404. Collector fails fast and marks it unavailable; do not use incomplete chart data as a substitute for 30 days of native history.
+- No strategy edge has been demonstrated: baseline and chronological segments still yield zero trades. Live mode remains disabled. PR #178 is draft/unmerged and requires base-SHA reconciliation.
