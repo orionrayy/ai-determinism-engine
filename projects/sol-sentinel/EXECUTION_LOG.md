@@ -274,3 +274,25 @@ This entry is documentation-only. It changes no scanner or trading logic. Since 
 - Added offline tests for transient timeout recovery and exhausting the retry bound. CI for the capture module/tests passed on run `40916160706`; the job reported the full project suite passing. Current retry-enabled full research workflow run: `40916209196`, launched on head `6ea5fd72945045c03ae2112fe3d9e870f2586c0a`; its final status must be read before claiming end-to-end success.
 - The seven-day and earlier 30-day successful research runs remain valid evidence for their exact artifacts. The earlier 30-day sensitivity result from run `40915191550` remains usable as a preliminary report, but that workflow version did not publish all the extra per-scenario metrics added later.
 - Current conclusion does not change: the Pro baseline has zero trades over the 30-day sample; the only trade-producing scenario observed was a deliberately unrealistic Lightning fee-only floor with zero spread and slippage, and that scenario lost roughly IDR 3,893 over 10 trades.
+
+
+## 15. Live API investigation and adapter repair — 2026-10-30 WIB
+
+### Confirmed fixes
+- The latest unit-test CI is [run 40921862301](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921862301), passing **63 tests** on head `ca3e13391634609377617ef26ca6ef255059de3d`. It covers interval-validation order, chart freshness/fallback, symbol-based order-book queries, HTTP error-body diagnostics, and fail-fast handling of a missing history endpoint.
+- A live read-only research pipeline completed successfully at [run 40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237), with artifact [12918995790](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237/artifacts/12918995790). This run's code head was `b3b8efe3b633118f52e59517aa9d26aebf79d839`; the current head adds a further test only.
+- The current Reku order-book API rejected the legacy `?id=51` query with HTTP 400 and body `{"error":"invalid 'symbol'"}`. A bounded symbol query using `symbol=SOL_IDR` now succeeds. The validated snapshot returned 40 levels per side, best bid IDR 1,835,000, best ask IDR 1,840,000, and a spread of IDR 5,000 / **27.210884 bps**. Values are a timestamped public snapshot, not a current-after-checkpoint quote.
+- The API returned HTTP 500 for the unsupported 1-minute chart probe. The adapter now tries documented 5-minute data first, then a 15-minute fallback. The successful snapshot returned 84 chart points at 5-minute interval, latest bar timestamp 2026-10-29 17:25 UTC; this limited chart response is not treated as 30-day history.
+- The legacy POST `/v2/activitytrans` route returned HTTP 404. The history collector now fails fast on that definitive 404 instead of repeating the unsupported request for each month, and records `error_category=endpoint_not_found`. Native Reku historical activity remains **unavailable/unverified**; no fabricated replacement candles are created.
+
+### Research result and interpretation
+- The full research workflow succeeded with 43,200 public Binance SOLUSDT one-minute candles covering 2026-09-29 through 2026-10-29, and a USD/IDR reference of 18,158 dated 2026-10-29.
+- The baseline and chronological 60/20/20 segments still produced **zero trades**. Zero return here means no position opened; it is not evidence of profitability or safety.
+- The live spread is used only as a fixed sensitivity reference across the historical window, not presented as a historical spread series. With the Reku Pro fee components (42.11 bps), observed spread snapshot (27.21 bps), and assumed 20 bps round-trip slippage, the modeled total is about 89.32 bps, or about 114.32 bps including the configured 25 bps minimum net-edge buffer. The current-spread scenario also did not produce a trade.
+- No live order, cancellation, transfer, withdrawal, wallet operation, or credential use occurred. Live execution remains disabled.
+
+### Current GitHub state and next gates
+- Current branch head: `ca3e13391634609377617ef26ca6ef255059de3d`.
+- [PR #178](https://github.com/orionrayy/ai-determinism-engine/pull/178) is still draft/open and unmerged.
+- The PR records base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`, while the observed current `main` SHA is `d5672c84a0ae184c3a95d3f925925887ece71aa4`. Reconcile this difference before any merge.
+- Remaining blockers: verify a current documented source for native Reku history; validate the scanner/backtest on the user's Termux device; improve strategy research because the tested rules still generate no trade; and keep live execution blocked until provider authorization, measured costs, risk controls, reconciliation, kill switch, out-of-sample evidence, and explicit approval are satisfied.
