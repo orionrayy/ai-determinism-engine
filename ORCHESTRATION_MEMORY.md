@@ -1295,3 +1295,249 @@ This is a required next-phase acceptance contract from the user. It is a roadmap
 - Do not add intentional mistakes, fabricate a personal experience, imitate a named living author, or claim the document was authored by a human when that is not established. This work is about quality and contextual fit, not evading AI-detection systems or promising detector outcomes.
 - Continue using the required repository contracts for privacy, provenance, trustworthy citations, free-first operation, authorization, idempotency and honest verification status.
 
+## Hallmark corpus pipeline and routing fix checkpoint (2026-10-30)
+
+This checkpoint records repository work on branch `feat/hallmark-corpus-benchmark-v1`; it is not merged to `main` and the CI result must be checked against the candidate commit before claiming validation.
+
+### Verified repository state before this candidate
+- `main` head at inspection: `d5672c84a0ae184c3a95d3f925925887ece71aa4`.
+- Hallmark import PR #175 merged at `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`; runtime/Document Craft PR #177 merged at `4d207fe3c420afe27fe66a4c3e5159d46bdf2640`.
+- `Orchestrator Tests` and `Hallmark skill validation` passed for `4d207fe3c420afe27fe66a4c3e5159d46bdf2640`; `Orchestrator Tests` passed for the inspected `main` head. These do not prove corpus validity or writing-quality improvement.
+- The repository tree had no `research/` directory before this candidate. Runtime source and `orchestrator/test_skill_runtime.py` were read from GitHub.
+
+### Candidate changes prepared
+- Added `research/corpus/manifest.schema.json`, `genre-taxonomy.json`, `evaluation-rubric.md`, `source_registry.json`, `manifest.jsonl`, `README.md`, `validate_corpus.py`, and `test_validate_corpus.py`.
+- The manifest is intentionally empty pending item-level provenance, rights, access, privacy, format, and originality validation. Current verified corpus count: **0**; target 500 status: `INSUFFICIENT_EVIDENCE`. Do not count source directories/journal registries as documents.
+- Source registry currently records 11 discovery-only entries (10 DOAJ journal directories and Portal Satu Data Indonesia). The license labels are reported as journal-level discovery metadata; item-specific license and content provenance must still be verified before any individual document enters the manifest.
+- Validator uses Python stdlib only. It checks JSONL shape, required fields/enums, safe HTTP(S) URLs, dates, hashes, rights/access, provenance and privacy gates, duplicate record identifiers, canonical URL/hash duplicates, genre distributions, and target status. It intentionally does not fetch source materials or bypass access controls.
+- Added automated tests for empty-manifest fail-closed status, eligibility, metadata-only rights/access, templates/synthetic samples, duplicates, duplicate IDs, malformed JSON, URLs containing credentials, and target-underflow exit code.
+- During runtime audit, `_DOCUMENT_INTENT` contained generic alternatives `writing` and `humaniz(?:e|ed|ing)`; these could route requests such as “writing Python code” to Document Craft. Candidate removes those generic triggers while preserving explicit document phrases, and adds three selector regression cases. This is a code-level defect hypothesis with regression coverage; runtime CI has not yet confirmed the patch.
+- Added `.github/workflows/hallmark-corpus-validation.yml` to compile the pipeline, validate metadata JSON, run corpus tests, and assert that an unmet target exits with code 3 instead of fabricating success.
+- GitHub repository edits were made only on the isolated candidate branch. A local clone attempt was blocked by DNS/network unavailability; therefore local full-suite execution is not claimed. Candidate CI and review are the next validation gates.
+
+### Evidence policy and next acceptance gates
+1. Confirm workflow syntax and all corpus unit tests pass on the candidate commit.
+2. Confirm existing `orchestrator/test_skill_runtime.py` and full `Orchestrator Tests` still pass, including the new selector regression cases.
+3. Audit the corpus validator's generated report and correct any regression before merging; do not merge solely to show activity.
+4. Individually verify licensed original items. Record access and rights evidence; do not place restricted full text, patient/person data, or private company documents in Git.
+5. Reach 500 only when 500 unique items satisfy the eligibility policy. Until then report the actual count and `INSUFFICIENT_EVIDENCE`.
+6. No baseline-to-candidate document-quality experiment or visual DOCX/PDF/Excel validation has yet been run. No quality-improvement claim is authorized.
+
+## Checkpoint riset korpus dan harvester metadata (2026-10-30)
+
+Checkpoint lanjutan sesudah penambahan metadata harvester dan sampel pertama. Branch kandidat: `feat/hallmark-corpus-benchmark-v1`. Jangan menafsirkan checkpoint terdahulu yang menyebut manifest kosong sebagai status terkini; urutan catatan tetap dipertahankan sebagai sejarah.
+
+### Status korpus aktual
+- `research/corpus/manifest.jsonl` kini memiliki satu rekaman individual yang melewati gate manifest: artikel Tessa Septy Dynesia, DOI `10.15294/ijicle.v2i3.38417`, lisensi CC BY-SA 4.0 berdasarkan halaman penerbit, kebijakan hak cipta jurnal dan pernyataan pada PDF.
+- Satu sampel tersebut disimpan sebagai metadata + fitur struktur saja. PDF dan teks penuh tidak disimpan ke repositori. Fitur analisis ada di `research/corpus/features.jsonl`; laporan temuan ada di `research/reports/document-craft-corpus-checkpoint-2026-10-30.md`.
+- Total yang lolos gate: **1/500**; target tersisa 499; status tetap `INSUFFICIENT_EVIDENCE`. Distribusi: `academic_paper=1`; semua genre lainnya nol. Sampel tunggal ini tidak cukup untuk membuat generalisasi per genre dan tidak disebut sebagai contoh kualitas ideal.
+- Registry discovery berisi 11 entri (10 direktori jurnal DOAJ dan Portal Satu Data Indonesia). Itu bukan sampel. Live harvest metadata DOAJ **belum dijalankan**, jadi kandidat yang benar-benar diambil dari feed = 0.
+
+### Pipeline baru
+- `research/corpus/harvest_doaj_candidates.py`: harvester OAI-PMH publik terbatas dengan max pages/response bytes, timeout, interval antar-request, filter ISSN, pemeriksaan checksum ISSN, penanganan resumption token, ID kandidat stabil, atomic write, merge idempoten, dan mode dry-run.
+- Harvester mencatat metadata bibliografis dan tautan, tidak menyimpan abstrak atau mengunduh isi artikel; semua kandidat dinyatakan `corpus_eligible=false` dan lisensi konten belum terverifikasi. Kandidat tidak dipindahkan otomatis ke manifest.
+- DOAJ menyatakan metadata artikelnya tersedia dengan CC0 waiver, tetapi hak cipta/lisensi dokumen yang ditunjuk harus diperiksa per-item. Sumber: `https://doaj.org/terms/` dan `https://doaj.org/docs/oai-pmh/`.
+- `research/corpus/validate_corpus.py` memeriksa manifest, hak/akses, provenance, privasi, status orisinal, ID duplikat, URL kanonis dan hash, kemudian melaporkan distribusi dan status target.
+- Tes validator menguji manifest kosong, eligibility, metadata-only, template/sintetis, duplikasi URL/hash, record ID ganda, JSON rusak, URL ber-kredensial, dan kegagalan jika target belum terpenuhi.
+- Tes harvester menggunakan mock XML/jaringan untuk ISSN checksum, parsing, hak metadata versus hak konten, pagination, error OAI, idempotensi dan dry-run. Ini bukan bukti feed live tersedia pada saat eksekusi.
+
+### Runtime fix
+- Audit `orchestrator/skill_runtime.py` menemukan kata generik `writing` dan `humaniz(?:e|ed|ing)` sebagai alternatif intent dokumen. Ini bisa memicu Document Craft untuk tugas pemrograman, mis. “writing Python code”.
+- Kandidat menghapus dua pemicu generik tersebut dan menambahkan tes regresi untuk tugas kode, “academic writing”, dan “humanize this Python script”. Ini pembatasan intent yang eksplisit; hasil CI menguji perilaku routing, bukan kualitas prosanya sendiri.
+
+### Validasi GitHub
+- Pada commit kandidat `ad260725f466a3931956109b68fd03b8ee286dd9`, seluruh tiga check telah selesai sukses: Orchestrator Tests, Hallmark skill validation, dan Hallmark corpus validation. Run: `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929212409`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929212386`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929212498`.
+- PR #179 `https://github.com/orionrayy/ai-determinism-engine/pull/179` masih terbuka, belum merged; base tetap `main`. Sesudah perubahan dokumentasi pada checkpoint ini, verifikasi ulang CI pada SHA terbaru sebelum menyatakan branch hijau.
+- Perubahan riset dan runtime masih di branch kandidat. Tidak ada perubahan langsung ke `main`.
+
+### Hal yang belum dikerjakan / batas klaim
+1. Tidak ada klaim 500 dokumen; status resmi tetap `INSUFFICIENT_EVIDENCE`.
+2. Belum ada baseline keluaran Document Craft dibanding dokumen asli, rubric scoring terhadap output kandidat, blind human review, atau bukti peningkatan mutu.
+3. Belum ada validasi visual keluaran Hallmark untuk DOCX/PDF/Excel. Inspeksi yang dilakukan hanya pada beberapa halaman PDF sumber satu artikel; ini bukan validasi output generator.
+4. Harvester baru diuji dengan fixture; lakukan live harvest bertahap dan periksa kepatuhan feed sebelum mengandalkannya sebagai jalur produksi korpus.
+5. Perlu menambah sampel dari beberapa source family dan genre yang berbeda, melakukan pemeriksaan lisensi/privacy per-item, lalu melakukan analisis struktural terukur sebelum mengubah prompt atau mengklaim pola.
+
+## Verifikasi CI setelah pembaruan status korpus (2026-10-30)
+
+Verifikasi ulang setelah perubahan dokumentasi korpus/laporan pada `1cf53f3e967ee9078b625b1d27fef30f80d5ede4`:
+- `Orchestrator Tests`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486838
+- `Hallmark skill validation`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486874
+- `Hallmark corpus validation`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486798
+- Ketiga check di atas selesai pada SHA yang sama. Perubahan selanjutnya pada memori ini akan memicu CI baru; status final harus diperiksa lagi pada SHA baru.
+- PR #179 tetap open, belum merged, branch terpisah dari `main`.
+
+## Hallmark korpus checkpoint lanjutan — empat dokumen (2026-10-30)
+
+Checkpoint ini menggantikan angka hitungan pada checkpoint Hallmark yang lebih lama di atas; catatan lama tetap dipertahankan sebagai riwayat. Branch kerja: `feat/hallmark-corpus-benchmark-v1`. Perubahan tetap terisolasi dari `main`.
+
+### Status korpus terbaru
+- `research/corpus/manifest.jsonl`: **4 entri yang memenuhi gate manifest** dari target 500; sisa 496; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi: `academic_paper=3` (tiga artikel terbit dalam jurnal/penerbit ICCLE yang sama) dan `other=1` (ID4D Practitioner’s Guide, World Bank Group). Semua genre lain bernilai 0.
+- Rekaman dokumen keempat adalah `doc-worldbank-id4d-guide-2019`; lisensi CC BY 3.0 IGO dicatat dari laman atribusi resmi World Bank dan PDF resmi. Pembatasan komponen pihak ketiga dipertahankan; tidak ada PDF, teks lengkap, tabel/gambar, atau alamat email penulis disimpan ke repo.
+- `research/corpus/features.jsonl` kini berisi empat analisis struktur manual. Inspeksi visual dilakukan secara selektif (beberapa halaman dari masing-masing PDF), bukan seluruh halaman; ini analisis sumber, **bukan** validasi visual keluaran generator.
+- Tiga artikel ICCLE tidak diperlakukan sebagai tiga source family independen yang membuktikan norma seluruh genre. Panduan World Bank menunjukkan arsitektur dokumen profesional yang berbeda; belum ada kesimpulan universal.
+- `research/reports/document-craft-corpus-checkpoint-2026-10-30.md` dan `research/corpus/README.md` diperbarui agar sesuai dengan 4/500.
+- DOAJ discovery harvester diuji dengan fixture/mock dan batas akses, tetapi live harvest masih belum berhasil: viewer web memberi 403 dan runtime container gagal DNS. Jumlah kandidat live feed = 0. Jangan menyatakan sumber/kandidat discovery setara dengan dokumen utama.
+
+### Repositori/PR
+- PR #179: `https://github.com/orionrayy/ai-determinism-engine/pull/179`.
+- Branch candidate, belum merge; jangan merge otomatis.
+- Runtime fix untuk menghindari false-positive skill routing pada permintaan kode sudah punya regression tests; seluruh Orchestrator Tests, Hallmark validation dan corpus validation terakhir yang diverifikasi lulus pada SHA `f0bdfe374a2c55bbb336c59226f3bf2fee9070b5`. Korpus dan laporan berubah setelah SHA itu; CI wajib dicek lagi pada HEAD terbaru.
+- Tidak ada perubahan langsung pada `main`.
+
+### Acceptance gates yang masih terbuka
+1. Jalankan validasi manifest terhadap HEAD terbaru, dan audit setiap record untuk eligibility, URL canonical/hash duplicates dan lisensi. Target tetap 500 dokumen unik.
+2. Tambah variasi sumber/institusi serta genre yang belum terwakili (LP/asuhan keperawatan, PKL/magang, skripsi/tesis, praktikum, proposal, laporan kegiatan/profesional, dan workbook asli).
+3. Live harvest metadata harus dijalankan hanya pada lingkungan yang dapat mengakses endpoint secara sah; metadata tidak memverifikasi lisensi konten.
+4. Benchmark baseline Document Craft belum dibuat. Belum ada scoring baseline-vs-kandidat, blind human review, inter-rater agreement, atau hasil kualitas.
+5. Belum ada validasi visual file output DOCX/PDF/Excel, formula/spreadsheet behavior, atau regression test berdasar kegagalan benchmark.
+6. Tidak boleh menyatakan kualitas meningkat atau korpus selesai sebelum bukti sesuai definisi penerimaan tersedia.
+
+## Gate tambahan untuk keterlacakan analisis fitur (2026-10-30)
+
+Checkpoint setelah korpus bertambah menjadi empat sampel.
+- Status korpus tetap 4/500 (`academic_paper=3`, `other=1`), sisa 496 dan `INSUFFICIENT_EVIDENCE`. Tidak ada sampel tambahan yang dianggap dari metadata kandidat.
+- Tambah `research/corpus/validate_features.py` dan `test_validate_features.py`. Validator mencocokkan setiap analisis fitur dengan manifest: record ID, source family, URL bukti yang disahkan manifest, metode inspeksi teks/visual, struktur yang teramati, dan batasan review. Baris yatim, family mismatch, URL bukti tak tercatat, duplikat analisis, dan field visual/metode yang hilang menyebabkan error. Ketidakpastian faktual dan batas generalisasi dilaporkan sebagai peringatan, bukan disembunyikan.
+- `.github/workflows/hallmark-corpus-validation.yml` kini mengompilasi validator fitur dan menjalankan output ringkasan `features-summary.json` di runner, di samping korpus validator/test sebelumnya. Ringkasan ini ephemeral di job; ia tidak mengubah manifest atau menaikkan jumlah sampel.
+- CI `Hallmark corpus validation` dan `Hallmark skill validation` lulus pada commit `d5e354a27152e5bfe46488648c470b329e990455`. Orchestrator Tests pada SHA itu dibatalkan karena ada push yang lebih baru; run penuh sebelumnya lulus pada `ffaf058892053098d2f4ba18bd6fe2fe4ce0c1b4`. Perubahan dokumentasi setelah itu perlu divalidasi ulang terhadap HEAD terbaru.
+- PR #179 tetap terbuka, mergeable, dan belum digabung. Branch kandidat saja yang diubah.
+
+Gate berikutnya: periksa CI di SHA akhir, lanjutkan pengumpulan sampel berizin dari genre baru, dan baru kemudian bangun baseline output AI. Tidak ada klaim peningkatan kualitas penulisan sampai eksperimen empiris selesai.
+
+## Artefak inventaris korpus untuk audit CI (2026-10-30)
+
+- Tambah langkah upload artifact terpin pada `.github/workflows/hallmark-corpus-validation.yml`. CI mengarsipkan `corpus-summary.json` dan `features-summary.json` selama 14 hari untuk inspeksi; berkas itu hanya metadata, hasil gate, distribusi, warning dan analisis traceability, tidak berisi PDF atau full text.
+- Pipeline sekarang menjalankan `validate_features.py` setelah tes corpus unit. Validator fitur mengikat setiap analisis kepada record manifest, source family, URL provenance, serta metode inspeksi visual/teks. Kasus tanpa traceability fail closed; ketidakpastian faktual dan batas generalisasi dilaporkan sebagai warning.
+- `research/corpus/README.md` dan laporan riset diperbarui untuk menjelaskan validator serta artifact.
+- Status korpus: 4/500, genre `academic_paper=3`, `other=1`, sisa 496, `INSUFFICIENT_EVIDENCE`. Live DOAJ harvest = belum berhasil; 0 metadata kandidat feed live.
+- Sebelum artefak workflow baru ditambahkan, ketiga check lulus pada `04f01303c4d14f757331cb88bb350d8112e6a9bc`. Tambahan workflow/dokumentasi ini memicu eksekusi CI baru; re-query status checks pada HEAD berikutnya sebelum finalisasi.
+- PR #179 tetap open, belum merge. Tidak ada perubahan langsung ke `main`.
+
+## Checkpoint sumber primer dan akses parsial — 2026-10-30
+
+Semua perubahan di branch kandidat `feat/hallmark-corpus-benchmark-v1`; PR #179 tetap belum merge dan `main` tidak disentuh.
+
+### Hitungan terbaru (manifest 8 catatan)
+- **5/500 dokumen memenuhi gate eligibility**, sisa 495, `INSUFFICIENT_EVIDENCE`.
+- Eligible: `academic_paper=3` (tiga artikel ICCLE, satu penerbit/jurnal), `other=1` (panduan ID4D World Bank CC BY 3.0 IGO), `thesis_dissertation=1` (skripsi teknik lingkungan UIN Ar-Raniry, item-level CC BY 4.0).
+- 2 catatan akses parsial, belum eligible: (a) laporan PKL Polije/SIPORA — summary dan Bab I publik CC BY-SA 4.0, berkas laporan lengkap dibatasi; (b) KIAN/asuhan keperawatan STIKes Muhammadiyah Ciamis — sebagian file publik berlisensi Creative Commons Attribution, bab kasus dan diskusi dibatasi, privacy review masih pending.
+- 1 lead XLSX metadata-only: resource beban kerja Sekretaris Dinas Sosial Kabupaten Karanganyar menyatakan CC BY pada metadata, tetapi unduhan ke dua host resmi menghasilkan HTTP 403. Sheet, formula, formatting, hidden sheet, dan isi sel belum diperiksa; tidak dihitung.
+- `research/corpus/features.jsonl` memiliki tujuh analisis/catatan: lima untuk item eligible dan dua catatan struktural yang secara eksplisit dibatasi ke bagian publik. Tidak ada PDF atau teks lengkap disimpan ke GitHub.
+
+### Perubahan gate
+- `access_status` dalam schema/validator ditambah nilai `partial`. Status ini sengaja tidak memenuhi gate eligibility, karena hanya ringkasan atau sebagian bab yang bisa diakses.
+- `test_validate_corpus.py` mendapat test yang memastikan dokumen berstatus partial tidak pernah menambah hitungan target.
+- `research/corpus/validate_features.py` menghubungkan setiap analisis ke manifest, source family dan URL bukti. Catatan parsial ditampilkan sebagai warning; tidak diperlakukan sebagai contoh eligible.
+- Skripsi UIN Ar-Raniry memberi struktur Bab I–V, abstrak dwibahasa, kata pengantar, daftar isi, daftar tabel/gambar/lampiran, dan pola nomor halaman. Anomali penomoran subbagian BAB V dicatat sebagai cacat khusus dokumen, bukan pedoman umum. Sumber menyatakan CC BY 4.0 dan punya pernyataan orisinalitas. Tidak menyimpan nomor mahasiswa atau URL file yang memuat kontak.
+- Laporan Polije Bab I menunjukkan tujuan/manfaat, lokasi/waktu dan metode pelaksanaan PKL, tetapi laporan lengkap masih dibatasi. KIAN hanya dicatat dari nama berkas dan metadata publik; tidak menyimpan isi kasus medis.
+
+### Status uji
+- CI terakhir yang terverifikasi pada SHA `c25d1add0fa8a0139ed54a48d3223635dd5fa257` lulus pada Orchestrator Tests, Hallmark skill validation, dan Hallmark corpus validation (yang termasuk tes traceability dan artifact inventory).
+- Commit setelah itu mengubah schema, validator, test, manifest, features, README dan laporan; wajib cek ulang tiga workflow pada HEAD terbaru sebelum merge.
+- Kualitas Document Craft belum diuji dengan output baseline-vs-candidate, blind scoring, inter-rater agreement atau visual/functional validation file DOCX/PDF/Excel. Tidak ada klaim peningkatan empiris.
+- Live DOAJ harvesting masih belum terjadi. Fixture tests lulus, tetapi feed live tidak dapat diakses dari lingkungan ini. Metadata discovery berbeda dari dokumen penelitian.
+
+## Checkpoint skripsi kedua dan korpus terbaru — 2026-10-30
+
+- Manifest `research/corpus/manifest.jsonl` sekarang memuat **9 catatan**: 6 eligible, 2 partial, 1 metadata-only. Target 500; remaining 494; `INSUFFICIENT_EVIDENCE`.
+- Eligible distribution: `academic_paper=3` (tiga ICCLE journal articles), `other=1` (World Bank ID4D guide, CC BY 3.0 IGO), `thesis_dissertation=2` (dua item UIN Ar-Raniry, CC BY 4.0 masing-masing). Tiga artikel ICCLE berasal dari source family/journal yang sama; dua skripsi dari kampus yang sama tapi program/topik berbeda. Jangan menyebut enam sampel sebagai representasi genre yang beragam.
+- Dokumen baru: `doc-ar-raniry-bisindo-ai-thesis-2026`, berjudul *Implementasi Sistem Penerjemah BISINDO Dua Arah Berbasis MediaPipe dan Artificial Intelligence*. Laman repository resmi https://repository.ar-raniry.ac.id/58108/ menyatakan CC BY 4.0, full PDF text layer dapat diakses. Analisis mencatat cover, approval, bilingual abstracts, preface, lists of figures/tables, struktur 5 bab, nested subsections dan hubungan metode-implementasi-evaluasi. Ada dua kemungkinan source-specific QA flags: "Error! Bookmark not defined" pada daftar isi dan ordering/pagination mismatch di list of figures. Tidak ada klaim visual karena rendered inspection belum dijalankan; NIM/detail pribadi tidak disalin; tidak ada PDF/full text disimpan.
+- `research/corpus/features.jsonl` sekarang punya 8 rekaman analisis: 6 untuk eligible sources dan 2 partial-only notes.
+- Satu partial PKL dan satu partial KIAN tetap pending dan tidak dihitung. XLSX Karanganyar tetap metadata-only (CC BY di portal metadata, tetapi direct download ke dua host 403); cells/formulas belum diinspeksi.
+- README dan laporan checkpoint sudah diperbarui untuk enam eligible records; diperlukan pemeriksaan string status lama untuk memastikan semua ringkasan dokumen cocok dengan 6/9.
+- Pada HEAD sebelumnya `4a7d1aede4bbdf498011f3cb618eda057d8c596e`, tiga CI check lulus dan artifact corpus-summary tersedia. Perubahan schema/manifest/features/laporan setelah itu butuh revalidasi pada HEAD final.
+- Tetap tidak ada benchmark Document Craft baseline-vs-candidate, blind scoring/inter-rater agreement, atau bukti peningkatan kualitas. Generated DOCX/PDF/XLSX visual/functional QA belum dilakukan. Live DOAJ harvesting masih 0 kandidat.
+
+## Checkpoint workbook Excel terinspeksi — 2026-10-30
+
+- Manifest kini memuat **10 catatan**: 7 item eligible, 2 partial, 1 metadata-only. Target 500; sisa 493; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi eligible: `academic_paper=3`, `other=1`, `thesis_dissertation=2`, `excel_workbook=1`. Tiga artikel ICCLE memiliki satu keluarga penerbit/jurnal; dua skripsi berasal dari UIN Ar-Raniry; workbook riset berasal dari dataset POLITEHNICA Bucharest. Belum ada eligible LP/asuhan keperawatan, PKL penuh, praktikum, proposal, laporan kegiatan/profesional, workbook administrasi/keuangan, dan sebagainya.
+- Menambahkan `research/corpus/inspect_xlsx_structure.py` dan `test_inspect_xlsx_structure.py` berbasis Python standard library. Inspector hanya mengeluarkan nama sheet, dimensi, count, hidden state, jumlah formula/merged ranges/table parts, style counts, ukuran dan SHA-256; tidak mengekspor nilai sel. Tes menggunakan fixture synthetic-only dan tidak menambah corpus counts.
+- CI menarik workbook open-license dari commit terpin `ec8f3f3bc0898bb440432cb11a434250d6bcbb0c` di `BulyK47/battery-datasets`; source LICENSE mengonfirmasi CC BY 4.0. Hash terverifikasi `9b8c541675256c08c24cc6ebeb486a46d07c533a70bf4dabcca4955dba90e08a`, byte size 466,798. Workbook berisi 17 sheet terlihat: Header + 16 data; 0 hidden, 0 formula, 0 table parts; 23 merged ranges pada Header (dimension A1:N101, 101 row elements, 546 non-empty cells); data sheets 1,442 row elements masing-masing. APR dims A1:G1442 (dua), BSE dims A1:D1442 (dua), 12 lainnya A1:B1442. Struktur metadata disimpan sebagai derived features; nilai sel tidak disimpan. Rendered Excel UI/print-preview belum diperiksa.
+- CI artifact/log terbaru membuktikan proses download/OOXML berjalan; gunakan run `40937408636` sebagai corpus-validation run untuk inspeksi XLSX. Artifact tersedia 14 hari; hasil parse menunjukkan `status=inspected`.
+- `research/corpus/manifest.jsonl`, `features.jsonl`, README, laporan checkpoint dan memori kanonis diperbarui. Laporan sample 7 menyatakan bahwa workbook ini adalah eksperimen data nyata, bukan contoh workbook operasional atau formula-heavy.
+- PR #179 tetap terbuka dan tidak digabung; tidak ada perubahan ke `main`. Revalidasi tiga CI check pada HEAD terbaru tetap diperlukan, sebab dokumen/manifest/features berubah setelah run yang memeriksa XLSX.
+- Tetap belum ada Document Craft baseline-vs-candidate experiment, blind human scoring/inter-rater agreement, dan bukti perbaikan kualitas tulisan. Sumber/struktur ini hanya membangun dataset dan QA harness; tidak boleh menyatakan Hallmark kualitasnya sudah meningkat.
+
+## Checkpoint workbook anggaran pemerintah — 2026-10-30
+
+Semua perubahan tetap berada di branch `feat/hallmark-corpus-benchmark-v1` dan PR #179 yang masih terbuka; `main` tidak diubah.
+
+### Hitungan korpus terbaru
+- Manifest `research/corpus/manifest.jsonl`: **12 catatan total**, terdiri dari **8 eligible**, 2 partial access, 1 artikel nursing case berstatus privacy-pending, dan 1 lead XLSX metadata-only. Target 500; remaining 492; status `INSUFFICIENT_EVIDENCE`.
+- Eligible distribution: `academic_paper=3` (tiga artikel ICCLE dari satu jurnal/penerbit), `other=1` (panduan World Bank ID4D CC BY 3.0 IGO), `thesis_dissertation=2` (dua tugas akhir UIN Ar-Raniry, CC BY 4.0), `excel_workbook=2` (dataset OCV baterai POLITEHNICA Bucharest CC BY 4.0 dan workbook anggaran Treasury Selandia Baru CC BY 4.0).
+- Tiga artikel ICCLE bukan tiga source-family independen untuk aturan universal; dua skripsi berasal dari satu kampus; dua workbook Excel berbeda tujuan (dataset terukur dan workbook anggaran historis). Delapan sampel masih jauh dari representatif.
+
+### Workbook Treasury yang baru terinspeksi
+- Sumber resmi: https://www.treasury.govt.nz/publications/data/budget-2020-data-estimates-appropriations-2020-21; page license menyatakan Crown Copyright Attribution 4.0 International (CC BY 4.0), dan status rilis adalah superseded.
+- Direct XLSX: https://www.treasury.govt.nz/sites/default/files/2020-05/b20-expenditure-data.xlsx
+- GitHub Actions berhasil mengunduh 860,536-byte workbook. SHA-256 `d6a4f00122a05a86bf905f2c43f53cc065b8f033ee080647cf8033961c43aced`.
+- `research/corpus/inspect_xlsx_structure.py` mengembalikan 8 worksheet terlihat: Intro, Explanation, Raw Data, dua pivot summaries, dua chart-named tabs, dan PivotAppnTypeByPortfolio. Total 6,512 row elements, 102,477 non-empty cells, 2 formula cells, 2 merged ranges, 1 auto-filter sheet, 4 sheets with frozen panes, 1 defined name, 0 hidden sheets, 0 OOXML table parts; styles 24 cellXfs, 19 fonts, 2 fills, 1 border. Raw Data dimension A1:Q6304 (101,427 non-empty cells). Tidak ada nilai sel yang dikembalikan atau disimpan.
+- Treasury workbook ditambahkan sebagai `doc-nz-treasury-budget-2020-expenditure-xlsx` dan fitur struktur di `features.jsonl`. Ini workbook anggaran publik bersejarah, bukan sumber nilai fiskal terkini; formula/cell values tidak diaudit dan grafis tidak dicek melalui rendered UI/print preview.
+- Battery XLSX tetap eligible sebagai dataset data eksperimental: 17 visible sheets (Header + 16 traces), size 466,798 bytes, SHA-256 `9b8c541675256c08c24cc6ebeb486a46d07c533a70bf4dabcca4955dba90e08a`, 0 formulas, 23 merged ranges di Header. Dua spreadsheet eligible kini mewakili dua jenis tujuan, bukan semua genre Excel.
+- `research/corpus/features.jsonl` memuat **11 catatan analisis**: delapan eligible feature records dan tiga non-eligible notes (dua partial + satu nursing case pending privacy). Item metadata-only Karanganyar tidak memiliki fitur isi.
+- `research/corpus/README.md` dan `research/reports/document-craft-corpus-checkpoint-2026-10-30.md` diperbarui menjadi 8/500. Perbaikan heading laporan terakhir menempatkan Sampel 8 sebelum section non-eligible dan mengembalikan heading kesimpulan.
+
+### Gates non-eligible yang harus dipertahankan
+- Laporan PKL Polije: summary dan Bab I publik CC BY-SA, laporan lengkap restricted; `access_status=partial`; tidak dihitung.
+- KIAN/asuhan keperawatan STIKes Muhammadiyah Ciamis: file awal publik, bab kasus/pembahasan restricted; privacy/license review pending; tidak dihitung.
+- Nursing case paper DOI `10.53801/jnep.v1i01.9`, CC BY-SA 4.0, full text accessible but contains sensitive patient narrative. Macro-headings only recorded; `anonymization_status=pending`, `privacy_review=pending`, `verification_status=pending`; not eligible.
+- ABK Sekdin.xlsx: metadata portal CC BY but workbook download returns HTTP 403; `access_status=metadata_only`; no workbook structure claims; not eligible.
+- Live DOAJ OAI-PMH harvesting has not succeeded. Fixture/mocked tests are not live discovery; live feed candidates = 0.
+
+### CI status / next acceptance gate
+- At SHA `3595ab172460a044b902056068a4cfcd7a8d9f85`, the latest corpus validation ran both XLSX fetch/structure inspection steps, feature traceability validator, provenance tests, and incomplete-target assertion successfully; Orchestrator Tests and Hallmark skill validation also completed success. Check run links were `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40938492288`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40938492102`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40938492143`. New manifest/features/docs changes after that SHA require CI re-run at current HEAD.
+- Workflow produces a corpus inventory artifact for 14 days with counts and structural summaries, no cell values.
+- No Document Craft baseline-vs-candidate quality experiment, blind human scoring/inter-rater reliability, generated DOCX/PDF/Excel rendering QA, or evidence of improvement exists yet. Keep all claims limited to corpus/pipeline/test progress.
+- Do not merge PR #179 automatically. It remains open pending review and green checks at the exact final HEAD.
+
+## Koreksi validasi fitur workbook Treasury — 2026-10-30
+
+- GitHub Actions menginspeksi workbook Treasury dengan sukses, tetapi corpus-validation run pada SHA `f4dea25d649bb630e28fccf54117dc922a5834c5` gagal di `validate_features.py` karena feature row Treasury tidak memiliki field wajib `observed_structure.front_matter`.
+- Penyebab telah diidentifikasi dari artifact `features-summary.json`: satu error traceability itu, bukan download/parse workbook atau manifest invalid.
+- Memperbaiki `research/corpus/features.jsonl` pada record `doc-nz-treasury-budget-2020-expenditure-xlsx`, menambahkan dua item observasi untuk sheet Intro dan Explanation di `observed_structure.front_matter`. Commit perbaikan: `659af3632e6744c8cfc88b97b50a50d060b27d44`.
+- CI wajib diperiksa ulang di SHA tersebut atau HEAD yang lebih baru sebelum mengklaim korpus pass. Target tetap 8/500 (`INSUFFICIENT_EVIDENCE)); tidak ada klaim kualitas meningkat.
+
+## Checkpoint laporan profesional dan audit lisensi — 2026-10-30
+
+- Manifest `research/corpus/manifest.jsonl` kini memuat **14 catatan**: **9 eligible**, 2 partial access, 1 nursing case privacy-pending, 1 XLSX metadata-only, dan 1 laporan riset yang sengaja excluded karena konflik terms. Target 500; remaining 491; `INSUFFICIENT_EVIDENCE`.
+- Eligible distribution: `academic_paper=3`, `other=1`, `thesis_dissertation=2`, `excel_workbook=2`, `professional_work_report=1`. Genre lain masih 0.
+- Sumber eligible baru adalah **Department of Conservation Annual Report 2024/25**, official PDF https://www.doc.govt.nz/globalassets/documents/about-doc/annual-reports/annual-report-2025/annual-report-2025.pdf. PDF menyatakan CC BY 4.0, judul laporan untuk tahun sampai 30 June 2025 dan terbit Oct 2025. `features.jsonl` mencatat bilingual Māori/English contents, delapan bagian utama (foreword/responsibility, strategic intentions, assessment of operations, organisational health/capability, annual/forecast financial statements, appropriation statements, independent audit, other matters/appendices), serta batasan bahwa rendered-page visual QA belum dilakukan. No PDF/full text stored.
+- Laporan riset WUR **Seaweed in Indonesia: farming, utilization and research**, DOI `10.18174/578007`, dicatat sebagai `usage_scope=excluded` / `verification_status=excluded`, bukan dipakai sebagai sumber fitur. Sumber menyebut CC BY 4.0 (Netherlands) tetapi juga menyatakan penggunaan komersial dilarang. Karena konflik terms tidak terselesaikan secara resmi, tidak dihitung dan tidak ada feature record. Ini contoh rights gate bekerja untuk mencegah asumsi salah.
+- README dan laporan checkpoint menyebut 9/500 dan 14 total records; satu catatan excluded due license conflict telah disebutkan secara eksplisit.
+- Treasury workbook tetap diinspeksi (8 sheets, 102,477 nonempty cells, 2 formula cells, 1 autofilter, 4 freeze panes, size 860,536 B, SHA-256 `d6a4f00122a05a86bf905f2c43f53cc065b8f033ee080647cf8033961c43aced`), historical release flagged superseded; battery workbook size 466,798 B, hash `9b8c541675256c08c24cc6ebeb486a46d07c533a70bf4dabcca4955dba90e08a`.
+- Pada SHA `d92460df052fc73081e8937857f707806b268c17`, semua tiga workflows lulus: corpus validation, Hallmark skill validation, Orchestrator Tests. Manifest/features/README/report/memory berubah setelah itu; CI ulang pada HEAD final wajib diverifikasi.
+- PR #179 tetap open, belum merge; no direct `main` changes. Belum ada Document Craft baseline-vs-candidate test, blind human score, inter-rater agreement, generated-output visual QA, atau evidence peningkatan kualitas. Korpus masih jauh dari 500; jangan overgeneralize dari 9 eligible records.
+
+## Checkpoint laporan tahunan ABS dan status 10 eligible — 2026-10-30
+
+- Manifest `research/corpus/manifest.jsonl` sekarang memuat **15 catatan**: **10 eligible**, 2 partial-access, 1 nursing case privacy-pending, 1 spreadsheet metadata-only, dan 1 rights-conflicted research report yang sengaja excluded. Target 500; remaining 490; status `INSUFFICIENT_EVIDENCE`.
+- Eligible distribution: `academic_paper=3`, `other=1`, `thesis_dissertation=2`, `excel_workbook=2`, `professional_work_report=2`. Semua genre lain masih 0.
+- Dokumen eligible baru: **Australian Bureau of Statistics Annual Report 2024–25** dari PDF resmi https://www.abs.gov.au/about/our-organisation/corporate-reporting/abs-annual-reports/ABS%20Annual%20Report%202024-25_final.pdf. PDF secara eksplisit menyatakan CC BY 4.0. Text layer/contents diperiksa; bagian utama meliputi Overview, Report on performance, Management and accountability, Appendices, Reference material; tujuh chapters dan tiga appendices. Tidak ada visual render inspection atau audit mandiri terhadap angka/kinerja.
+- Sampel profesional sekarang mencakup dua institusi/jurisdiksi independen: Department of Conservation New Zealand annual report 2024/25, dan Australian Bureau of Statistics annual report 2024–25. Keduanya CC BY 4.0; fitur membandingkan macrostructure tanpa menyalin full text.
+- Laporan WUR **Seaweed in Indonesia: farming, utilization and research** (DOI 10.18174/578007) dicatat dalam manifest sebagai `usage_scope=excluded`, `verification_status=excluded` karena sumber menyebut CC BY 4.0 (Netherlands) namun juga secara eksplisit melarang penggunaan komersial. Konflik belum diselesaikan oleh sumber berwenang; tidak dibuat record fitur dan tidak dihitung.
+- README kini memperbarui angka 15 manifest / 10 eligible dan distribusi `professional_work_report=2`; research checkpoint memperbarui hitungan dan menambah Sample 10. Heading kesimpulan dipulihkan supaya tidak menduplikasi judul Sample 10.
+- Terakhir, corpus validation pada SHA `c6d1954baf146ede91f1ca64b1f6cc063b5d4034` telah mulai ulang setelah perbaikan kode bahasa; tetapi penambahan ABS + update README/report/memory mengubah konten setelah SHA itu. Wajib jalankan dan cek seluruh tiga workflows pada HEAD terakhir.
+- Tidak ada 500-doc completion, Document Craft baseline-vs-candidate benchmark, blind human scoring/inter-rater agreement, or generated DOCX/PDF/XLSX visual/functional validation. Tidak boleh klaim peningkatan kualitas berdasarkan struktur sumber saja.
+- PR #179 tetap terbuka/unmerged; `main` tidak disentuh langsung.
+
+## Checkpoint live DOAJ discovery dan perluasan parser ISSN — 2026-10-30
+
+- Branch HEAD pada saat menjalankan discovery pipeline: `a950e30cd0b54cf67fefc9f023f42c2cccbd4ec6`. Tiga CI checks lulus (Orchestrator Tests, Hallmark skill validation, Hallmark corpus validation).
+- Live DOAJ OAI-PMH berhasil diakses melalui GitHub Actions. Bounded run `--max-pages 20 --max-records 6000 --timeout 20 --min-interval 1` memindai 20 halaman penuh, **6.000 rekaman metadata**, tanpa error, dan menghasilkan status `NO_NEW_CANDIDATES`: 0 ISSN-target matches dari 11 target journal ISSNs, kandidat baru = 0, `candidates.jsonl` kosong. Ringkasan berada pada artifact CI `12926677951` (retensi sampai 12 Nov 2026). Tidak ada abstrak, full text, atau PDF yang diunduh.
+- Hasil nol tersebut hanya berarti tidak ada kecocokan pada rentang awal 20 halaman/6.000 rekaman; bukan bukti bahwa 11 jurnal tersebut tidak memiliki artikel. Harvester tidak mengklaim feed exhaustiveness, karena berhenti pada threshold record count setelah halaman lengkap.
+- Pemeriksaan kode menunjukkan ISSN sebelumnya diekstrak dari `dc:identifier`/`dc:relation`, tetapi tidak dari Dublin Core `dc:source`. Parser diperluas untuk membaca `source` dan mengekstrak ISSN yang dilabeli di dalam teks sumber; ditambah regression test `test_parse_matches_issn_from_dublin_core_source_field`. Regex label diperlebar dari `fullmatch` ke pencarian berlabel `ISSN`; tetap tidak mengambil rangkaian angka arbitrary dari DOI.
+- Run CI sebelumnya sempat gagal pada regression test baru karena regex lama hanya menerima string `ISSN` jika seluruh field cocok, bukan jika label ISSN berada di dalam judul sumber. Perbaikan diuji pada SHA `5c8d0d71861e067d20ecf0efb64585f875526abe`; seluruh tiga checks lulus. Scan 20 halaman pada SHA `a950e30cd0b54cf67fefc9f023f42c2cccbd4ec6` juga lulus, namun hasil feed live tetap 0 match.
+- `research/corpus/README.md` diperbarui untuk mengganti klaim lama “live harvest belum berhasil” dengan hasil bounded run 20 halaman/6.000 records dan batas interpretasinya. Korpus eligible tetap **10/500**, sisa 490, `INSUFFICIENT_EVIDENCE`. Live candidates tidak masuk manifest dan tidak dihitung.
+- Setelah pembaruan README, perlu verifikasi seluruh checks pada HEAD terakhir sebelum final. PR #179 tetap open/unmerged; `main` tidak disentuh.
+- Belum ada benchmark baseline-vs-candidate, blind human scoring/inter-rater agreement, atau validasi visual/fungsional hasil DOCX/PDF/XLSX buatan Hallmark. Tidak ada klaim empiris peningkatan kualitas.
+
+## Checkpoint artikel akademik lintas-penerbit — 2026-10-30
+
+- Manifest sekarang memuat **16 catatan**, dengan **11 eligible**, 2 partial-access, 1 nursing case privacy-pending, 1 XLSX metadata-only, dan 1 report rights-conflicted/excluded. Target 500; sisa 489; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi eligible: `academic_paper=4`, `other=1`, `thesis_dissertation=2`, `excel_workbook=2`, `professional_work_report=2`. Empat artikel ilmiah sekarang mencakup tiga artikel dari satu jurnal ICCLE dan satu artikel dari Priviet Social Sciences Journal, sehingga ada variasi penerbit yang lebih baik tetapi sampel tetap kecil.
+- Item baru `doc-privietlab-election-legal-certainty-2026`: “Legal certainty in sentencing of local legislative candidates involving village heads in election campaigns”, DOI `10.55942/pssj.v6i7.1996`, *Priviet Social Sciences Journal* 6(7), 155–169 (July 2026). Official publisher item page dan PDF menyatakan CC BY 4.0; URL halaman item https://journal.privietlab.org/index.php/PSSJ/article/view/1996; PDF tersedia di https://repository.ar-raniry.ac.id/59148/1/Artikel%20Anzilahata%20.pdf. Section structure: 1. Introduction; 2. Data and Method; 3. Results and Discussion dengan 3.1, 3.2, 3.2.1, 3.2.2, 3.3; 4. Conclusion; Data Availability Statement; Funding; References. Struktur fitur hanya berisi heading/notes, tanpa rincian kasus atau kontak pribadi. Tidak ada PDF/full text tersimpan; rendered visual review belum dilakukan.
+- `research/corpus/manifest.jsonl` 16 records; `research/corpus/features.jsonl` 14 feature records (11 eligible documents plus 3 partial/privacy-pending records). README sudah diubah menjadi 11/500; laporan checkpoint memuat Sampel 11 dan kesimpulan 11 sampel.
+- Live DOAJ OAI-PMH: bounded harvest 20 halaman / 6.000 rekaman metadata telah berhasil, 0 cocok dengan 11 ISSN target, status `NO_NEW_CANDIDATES`. Ini bukan bukti bahwa jurnal sasaran tidak memiliki artikel; pencarian berhenti pada rentang awal yang dibatasi. Tidak ada abstract/PDF/full-text download, dan candidate file tetap terpisah dari korpus.
+- Sebelum perubahan artikel di atas, CI tiga workflows lulus pada SHA `a950e30cd0b54cf67fefc9f023f42c2cccbd4ec6`; manifest/features/README/report/memory berubah sesudah itu. Harus verifikasi ulang CI di HEAD final.
+- PR #179 tetap open/unmerged; no direct change to `main`. Belum ada benchmark baseline-vs-candidate, human blind score/inter-rater agreement, atau QA rendered DOCX/PDF/XLSX buatan Hallmark.
