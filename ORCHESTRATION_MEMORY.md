@@ -1322,3 +1322,37 @@ This checkpoint records repository work on branch `feat/hallmark-corpus-benchmar
 4. Individually verify licensed original items. Record access and rights evidence; do not place restricted full text, patient/person data, or private company documents in Git.
 5. Reach 500 only when 500 unique items satisfy the eligibility policy. Until then report the actual count and `INSUFFICIENT_EVIDENCE`.
 6. No baseline-to-candidate document-quality experiment or visual DOCX/PDF/Excel validation has yet been run. No quality-improvement claim is authorized.
+
+## Checkpoint riset korpus dan harvester metadata (2026-10-30)
+
+Checkpoint lanjutan sesudah penambahan metadata harvester dan sampel pertama. Branch kandidat: `feat/hallmark-corpus-benchmark-v1`. Jangan menafsirkan checkpoint terdahulu yang menyebut manifest kosong sebagai status terkini; urutan catatan tetap dipertahankan sebagai sejarah.
+
+### Status korpus aktual
+- `research/corpus/manifest.jsonl` kini memiliki satu rekaman individual yang melewati gate manifest: artikel Tessa Septy Dynesia, DOI `10.15294/ijicle.v2i3.38417`, lisensi CC BY-SA 4.0 berdasarkan halaman penerbit, kebijakan hak cipta jurnal dan pernyataan pada PDF.
+- Satu sampel tersebut disimpan sebagai metadata + fitur struktur saja. PDF dan teks penuh tidak disimpan ke repositori. Fitur analisis ada di `research/corpus/features.jsonl`; laporan temuan ada di `research/reports/document-craft-corpus-checkpoint-2026-10-30.md`.
+- Total yang lolos gate: **1/500**; target tersisa 499; status tetap `INSUFFICIENT_EVIDENCE`. Distribusi: `academic_paper=1`; semua genre lainnya nol. Sampel tunggal ini tidak cukup untuk membuat generalisasi per genre dan tidak disebut sebagai contoh kualitas ideal.
+- Registry discovery berisi 11 entri (10 direktori jurnal DOAJ dan Portal Satu Data Indonesia). Itu bukan sampel. Live harvest metadata DOAJ **belum dijalankan**, jadi kandidat yang benar-benar diambil dari feed = 0.
+
+### Pipeline baru
+- `research/corpus/harvest_doaj_candidates.py`: harvester OAI-PMH publik terbatas dengan max pages/response bytes, timeout, interval antar-request, filter ISSN, pemeriksaan checksum ISSN, penanganan resumption token, ID kandidat stabil, atomic write, merge idempoten, dan mode dry-run.
+- Harvester mencatat metadata bibliografis dan tautan, tidak menyimpan abstrak atau mengunduh isi artikel; semua kandidat dinyatakan `corpus_eligible=false` dan lisensi konten belum terverifikasi. Kandidat tidak dipindahkan otomatis ke manifest.
+- DOAJ menyatakan metadata artikelnya tersedia dengan CC0 waiver, tetapi hak cipta/lisensi dokumen yang ditunjuk harus diperiksa per-item. Sumber: `https://doaj.org/terms/` dan `https://doaj.org/docs/oai-pmh/`.
+- `research/corpus/validate_corpus.py` memeriksa manifest, hak/akses, provenance, privasi, status orisinal, ID duplikat, URL kanonis dan hash, kemudian melaporkan distribusi dan status target.
+- Tes validator menguji manifest kosong, eligibility, metadata-only, template/sintetis, duplikasi URL/hash, record ID ganda, JSON rusak, URL ber-kredensial, dan kegagalan jika target belum terpenuhi.
+- Tes harvester menggunakan mock XML/jaringan untuk ISSN checksum, parsing, hak metadata versus hak konten, pagination, error OAI, idempotensi dan dry-run. Ini bukan bukti feed live tersedia pada saat eksekusi.
+
+### Runtime fix
+- Audit `orchestrator/skill_runtime.py` menemukan kata generik `writing` dan `humaniz(?:e|ed|ing)` sebagai alternatif intent dokumen. Ini bisa memicu Document Craft untuk tugas pemrograman, mis. “writing Python code”.
+- Kandidat menghapus dua pemicu generik tersebut dan menambahkan tes regresi untuk tugas kode, “academic writing”, dan “humanize this Python script”. Ini pembatasan intent yang eksplisit; hasil CI menguji perilaku routing, bukan kualitas prosanya sendiri.
+
+### Validasi GitHub
+- Pada commit kandidat `ad260725f466a3931956109b68fd03b8ee286dd9`, seluruh tiga check telah selesai sukses: Orchestrator Tests, Hallmark skill validation, dan Hallmark corpus validation. Run: `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929212409`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929212386`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929212498`.
+- PR #179 `https://github.com/orionrayy/ai-determinism-engine/pull/179` masih terbuka, belum merged; base tetap `main`. Sesudah perubahan dokumentasi pada checkpoint ini, verifikasi ulang CI pada SHA terbaru sebelum menyatakan branch hijau.
+- Perubahan riset dan runtime masih di branch kandidat. Tidak ada perubahan langsung ke `main`.
+
+### Hal yang belum dikerjakan / batas klaim
+1. Tidak ada klaim 500 dokumen; status resmi tetap `INSUFFICIENT_EVIDENCE`.
+2. Belum ada baseline keluaran Document Craft dibanding dokumen asli, rubric scoring terhadap output kandidat, blind human review, atau bukti peningkatan mutu.
+3. Belum ada validasi visual keluaran Hallmark untuk DOCX/PDF/Excel. Inspeksi yang dilakukan hanya pada beberapa halaman PDF sumber satu artikel; ini bukan validasi output generator.
+4. Harvester baru diuji dengan fixture; lakukan live harvest bertahap dan periksa kepatuhan feed sebelum mengandalkannya sebagai jalur produksi korpus.
+5. Perlu menambah sampel dari beberapa source family dan genre yang berbeda, melakukan pemeriksaan lisensi/privacy per-item, lalu melakukan analisis struktural terukur sebelum mengubah prompt atau mengklaim pola.
