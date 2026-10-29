@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile research pipeline
-        run: python -m py_compile research/corpus/validate_corpus.py research/corpus/test_validate_corpus.py
+        run: python -m py_compile research/corpus/validate_corpus.py research/corpus/test_validate_corpus.py research/corpus/harvest_doaj_candidates.py research/corpus/test_harvest_doaj_candidates.py
       - name: Validate JSON metadata contracts
         run: |
           python -m json.tool research/corpus/manifest.schema.json >/dev/null
