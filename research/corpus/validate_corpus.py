@@ -34,7 +34,7 @@ ENUMS = {
     "provenance_confidence": {"high", "medium", "low"},
     "acquisition_method": {"official_download", "official_web_view", "api",
                            "user_supplied_permission", "library_metadata_only", "other"},
-    "access_status": {"accessed", "metadata_only", "inaccessible"},
+    "access_status": {"accessed", "partial", "metadata_only", "inaccessible"},
     "anonymization_status": {"not_applicable", "verified", "pending", "excluded"},
     "privacy_review": {"not_required", "passed", "pending", "failed"},
     "verification_status": {"pending", "verified", "excluded"},
