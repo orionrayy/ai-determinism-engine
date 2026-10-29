@@ -176,3 +176,8 @@ This section supersedes the earlier run #25 capture metrics as the latest resear
 ## Latest compare refresh
 
 A final fresh compare after all current branch documentation commits reports PR #178 as diverged from main: merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, 168 commits ahead, 2 behind, 27 changed files; current main SHA \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`, feature branch head \`3d2054da51ebb34f98380c50257e61735e650475\`. This supersedes the earlier point-in-time count of 167 ahead. Keep the PR draft/unmerged; no history rewriting or integration was attempted.
+
+
+## Latest fixed-head comparison
+
+At the final feature journal head \`7e1b62df19a950f79f58eea2a0a1a118fdb03d2d\`, GitHub reports the PR #178 branch is diverged from main \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`: merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, 169 commits ahead, 2 behind, 27 files in the PR diff. This supersedes earlier point-in-time 167/168 ahead counts. Keep the implementation PR draft and do not rewrite/merge its history without a dedicated review. No such integration action was performed in this session.

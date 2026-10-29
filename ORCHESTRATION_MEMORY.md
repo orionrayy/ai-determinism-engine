@@ -1379,3 +1379,8 @@ This is a required next-phase acceptance contract from the user. It is a roadmap
 ## Final compare refresh — 2026-10-30
 
 The last fresh GitHub compare, performed after all current documentation commits were pushed, reports current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` versus feature head \`3d2054da51ebb34f98380c50257e61735e650475\`: \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=168\`, \`behind_by=2\`, 27 files in PR #178. This supersedes the earlier point-in-time count of 167 commits ahead recorded in previous notes. \`mergeable=true\` is only API metadata and does not authorize merge; keep PR #178 draft and obtain review of the full history delta before integration. No rebase, force-push, merge, or change to main was performed.
+
+
+## Final fixed-head compare — 2026-10-30 (session-2026-10-30-final-compare-head-7e1b62d)
+
+This was measured after finalizing the feature branch journal at \`7e1b62df19a950f79f58eea2a0a1a118fdb03d2d\`. A fresh GitHub compare against current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` reports \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=169\`, \`behind_by=2\`, 27 PR-diff files. This supersedes earlier point-in-time counts 167/168 recorded above. Freeze feature branch at this head for this session; do not add more commits while citing this compare snapshot. \`mergeable=true\` is not authorization or a complete review of the 169-commit delta. PR #178 remains draft/unmerged; no rebase, force-push, merge, or main mutation.
