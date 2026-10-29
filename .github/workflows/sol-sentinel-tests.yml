@@ -32,6 +32,6 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile
-        run: python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/test_sol_sentinel.py projects/sol-sentinel/test_paper_engine.py projects/sol-sentinel/test_evaluate_splits.py
+        run: python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/test_sol_sentinel.py projects/sol-sentinel/test_paper_engine.py projects/sol-sentinel/test_evaluate_splits.py projects/sol-sentinel/test_capture_history.py
       - name: Offline unit tests
         run: python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
