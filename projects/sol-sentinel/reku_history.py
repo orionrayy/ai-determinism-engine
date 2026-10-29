@@ -136,7 +136,10 @@ def parse_activity_rows(payload: Any, start_ms: int, end_ms: int) -> list[Trade]
         try:
             timestamp_raw = float(row[0])
             timestamp_ms = int(timestamp_raw if timestamp_raw >= 100_000_000_000 else timestamp_raw * 1000.0)
-            transaction_type = int(float(row[1]))
+            side_value = float(row[1])
+            if not math.isfinite(side_value) or not side_value.is_integer():
+                continue
+            transaction_type = int(side_value)
             price_idr = float(row[2])
             notional_idr = float(row[3])
             quantity_coin = float(row[4])
@@ -149,7 +152,7 @@ def parse_activity_rows(payload: Any, start_ms: int, end_ms: int) -> list[Trade]
             continue
         if transaction_type not in (0, 1):
             continue
-        if price_idr <= 0 or notional_idr < 0 or quantity_coin < 0:
+        if price_idr <= 0 or notional_idr <= 0 or quantity_coin <= 0:
             continue
         trades.append(Trade(timestamp_ms, transaction_type, price_idr, notional_idr, quantity_coin))
     # Stable ordering preserves API order for trades carrying identical second-resolution timestamps.
