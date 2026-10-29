@@ -264,3 +264,40 @@ Current mode remains `RESEARCH_ONLY`; strategy status remains `INSUFFICIENT_EVID
 - Operational readiness: `RESEARCH_ONLY`; public INDODAX endpoints not directly verified from this session; Termux still not tested.
 - Live readiness: blocked. No live executor, no approval gate completed, no actual order/transfer or wallet signing.
 - Next: run an isolated real *public read-only* INDODAX metadata/depth smoke test from an allowed network; inspect response fields and server-time freshness; then add read-only contract check. In parallel, diagnose signal rejection combinations and preserve fixed parameters for validation/OOS. Update the two PRs only after checking their current head/base and CI; no merge or base rewrite without reviewed merge plan.
+
+
+## Execution follow-up — adapter contracts and fresh CI proof (2026-10-30)
+
+### Verified change and test state
+
+Implementation branch: `feat/sol-sentinel-paper-trader-v1`, current code head `5f2acac4bddfa3dc72c4dea3bc429e14de9d6172`.
+
+- Latest branch-head CI: [run #40945972566](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40945972566), successful. Decoded Actions log reports `Ran 120 tests ... OK`. This is offline compile/unit-test evidence, not a live endpoint probe or strategy profitability result.
+- New module: `projects/sol-sentinel/execution_adapters.py`; tests: `projects/sol-sentinel/test_execution_adapters.py`; venue decision: `projects/sol-sentinel/PLATFORM_ADAPTER_DECISION_2026-10-30.md`.
+- The adapter layer isolates market data, capital-source metadata, custody balance interface, transfer planning, paper execution and ledger contracts. The INDODAX adapter reads the public pair catalogue and depth only; its test transport is mocked. The paper executor is in-memory and quote-crossing only. Live policy remains unconditionally blocked.
+- Current feature branch is still diverged from current `main`: 207 ahead / 2 behind; merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`; 32 changed files. PR #178 remains draft/open/unmerged. Do not blindly rebase/merge.
+
+### Error register
+
+| Priority | Finding | Root cause / proof | Current state |
+|---|---|---|---|
+| P1 | A route whose withdrawal fee consumes the entire requested amount could be represented as a nominal plan with zero remainder | A regression was added for fee == requested amount. The planner returns zero received amount and adds `no_transfer_value_remaining`; the route is not approved. | Fixed/guarded; regression is in the passing suite. |
+| P1 | Transfer verification flags could accept non-boolean truthy input | A string such as `"false"` is truthy in Python if consumed as an ordinary bool. `TransferRoute` now rejects non-boolean values at construction. | Fixed; regression is in the passing suite. |
+| P1 | Reusing an idempotency key for a different order could cause paper-state ambiguity | Paper adapter fingerprint and ledger conflict tests require identical intent/receipt content on replay. | Guarded by current unit tests; durable cross-process exchange idempotency is not implemented. |
+| P2 | Conflicting duplicate source candles were silently overwriteable by a last-row-wins map | Same timestamp but differing OHLCV was not distinguishable from an identical duplicate. Scanner/capture now deduplicate identical rows and fail closed for conflicting history rows. | Fixed with regression tests; no live-source smoke test performed here. |
+| P2 | Historical activity rows could include fractional side identifiers or empty/zero-quantity trades | Side values were cast directly to int and zero values could enter the parsed tape. The parser now rejects non-integral side values, unsupported side values and non-positive trade economics. | Fixed with regression coverage; native Reku activity endpoint still is not verified and the last research evidence for legacy activity history returned HTTP 404. |
+| P2 | Market-data requests required an explicit documented venue boundary | Earlier engine contract did not define a portable venue/precision/routing interface. Added venue-neutral protocols and INDODAX public `/api/pairs` / `/api/depth/{pair_id}` adapter, finite timeouts, bounded retries, capped response size, public rate pacing, Decimal tick/lot/minimum checks and bid/ask validation. | Mock-tested and CI green; public endpoint behavior has not been smoke-tested from this session. |
+| P2 | Venue-specific minimum and fees can be confused with generic market metadata | Official INDODAX help states that current all-in fee detail is displayed in Profile/Trading Fees, effective 1 October 2026; Lite min is IDR 10,000 and direct Pro min is IDR 25,000 (orders IDR 10,000–24,999 route via Lite). The per-market pair metadata alone is not a substitute for the account/mode rule. | Documented; add an explicit mode-specific simulator floor before using the adapter in venue-specific paper tests. |
+| P1 | Strategy still has no demonstrated tradable edge | Last full 60/20/20 historical research run #27 had 0 trades in development, validation and OOS on dataset SHA `6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14`. A new complete research run on the latest adapter branch was not completed. | Open blocker; `INSUFFICIENT_EVIDENCE`. |
+
+### Platform decision and remaining proof
+
+Reku is treated only as the on-ramp. Reku's current public coin-status page lists SOL deposit/withdrawal as Active and its official notice documents the Solana network, but the current account-specific withdrawal amount/fee/minimum still must be confirmed in the official app. See https://reku.id/status and https://reku.id/information/reku-support-sol-solana-network-dan-ftm-ethereum-network.
+
+INDODAX is the initial centralized-exchange adapter candidate because the official 2026 API documentation exposes a no-key public pair catalogue and depth route, with a stated 180 requests/min public limit. Its current per-account all-in fee and exact SOL deposit-network acceptance are not certified by this test suite. Official references: https://indodax.com/downloads/INDODAXCOM-API-DOCUMENTATION.pdf and https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX. The latter says minimum order value IDR 25,000 for direct Pro and IDR 10,000 for Lite; exact current fee components are shown in the account UI.
+
+Jupiter remains quote-only; free API key limit is 1 RPS, keyless is 0.5 RPS. Solana base fee is documented as 5,000 lamports per signature plus optional priority fee; failed transactions can still pay fees. Sources: https://developers.jup.ag/pricing, https://developers.jup.ag/changelog/developer-platform, and https://solana.com/docs/core/fees.
+
+### Safety / gate status
+
+No transfer, order, wallet connection, signature, private key, production credential, or secret was used. No live execution adapter exists. `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE` remains mandatory until strategy evidence, direct public endpoint validation, network and fee proof, Termux verification, paper-forward observation, and all required readiness gates pass.
