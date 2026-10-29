@@ -96,12 +96,14 @@ class IndodaxNativeCaptureTests(unittest.TestCase):
             with csv_path.open(newline="", encoding="utf-8") as handle:
                 rows = list(csv.DictReader(handle))
             sidecar = json.loads(meta_path.read_text(encoding="utf-8"))
+            actual_digest = hashlib.sha256(csv_path.read_bytes()).hexdigest()
         self.assertEqual(len(rows), 100)
         self.assertEqual(rows[0]["open"], "1800000")
         self.assertEqual(metadata["input_price_currency"], "IDR")
         self.assertFalse(metadata["fx_conversion_applied"])
         self.assertFalse(metadata["orders_enabled"])
-        self.assertEqual(metadata["dataset_sha256"], hashlib.sha256(csv_path.read_bytes()).hexdigest() if csv_path.exists() else sidecar["dataset_sha256"])
+        self.assertEqual(metadata["dataset_sha256"], actual_digest)
+        self.assertEqual(sidecar["dataset_sha256"], actual_digest)
         self.assertEqual(sidecar["venue"], "INDODAX")
         self.assertEqual(sidecar["quote_asset"], "IDR")
 
