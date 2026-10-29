@@ -83,3 +83,12 @@ The evaluator splits the input by time in a 60/20/20 ratio. Each segment begins 
 ## Cost assumptions
 
 The scanner accepts `--fee-bps-round-trip`, `--spread-bps-round-trip`, and `--slippage-bps-round-trip`. The backtest/evaluator accept `--entry-fee-bps`, `--exit-fee-bps`, `--spread-bps-round-trip`, and `--slippage-bps-per-side`. These separate estimates to make assumptions visible. Do not set spread/slippage to zero just to obtain more signals. The historical default values are placeholders and should be changed only using verified venue costs or a documented sensitivity test.
+
+
+## Quote currency and IDR conversion
+
+The CSV contains SOLUSDT prices, while the configured capital and reports use IDR. The history-capture script fetches a daily USD/IDR reference from Frankfurter and records the rate/date in the `.csv.meta.json` sidecar. The backtest and chronological evaluator read that sidecar by default. The reference is a USD proxy for USDT and applies one daily rate to the entire dataset; it is not Reku's live SOL/IDR price. If the reference is missing/stale, recapture or provide a verified manual value:
+
+`python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --quote-to-idr-rate YOUR_VERIFIED_RATE --quote-to-idr-source "source and date" --report-path ~/.sol-sentinel/backtest.json`
+
+Do not paste a private or account-specific value into GitHub. This conversion corrects units for simulation; it does not make Binance prices executable on Reku.
