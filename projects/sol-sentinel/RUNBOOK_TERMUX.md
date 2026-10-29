@@ -21,6 +21,7 @@ python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m -
 python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json
 python projects/sol-sentinel/cost_sensitivity.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/cost_sensitivity.json
+python projects/sol-sentinel/reku_market.py --symbol SOL --binance-csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/reku_sol_idr_market.json
 ```
 
 To run a continuous scanner while the terminal stays active:
@@ -102,3 +103,12 @@ Run the predeclared comparison with identical technical rules on the same histor
 `python projects/sol-sentinel/cost_sensitivity.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/cost_sensitivity.json`
 
 The report compares: a Reku Pro fee baseline with assumed spread/slippage; a lower-friction hypothetical with the same fees; and two fee-only mathematical floors (Pro and Lightning) that explicitly assume zero spread/slippage and are not executable scenarios. All technical parameters remain fixed. Do not choose a scenario simply because its historical P&L is highest; use the report to understand whether costs erase the edge.
+
+
+## Reku SOL/IDR public quote and order-book snapshot
+
+After capturing Binance history (to provide the dated FX proxy), run:
+
+`python projects/sol-sentinel/reku_market.py --symbol SOL --binance-csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/reku_sol_idr_market.json`
+
+The adapter calls the public endpoints documented at https://api.reku.id/: `/v2/coins`, `/v2/price`, `/v2/bidask`, and `/v2/orderbook?id=...`. It records direct spread in basis points, order-book best levels and top-five notional depth, and optional cross-venue reference deviation. No login or credentials are used. The documentation is legacy, so use the report's `data_status` and `warnings`: `OK` means the fields parsed coherently, `PARTIAL` means quote/book consistency could not be fully validated, and `ERROR` means no reliable snapshot. Do not treat the USD/IDR proxy as a transaction rate or the adapter as an order API.
