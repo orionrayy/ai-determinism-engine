@@ -154,3 +154,7 @@ Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
 
 Keterlacakan analisis diverifikasi oleh `research/corpus/validate_features.py`, dengan tes untuk referensi manifest, source family, URL bukti, analisis duplikat dan kelengkapan metode inspeksi. Workflow CI menyimpan ringkasan mesin `corpus-summary.json` dan `features-summary.json` sebagai artifact selama 14 hari. Ringkasan itu bersifat status inventaris, bukan hasil benchmark kualitas.
+
+### Hasil live discovery DOAJ (metadata saja)
+
+Pada run terbaru, pipeline mengakses DOAJ OAI-PMH melalui GitHub Actions, membaca 20 halaman (6.000 rekaman metadata), dan tidak menemukan metadata yang cocok dengan 11 ISSN sasaran. Status harvester: `NO_NEW_CANDIDATES`; kandidat baru 0. Tidak ada abstrak, PDF, atau teks artikel yang diunduh. Ini hanya kesimpulan dari rentang awal 20 halaman, karena harvester berhenti pada batas jumlah rekaman; bukan bukti bahwa jurnal sasaran tidak memiliki artikel. Parser kini memeriksa `dc:source` untuk ISSN selain `dc:identifier`/`dc:relation`, dengan regression test yang lulus.
