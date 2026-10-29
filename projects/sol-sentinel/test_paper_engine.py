@@ -127,6 +127,10 @@ class BacktestAndLedgerTests(unittest.TestCase):
         self.assertEqual(report["final_equity_idr"], report["initial_equity_idr"])
         self.assertGreater(report["bars_5m_complete"], 30)
         self.assertGreater(report["bars_15m_complete"], 30)
+        self.assertGreater(report["signal_evaluations"], 0)
+        self.assertEqual(report["signal_candidates"], 0)
+        self.assertGreater(sum(report["signal_rejection_counts"].values()), 0)
+        self.assertIn("1m_volume_confirmation_missing", report["signal_rejection_counts"])
 
     def test_persisting_same_run_is_idempotent(self):
         bars = [make_bar(i, close=1000 + i * 0.01) for i in range(600)]
