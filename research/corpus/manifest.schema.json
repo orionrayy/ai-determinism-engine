@@ -178,6 +178,7 @@
     "access_status": {
       "enum": [
         "accessed",
+        "partial",
         "metadata_only",
         "inaccessible"
       ]
