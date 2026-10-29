@@ -33,6 +33,8 @@ Default output adalah `candidates.jsonl`. Harvester menggabungkan berdasarkan ID
 
 `candidates.jsonl` dan `manifest.jsonl` adalah dua inventaris berbeda. Metadata kandidat tidak dihitung dalam target 500.
 
+Workflow CI juga menjalankan `validate_features.py` untuk memeriksa keterlacakan analisis ke manifest. Pada job CI, `corpus-summary.json` dan `features-summary.json` disimpan sebagai artifact inspeksi selama 14 hari; berkas itu berisi metadata, status gate, peringatan, dan distribusi, bukan teks penuh sumber.
+
 ## Format entri manifest
 
 Lihat `manifest.schema.json`. Wajib menyimpan `record_id`, `source_family_id`, URL dan judul, penerbit/pencipta, genre/subgenre, tanggal dan format, hak penggunaan, provenance, cara memperoleh, status akses, hasil peninjauan privasi, status verifikasi, serta alasan pengecualian/duplikasi. Hash dan ukuran hanya dicatat bila pengukuran tidak melanggar ketentuan penggunaan atau kerahasiaan sumber.
