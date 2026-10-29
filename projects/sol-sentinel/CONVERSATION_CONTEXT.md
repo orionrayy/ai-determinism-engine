@@ -76,3 +76,17 @@ Canonical links and caveats are maintained in SOURCES.md. Relevant official refe
 ## Privacy warning
 
 This repository is public. Anything committed here is publicly readable. Only the user-provided project budget/target and the minimum necessary screenshot observations have been retained to preserve task continuity. Never add account identifiers, personally identifying data, private transaction identifiers, credentials, wallet secrets, or unredacted screenshots.
+
+
+## Continued implementation checkpoint — 2026-10-29
+
+Additional files now present:
+- `capture_history.py`: bounded public-only Binance candle capture, CSV hash and metadata sidecar; no order API.
+- `paper_engine.py`: offline cost-aware historical simulation and SQLite paper ledger.
+- `test_paper_engine.py`: offline backtest/ledger tests.
+- `evaluate_splits.py`: fixed-parameter chronological 60/20/20 evaluation with an untouched out-of-sample segment.
+- `test_evaluate_splits.py`: tests for exact split boundaries, insufficient history, invalid ratios, and timestamp gaps.
+
+Latest verified CI run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40906164183 — success for commit `41f60c53ff7801d3b3729c27f5bd338854538386`. The compile and offline unit-test steps both passed.
+
+The backtest has not yet been run against a downloaded historical CSV on the user's device. No actual profitability, exchange connectivity, Reku execution support, or goal attainment has been established. Next actions: run capture and tests in Termux, run the basic backtest and chronological evaluator with verified fee parameters, inspect the trade count and per-segment results, and keep all private data local.
