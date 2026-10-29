@@ -45,7 +45,7 @@ jobs:
 
       - name: Compile and test
         run: |
-          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py
+          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py
           python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 
       - name: Capture public historical candles
@@ -67,6 +67,12 @@ jobs:
           python projects/sol-sentinel/evaluate_splits.py \
             --csv research-output/SOLUSDT_1m.csv \
             --output research-output/evaluation.json
+
+      - name: Compare predeclared execution-cost scenarios
+        run: |
+          python projects/sol-sentinel/cost_sensitivity.py \
+            --csv research-output/SOLUSDT_1m.csv \
+            --output research-output/cost_sensitivity.json
 
       - name: Publish research summary
         if: always()
@@ -103,6 +109,18 @@ jobs:
           for name, metrics in report.get("segments", {}).items():
               print(f"- {name}: bars={metrics.get('bars_1m')}, signals={metrics.get('signal_evaluations')}, candidates={metrics.get('signal_candidates')}, trades={metrics.get('closed_trades')}, net_pnl_idr={metrics.get('net_pnl_idr')}, max_drawdown_pct={metrics.get('max_drawdown_pct')}")
               print(f"  rejection_counts={metrics.get('signal_rejection_counts')}")
+          PY
+            fi
+            if [ -f research-output/cost_sensitivity.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/cost_sensitivity.json").read_text())
+          print("Cost sensitivity (predeclared; not auto-optimized):")
+          for item in report.get("scenarios", []):
+              print(f"- {item['scenario']}: cost_bps={item['modeled_round_trip_cost_bps']}, min_gross_bps={item['minimum_gross_move_bps_in_signal_gate']}, candidates={item['signal_candidates']}, trades={item['closed_trades']}, net_pnl_idr={item['net_pnl_idr']}, return_pct={item['net_return_pct']}")
+              print(f"  rejection_counts={item['signal_rejection_counts']}")
           PY
             fi
           } >> "$GITHUB_STEP_SUMMARY"
