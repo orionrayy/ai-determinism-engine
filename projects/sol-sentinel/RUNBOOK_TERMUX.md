@@ -20,6 +20,7 @@ python projects/sol-sentinel/sol_sentinel.py --json
 python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv
 python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json
+python projects/sol-sentinel/cost_sensitivity.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/cost_sensitivity.json
 ```
 
 To run a continuous scanner while the terminal stays active:
@@ -92,3 +93,12 @@ The CSV contains SOLUSDT prices, while the configured capital and reports use ID
 `python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --quote-to-idr-rate YOUR_VERIFIED_RATE --quote-to-idr-source "source and date" --report-path ~/.sol-sentinel/backtest.json`
 
 Do not paste a private or account-specific value into GitHub. This conversion corrects units for simulation; it does not make Binance prices executable on Reku.
+
+
+## Cost sensitivity
+
+Run the predeclared comparison with identical technical rules on the same historical dataset:
+
+`python projects/sol-sentinel/cost_sensitivity.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/cost_sensitivity.json`
+
+The report compares: a Reku Pro fee baseline with assumed spread/slippage; a lower-friction hypothetical with the same fees; and two fee-only mathematical floors (Pro and Lightning) that explicitly assume zero spread/slippage and are not executable scenarios. All technical parameters remain fixed. Do not choose a scenario simply because its historical P&L is highest; use the report to understand whether costs erase the edge.
