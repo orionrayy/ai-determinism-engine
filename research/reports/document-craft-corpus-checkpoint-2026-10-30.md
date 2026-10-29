@@ -2,14 +2,14 @@
 
 ## Status yang dapat dibuktikan
 
-Korpus saat ini memiliki **10 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 490. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
+Korpus saat ini memiliki **11 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 489. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
 
 | Genre | Dokumen lolos gate |
 |---|---:|
 | LP/asuhan keperawatan | 0 |
 | Laporan PKL/magang | 0 |
 | Skripsi/tesis/disertasi | 2 |
-| Makalah/artikel ilmiah | 3 |
+| Makalah/artikel ilmiah | 4 |
 | Laporan praktikum | 0 |
 | Laporan penelitian | 0 |
 | Proposal | 0 |
@@ -19,7 +19,7 @@ Korpus saat ini memiliki **10 dokumen individual yang lolos gate provenance dan 
 | Workbook Excel | 2 |
 | Genre lain — panduan profesional/operasional | 1 |
 
-Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 15 catatan: 10 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, 1 lead XLSX metadata-only, dan 1 laporan riset yang dikecualikan karena konflik syarat lisensi. Lima catatan non-eligible itu **tidak dihitung** ke angka 10/500.
+Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 16 catatan: 11 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, 1 lead XLSX metadata-only, dan 1 laporan riset yang dikecualikan karena konflik syarat lisensi. Lima catatan non-eligible itu **tidak dihitung** ke angka 11/500.
 
 ## Sampel yang sudah diverifikasi
 
@@ -137,6 +137,23 @@ The front matter includes the report title/year, copyright and ISSN, explicit li
 
 The architecture places narrative/overview first, then performance and financial statements, followed by governance/workforce, appendices and reference material. The transmittal and statutory context establish accountability to the responsible Minister and Parliament. This differs from the NZ DOC annual report despite the shared annual-report genre: both separate performance and financial reporting, while their sectional hierarchy and governance context vary by jurisdiction. Rendered-page visual inspection was not performed; financial and performance claims have not been independently re-audited.
 
+
+## Sampel 11 — artikel hukum dari penerbit lain, CC BY 4.0
+
+**Legal certainty in sentencing of local legislative candidates involving village heads in election campaigns** — Anzilahata, Riza Afrian Mustaqim, Nurul Fithria, Arifin Abdullah, Ihdi Karim Makinara, and Jamhir. *Priviet Social Sciences Journal*, 6(7), 155–169 (July 2026), DOI [10.55942/pssj.v6i7.1996](https://doi.org/10.55942/pssj.v6i7.1996). Official item page: https://journal.privietlab.org/index.php/PSSJ/article/view/1996. The publisher PDF and item page explicitly state CC BY 4.0; the public PDF text layer was inspected. No PDF/full text or author email is retained in the repo.
+
+The front matter includes the journal volume/article/issue/date, title, DOI, explicit license statement, author/affiliation block, received/revised/accepted dates, abstract, and keywords. The article hierarchy is:
+1. INTRODUCTION
+2. DATA AND METHOD
+3. RESULTS AND DISCUSSION
+   - 3.1 Legal Certainty
+   - 3.2 Analysis of Panel of Judges’ Considerations, with two 3.2.x subsubsections
+   - 3.3 Review of Legal Certainty in Imposition of Criminal Sanctions
+4. CONCLUSION
+Data Availability Statement, Funding, and REFERENCES.
+
+The paper's method heading is “Data and Method” rather than “Methodology”; the core analysis is nested three levels deep while the conclusion returns to first-level numbering. Data availability and funding declarations appear before references. This adds cross-publisher variation within the academic-paper genre, but the sample is one legal article and does not establish a general format. The text includes public legal proceedings; no detailed case narrative, named court participants, or personal contact information is retained in the feature record. Legal assertions and court decision details have not been independently audited. Rendered-page visual inspection was not performed.
+
 ## Partial, metadata-only, privacy-pending, and excluded leads (not counted toward the target)
 
 - **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
@@ -145,7 +162,7 @@ The architecture places narrative/overview first, then performance and financial
 - **Studi Kasus: Asuhan Keperawatan pada Orang Dewasa dengan Isolasi Sosial** — Journal of Nursing Education and Practice, DOI [10.53801/jnep.v1i01.9](https://doi.org/10.53801/jnep.v1i01.9), CC BY-SA 4.0 and full text public. Only macro-headings are recorded (case-study label, abstract sections, Pendahuluan, Metode, Hasil dan Pembahasan, Kesimpulan, conflict/acknowledgement/funding/references). The full paper contains sensitive patient narrative, so the source is held at `privacy_review=pending`; no case facts, quotes, chronology, or contact details are retained. It contributes **zero** to eligibility until privacy review is resolved.
 - **Seaweed in Indonesia: farming, utilization and research** — Wageningen Centre for Development Innovation, Report WCDI-22-220, DOI [10.18174/578007](https://doi.org/10.18174/578007). The source says CC BY 4.0 (Netherlands) but also explicitly prohibits commercial use. Because those conditions conflict and no authoritative clarification was obtained, the manifest record is `usage_scope=excluded`/`verification_status=excluded`; no feature record was created and the report contributes **zero** to eligibility.
 
-## Apa yang dapat disimpulkan dari sepuluh sampel
+## Apa yang dapat disimpulkan dari sebelas sampel
 
 Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat memperlihatkan variasi dalam satu tradisi publikasi tetapi belum menjadi tiga source family independen. Sebagian ciri berulang—metadata DOI dan lisensi di halaman awal, satu kolom serif, catatan bernomor, bagian referensi dan deklarasi penerbitan—masuk akal diuji sebagai hipotesis untuk artikel-artikel jurnal tersebut. Adanya bagian recommendation yang terpisah pada salah satu artikel serta perbedaan heading/topik memperlihatkan bahwa urutan bab tidak boleh dipaksakan sebagai template universal.
 
