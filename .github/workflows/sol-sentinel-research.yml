@@ -17,7 +17,7 @@ on:
           - "7"
           - "14"
           - "30"
-        default: "7"
+        default: "30"
   schedule:
     - cron: "15 14 * * *"
 
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      CAPTURE_DAYS: ${{ inputs.days || '7' }}
+      CAPTURE_DAYS: ${{ inputs.days || '30' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
