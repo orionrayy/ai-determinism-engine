@@ -65,4 +65,4 @@ The repository is public. Do not commit wallet seed phrases, private keys, API s
 
 ## Automated historical research
 
-The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can capture a bounded public candle window, run the offline backtest, and evaluate fixed parameters on chronological 60/20/20 splits. It is a research automation only, not a live trading bot. Use Actions > SOL Sentinel Research > Run workflow, choose this branch, and select a history length. The daily schedule only runs once the workflow exists on the default branch. Artifacts are retained for seven days.
+The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can capture a bounded public candle window, run the offline backtest, and evaluate fixed parameters on chronological 60/20/20 splits. It is research automation only, not a live trading bot. Because GitHub requires `workflow_dispatch` and scheduled workflows to exist on the default branch, the workflow must be merged to the default branch before it can be run manually from Actions or execute on its daily schedule. Artifacts are retained for seven days.
