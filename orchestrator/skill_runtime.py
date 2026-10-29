@@ -25,8 +25,8 @@ _SHA256_ZERO = "sha256:" + "0" * 64
 _DOCUMENT_INTENT = re.compile(
     r"\b(makalah|paper|essay|esai|skripsi|tesis|disertasi|laporan|report|reports|technical report|academic report|praktikum|"
     r"praktik|pkl|magang|proposal|artikel ilmiah|karya tulis|tugas kuliah|"
-    r"academic writing|literature review|metode penelitian|hasil penelitian|citation|citations|bibliography|bibliographies|reference list|writing|"
-    r"dokumen|document|docx|pdf|humaniz(?:e|ed|ing)|memo|notulen|minutes of meeting)\b",
+    r"academic writing|literature review|metode penelitian|hasil penelitian|citation|citations|bibliography|bibliographies|reference list|"
+    r"dokumen|document|docx|pdf|memo|notulen|minutes of meeting)\b",
     re.IGNORECASE,
 )
 _UI_INTENT = re.compile(
