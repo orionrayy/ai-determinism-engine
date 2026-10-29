@@ -17,6 +17,8 @@ git checkout feat/sol-sentinel-paper-trader-v1
 python --version
 python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 python projects/sol-sentinel/sol_sentinel.py --json
+python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv
+python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 ```
 
 To run a continuous scanner while the terminal stays active:
@@ -54,3 +56,16 @@ Do not set fees to zero to force a signal. If changing fees, store the reason an
 - Clock skew: enable Android automatic time.
 - Android process stopped: restart manually and inspect the last JSONL record.
 - Unexpected signal: inspect the JSON metrics and replay that exact data offline before changing any parameters.
+
+
+## Historical capture and offline backtest
+
+1. Capture up to 30 days of public Binance 1-minute candles (bounded to 60 pages and bounded retries):
+   `python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv`
+2. Review the generated `.meta.json` sidecar for source, timestamps, count, and SHA-256. Keep the CSV and sidecar local; never commit private datasets or account records.
+3. Run the backtest:
+   `python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json`
+4. The engine writes a local SQLite ledger by default at `~/.sol-sentinel/paper_ledger.sqlite3`. Use `--db-path ""` to disable persistence. A repeated identical run is idempotent.
+5. The default fees and slippage are assumptions, not confirmed current Reku fees. Override with explicit values only after checking the official venue fee schedule.
+6. Reject any backtest whose data has gaps, bad timestamps, or insufficient history. Do not tune parameters using the out-of-sample segment.
+7. Expect the strategy to produce zero trades on some datasets; this is valid and preferable to forcing entries.
