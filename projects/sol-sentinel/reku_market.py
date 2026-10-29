@@ -166,6 +166,8 @@ def spread_metrics(bid: float, ask: float) -> dict[str, float]:
 
 def parse_chart_payload(payload: Any, interval_minutes: int, now_ms: int | None = None) -> dict[str, Any]:
     """Parse the documented Reku chart row: [timestamp, open, close, low, high, volume_coin, volume_idr]."""
+    if not isinstance(interval_minutes, int) or isinstance(interval_minutes, bool) or interval_minutes <= 0:
+        raise ValueError("chart interval_minutes must be a positive integer")
     if not isinstance(payload, list):
         raise ValueError("Unexpected Reku /chart response structure")
     now = int(time.time() * 1000) if now_ms is None else int(now_ms)
@@ -198,8 +200,6 @@ def parse_chart_payload(payload: Any, interval_minutes: int, now_ms: int | None 
     ordered = [bars[key] for key in sorted(bars)]
     if not ordered:
         raise ValueError("Reku /chart returned no valid OHLCV bars")
-    if not isinstance(interval_minutes, int) or interval_minutes <= 0:
-        raise ValueError("chart interval_minutes must be a positive integer")
     last = ordered[-1]
     age_seconds = (now - int(last["timestamp_ms"])) / 1000.0
     # Permit at most three chart intervals; never impose a 15-minute floor on 1m data.
