@@ -58,6 +58,26 @@ class DataAndIndicatorTests(unittest.TestCase):
     def test_ema_period_one_tracks_input(self):
         self.assertEqual(engine.ema_series([1, 3, 2], 1), [1.0, 3.0, 2.0])
 
+    def test_ema_matches_independent_hand_calculation(self):
+        actual = engine.ema_series([10.0, 12.0, 11.0], period=2)
+        self.assertAlmostEqual(actual[0], 10.0, places=10)
+        self.assertAlmostEqual(actual[1], 11.333333333333334, places=10)
+        self.assertAlmostEqual(actual[2], 11.111111111111112, places=10)
+
+    def test_rsi_matches_simple_rolling_gain_loss_fixture(self):
+        # Deltas +1, -1, +1 give average gain 2/3 and average loss 1/3.
+        actual = engine.rsi_at([1.0, 2.0, 1.0, 2.0], index=3, period=3)
+        self.assertAlmostEqual(actual, 66.66666666666667, places=10)
+
+    def test_atr_matches_independent_true_range_fixture(self):
+        bars = [
+            engine.Bar(BASE_MS, 10.0, 11.0, 9.0, 10.0, 1.0, BASE_MS + 59_999),
+            engine.Bar(BASE_MS + 60_000, 10.0, 12.0, 9.0, 11.0, 1.0, BASE_MS + 119_999),
+            engine.Bar(BASE_MS + 120_000, 11.0, 13.0, 10.0, 12.0, 1.0, BASE_MS + 179_999),
+        ]
+        # Both selected true ranges are 3.0, so the two-bar arithmetic ATR is 3.0.
+        self.assertAlmostEqual(engine.atr_at(bars, index=2, period=2), 3.0, places=10)
+
     def test_rsi_insufficient_history_is_none(self):
         self.assertIsNone(engine.rsi_at([10, 11, 12], 2, 14))
 
