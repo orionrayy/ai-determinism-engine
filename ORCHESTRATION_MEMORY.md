@@ -1490,3 +1490,10 @@ Semua perubahan tetap berada di branch `feat/hallmark-corpus-benchmark-v1` dan P
 - Workflow produces a corpus inventory artifact for 14 days with counts and structural summaries, no cell values.
 - No Document Craft baseline-vs-candidate quality experiment, blind human scoring/inter-rater reliability, generated DOCX/PDF/Excel rendering QA, or evidence of improvement exists yet. Keep all claims limited to corpus/pipeline/test progress.
 - Do not merge PR #179 automatically. It remains open pending review and green checks at the exact final HEAD.
+
+## Koreksi validasi fitur workbook Treasury — 2026-10-30
+
+- GitHub Actions menginspeksi workbook Treasury dengan sukses, tetapi corpus-validation run pada SHA `f4dea25d649bb630e28fccf54117dc922a5834c5` gagal di `validate_features.py` karena feature row Treasury tidak memiliki field wajib `observed_structure.front_matter`.
+- Penyebab telah diidentifikasi dari artifact `features-summary.json`: satu error traceability itu, bukan download/parse workbook atau manifest invalid.
+- Memperbaiki `research/corpus/features.jsonl` pada record `doc-nz-treasury-budget-2020-expenditure-xlsx`, menambahkan dua item observasi untuk sheet Intro dan Explanation di `observed_structure.front_matter`. Commit perbaikan: `659af3632e6744c8cfc88b97b50a50d060b27d44`.
+- CI wajib diperiksa ulang di SHA tersebut atau HEAD yang lebih baru sebelum mengklaim korpus pass. Target tetap 8/500 (`INSUFFICIENT_EVIDENCE)); tidak ada klaim kualitas meningkat.
