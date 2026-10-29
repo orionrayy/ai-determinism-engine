@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile research pipeline
-        run: python -m py_compile research/corpus/validate_corpus.py research/corpus/test_validate_corpus.py research/corpus/harvest_doaj_candidates.py research/corpus/test_harvest_doaj_candidates.py research/corpus/validate_features.py research/corpus/test_validate_features.py research/corpus/inspect_xlsx_structure.py research/corpus/test_inspect_xlsx_structure.py
+        run: python -m py_compile research/corpus/validate_corpus.py research/corpus/test_validate_corpus.py research/corpus/harvest_doaj_candidates.py research/corpus/test_harvest_doaj_candidates.py research/corpus/validate_features.py research/corpus/test_validate_features.py research/corpus/inspect_xlsx_structure.py research/corpus/test_inspect_xlsx_structure.py research/corpus/harvest_doaj_by_issn.py research/corpus/test_harvest_doaj_by_issn.py
       - name: Validate JSON metadata contracts
         run: |
           python -m json.tool research/corpus/manifest.schema.json >/dev/null
@@ -120,19 +120,19 @@ jobs:
               json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True) + chr(10), encoding="utf-8")
           print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
           PY
-      - name: Discover bounded DOAJ metadata candidates (best-effort; no article content)
+      - name: Discover article metadata by exact DOAJ ISSN (bounded; no article content)
         shell: bash
         run: |
           set +e
-          python research/corpus/harvest_doaj_candidates.py --json --max-pages 20 --max-records 6000 --timeout 20 --min-interval 1 --output candidates.jsonl > doaj-discovery-summary.json 2> doaj-discovery-error.txt
+          python research/corpus/harvest_doaj_by_issn.py --per-issn 10 --timeout 15 --min-interval 1 --output candidates.jsonl --summary doaj-discovery-summary.json > doaj-discovery-output.txt 2> doaj-discovery-error.txt
           code=$?
           set -e
-          if [ "$code" -ne 0 ]; then
-            python -c 'import json, pathlib; p=pathlib.Path("doaj-discovery-error.txt"); detail=p.read_text(encoding="utf-8", errors="replace")[:240]; report={"status":"LIVE_DISCOVERY_UNAVAILABLE","source":"DOAJ OAI-PMH","pages_requested":20,"live_candidates_added":0,"candidate_inventory_is_corpus":False,"failure_detail":detail,"content_rights_warning":"No article content was downloaded. This failure does not affect the eligible corpus count.","target_500_status":"INSUFFICIENT_EVIDENCE"}; pathlib.Path("doaj-discovery-summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+chr(10), encoding="utf-8")'
-            : > candidates.jsonl
-            echo "WARNING: DOAJ live metadata discovery unavailable; the CI remains non-blocking and no candidate is counted."
+          if [ "$code" -ne 0 ] && [ ! -s doaj-discovery-summary.json ]; then
+            python -c 'import json, pathlib; p=pathlib.Path("doaj-discovery-error.txt"); detail=p.read_text(encoding="utf-8", errors="replace")[:240]; report={"status":"LIVE_DISCOVERY_UNAVAILABLE","source":"DOAJ public Search API by journal ISSN","target_journal_count":11,"successful_queries":0,"failed_queries":None,"unique_candidate_records_written":0,"candidate_inventory_is_corpus":False,"failure_detail":detail,"article_content_downloaded":False,"abstracts_retained":False,"target_500_status":"INSUFFICIENT_EVIDENCE"}; pathlib.Path("doaj-discovery-summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+chr(10), encoding="utf-8")'
+            echo "WARNING: DOAJ ISSN discovery unavailable; corpus count is unaffected."
           fi
           test -f candidates.jsonl || : > candidates.jsonl
+          test -f doaj-discovery-summary.json || echo '{"status":"LIVE_DISCOVERY_UNAVAILABLE","unique_candidate_records_written":0,"candidate_inventory_is_corpus":false}' > doaj-discovery-summary.json
       - name: Produce an honest baseline summary
         run: python research/corpus/validate_corpus.py research/corpus/manifest.jsonl --json > corpus-summary.json
       - name: Validate structure-analysis traceability
@@ -156,6 +156,7 @@ jobs:
             battery-workbook-structure.json
             treasury-expenditure-structure.json
             doaj-discovery-summary.json
+            doaj-discovery-output.txt
             doaj-discovery-error.txt
             candidates.jsonl
           if-no-files-found: warn
