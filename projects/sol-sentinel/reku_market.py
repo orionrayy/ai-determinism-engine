@@ -219,15 +219,15 @@ def parse_chart_payload(payload: Any, interval_minutes: int, now_ms: int | None 
 
 
 def fetch_chart_probe(coin_id: Any) -> tuple[dict[str, Any] | None, str | None]:
-    """Probe 1m first, then 5m; preserve fallback evidence without fabricating data."""
+    """Probe documented 5m chart data first, then 15m; never assume 1m is supported."""
     errors: list[str] = []
-    for interval in (1, 5):
+    for interval in (5, 15):
         try:
             payload = request_json("/chart", {"t": 2, "f": interval, "id": coin_id})
             parsed = parse_chart_payload(payload, interval)
             if parsed["data_status"] == "OK":
                 parsed["endpoint"] = f"/v2/chart?t=2&f={interval}&id={coin_id}"
-                parsed["fallback_used"] = interval != 1
+                parsed["fallback_used"] = interval != 5
                 parsed["prior_attempt_errors"] = list(errors)
                 return parsed, None
             errors.append(
@@ -320,15 +320,29 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
     orderbook_status = "OK"
     orderbook_error = None
     orderbook_endpoint_used = None
+    orderbook_query_used = None
     book = None
     endpoint_errors: list[str] = []
-    for endpoint in ("orderbook", "orderbookall"):
+    # The legacy public API docs specify an integer coin ID, but the current
+    # endpoint responds "invalid 'symbol'" to id=... . Probe a small bounded
+    # set of public pair-symbol conventions, preferring modern symbol queries.
+    query_candidates = (
+        ("orderbook", {"symbol": f"{symbol.upper()}_IDR"}),
+        ("orderbook", {"symbol": f"{symbol.upper()}-IDR"}),
+        ("orderbook", {"symbol": symbol.upper()}),
+        ("orderbookall", {"symbol": f"{symbol.upper()}_IDR"}),
+        ("orderbookall", {"symbol": f"{symbol.upper()}-IDR"}),
+        ("orderbookall", {"symbol": symbol.upper()}),
+    )
+    for endpoint, params in query_candidates:
         try:
-            book = parse_orderbook(request_json(f"/{endpoint}", {"id": coin_id}))
+            book = parse_orderbook(request_json(f"/{endpoint}", params))
             orderbook_endpoint_used = endpoint
+            orderbook_query_used = dict(params)
             break
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-            endpoint_errors.append(f"{endpoint}: {type(exc).__name__}: {str(exc)[:140]}")
+            param_text = ",".join(f"{key}={value}" for key, value in params.items())
+            endpoint_errors.append(f"{endpoint}?{param_text}: {type(exc).__name__}: {str(exc)[:140]}")
     if book is None:
         orderbook_status = "ERROR"
         orderbook_error = " | ".join(endpoint_errors)[:360]
@@ -387,8 +401,8 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
             "GET https://api.reku.id/v2/coins",
             "GET https://api.reku.id/v2/price",
             "GET https://api.reku.id/v2/bidask",
-            f"GET https://api.reku.id/v2/orderbook?id={coin_id}",
-            f"GET https://api.reku.id/v2/orderbookall?id={coin_id} (fallback)",
+            "GET https://api.reku.id/v2/orderbook?symbol=<SOL_IDR|SOL-IDR|SOL>",
+            "GET https://api.reku.id/v2/orderbookall?symbol=<SOL_IDR|SOL-IDR|SOL> (fallback)",
             f"GET https://api.reku.id/v2/chart?t=2&f=1&id={coin_id} (1-minute chart probe)",
             f"GET https://api.reku.id/v2/chart?t=2&f=5&id={coin_id} (5-minute fallback)",
         ],
@@ -411,6 +425,7 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
         "direct_bidask": direct_spread,
         "orderbook_status": orderbook_status,
         "orderbook_endpoint_used": orderbook_endpoint_used,
+        "orderbook_query_used": orderbook_query_used,
         "orderbook_error": orderbook_error,
         "orderbook": book_stats,
         "chart_status": chart_probe["data_status"] if chart_probe else "ERROR",
