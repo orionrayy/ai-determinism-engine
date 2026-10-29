@@ -38,6 +38,14 @@ Workflow dispatch accepts a `max_parallel` input (1–8). The default is 4. Dry-
 - `.github/workflows/orchestrator.yml`: execution worker and scheduled resume.
 - `.github/workflows/orchestrator-tests.yml`: compile + unit-test gate.
 
+## Repository-local agent skills
+
+This repository includes the project-scoped **Hallmark v2.0.0** design skill at [`.agents/skills/hallmark/SKILL.md`](.agents/skills/hallmark/SKILL.md). It provides design guidance, theme references, and a zero-dependency static UI linter for avoiding generic generated-looking interfaces.
+
+Invoke it in Codex with `$hallmark <design brief>`; for an existing UI, name Hallmark explicitly and use `$hallmark audit <path>` or `$hallmark redesign <path>`. See [the skill catalog](.agents/skills/README.md) and [upstream provenance and usage notes](.agents/skills/hallmark/UPSTREAM.md).
+
+The skill is workspace-scoped. Importing these files does **not** automatically register Hallmark as an executable skill in the orchestrator's separate `SkillRegistry`; runtime tasks still require the existing manifest, digest, trust, network, billing, and permission checks.
+
 ## LLM routing
 
 Gemini is the primary LLM adapter and OpenAI is an optional fallback. Google currently lists Gemini 3.8 Flash as free at the standard API tier. API-key authentication is still required.
