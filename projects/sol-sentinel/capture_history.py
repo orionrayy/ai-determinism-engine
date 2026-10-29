@@ -130,22 +130,36 @@ def capture(symbol: str, interval: str, days: int, max_pages: int) -> tuple[list
             break
         last_open = int(rows[-1][0])
         for row in rows:
-            if len(row) < 9:
+            if not isinstance(row, (list, tuple)) or len(row) < 9:
                 continue
-            open_ms, close_ms = int(row[0]), int(row[6])
-            if close_ms >= now:
+            try:
+                open_ms, close_ms = int(row[0]), int(row[6])
+                values = [float(row[i]) for i in (1, 2, 3, 4, 5)]
+                quote_volume = float(row[7])
+                trade_count_raw = float(row[8])
+            except (TypeError, ValueError, OverflowError):
                 continue
-            values = [float(row[i]) for i in (1, 2, 3, 4, 5)]
             o, h, low, close, volume = values
-            if not all(map(lambda x: x == x and abs(x) != float("inf"), values)):
+            numeric_values = (*values, quote_volume, trade_count_raw)
+            if not all(math.isfinite(value) for value in numeric_values):
                 continue
-            if min(o, h, low, close) <= 0 or volume < 0 or h < max(o, close, low) or low > min(o, close, h):
+            if not trade_count_raw.is_integer() or trade_count_raw < 0:
                 continue
-            by_open[open_ms] = {
+            if open_ms % step != 0 or close_ms != open_ms + step - 1 or close_ms >= now:
+                continue
+            if min(o, h, low, close) <= 0 or volume < 0 or quote_volume < 0:
+                continue
+            if h < max(o, close, low) or low > min(o, close, h):
+                continue
+            candle = {
                 "open_time_ms": open_ms, "close_time_ms": close_ms,
                 "open": o, "high": h, "low": low, "close": close,
-                "volume": volume, "quote_volume": float(row[7]), "trades": int(row[8]),
+                "volume": volume, "quote_volume": quote_volume, "trades": int(trade_count_raw),
             }
+            previous = by_open.get(open_ms)
+            if previous is not None and previous != candle:
+                raise ValueError(f"Conflicting duplicate candle from source at open_time_ms={open_ms}")
+            by_open[open_ms] = candle
         next_cursor = last_open + step
         if next_cursor <= cursor:
             raise RuntimeError("Pagination did not advance; stopping safely")
