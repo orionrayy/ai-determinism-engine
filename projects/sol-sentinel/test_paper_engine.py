@@ -68,6 +68,30 @@ class DataAndIndicatorTests(unittest.TestCase):
 
 
 class BacktestAndLedgerTests(unittest.TestCase):
+    def test_gap_through_stop_fills_at_open_not_stop_price(self):
+        bar = make_bar(1, close=95.0, high=100.0, low=94.0)
+        reason, reference = engine.resolve_exit(bar, stop_price=98.0, target_price=105.0, bars_held=1, maximum_hold_bars=30)
+        self.assertEqual(reason, "stop_loss")
+        self.assertEqual(reference, bar.open)
+        self.assertLess(reference, 98.0)
+
+    def test_same_bar_stop_and_target_uses_conservative_stop(self):
+        bar = make_bar(1, close=102.0, high=106.0, low=97.0)
+        reason, reference = engine.resolve_exit(bar, stop_price=98.0, target_price=105.0, bars_held=1, maximum_hold_bars=30)
+        self.assertEqual(reason, "stop_and_target_same_bar_stop_first")
+        self.assertEqual(reference, 98.0)
+
+    def test_mark_equity_deducts_estimated_exit_friction(self):
+        cfg = engine.BacktestConfig(exit_fee_bps=100.0, spread_bps_round_trip=20.0, slippage_bps_per_side=10.0)
+        pos = engine.Position(
+            signal_time_ms=BASE_MS, entry_time_ms=BASE_MS, entry_reference_price=100.0,
+            entry_fill_price=100.2, quantity=2.0, entry_fee_idr=0.0, stop_price=99.0,
+            target_price=102.0, entry_atr=1.0,
+        )
+        marked = engine.mark_equity(0.0, pos, 100.0, cfg)
+        self.assertLess(marked, pos.quantity * 100.0)
+        self.assertAlmostEqual(marked, 197.604, places=3)
+
     def test_monotonic_overbought_series_fails_closed_without_trade(self):
         # Monotonic price makes RSI saturate; the strategy must reject it rather than chase it.
         bars = [make_bar(i, close=1000 + i * 0.01) for i in range(600)]
