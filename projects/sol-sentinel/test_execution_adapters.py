@@ -134,7 +134,7 @@ class AdapterContractTests(unittest.TestCase):
         observed = adapter.get_quote(spec)
         self.assertEqual(observed.bid, Decimal("1810000"))
         self.assertEqual(observed.ask, Decimal("1815000"))
-        self.assertEqual(observed.source, "INDODAX public /api/depth (client receive timestamp)")
+        self.assertEqual(observed.source, "INDODAX public /api/depth (request-start timestamp; conservative age)")
         self.assertEqual(requests, [("https://indodax.com/api/depth/solidr", 2.0)])
         self.assertFalse(hasattr(adapter, "execute"))
         self.assertFalse(hasattr(adapter, "sign"))
