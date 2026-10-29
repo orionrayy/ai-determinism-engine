@@ -64,7 +64,7 @@ def _issns_in_values(values: Iterable[str]) -> set[str]:
         if direct:
             found.add(direct)
             continue
-        labeled = re.fullmatch(r"(?i)ISSN\s*[:=]?\s*([0-9]{4}-?[0-9]{3}[0-9X])", stripped)
+        labeled = re.search(r"(?i)\bISSN\s*[:=]?\s*([0-9]{4}-?[0-9]{3}[0-9X])", stripped)
         if labeled:
             normalized = normalize_issn(labeled.group(1))
             if normalized:
