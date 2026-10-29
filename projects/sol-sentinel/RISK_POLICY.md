@@ -50,8 +50,8 @@ Return NO_TRADE and preserve an audit record if:
 Every future result must separate:
 1. purchase fee;
 2. sale fee;
-3. spread crossing on entry and exit;
-4. slippage / price impact on entry and exit;
+3. round-trip bid/ask spread cost (modeled separately, as an assumption until quoted spread is measured);
+4. slippage / price impact per side;
 5. network fee and optional priority fee;
 6. transfer/withdrawal fee, if relevant;
 7. unrealized mark-to-market versus realized P&L.
@@ -77,3 +77,11 @@ Pause the system if:
 - the process restarts without recovering the position/order ledger consistently;
 - any unexplained balance or P&L discrepancy occurs;
 - a risk-policy test fails.
+
+
+## Current offline cost assumptions
+
+- Scanner: default fee 42.11 bps round trip, spread 10 bps round trip, slippage 20 bps round trip. These are explicit placeholders, not a current live Reku quote.
+- Backtest/evaluator: default entry fee 10.555 bps, exit fee 31.555 bps, spread 10 bps round trip, slippage 10 bps per side. All are configurable.
+- Spread cost is modeled by adverse half-spread adjustment on each side; slippage is a distinct adverse adjustment. Both are included in fill prices and modeled risk sizing. Exchange fees remain separate in the ledger.
+- These defaults must be replaced with the actual venue/market measurements before interpreting net expectancy. A wrong cost assumption can flip a small trading edge negative.
