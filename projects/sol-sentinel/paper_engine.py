@@ -89,6 +89,38 @@ class BacktestConfig:
             raise ValueError("maximum_hold_bars must be an integer")
 
  
+def normalize_bars_to_idr(
+    bars: Sequence[Bar],
+    *,
+    input_price_currency: str,
+    quote_to_idr_rate: float,
+) -> list[Bar]:
+    """Convert reference-quoted bars to IDR exactly once; pass native IDR bars through."""
+    currency = input_price_currency.upper()
+    if currency == "IDR":
+        if not math.isfinite(float(quote_to_idr_rate)) or float(quote_to_idr_rate) != 1.0:
+            raise ValueError("native IDR bars require quote_to_idr_rate=1.0")
+        fx = 1.0
+    elif currency == "USDT":
+        fx = float(quote_to_idr_rate)
+        if not math.isfinite(fx) or not 1_000 <= fx <= 50_000:
+            raise ValueError("USDT reference FX rate must be finite and between 1,000 and 50,000")
+    else:
+        raise ValueError(f"unsupported input price currency: {input_price_currency}")
+    return [
+        Bar(
+            open_time_ms=bar.open_time_ms,
+            open=bar.open * fx,
+            high=bar.high * fx,
+            low=bar.low * fx,
+            close=bar.close * fx,
+            volume=bar.volume,
+            close_time_ms=bar.close_time_ms,
+        )
+        for bar in bars
+    ]
+
+
 def notional_meets_minimum(quantity: float, price: float, minimum_notional_idr: float) -> bool:
     """Fail closed when a simulated order has invalid size, price, or notional."""
     try:
@@ -366,14 +398,13 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         if current.open_time_ms - previous.open_time_ms != ONE_MINUTE_MS:
             raise ValueError("backtest bars must be contiguous 1m candles")
 
-    # Binance SOLUSDT bars require the dated USD/IDR proxy. Native INDODAX SOL/IDR
-    # bars are already IDR-denominated and must never be converted a second time.
-    fx = 1.0 if config.input_price_currency.upper() == "IDR" else config.quote_to_idr_rate
-    bars = [Bar(
-        open_time_ms=bar.open_time_ms, open=bar.open * fx, high=bar.high * fx,
-        low=bar.low * fx, close=bar.close * fx, volume=bar.volume,
-        close_time_ms=bar.close_time_ms,
-    ) for bar in bars]
+    # Binance reference candles require a dated FX proxy. Native INDODAX
+    # SOL/IDR candles are already IDR-denominated.
+    bars = normalize_bars_to_idr(
+        bars,
+        input_price_currency=config.input_price_currency,
+        quote_to_idr_rate=config.quote_to_idr_rate,
+    )
 
     bars5 = aggregate_bars(bars, 5)
     bars15 = aggregate_bars(bars, 15)
