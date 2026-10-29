@@ -641,9 +641,29 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
 
 
 def persist_ledger(db_path: str | Path, report: dict[str, Any], run_id: str) -> None:
+    """Persist a deterministic run atomically; identical retries are no-ops, conflicts fail closed."""
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError("run_id must be a non-empty string")
+    report_json = json.dumps(report, ensure_ascii=False, sort_keys=True, allow_nan=False)
+    trade_rows: list[tuple[str, str, int, float, str]] = []
+    seen_trade_ids: set[str] = set()
+    for idx, trade in enumerate(report["trades"]):
+        trade_id = trade.get("trade_id")
+        if not isinstance(trade_id, str) or not trade_id.strip():
+            raise ValueError("each ledger trade must have a non-empty trade_id")
+        if trade_id in seen_trade_ids:
+            raise ValueError(f"duplicate trade_id in report: {trade_id}")
+        seen_trade_ids.add(trade_id)
+        pnl = float(trade["net_pnl_idr"])
+        if not math.isfinite(pnl):
+            raise ValueError(f"trade {trade_id} has a non-finite net_pnl_idr")
+        trade_json = json.dumps(trade, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        trade_rows.append((run_id, trade_id, idx, pnl, trade_json))
+
     path = Path(db_path).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as db:
+        db.execute("PRAGMA foreign_keys=ON")
         db.execute("PRAGMA journal_mode=WAL")
         db.execute("""
             CREATE TABLE IF NOT EXISTS backtest_runs (
@@ -668,20 +688,40 @@ def persist_ledger(db_path: str | Path, report: dict[str, Any], run_id: str) -> 
                 FOREIGN KEY (run_id) REFERENCES backtest_runs(run_id)
             )
         """)
+
+        existing = db.execute(
+            "SELECT schema_version, dataset_sha256, report_json FROM backtest_runs WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+        if existing is not None:
+            expected = (report["schema_version"], report.get("dataset_sha256", ""), report_json)
+            if existing != expected:
+                raise ValueError(f"run_id {run_id} already exists with different report content")
+            stored_trades = db.execute(
+                "SELECT trade_index, trade_id, net_pnl_idr, trade_json "
+                "FROM paper_trades WHERE run_id=? ORDER BY trade_index, trade_id",
+                (run_id,),
+            ).fetchall()
+            expected_trades = [
+                (idx, trade_id, pnl, trade_json)
+                for _, trade_id, idx, pnl, trade_json in trade_rows
+            ]
+            if stored_trades != expected_trades:
+                raise ValueError(f"run_id {run_id} exists but its ledger trade rows are inconsistent")
+            return
+
         db.execute(
-            "INSERT OR IGNORE INTO backtest_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO backtest_runs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 run_id, report["schema_version"], datetime.now(timezone.utc).isoformat(),
                 report.get("dataset_sha256", ""), report["initial_equity_idr"],
-                report["final_equity_idr"], report["net_pnl_idr"],
-                json.dumps(report, ensure_ascii=False, sort_keys=True),
+                report["final_equity_idr"], report["net_pnl_idr"], report_json,
             ),
         )
-        for idx, trade in enumerate(report["trades"]):
-            db.execute(
-                "INSERT OR IGNORE INTO paper_trades VALUES (?, ?, ?, ?, ?)",
-                (run_id, trade["trade_id"], idx, trade["net_pnl_idr"], json.dumps(trade, sort_keys=True)),
-            )
+        db.executemany(
+            "INSERT INTO paper_trades VALUES (?, ?, ?, ?, ?)",
+            trade_rows,
+        )
 
 
 def resolve_quote_to_idr(

@@ -165,6 +165,89 @@ class BacktestAndLedgerTests(unittest.TestCase):
             self.assertEqual(run_count, 1)
             self.assertEqual(trade_count, 0)
 
+    def test_persisting_same_run_with_trades_is_idempotent(self):
+        report = {
+            "schema_version": engine.SCHEMA_VERSION,
+            "dataset_sha256": "sample-dataset",
+            "initial_equity_idr": 300_000.0,
+            "final_equity_idr": 300_010.0,
+            "net_pnl_idr": 10.0,
+            "trades": [{"trade_id": "trade-1", "net_pnl_idr": 10.0}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "paper.sqlite3"
+            engine.persist_ledger(db_path, report, "stable-trade-run")
+            engine.persist_ledger(db_path, report, "stable-trade-run")
+            with sqlite3.connect(db_path) as db:
+                run_count = db.execute("SELECT COUNT(*) FROM backtest_runs").fetchone()[0]
+                trades = db.execute(
+                    "SELECT trade_index, trade_id, net_pnl_idr FROM paper_trades WHERE run_id=?",
+                    ("stable-trade-run",),
+                ).fetchall()
+            self.assertEqual(run_count, 1)
+            self.assertEqual(trades, [(0, "trade-1", 10.0)])
+
+    def test_persisting_conflicting_content_for_same_run_id_fails_closed(self):
+        original = {
+            "schema_version": engine.SCHEMA_VERSION,
+            "dataset_sha256": "sample-dataset",
+            "initial_equity_idr": 300_000.0,
+            "final_equity_idr": 300_010.0,
+            "net_pnl_idr": 10.0,
+            "trades": [{"trade_id": "trade-1", "net_pnl_idr": 10.0}],
+        }
+        changed = {**original, "net_pnl_idr": 11.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "paper.sqlite3"
+            engine.persist_ledger(db_path, original, "conflicting-run")
+            with self.assertRaisesRegex(ValueError, "different report content"):
+                engine.persist_ledger(db_path, changed, "conflicting-run")
+            with sqlite3.connect(db_path) as db:
+                stored_pnl = db.execute(
+                    "SELECT net_pnl_idr FROM backtest_runs WHERE run_id=?",
+                    ("conflicting-run",),
+                ).fetchone()[0]
+                trades = db.execute(
+                    "SELECT COUNT(*) FROM paper_trades WHERE run_id=?",
+                    ("conflicting-run",),
+                ).fetchone()[0]
+            self.assertEqual(stored_pnl, 10.0)
+            self.assertEqual(trades, 1)
+
+    def test_persisting_same_report_detects_missing_trade_rows(self):
+        report = {
+            "schema_version": engine.SCHEMA_VERSION,
+            "dataset_sha256": "sample-dataset",
+            "initial_equity_idr": 300_000.0,
+            "final_equity_idr": 300_010.0,
+            "net_pnl_idr": 10.0,
+            "trades": [{"trade_id": "trade-1", "net_pnl_idr": 10.0}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "paper.sqlite3"
+            engine.persist_ledger(db_path, report, "damaged-run")
+            with sqlite3.connect(db_path) as db:
+                db.execute("DELETE FROM paper_trades WHERE run_id=?", ("damaged-run",))
+            with self.assertRaisesRegex(ValueError, "trade rows are inconsistent"):
+                engine.persist_ledger(db_path, report, "damaged-run")
+            with sqlite3.connect(db_path) as db:
+                run_count = db.execute("SELECT COUNT(*) FROM backtest_runs WHERE run_id=?", ("damaged-run",)).fetchone()[0]
+                trade_count = db.execute("SELECT COUNT(*) FROM paper_trades WHERE run_id=?", ("damaged-run",)).fetchone()[0]
+            self.assertEqual(run_count, 1)
+            self.assertEqual(trade_count, 0)
+
+        bars = [make_bar(i, close=1000 + i * 0.01) for i in range(600)]
+        report = engine.backtest(bars, engine.BacktestConfig(), dataset_sha256="stable-data")
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "paper.sqlite3"
+            engine.persist_ledger(db_path, report, "stable-run")
+            engine.persist_ledger(db_path, report, "stable-run")
+            with sqlite3.connect(db_path) as db:
+                run_count = db.execute("SELECT COUNT(*) FROM backtest_runs").fetchone()[0]
+                trade_count = db.execute("SELECT COUNT(*) FROM paper_trades").fetchone()[0]
+            self.assertEqual(run_count, 1)
+            self.assertEqual(trade_count, 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
