@@ -109,7 +109,7 @@ class DoajByIssnTests(unittest.TestCase):
         item = result["candidates"][0]
         self.assertEqual(item["title"], "Example research article")
         self.assertEqual(item["doi"], "10.1234/example.2024")
-        self.assertEqual(item["matched_target_issns"], ["2548-592X", "2656-4602"])
+        self.assertEqual(item["matched_target_issns"], ["2548-592X"])
         self.assertEqual(item["article_license_status"], "not_verified_for_this_article")
         self.assertFalse(item["corpus_eligible"])
         self.assertFalse(item["abstract_saved"])
@@ -194,18 +194,21 @@ class DoajByIssnTests(unittest.TestCase):
         self.assertEqual(result["summary"]["unique_candidate_records_written"], 0)
 
     def test_response_size_bound_is_enforced(self):
+        # Exercise the real 8 MiB read boundary rather than monkeypatching the
+        # same constant that controls both the read size and the comparison.
+        oversized = b"x" * (harvest.MAX_RESPONSE_BYTES + 1)
         with tempfile.TemporaryDirectory() as tmp:
             registry = registry_file(Path(tmp))
 
             def opener(_request, _timeout):
-                return FakeResponse(b"x" * 32)
+                return FakeResponse(oversized)
 
-            with patch.object(harvest, "MAX_RESPONSE_BYTES", 8):
-                with patch.object(harvest.time, "monotonic", side_effect=[0, 2, 4]):
-                    result = harvest.discover(registry, opener=opener, sleeper=lambda _delay: None)
+            with patch.object(harvest.time, "monotonic", side_effect=[0, 2, 4]):
+                result = harvest.discover(registry, opener=opener, sleeper=lambda _delay: None)
 
         self.assertEqual(result["summary"]["status"], "LIVE_DISCOVERY_UNAVAILABLE")
-        self.assertTrue(all("exceeded_8MiB_limit" in e["error"] for e in result["summary"]["errors"]))
+        self.assertEqual(len(result["summary"]["errors"]), 2)
+        self.assertTrue(all("api_response_exceeded_8MiB_limit" in e["error"] for e in result["summary"]["errors"]))
 
     def test_invalid_limits_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
