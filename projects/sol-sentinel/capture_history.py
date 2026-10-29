@@ -57,17 +57,39 @@ def fetch_page(symbol: str, interval: str, start_ms: int, end_ms: int) -> list:
     raise RuntimeError("Public market-data request failed after bounded retries: " + str(last_error))
 
 
-def fetch_quote_to_idr_reference() -> dict:
-    """Fetch a daily USD/IDR reference rate; this is not a live USDT/IDR trading quote."""
+def fetch_quote_to_idr_reference(timeout: float = 8.0, attempts: int = 3, pause_seconds: float = 0.5) -> dict:
+    """Fetch a dated USD/IDR reference with bounded retries; never treat it as a live trading quote."""
+    if not 0.1 <= timeout <= 20.0:
+        raise ValueError("FX timeout must be between 0.1 and 20 seconds")
+    if not 1 <= attempts <= 5:
+        raise ValueError("FX attempts must be between 1 and 5")
+    if not 0.0 <= pause_seconds <= 5.0:
+        raise ValueError("FX retry pause must be between 0 and 5 seconds")
     url = "https://api.frankfurter.dev/v2/rate/USD/IDR"
     request = urllib.request.Request(
         url,
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
     )
-    with urllib.request.urlopen(request, timeout=8) as response:
-        if response.status != 200:
-            raise RuntimeError("FX reference HTTP status " + str(response.status))
-        data = json.loads(response.read(100_000).decode("utf-8"))
+    data = None
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if response.status != 200:
+                    raise RuntimeError("FX reference HTTP status " + str(response.status))
+                payload = response.read(100_000)
+            data = json.loads(payload.decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code not in (408, 425, 429, 500, 502, 503, 504):
+                raise RuntimeError(f"FX reference HTTP {exc.code}: {exc.reason}") from exc
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(min(2.0, pause_seconds * (2 ** attempt)))
+    if data is None:
+        raise RuntimeError(f"FX reference request failed after {attempts} attempts: {last_error}")
     if not isinstance(data, dict) or data.get("base") != "USD" or data.get("quote") != "IDR":
         raise ValueError("Unexpected USD/IDR reference response")
     rate = float(data.get("rate", 0))
@@ -82,7 +104,7 @@ def fetch_quote_to_idr_reference() -> dict:
         "quote_to_idr_rate": rate,
         "quote_to_idr_date": rate_date,
         "quote_to_idr_source": "Frankfurter daily USD/IDR mid-market reference; USDT treated as USD proxy",
-        "quote_to_idr_source_url": "https://api.frankfurter.dev/v2/rate/USD/IDR",
+        "quote_to_idr_source_url": url,
         "quote_to_idr_age_days": age_days,
         "quote_to_idr_is_trading_quote": False,
     }
