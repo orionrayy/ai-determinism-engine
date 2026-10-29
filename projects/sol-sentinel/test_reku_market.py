@@ -59,8 +59,8 @@ class RekuMarketParserTests(unittest.TestCase):
         self.assertEqual(report["data_status"], "OK")
         self.assertEqual(report["orderbook_status"], "OK")
         self.assertEqual(report["orderbook_endpoint_used"], "orderbookall")
-        self.assertEqual(report["orderbook"]["spread_bps"], 200.0)
-        self.assertEqual(report["direct_bidask"]["spread_bps"], 200.0)
+        self.assertAlmostEqual(report["orderbook"]["spread_bps"], (2.0 / 101.0) * 10_000.0, places=8)
+        self.assertAlmostEqual(report["direct_bidask"]["spread_bps"], (2.0 / 101.0) * 10_000.0, places=8)
 
     def test_snapshot_marks_partial_if_both_orderbook_endpoints_fail(self):
         def fake_request(path, params=None, timeout=8.0):
