@@ -77,3 +77,12 @@ The scanner and offline paper engine separate fee, spread, and slippage assumpti
 ## Continuity archive update — 2026-10-29
 
 The detailed conversational decision timeline, APIs/repositories, GitHub tool inventory, known rejections, CI debugging evidence and continuation plan are recorded in `EXECUTION_LOG.md` and indexed from `README.md`. Before any further writes, reread the current PR head and latest CI. The last fully inspected green run before the journal commits was `40910240121` (commit `e20c3ce0b49969cbaa08706a44fc765e47e01db9`, 32 tests passed). This needs to be refreshed after the current commit sequence.
+
+
+## Latest checkpoint — 2026-10-29
+
+- Full user-facing decisions, source/API inventory, GitHub connector tools, debugging/rejection history, CI runs and continuation steps: `projects/sol-sentinel/EXECUTION_LOG.md`.
+- Project README indexes the journal; the context and session log have current status entries.
+- Last verified green head before these final handoff notes: `8d8c91738b5f237e715206f662db417bbb509b63`; CI run `40911083700` passed compilation and 32 offline tests.
+- PR #178 is still a draft and unmerged. The PR's recorded base SHA differs from the currently observed `main` SHA; inspect and reconcile before merge.
+- No live trading or wallet operation was performed. End-to-end network research, Termux runtime, and historical profitability remain unverified.
