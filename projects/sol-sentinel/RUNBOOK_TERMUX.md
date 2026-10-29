@@ -6,7 +6,10 @@
 pkg update
 pkg install python git
 git clone https://github.com/orionrayy/ai-determinism-engine.git
-cd ai-determinism-engine/projects/sol-sentinel
+cd ai-determinism-engine
+git fetch origin feat/sol-sentinel-paper-v1
+git checkout feat/sol-sentinel-paper-v1
+cd projects/sol-sentinel
 python -m unittest -v
 ```
 
