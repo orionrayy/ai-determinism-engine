@@ -54,7 +54,7 @@ class DataAndIndicatorTests(unittest.TestCase):
             with path.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.writer(handle)
                 writer.writerow(["open_time_ms", "close_time_ms", "open", "high", "low", "close", "volume"])
-                for i in range(100):
+                for i in range(101):
                     if i == 50:
                         continue
                     bar = make_bar(i)
