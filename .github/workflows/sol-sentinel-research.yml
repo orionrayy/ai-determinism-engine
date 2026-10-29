@@ -6,7 +6,6 @@ on:
       - feat/sol-sentinel-paper-trader-v1
     paths:
       - ".github/workflows/sol-sentinel-research.yml"
-      - "projects/sol-sentinel/**"
   workflow_dispatch:
     inputs:
       days:
