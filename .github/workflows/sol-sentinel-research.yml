@@ -55,7 +55,7 @@ jobs:
             --symbol SOLUSDT --interval 1m --days "$CAPTURE_DAYS" \
             --output research-output/SOLUSDT_1m.csv
 
-      - name: Capture read-only Reku SOL/IDR market snapshot (order-book fallback)
+      - name: Capture read-only Reku SOL/IDR market snapshot (order-book fallback and midpoint spread validation)
         continue-on-error: true
         run: |
           python projects/sol-sentinel/reku_market.py \
