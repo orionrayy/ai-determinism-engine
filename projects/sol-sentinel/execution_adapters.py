@@ -711,9 +711,9 @@ class IndodaxPublicMarketDataAdapter:
             raise AdapterContractError("now_ms must be a non-negative integer timestamp")
         if end_ms > now:
             raise AdapterContractError("history end_ms cannot be in the future")
-        pair_symbol = market.symbol.replace("/", "").upper()
+        pair_symbol = market.venue_symbol.lower()
         if not pair_symbol.isalnum() or len(pair_symbol) > 40:
-            raise AdapterContractError("market symbol is not a valid public history symbol")
+            raise AdapterContractError("venue_symbol must be the alphanumeric pair ID returned by /api/pairs")
 
         by_open: dict[int, MarketCandle] = {}
         cursor = start_ms
