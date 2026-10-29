@@ -5774,9 +5774,24 @@ def create_workflow(
             append_event("planner.fallback", {"goal": goal, "error": str(planner_exc)})
     if nodes is None:
         nodes = deterministic_plan(goal, registry, live=live)
-    validate_dag(nodes)
     for node in nodes:
         assign_role(node)
+    try:
+        from .skill_runtime import apply_skill_routing
+    except ImportError:
+        from skill_runtime import apply_skill_routing
+    skill_routing = apply_skill_routing(
+        goal,
+        nodes,
+        free_only=os.environ.get("ORCHESTRATOR_FREE_ONLY", "true").lower() == "true",
+    )
+    if skill_routing.get("selected_skill_ids"):
+        append_event("skills.routed", {
+            "goal_sha256": hashlib.sha256(goal.encode("utf-8")).hexdigest(),
+            "selected_skill_ids": skill_routing["selected_skill_ids"],
+            "routes": skill_routing["routes"],
+        })
+    validate_dag(nodes)
     workflow_id = str(workflow_id or new_id("wf")).strip()
     if not workflow_id:
         raise RuntimeError("workflow id cannot be empty")

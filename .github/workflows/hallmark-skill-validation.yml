@@ -5,12 +5,20 @@ on:
     paths:
       - ".agents/skills/hallmark/**"
       - ".agents/skills/README.md"
+      - ".agents/skills/catalog.json"
+      - ".agents/skills/document-craft/**"
+      - "orchestrator/skill_runtime.py"
+      - "orchestrator/test_skill_runtime.py"
       - ".github/workflows/hallmark-skill-validation.yml"
   push:
     branches: [main]
     paths:
       - ".agents/skills/hallmark/**"
       - ".agents/skills/README.md"
+      - ".agents/skills/catalog.json"
+      - ".agents/skills/document-craft/**"
+      - "orchestrator/skill_runtime.py"
+      - "orchestrator/test_skill_runtime.py"
       - ".github/workflows/hallmark-skill-validation.yml"
   workflow_dispatch:
 
@@ -21,7 +29,7 @@ jobs:
   validate:
     name: Validate imported Hallmark package
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -31,6 +39,12 @@ jobs:
           node-version: 22
       - name: Validate themes and reference links without installing
         run: node .agents/skills/hallmark/scripts/install.mjs --codex --dry-run
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test skill routing and authorization
+        run: python -m unittest discover -s orchestrator -p "test_skill_runtime.py" -v
       - name: Check JavaScript syntax
         shell: bash
         run: |
