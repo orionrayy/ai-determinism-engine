@@ -116,7 +116,12 @@ def parse_klines(rows: Any, now_ms: int | None = None) -> list[Candle]:
             continue
         candles.append(candle)
     candles.sort(key=lambda c: c.open_time_ms)
-    deduped: dict[int, Candle] = {c.open_time_ms: c for c in candles}
+    deduped: dict[int, Candle] = {}
+    for candle in candles:
+        previous = deduped.get(candle.open_time_ms)
+        if previous is not None and previous != candle:
+            raise ValueError(f"conflicting duplicate candle at open_time_ms={candle.open_time_ms}")
+        deduped[candle.open_time_ms] = candle
     return [deduped[key] for key in sorted(deduped)]
 
 
