@@ -19,7 +19,7 @@ Korpus saat ini memiliki **7 dokumen individual yang lolos gate provenance dan h
 | Workbook Excel | 1 |
 | Genre lain — panduan profesional/operasional | 1 |
 
-Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest juga menyimpan dua catatan partial (laporan PKL dan KIAN) serta satu lead XLSX metadata-only; item parsial/metadata-only tersebut **tidak dihitung** ke angka 7/500.
+Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 11 catatan: 7 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, serta 1 lead XLSX metadata-only. Empat catatan non-eligible itu **tidak dihitung** ke angka 7/500.
 
 ## Sampel yang sudah diverifikasi
 
@@ -107,6 +107,7 @@ This sample broadens Excel evidence to a genuine experimental-data workbook. It 
 - **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
 - **Asuhan Keperawatan pada Klien Harga Diri Rendah dengan Penerapan Terapi Kognitif** — STIKes Muhammadiyah Ciamis repository, 2022. Public files include cover/approval/abstract/Chapter I/bibliography under a file-level Creative Commons Attribution notice; the clinical case and discussion chapters are restricted. Privacy and version-of-license review remain pending. No patient-level facts are retained. The record contributes **zero** to eligibility.
 - **ABK Sekdin.xlsx — Analisis Beban Kerja Sekertaris Dinas Sosial Kabupaten Karanganyar** — official Portal Data Jawa Tengah resource declares CC BY at metadata level, but download requests to two listed hosts returned HTTP 403. No worksheet, formula, formatting, hidden-sheet, or cell-content claims have been made. It remains metadata-only and contributes **zero** to eligibility.
+- **Studi Kasus: Asuhan Keperawatan pada Orang Dewasa dengan Isolasi Sosial** — Journal of Nursing Education and Practice, DOI [10.53801/jnep.v1i01.9](https://doi.org/10.53801/jnep.v1i01.9), CC BY-SA 4.0 and full text public. Only macro-headings are recorded (case-study label, abstract sections, Pendahuluan, Metode, Hasil dan Pembahasan, Kesimpulan, conflict/acknowledgement/funding/references). The full paper contains sensitive patient narrative, so the source is held at `privacy_review=pending`; no case facts, quotes, chronology, or contact details are retained. It contributes **zero** to eligibility until privacy review is resolved.
 
 ## Apa yang dapat disimpulkan dari tujuh sampel
 
