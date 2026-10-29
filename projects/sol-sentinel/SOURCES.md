@@ -82,3 +82,13 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 - Scheduled run time: 14:15 UTC (21:15 Asia/Jakarta). GitHub Actions requires workflow_dispatch and scheduled workflows to exist on the repository default branch, so merge this branch before the workflow can be manually dispatched or scheduled.
 - Actions performed: offline tests, public history capture, offline backtest, fixed-parameter chronological split evaluation, and upload of research outputs for 7 days.
 - No credentials or account APIs are used; it never sends orders. The output CSV contains public market data only, but reports should remain research artifacts and must not be interpreted as live account equity.
+
+
+## FX unit conversion reference (research only)
+
+- Official project/docs: https://frankfurter.dev/
+- Endpoint: https://api.frankfurter.dev/v2/rate/USD/IDR
+- Access: public, no API key; daily reference rates from central-bank/official sources, not an intraday trading quote. Documentation describes the API as free with no published quota beyond abuse-prevention rate limiting.
+- Usage: the history-capture script records a USD/IDR reference rate and date in the local CSV sidecar. The offline simulator converts SOLUSDT prices to IDR before sizing and calculating nominal P&L, because the configured capital is in IDR.
+- Important caveat: the system uses USD/IDR as a proxy for USDT/IDR and applies a single daily rate to the sampled window. It does not model the USDT premium/discount, FX changes within the historical window, or Reku SOL/IDR executable prices. This rate is for unit consistency and indicative reporting only, not a transaction rate.
+- Attribution/docs: https://frankfurter.dev/ . Check the response date and fail closed on stale/missing rates. A verified manual `--quote-to-idr-rate` may be supplied with a descriptive `--quote-to-idr-source` override.
