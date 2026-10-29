@@ -202,3 +202,15 @@ Read-back verification at 2026-10-29:
 - Repository tree includes `EXECUTION_LOG.md` plus the scanner, capture, paper engine, split evaluator, tests and project docs listed in section 2.
 - This validates source compilation and offline unit tests only. The historical research workflow has not been run end-to-end on actual network data; no profitability or live trading claim is established.
 - Subsequent edits will create a new head and may trigger new CI; re-read GitHub before relying on this snapshot.
+
+
+## 12. Follow-up status refresh — 2026-10-29
+
+A fresh read-back immediately before this note showed:
+- PR #178: open, draft, not merged.
+- Branch head before this documentation-only refresh: `6c6729338423b19ff16fadc09686f972d4a42665`.
+- CI run [40911562946](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40911562946) passed for that exact head. Compile passed; 32 offline tests passed in 0.073 seconds.
+- Current `main` SHA observed remains `d5672c84a0ae184c3a95d3f925925887ece71aa4`; PR base SHA remains `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`. Do not merge without reconciling.
+- No end-to-end public history capture/backtest report has been run yet, no Termux runtime check has been done, and no live trading action has occurred.
+
+This entry is documentation-only. It changes no scanner or trading logic. Since every new commit can trigger CI, the exact final head and its CI should be obtained from the PR/Actions links above rather than inferred from a fixed SHA stored in a log.
