@@ -85,3 +85,8 @@ Pause the system if:
 - Backtest/evaluator: default entry fee 10.555 bps, exit fee 31.555 bps, spread 10 bps round trip, slippage 10 bps per side. All are configurable.
 - Spread cost is modeled by adverse half-spread adjustment on each side; slippage is a distinct adverse adjustment. Both are included in fill prices and modeled risk sizing. Exchange fees remain separate in the ledger.
 - These defaults must be replaced with the actual venue/market measurements before interpreting net expectancy. A wrong cost assumption can flip a small trading edge negative.
+
+
+## Quote-currency consistency
+
+The history capture is SOLUSDT while the starting capital and nominal P&L are IDR. The paper engine must convert OHLC prices into IDR before position sizing, stop/target arithmetic, and P&L accounting. It reads a dated USD/IDR reference from the capture sidecar or requires an explicit rate override. The reference uses USD as a proxy for USDT and is not the executable Reku SOL/IDR quote. If the rate is absent, invalid, or older than five calendar days, the CLI fails closed rather than silently sizing in mixed currencies. Exact live position sizing must use a verified live IDR price and actual venue rules.
