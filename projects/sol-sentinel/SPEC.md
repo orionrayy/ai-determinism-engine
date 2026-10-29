@@ -31,13 +31,13 @@ Non-goals:
 4. Cost model: net expected edge = conservative gross movement assumption - round-trip fees - round-trip slippage - any separately configured transfer/priority costs. Every parameter must be explicit and recorded.
 5. Risk gate: reject signals if inputs are stale, insufficient, costs exceed edge, volatility/data regime is outside tested bounds, or the daily loss lock is engaged.
 6. Audit: append one JSONL record per scan with timestamp, source, candle timestamps, parameter values, metrics, outcome, and rejection reasons. Never store credentials.
-7. Supervisory control: existing \`ai-determinism-engine\` remains responsible for bounded DAG execution, approvals, workflow identity, checkpoints, and failure recovery. This module must not bypass those contracts.
+7. Supervisory control: existing `ai-determinism-engine` remains responsible for bounded DAG execution, approvals, workflow identity, checkpoints, and failure recovery. This module must not bypass those contracts.
 8. Later paper engine: simulated position state and fill model, including spread, fees, slippage, delay, failed orders, and no-fill limit orders.
 9. Optional execution adapter: prohibited until an official venue/API and terms are verified, signer isolation is implemented, and explicit user approval is recorded.
 
 ## 4. DAG
 
-\`\`\`text
+```text
 source_preflight
     -> fetch_1m ─┐
     -> fetch_5m ─┼-> freshness_and_integrity
@@ -64,7 +64,7 @@ source_preflight
                                |
                                v
                     assistant-readable report
-\`\`\`
+```
 
 All source calls are read-only. Retry only bounded transient market-data failures; never retry a financial side effect automatically after an uncertain outcome.
 
