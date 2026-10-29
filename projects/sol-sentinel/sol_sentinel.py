@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
-BINANCE_BASE = "https://api.binance.com"
+BINANCE_BASE = "https://data-api.binance.vision"
 USER_AGENT = "sol-sentinel-research/0.1 (read-only public market data)"
 INTERVAL_MS = {"1m": 60_000, "5m": 300_000, "15m": 900_000}
 
