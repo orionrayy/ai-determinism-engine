@@ -1,12 +1,5 @@
-import importlib.util
-import pathlib
 import unittest
-
-MODULE_PATH = pathlib.Path(__file__).with_name("sol_sentinel.py")
-SPEC = importlib.util.spec_from_file_location("sol_sentinel", MODULE_PATH)
-sentinel = importlib.util.module_from_spec(SPEC)
-assert SPEC and SPEC.loader
-SPEC.loader.exec_module(sentinel)
+import sol_sentinel as sentinel
 
 
 def candle(i, close, high=None, low=None, volume=10.0, close_time=None):
