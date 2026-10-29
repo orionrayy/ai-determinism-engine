@@ -245,6 +245,6 @@ These primitives are side-effect-free and do not replace the supervisor. Existin
 
 ## SOL Sentinel — SOL Scalping Research
 
-Free-first, read-only SOL market scanner and paper-trading research. Phase 0 has no live order capability. Context, runbook, source inventory, risk policy, and session handoff are in [projects/sol-sentinel](projects/sol-sentinel/README.md). See [the conversation context](projects/sol-sentinel/CONVERSATION_CONTEXT.md) and [the canonical orchestration memory update](ORCHESTRATION_MEMORY.md).
+Free-first, read-only SOL market scanner and paper-trading research. Phase 0 has no live order capability. Context, runbook, source inventory, risk policy, and session handoff are in [projects/sol-sentinel](projects/sol-sentinel/README.md). See [the conversation context](projects/sol-sentinel/CONVERSATION_CONTEXT.md) and [the project session log](projects/sol-sentinel/SESSION_LOG.md).
 
 Current development branch: `feat/sol-sentinel-paper-trader-v1`. Its CI workflow checks Python compilation and offline unit tests. The IDR 3,500,000 target is an aspiration, not a forecast or guarantee.
