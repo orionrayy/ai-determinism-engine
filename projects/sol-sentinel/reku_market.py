@@ -155,6 +155,72 @@ def spread_metrics(bid: float, ask: float) -> dict[str, float]:
     }
 
 
+def parse_chart_payload(payload: Any, interval_minutes: int, now_ms: int | None = None) -> dict[str, Any]:
+    """Parse the documented Reku chart row: [timestamp, open, close, low, high, volume_coin, volume_idr]."""
+    if not isinstance(payload, list):
+        raise ValueError("Unexpected Reku /chart response structure")
+    now = int(time.time() * 1000) if now_ms is None else int(now_ms)
+    bars: dict[int, dict[str, float | int]] = {}
+    for row in payload:
+        if not isinstance(row, (list, tuple)) or len(row) < 7:
+            continue
+        try:
+            raw_timestamp = float(row[0])
+            timestamp_ms = int(raw_timestamp if raw_timestamp >= 100_000_000_000 else raw_timestamp * 1000)
+            opened, close, low, high, volume_coin, volume_idr = [float(row[i]) for i in range(1, 7)]
+        except (TypeError, ValueError, OverflowError):
+            continue
+        values = (opened, close, low, high, volume_coin, volume_idr)
+        if not all(math.isfinite(value) for value in values):
+            continue
+        if min(opened, close, low, high) <= 0 or volume_coin < 0 or volume_idr < 0:
+            continue
+        if high < max(opened, close, low) or low > min(opened, close, high):
+            continue
+        bars[timestamp_ms] = {
+            "timestamp_ms": timestamp_ms,
+            "open_idr": opened,
+            "close_idr": close,
+            "low_idr": low,
+            "high_idr": high,
+            "volume_coin": volume_coin,
+            "volume_idr": volume_idr,
+        }
+    ordered = [bars[key] for key in sorted(bars)]
+    if not ordered:
+        raise ValueError("Reku /chart returned no valid OHLCV bars")
+    last = ordered[-1]
+    age_seconds = (now - int(last["timestamp_ms"])) / 1000.0
+    allowed_age_seconds = max(interval_minutes * 60 * 3, 900.0)
+    status = "OK" if -5.0 <= age_seconds <= allowed_age_seconds else "STALE"
+    return {
+        "data_status": status,
+        "interval_minutes": interval_minutes,
+        "points_returned": len(ordered),
+        "first_time_utc": datetime.fromtimestamp(int(ordered[0]["timestamp_ms"]) / 1000.0, timezone.utc).isoformat(),
+        "last_time_utc": datetime.fromtimestamp(int(last["timestamp_ms"]) / 1000.0, timezone.utc).isoformat(),
+        "last_age_seconds": age_seconds,
+        "last_bar": last,
+        "warning": "Chart timestamps/interval semantics must be confirmed against current Reku behavior; this is a public-data probe, not proof of full historical coverage.",
+    }
+
+
+def fetch_chart_probe(coin_id: Any) -> tuple[dict[str, Any] | None, str | None]:
+    """Probe 1m chart first, then documented 5m interval; report errors without inventing candles."""
+    errors: list[str] = []
+    for interval in (1, 5):
+        try:
+            payload = request_json("/chart", {"t": 2, "f": interval, "id": coin_id})
+            parsed = parse_chart_payload(payload, interval)
+            if parsed["data_status"] == "OK":
+                parsed["endpoint"] = f"/v2/chart?t=2&f={interval}&id={coin_id}"
+                return parsed, None
+            errors.append(f"f={interval}: chart data stale (age_seconds={parsed['last_age_seconds']:.1f})")
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+            errors.append(f"f={interval}: {type(exc).__name__}: {str(exc)[:130]}")
+    return None, " | ".join(errors)[:400]
+
+
 def compare_reference(reku_close_idr: float, binance_close_usdt: float, quote_to_idr_rate: float) -> dict[str, Any]:
     values = (reku_close_idr, binance_close_usdt, quote_to_idr_rate)
     if not all(math.isfinite(v) and v > 0 for v in values):
@@ -282,6 +348,10 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
         if price_idr > 0 and abs(price_idr / direct_mid - 1.0) * 10_000.0 > 500.0:
             warnings.append("last_price_vs_quote_mid_mismatch_over_500bps")
 
+    chart_probe, chart_probe_error = fetch_chart_probe(coin_id)
+    if chart_probe is None:
+        warnings.append("reku_chart_probe_unavailable_or_stale")
+
     return {
         "schema_version": "sol-sentinel-reku-market-v1",
         "mode": "READ_ONLY_PUBLIC_MARKET_DATA",
@@ -322,6 +392,9 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
         "orderbook_endpoint_used": orderbook_endpoint_used,
         "orderbook_error": orderbook_error,
         "orderbook": book_stats,
+        "chart_status": chart_probe["data_status"] if chart_probe else "ERROR",
+        "chart_probe": chart_probe,
+        "chart_probe_error": chart_probe_error,
         "warnings": warnings,
         "data_status": "OK" if orderbook_status == "OK" and not warnings else "PARTIAL",
         "warning": "Public API documentation may be older than the current platform. This adapter is read-only and must not be used to infer order-placement support.",
