@@ -33,7 +33,7 @@ Use Termux wake-lock if available and keep the device on a stable connection. An
 ## Parameters
 
 - `--symbol SOLUSDT`: public Binance spot market reference.
-- `--fee-bps-round-trip 42.11`: optional assumption equivalent to 0.4211% round trip. This is a placeholder based on a previously viewed Reku Pro fee example; verify current exact fees before relying on it.
+- `--fee-bps-round-trip 42.11`: fee reference based on the current published Reku Pro buy/sell fee components (https://reku.id/fees/crypto; checked 2026-10-29). Actual fee treatment depends on mode/order and must be checked in the order preview; spread/slippage are separate assumptions.
 - `--slippage-bps-round-trip 20`: initial slippage allowance, not a measured estimate.
 - `--min-net-edge-bps 25`: minimum net edge buffer used for the candidate filter.
 - `--log-path FILE`: append scan results as JSON Lines.
@@ -67,7 +67,7 @@ Do not set fees to zero to force a signal. If changing fees, store the reason an
 3. Run the backtest:
    `python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json`
 4. The engine writes a local SQLite ledger by default at `~/.sol-sentinel/paper_ledger.sqlite3`. Use `--db-path ""` to disable persistence. A repeated identical run is idempotent.
-5. The default fees and slippage are assumptions, not confirmed current Reku fees. Override with explicit values only after checking the official venue fee schedule.
+5. The default entry/exit fee components match Reku's published Pro Mode table checked 2026-10-29; recheck https://reku.id/fees/crypto and the actual order preview before use. Spread and slippage remain assumptions.
 6. Reject any backtest whose data has gaps, bad timestamps, or insufficient history. Do not tune parameters using the out-of-sample segment.
 7. Expect the strategy to produce zero trades on some datasets; this is valid and preferable to forcing entries.
 
@@ -82,7 +82,7 @@ The evaluator splits the input by time in a 60/20/20 ratio. Each segment begins 
 
 ## Cost assumptions
 
-The scanner accepts `--fee-bps-round-trip`, `--spread-bps-round-trip`, and `--slippage-bps-round-trip`. The backtest/evaluator accept `--entry-fee-bps`, `--exit-fee-bps`, `--spread-bps-round-trip`, and `--slippage-bps-per-side`. These separate estimates to make assumptions visible. Do not set spread/slippage to zero just to obtain more signals. The historical default values are placeholders and should be changed only using verified venue costs or a documented sensitivity test.
+The scanner accepts `--fee-bps-round-trip`, `--spread-bps-round-trip`, and `--slippage-bps-round-trip`. The backtest/evaluator accept `--entry-fee-bps`, `--exit-fee-bps`, `--spread-bps-round-trip`, and `--slippage-bps-per-side`. These separate estimates to make assumptions visible. Do not set spread/slippage to zero just to obtain more signals. Published fee inputs are sourced from Reku's Pro Mode fee table; spread/slippage defaults are placeholders and should be replaced only by measured quotes, execution data, or a documented sensitivity test.
 
 
 ## Quote currency and IDR conversion
