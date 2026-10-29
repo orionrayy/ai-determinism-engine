@@ -17,6 +17,21 @@ Akses publik tidak dengan sendirinya mengizinkan pengunduhan ulang atau redistri
 - `evaluation-rubric.md`: rubrik benchmark yang harus dibekukan sebelum penilaian kandidat.
 - `genre-taxonomy.json`: kelas dokumen dan fitur yang dipelajari sebagai hipotesis, bukan aturan universal.
 
+## Penemuan metadata kandidat (DOAJ)
+
+`harvest_doaj_candidates.py` mengambil **metadata artikel**, bukan PDF/teks artikel, melalui feed OAI-PMH publik DOAJ. DOAJ menyatakan metadata jurnal/artikel dapat digunakan kembali dengan waiver CC0; lisensi metadata ini tidak mengubah lisensi artikel yang dideskripsikannya. Lihat [DOAJ Terms](https://doaj.org/terms/) dan [OAI-PMH documentation](https://doaj.org/docs/oai-pmh/). Feed umum bisa tertinggal hingga 30 hari dan dapat memiliki volume besar; karena itu harvester membatasi jumlah halaman, ukuran respons, timeout, dan laju permintaan. Opsi ISSN memfilter hanya rekaman yang berhubungan dengan jurnal pilihan.
+
+Contoh (maksimal dua halaman, tanpa mengambil konten penuh):
+
+```sh
+python research/corpus/harvest_doaj_candidates.py --dry-run --json --max-pages 2 --max-records 200
+python research/corpus/harvest_doaj_candidates.py --json --max-pages 5 --max-records 500
+```
+
+Default output adalah `candidates.jsonl`. Harvester menggabungkan berdasarkan ID kandidat stabil, menulis secara atomik, tidak menyimpan abstrak, menandai `corpus_eligible=false`, dan tidak pernah memindahkan kandidat secara otomatis ke `manifest.jsonl`. Hak penggunaan, akses teks, autentisitas artikel, privasi, genre dan duplikasi harus diverifikasi per item sebelum promosi manual. Batas `--max-records` dievaluasi setelah satu halaman OAI selesai diproses, sehingga jumlah yang diproses dapat sedikit melewati ambang maksimal sebesar ukuran halaman terakhir; `--max-pages` dan ukuran respons tetap menjadi batas keras.
+
+`candidates.jsonl` dan `manifest.jsonl` adalah dua inventaris berbeda. Metadata kandidat tidak dihitung dalam target 500.
+
 ## Format entri manifest
 
 Lihat `manifest.schema.json`. Wajib menyimpan `record_id`, `source_family_id`, URL dan judul, penerbit/pencipta, genre/subgenre, tanggal dan format, hak penggunaan, provenance, cara memperoleh, status akses, hasil peninjauan privasi, status verifikasi, serta alasan pengecualian/duplikasi. Hash dan ukuran hanya dicatat bila pengukuran tidak melanggar ketentuan penggunaan atau kerahasiaan sumber.
