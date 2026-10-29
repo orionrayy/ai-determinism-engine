@@ -58,9 +58,10 @@ class IndicatorTests(unittest.TestCase):
                 "5m": {"atr14": 1, "close": 100, "trend_up": True, "ema9": 99, "rsi14": 55},
                 "15m": {"trend_up": True, "close": 101, "ema21": 100},
             },
-            fee_bps_round_trip=40, slippage_bps_round_trip=10, min_net_edge_bps=25,
+            fee_bps_round_trip=40, spread_bps_round_trip=10, slippage_bps_round_trip=10, min_net_edge_bps=25,
         )
-        self.assertEqual(out["cost_model"]["total_cost_bps"], 50)
+        self.assertEqual(out["cost_model"]["total_cost_bps"], 60)
+        self.assertEqual(out["cost_model"]["spread_bps_round_trip"], 10)
         self.assertTrue(out["cost_model"]["assumption_only"])
         self.assertEqual(out["signal"], "NO_TRADE")
 
