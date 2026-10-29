@@ -136,3 +136,19 @@ By default, the script uses the keyless Jupiter Developer Platform path, subject
 Official Swap V2 order docs: https://developers.jup.ag/docs/swap/order-and-execute
 
 The probe prints raw input/output units and any available estimated price impact/fee fields. Convert using verified token mint decimals; do not compare raw lamports and USDC units directly. A complete cost model also requires priority fee, possible account rent, transfer-to/from-exchange costs, and eventual IDR off-ramp costs. **The probe never executes a trade.** This code path is strictly read-only and not a paper-fill or production executor.
+
+
+## Venue-neutral adapter contracts (mock/paper only)
+
+For the current development branch, the platform boundary and evidence requirements are documented in `PLATFORM_ADAPTER_DECISION_2026-10-30.md`. Contract code is `execution_adapters.py`; offline regression cases are `test_execution_adapters.py`.
+
+Run the contract tests without networking or secrets:
+
+```sh
+python -m py_compile projects/sol-sentinel/execution_adapters.py projects/sol-sentinel/test_execution_adapters.py
+python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
+```
+
+The included market-data, capital-source and custody adapters are fixtures only. `PlanningOnlyTransferAdapter` validates network names, verified network flags, known minimums/fees and fee-evidence age; it cannot send a transfer. `PaperExecutionAdapter` uses a mock bid/ask and Decimal quantities. `ExecutionPolicy(LIVE)` deliberately fails because no live adapter exists.
+
+Do not supply a wallet seed/private key or API secret to these tests. Do not use a withdrawal-enabled API key for a trading worker. Exact Solana withdrawal fee/minimum, destination deposit minimum, market tick/lot/minimum, and current venue-specific quote/fee schedule must be verified from current official sources before the paper model is configured for a chosen platform. No live order, transfer, signature or signer integration is currently present.
