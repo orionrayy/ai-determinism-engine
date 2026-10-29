@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Sequence
 from datetime import datetime, timezone
 
-from paper_engine import BacktestConfig, backtest, read_bars_csv, resolve_quote_to_idr
+from paper_engine import BacktestConfig, backtest, read_bars_csv, resolve_quote_to_idr, resolve_input_market_metadata
 
 
 def load_reku_spread_reference(path: str | Path, max_age_seconds: float = 300.0) -> tuple[float, dict[str, Any]]:
@@ -156,7 +156,13 @@ def run_sensitivity(
     reku_market_json_path: str | Path | None = None,
 ) -> dict[str, Any]:
     source = Path(csv_path).expanduser()
-    rate, rate_source = resolve_quote_to_idr(source, quote_to_idr_rate, quote_to_idr_source)
+    source_market = resolve_input_market_metadata(source)
+    if source_market != {"venue": "Binance", "symbol": "SOLUSDT", "price_currency": "USDT"}:
+        raise ValueError(
+            "cost_sensitivity presets currently model the Reku fee reference on Binance SOLUSDT/USDT input only; "
+            "native INDODAX SOL/IDR requires a separately declared venue-specific cost model"
+        )
+    rate, rate_source = resolve_quote_to_idr(source, quote_to_idr_rate, quote_to_idr_source, source_market)
     bars = read_bars_csv(source)
     dataset_sha = hashlib.sha256(source.read_bytes()).hexdigest()
     reku_spread_reference = None
