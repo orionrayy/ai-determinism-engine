@@ -28,6 +28,8 @@ class RekuHistoryTests(unittest.TestCase):
             [start_ms / 1000 + 3, 0, "NaN", 100, 0.1],
             ["bad", 0, 1_800_000, 100, 0.1],
             [start_ms / 1000 + 4, 1, -1, 100, 0.1],
+            [start_ms / 1000 + 5, 0.5, 1_800_000, 100, 0.1],
+            [start_ms / 1000 + 6, 0, 1_800_000, 0, 0],
         ]
         trades = history.parse_activity_rows(rows, start_ms, end_ms)
         self.assertEqual(len(trades), 2)
