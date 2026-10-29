@@ -184,6 +184,24 @@ class AdapterContractTests(unittest.TestCase):
         self.assertEqual(spec.base_decimals, 6)
         self.assertEqual(urls, ["https://indodax.com/api/pairs"])
 
+    def test_indodax_market_spec_applies_explicit_mode_minimum_floor(self):
+        row = {
+            "id": "solidr", "symbol": "SOLIDR",
+            "base_currency": "idr", "traded_currency": "sol",
+            "traded_currency_unit": "SOL", "price_precision": "1000",
+            "quantity_increment": "0.000001", "trade_min_base_currency": "10000",
+            "trade_min_traded_currency": "0.001",
+        }
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: [row], attempts=1)
+        api_minimum = adapter.get_market_spec("SOL/IDR")
+        pro_minimum = adapter.get_market_spec("SOL/IDR", mode_minimum_notional_quote=Decimal("25000"))
+        lite_minimum = adapter.get_market_spec("SOL/IDR", mode_minimum_notional_quote=Decimal("10000"))
+        self.assertEqual(api_minimum.min_notional_quote, Decimal("10000"))
+        self.assertEqual(pro_minimum.min_notional_quote, Decimal("25000"))
+        self.assertEqual(lite_minimum.min_notional_quote, Decimal("10000"))
+        with self.assertRaisesRegex(a.AdapterContractError, "mode_minimum_notional_quote"):
+            adapter.get_market_spec("SOL/IDR", mode_minimum_notional_quote=Decimal("-1"))
+
     def test_indodax_pair_catalogue_fails_closed_on_ambiguous_or_incomplete_metadata(self):
         duplicate = [
             {"id": "solidr", "symbol": "SOLIDR", "base_currency": "idr", "traded_currency": "sol", "traded_currency_unit": "SOL", "price_precision": 1000, "quantity_increment": "0.000001", "trade_min_base_currency": 10000, "trade_min_traded_currency": "0.001"},
