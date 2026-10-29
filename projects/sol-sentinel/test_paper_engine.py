@@ -83,6 +83,38 @@ class DataAndIndicatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "native IDR bars require quote_to_idr_rate=1.0"):
             engine.normalize_bars_to_idr([bar], input_price_currency="IDR", quote_to_idr_rate=16_000.0)
 
+    def test_fee_inputs_never_apply_reku_defaults_to_native_indodax(self):
+        native = {"venue": "INDODAX", "symbol": "SOL/IDR", "price_currency": "IDR"}
+        with self.assertRaisesRegex(ValueError, "requires --fee-model indodax-custom"):
+            engine.resolve_fee_inputs(
+                native, fee_model=None, fee_source="", entry_fee_bps=None,
+                exit_fee_bps=None, spread_bps_round_trip=None,
+                slippage_bps_per_side=None, minimum_order_notional_idr=None,
+            )
+        with self.assertRaisesRegex(ValueError, "--spread-bps-round-trip"):
+            engine.resolve_fee_inputs(
+                native, fee_model="indodax-custom", fee_source="test fixture",
+                entry_fee_bps=10.0, exit_fee_bps=20.0,
+                spread_bps_round_trip=None, slippage_bps_per_side=5.0,
+                minimum_order_notional_idr=25_000.0,
+            )
+        resolved = engine.resolve_fee_inputs(
+            native, fee_model="indodax-custom", fee_source="dated mock fee source",
+            entry_fee_bps=10.0, exit_fee_bps=20.0,
+            spread_bps_round_trip=15.0, slippage_bps_per_side=5.0,
+            minimum_order_notional_idr=25_000.0,
+        )
+        self.assertEqual(resolved["fee_model_name"], "INDODAX_CUSTOM")
+        self.assertEqual(resolved["minimum_order_notional_idr"], 25_000.0)
+        usdt = engine.resolve_fee_inputs(
+            {"venue": "Binance", "symbol": "SOLUSDT", "price_currency": "USDT"},
+            fee_model=None, fee_source="", entry_fee_bps=None, exit_fee_bps=None,
+            spread_bps_round_trip=None, slippage_bps_per_side=None, minimum_order_notional_idr=None,
+        )
+        self.assertEqual(usdt["entry_fee_bps"], 10.555)
+        self.assertEqual(usdt["exit_fee_bps"], 31.555)
+        self.assertEqual(usdt["fee_model_name"], "REKU_PRO_REFERENCE_ASSUMPTION")
+
     def test_native_idr_backtest_config_requires_indodax_and_custom_fee_model(self):
         with self.assertRaisesRegex(ValueError, "native IDR candles require INDODAX"):
             engine.BacktestConfig(input_price_currency="IDR", quote_to_idr_rate=1.0).validate()
