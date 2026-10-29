@@ -105,3 +105,13 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 ## Market data endpoint correction — 2026-10-29
 
 The first GitHub Actions capture against `api.binance.com` returned HTTP 451 in the runner. Binance's official Market Data Only documentation lists `https://data-api.binance.vision` for public endpoints including `GET /api/v3/klines`. The collector and scanner now use that documented host. First end-to-end research validation succeeded with a 7-day capture and generated downloadable artifacts; see `EXECUTION_LOG.md` for run IDs and results.
+
+
+## First live read-only Reku market-data snapshot
+
+- Research run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40916894414
+- Artifact: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40916894414/artifacts/12917145818
+- Observed data from the endpoint at that run: last SOL/IDR price Rp1,845,000; direct bid Rp1,840,000; ask Rp1,845,000; quoted spread Rp5,000, about 27.137 bps using the quote midpoint. This is a single historical snapshot, not the present price.
+- The same snapshot compared Reku close to converted Binance SOLUSDT reference at roughly -0.1983% difference, using USD/IDR as a proxy for USDT/IDR. Venue/timestamp mismatch means this is indicative, not arbitrage.
+- The documented `/v2/orderbook?id=51` endpoint returned HTTP 400 for the SOL coin ID on that run, so that record was marked `PARTIAL`; no depth data were inferred. The code now falls back to the also-documented `/v2/orderbookall?id=51`. The latest pipeline run is testing whether that fallback succeeds.
+- This snapshot does not prove a currently-supported authenticated order API exists. Market-data access is read-only; no order endpoint is called.
