@@ -1384,3 +1384,47 @@ The last fresh GitHub compare, performed after all current documentation commits
 ## Final fixed-head compare — 2026-10-30 (session-2026-10-30-final-compare-head-7e1b62d)
 
 This was measured after finalizing the feature branch journal at \`7e1b62df19a950f79f58eea2a0a1a118fdb03d2d\`. A fresh GitHub compare against current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` reports \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=169\`, \`behind_by=2\`, 27 PR-diff files. This supersedes earlier point-in-time counts 167/168 recorded above. Freeze feature branch at this head for this session; do not add more commits while citing this compare snapshot. \`mergeable=true\` is not authorization or a complete review of the 169-commit delta. PR #178 remains draft/unmerged; no rebase, force-push, merge, or main mutation.
+
+
+---
+
+## SOL Sentinel session checkpoint — current audit, Jupiter quote probe, and infrastructure decision (2026-10-30)
+<!-- SOL_SENTINEL_SESSION_2026-10-30_CURRENT_AUDIT_JUPITER_V2 -->
+
+### Verified GitHub state at checkpoint
+- Main: `d5672c84a0ae184c3a95d3f925925887ece71aa4`.
+- Implementation branch `feat/sol-sentinel-paper-trader-v1`: `0b5dac9f3ac64c1753437fcc4afe96b8171cc079`.
+- PR #178 remains open/draft/unmerged: https://github.com/orionrayy/ai-determinism-engine/pull/178. `main...feat` compare is `diverged`, 175 ahead / 2 behind, merge-base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`, 29 files. Do not merge/rebase/force-push without a deliberate reviewed integration plan.
+- Feature CI run #293: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936825849 (success) and duplicate #294 https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936815027 (success), latest relevant head `0b5dac9f...`. Tests source count at that head is 88 across 8 `test_*.py` modules, including 9 new quote-probe tests. The Actions compile and offline unittest-discovery steps succeeded. The exact test-runner stdout was not fetched through the connector; test count is derived from checked source, not claimed as copied from runner logs.
+- Documentation branch after infrastructure report and research-audit addendum: latest known commit `a8d72ea6b84e577dee18a5fd5a0725b14db3b036` (verify before next update). PR #180 remains open/draft/unmerged: https://github.com/orionrayy/ai-determinism-engine/pull/180. It targets current `main`, six older commits before this audit addendum; check latest compare and CI before any merge consideration.
+- Docs PR's previous current-head run #2264 / #40936927144 passed on `c1229ea4436074394c1501d0a0bbc552896bf157`. The newer `a8d72ea...` adds an audit appendendum; its own status was not observed at the time of this checkpoint and must be rechecked.
+- Repo clone/local full-suite execution was blocked by container DNS resolution to github.com. CI status is read from GitHub Actions API; no claim that the full repository suite was run locally.
+
+### Code change in this session
+- Added `projects/sol-sentinel/jupiter_quote_probe.py` (`ed203fcae1ed0176c27959330865e69e2fb282a7`) and `projects/sol-sentinel/test_jupiter_quote_probe.py` (`a0849839638c509cc5289c1c3d84f16c95eb08d7`).
+- Added explicit compile coverage in `.github/workflows/sol-sentinel-tests.yml` (`88918e8fe666e26406b1939bda6ad94c9ea9a16d`) and Termux runbook guidance (`0b5dac9f3ac64c1753437fcc4afe96b8171cc079`).
+- Probe uses standard library, calls Jupiter Swap V2 `/swap/v2/order` without `taker`, has no signing/submit code, whitelists fields and explicitly returns `execution_enabled=false`, rejects unexpected assembled transaction payload, checks response amount/mint identity, bounds timeout/body, and does not print an API key supplied from environment. It uses raw units; conversion requires verified decimals. The actual live Jupiter quote API was not called, so external endpoint/schema currentness still needs a controlled read-only runtime check.
+- Official Jupiter refs: https://developers.jup.ag/docs/swap/order-and-execute ; https://developers.jup.ag/pricing ; https://developers.jup.ag/changelog/developer-platform. Current docs list Free plan at $0 / 1 request per second with API key; keyless is available with lower rate limits. Verify at use time.
+- Latest relevant test workflow succeeded on quote-probe + runbook head. This is implementation-test evidence only and not evidence the strategy is profitable or ready for production.
+
+### Research and strategy readiness (historical evidence remains unchanged)
+- Last research run #27 passed on earlier code SHA `833e57a13022c3efe6ff5115df2b2e0697072817`, not current head. Dataset SHA `6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14` (43,200 1m Binance SOLUSDT candles, 2026-09-29 through 2026-10-29).
+- Results: baseline zero candidates/trades; chronological development/validation/OOS also zero trades. Rejection counters overlap; common failures include 1m breakout and relative volume, 5m momentum/RSI and 15m trend. Do not lower multiple filters just to create transactions. Fee-only and lower-friction sensitivity did not establish a positive edge; the theoretical Lightning floor with zero spread/slippage made 10 trades but net about -Rp3,893 and PF 0.276.
+- Existing paper-engine fixes remain: SQLite idempotency checks full report and trade rows, conflicts fail closed; strict candle interval/OHLCV validation; independent EMA/RSI/ATR reference tests. Reviewed signal alignment maps higher-timeframe bars only when their close timestamps are <= decision close. No live trading code was added.
+- Current mode stays `RESEARCH_ONLY`; strategy status stays `INSUFFICIENT_EVIDENCE`. No live orders, transfers, deposits, withdrawals, signing, production credentials or private keys used.
+
+### Infrastructure finding and decision
+- New decision report: `projects/sol-sentinel/INFRASTRUCTURE_DECISION_2026-10-30.md`, created at `c1229ea4436074394c1501d0a0bbc552896bf157`; it records sources, assumptions, gate criteria and capital math.
+- Candidate architecture is **local IDR on-ramp (Reku as currently known candidate) -> dedicated Solana self-custody wallet -> Jupiter V2 quote adapter -> paper execution**. It is not authorized to sign/submit swaps. A wallet provides custody/signing, not market liquidity or a strategy. Avoid asserting Reku is the only or necessarily cheapest venue.
+- Current source refs: OJK AKD/crypto trader list (position 22 Sep 2026): https://ojk.go.id/id/Fungsi-Utama/ITSK/Perizinan-ITSK-Aset-Keuangan-Digital-Aset-Kripto/Pages/Daftar-Penyelenggara-Perdagangan-Aset-Keuangan-Digital-Posisi-22-September-2026.aspx; Reku fees https://reku.id/fees/crypto; Pintu Pro fees https://www.pintu.co.id/en/faq/spot-trading-at-pintu-pro; Jupiter docs/pricing above; Solana network fees https://solana.com/docs/core/fees .
+- Simplified source-published fees, same nominal Rp300,000 buy and sell: Reku Pro components 0.4211% (~Rp1,263.30), Reku Lightning 0.2211% (~Rp663.30), Pintu Pro maker 0.4611% (~Rp1,383.30), taker 0.5611% (~Rp1,683.30). These exclude spread, slippage, transfer/withdrawal fees, route fees, priority fees and off-ramp effects. Reku/Pintu SOL external withdrawal fee and supported exit path remain unverified live values; do not invent them. Pintu’s official trading API support was not confirmed. Phantom help reports 0.85% app swap fee on most swaps; do not assume UI swaps are free or conflate it with Jupiter direct API costs.
+- Solana base transaction fee source: 5,000 lamports/signature; optional priority fees; fees are charged even if transaction fails.
+- Goal math for equity (not profit) Rp300,000 -> Rp3,500,000: 11.6667x final capital, requiring +1,066.67% cumulative return before added capital and costs; aspirational only, no timeline/return promise. 10% drawdown at Rp300,000 is Rp30,000 and needs 11.11% recovery; 20% = Rp60,000 and 25% recovery; 30% = Rp90,000 and 42.86% recovery; 50% = Rp150,000 and 100% recovery.
+- The full decision memo preregisters gates: chronological OOS unaltered; at least 100 closed trades before profitability claim; positive net expectancy with 95% bootstrap lower confidence bound > 0, PF >= 1.2, max DD within pre-set risk budget; >=30 days forward-paper with timestamped actual quotes and reconciled ledger; operational security/kill-switch checks. A low sample or 0 trades is `INSUFFICIENT_EVIDENCE`. These are prudential project criteria, not a future guarantee.
+
+### Next checkpoint
+1. Re-read latest branch refs/PR heads and compare before any code integration.
+2. Verify the current Jupiter docs/API with the read-only probe in a user's local Termux environment. Do not put `JUPITER_API_KEY` or wallet secret into repo, Actions, logs, or chat.
+3. Capture synchronized quote samples and full path fees including current SOL withdrawal/return compatibility before comparing local CEX to wallet/DEX economics.
+4. Diagnose zero-trade strategy via fixed one-filter-at-a-time ablations on development data and freeze candidate before validation/OOS.
+5. Keep all execution disabled until strategy, cost, forward paper and security gates are met; any real-money pilot requires separate explicit authorization.
