@@ -91,6 +91,34 @@ def write_history(
     return metadata
 
 
+def capture_quote_snapshot(adapter: IndodaxPublicMarketDataAdapter, market: MarketSpec) -> dict:
+    """Collect a best-effort public depth snapshot; failure never invalidates OHLC capture."""
+    try:
+        quote = adapter.get_quote(market)
+        return {
+            "market_quote_status": "OK",
+            "market_quote": {
+                "venue": quote.venue,
+                "symbol": quote.symbol,
+                "source": quote.source,
+                "observed_at_utc": quote.observed_at.isoformat(),
+                "bid_idr": str(quote.bid),
+                "ask_idr": str(quote.ask),
+                "mid_idr": str(quote.midpoint),
+                "spread_bps": str(quote.spread_bps),
+            },
+            "market_quote_error": None,
+            "orders_enabled": False,
+        }
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError, TimeoutError) as exc:
+        return {
+            "market_quote_status": "ERROR",
+            "market_quote": None,
+            "market_quote_error": f"{type(exc).__name__}: {str(exc)[:240]}",
+            "orders_enabled": False,
+        }
+
+
 def capture_history(
     symbol: str = "SOL/IDR",
     days: int = 30,
@@ -125,9 +153,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     out = Path(args.output).expanduser()
     metadata_path = Path(args.metadata_output).expanduser() if args.metadata_output else Path(str(out) + ".meta.json")
     try:
-        bars, market, start_ms, end_ms, captured_at = capture_history(args.symbol, args.days)
+        adapter = IndodaxPublicMarketDataAdapter()
+        bars, market, start_ms, end_ms, captured_at = capture_history(args.symbol, args.days, adapter=adapter)
         metadata = write_history(out, metadata_path, bars, market, requested_days=args.days,
                                  requested_start_ms=start_ms, requested_end_ms=end_ms, captured_at_utc=captured_at)
+        metadata.update(capture_quote_snapshot(adapter, market))
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
         print(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True))
         return 0
     except (OSError, ValueError, RuntimeError, urllib.error.URLError, TimeoutError) as exc:
