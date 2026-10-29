@@ -1,0 +1,13 @@
+dimension,score_1,score_3,score_5,reviewer_notes
+"Genre fit and required structure","Major genre requirements missing","Most requirements present with minor gaps","Structure fits task and genre without unnecessary sections",""
+"Factual accuracy and traceability","Material errors or unsourced claims","Mostly accurate; some claims need sourcing","Claims trace to supplied facts or reliable sources",""
+"Specificity to brief","Generic content with little task-specific detail","Some specific details; occasional generic passages","Details directly reflect task inputs and avoid invention",""
+"Paragraph readability","Hard to follow, overpacked or fragmented","Generally readable with some uneven passages","Paragraphs carry a clear unit of thought and appropriate length",""
+"Sentence variation","Highly repetitive or unnaturally uniform","Some variation; a few repeated scaffolds","Syntax varies naturally according to information needs",""
+"Transitions and repetition","Stock transitions or repeated claims obscure logic","Some redundant phrasing but meaning remains clear","Transitions are useful and redundancy is low",""
+"Terminology and register","Inconsistent terms or mismatched formality","Mostly consistent with some slips","Terminology and register fit the audience and genre",""
+"Evidence and reasoning","Conclusions unsupported or reasoning absent","Reasoning visible but unevenly supported","Conclusions follow from evidence and stated limits",""
+"Tables and information design","Tables/lists hinder comprehension or key data are buried","Layout is usable but not consistently efficient","Tables/lists improve comparison and are easy to scan",""
+"Visual hierarchy and page flow","Crowded, inconsistent, awkward page breaks","Readable overall with several layout issues","Clear hierarchy, spacing, alignment and page flow",""
+"Document integrity","Missing metadata, broken numbering or inconsistent values","Minor inconsistencies that are easy to resolve","Dates, numbers, headings, references and pagination are consistent",""
+"Overall task usefulness","Requires substantial rework before use","Usable after focused editing","Ready for intended audience with only routine checks",""
