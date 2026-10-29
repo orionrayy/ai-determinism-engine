@@ -348,6 +348,8 @@ def assess_transfer_route(
             reasons.append("withdrawal_fee_exceeds_amount")
         else:
             received = requested - route.withdrawal_fee
+            if received <= 0:
+                reasons.append("no_transfer_value_remaining")
             if route.minimum_deposit is not None and received < route.minimum_deposit:
                 reasons.append("net_amount_below_minimum_deposit")
     return TransferDecision(
@@ -546,21 +548,18 @@ class IndodaxPublicMarketDataAdapter:
 
     @staticmethod
     def _best_level(levels: Any, *, side: str) -> Decimal:
-        if not isinstance(levels, list):
-            raise VenueDataError(f"INDODAX depth {side} must be an array")
+        if not isinstance(levels, list) or not levels:
+            raise VenueDataError(f"INDODAX depth {side} must be a non-empty array")
         prices: list[Decimal] = []
-        for level in levels:
+        for index, level in enumerate(levels):
             if not isinstance(level, (list, tuple)) or len(level) < 2:
-                continue
+                raise VenueDataError(f"INDODAX depth has malformed {side} level {index}")
             try:
                 price = _decimal(level[0], f"{side} price")
                 quantity = _decimal(level[1], f"{side} quantity")
-            except AdapterContractError:
-                continue
-            if price > 0 and quantity > 0:
-                prices.append(price)
-        if not prices:
-            raise VenueDataError(f"INDODAX depth contains no valid {side} levels")
+            except AdapterContractError as exc:
+                raise VenueDataError(f"INDODAX depth has invalid {side} level {index}: {exc}") from None
+            prices.append(price)
         return max(prices) if side == "buy" else min(prices)
 
     def get_quote(self, market: MarketSpec) -> MarketQuote:
@@ -569,20 +568,26 @@ class IndodaxPublicMarketDataAdapter:
         if market.quote_asset.upper() != "IDR":
             raise AdapterContractError("This public depth adapter currently supports IDR-quoted pairs only")
         pair_id = market.venue_symbol.lower()
+        expected_pair_id = f"{market.base_asset}{market.quote_asset}".lower()
         if not pair_id or len(pair_id) > 40 or not pair_id.isalnum():
             raise AdapterContractError("venue_symbol must be the alphanumeric pair id returned by /api/pairs")
+        if pair_id != expected_pair_id:
+            raise AdapterContractError("venue_symbol does not match the market base/quote assets")
+        request_started_at = datetime.now(timezone.utc)
         payload = self._get_public_json(self.BASE_URL + pair_id)
         if not isinstance(payload, dict) or ("error" in payload and payload["error"]):
             raise VenueDataError("INDODAX depth response is not a valid order-book object")
         bid = self._best_level(payload.get("buy"), side="buy")
         ask = self._best_level(payload.get("sell"), side="sell")
+        if ask < bid:
+            raise VenueDataError("INDODAX order book is crossed (best ask < best bid)")
         return MarketQuote(
             venue="INDODAX",
             symbol=market.symbol,
             bid=bid,
             ask=ask,
-            observed_at=datetime.now(timezone.utc),
-            source="INDODAX public /api/depth (client receive timestamp)",
+            observed_at=request_started_at,
+            source="INDODAX public /api/depth (request-start timestamp; conservative age)",
         )
 
 
