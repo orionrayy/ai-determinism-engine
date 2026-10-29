@@ -28,11 +28,13 @@ Requires Python 3.10+ and network access; no third-party package is required.
 python projects/sol-sentinel/sol_sentinel.py
 python projects/sol-sentinel/sol_sentinel.py --json
 python projects/sol-sentinel/sol_sentinel.py --watch-seconds 30
+python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv
+python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 python projects/sol-sentinel/sol_sentinel.py --fee-bps-round-trip 42.11 --slippage-bps-round-trip 20
 python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 ```
 
-The fee/slippage parameters are assumptions and must be set to the actual selected venue and execution path. The default data venue is Binance public SOL/USDT, not Reku SOL/IDR.
+The fee/slippage parameters are assumptions and must be set to the actual selected venue and execution path. The default data venue is Binance public SOL/USDT, not Reku SOL/IDR. Historical capture fails closed on gaps; the current backtest requires contiguous 1-minute candles. Never treat a backtest as a forecast.
 
 ## Files
 
@@ -44,6 +46,9 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `SESSION_LOG.md`: user-confirmed project context, decisions, and progress checkpoints.
 - `RUNBOOK_TERMUX.md`: install, run, validate, and troubleshoot on Android.
 - `sol_sentinel.py`: standard-library scanner, indicators, signal gating, and JSONL audit output.
+- `capture_history.py`: bounded public Binance 1m history capture with CSV hash and metadata sidecar.
+- `paper_engine.py`: cost-aware offline backtest with SQLite paper ledger; never sends orders.
+- `test_paper_engine.py`: replay, data-integrity, and ledger tests.
 - `test_sol_sentinel.py`: offline tests.
 - `../../.github/workflows/sol-sentinel-tests.yml`: continuous integration for this module.
 
