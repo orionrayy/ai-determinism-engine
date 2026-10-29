@@ -82,6 +82,22 @@ class DoajCandidateHarvesterTests(unittest.TestCase):
         self.assertEqual(token, "next%2Btoken")
         self.assertEqual(info["records_in_response"], 2)
 
+    def test_parse_matches_issn_from_dublin_core_source_field(self):
+        # Some OAI-DC records identify the journal in dc:source rather than
+        # placing its ISSN in dc:identifier or dc:relation.
+        xml = OAI_XML.replace(
+            b"<dc:identifier>1234-5679</dc:identifier>",
+            b"<dc:identifier>https://doi.org/10.1234/EXAMPLE.2020</dc:identifier>",
+        ).replace(
+            b"<dc:relation>https://publisher.example/article.pdf</dc:relation>",
+            b"<dc:relation>https://publisher.example/article.pdf</dc:relation>"
+            b"<dc:source>Official Journal Name ISSN 1234-5679</dc:source>",
+        )
+        records, _, _ = harvest.parse_records(xml, {"1234-5679"})
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["journal_issns"], ["1234-5679"])
+        self.assertEqual(records[0]["journal_source_metadata"], ["Official Journal Name ISSN 1234-5679"])
+
     def test_metadata_ids_without_target_issn_are_excluded(self):
         records, token, _ = harvest.parse_records(OAI_XML, {"9999-9999"})
         self.assertEqual(records, [])
