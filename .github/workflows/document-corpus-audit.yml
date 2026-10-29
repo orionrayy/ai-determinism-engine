@@ -1,0 +1,81 @@
+name: Original document corpus audit
+
+on:
+  push:
+    branches:
+      - research/original-document-corpus-v1
+    paths:
+      - "research/document-corpus/discovery_batch_*.jsonl"
+      - "research/document-corpus/tools/**"
+      - ".github/workflows/document-corpus-audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: document-corpus-audit-v1
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - name: Checkout research branch
+        uses: actions/checkout@v4
+        with:
+          ref: research/original-document-corpus-v1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install parsers
+        run: python -m pip install --upgrade pip && python -m pip install pymupdf openpyxl
+
+      - name: Validate audit tool
+        run: python research/document-corpus/tools/audit_corpus.py --self-test
+
+      - name: Analyze public reference artifacts
+        run: python research/document-corpus/tools/audit_corpus.py --target 500 --max-attempts 850 --delay 0.15
+
+      - name: Commit derived metadata and analysis report
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add research/document-corpus/results/
+          if git diff --cached --quiet; then
+            echo "No derived reports to commit"
+          else
+            git commit -m "research(corpus): persist structural audit results"
+            git push origin research/original-document-corpus-v1
+          fi
+
+      - name: Enforce 500-document acceptance threshold
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("research/document-corpus/results/summary.json")
+          if not p.exists():
+              raise SystemExit("No analysis summary was produced")
+          data = json.loads(p.read_text())
+          n = data.get("full_documents_analyzed", 0)
+          target = data.get("target_full_documents", 500)
+          print(f"full_documents_analyzed={n}; target={target}; target_reached={n >= target}")
+          if n < target:
+              raise SystemExit(1)
+          PY
+
+      - name: Upload audit output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: original-document-corpus-audit
+          path: research/document-corpus/results/
+          retention-days: 30
+          if-no-files-found: warn
