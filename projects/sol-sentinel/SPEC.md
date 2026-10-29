@@ -136,3 +136,8 @@ Financial success cannot be promised. The IDR 3,500,000 target is tracked as an 
 ## 9. Venue-specific market-data validation
 
 The read-only module `reku_market.py` requests Reku coin metadata, prices, direct bid/ask, and order book from the legacy public API reference at https://api.reku.id/. It records spread (bps), best levels, top-five depth, and optional deviation from a contemporaneous-enough Binance reference converted via a dated USD/IDR rate. Because the documentation is old and the public endpoint responses may vary, the live snapshot is accepted only as market-data evidence when its status and warning fields are valid. It is not a trade signal and offers no order-placement capability. The historical backtest still uses Binance SOLUSDT candles converted with a single daily FX reference; replacing this with verified Reku SOL/IDR chart history is a separate task after the chart endpoint's semantics and continuity are validated.
+
+
+## 10. First public Reku quote observation (not a live guarantee)
+
+A read-only snapshot in Actions run `40916894414` observed last price Rp1,845,000, bid Rp1,840,000, ask Rp1,845,000 and spread around 27.137 bps. The orderbook endpoint returned HTTP 400 for the SOL coin ID and was therefore recorded as unavailable; no depth was inferred. The adapter now falls back to the documented `/v2/orderbookall` endpoint. This is a single snapshot with no guaranteed freshness after capture; use only a new `OK` snapshot for any quote-related research. It still does not establish a supported authenticated order API.
