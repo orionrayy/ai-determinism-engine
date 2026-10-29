@@ -101,6 +101,20 @@ def get_number(obj: dict[str, Any], *names: str) -> float | None:
     return None
 
 
+def get_signed_number(obj: dict[str, Any], *names: str) -> float | None:
+    """Parse a finite signed number such as a negative 24h change percentage."""
+    for name in names:
+        value = obj.get(name)
+        try:
+            if value is not None:
+                n = float(value)
+                if math.isfinite(n):
+                    return n
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 @dataclass(frozen=True)
 class Candle:
     ts: int
@@ -224,7 +238,7 @@ class RekuPublicClient:
             return MarketSnapshot(
                 sampled_at=sampled, source="reku_public_legacy", symbol="SOL/IDR",
                 coin_id=coin_id, last_idr=last, bid_idr=bid, ask_idr=ask,
-                spread_bps=spread_bps, change_pct=get_number(price, "cp", "change_pct"),
+                spread_bps=spread_bps, change_pct=get_signed_number(price, "cp", "change_pct"),
                 volume_idr=get_number(price, "v", "volume_idr"), candles=candles,
                 depth_bid_idr=depth_bid, depth_ask_idr=depth_ask,
                 chart_age_seconds=chart_age, errors=errors,
@@ -333,7 +347,8 @@ def analyze(snapshot: MarketSnapshot, config: dict[str, Any], sampled_at: int | 
         "source": snapshot.source, "symbol": snapshot.symbol, "sampled_at": sampled,
         "price_idr": snapshot.last_idr, "bid_idr": snapshot.bid_idr, "ask_idr": snapshot.ask_idr,
         "spread_bps": snapshot.spread_bps, "chart_age_seconds": snapshot.chart_age_seconds,
-        "features": f, "stop_pct": stop_pct, "target_pct": target_pct,
+        "features": f, "signal_candle_ts": candles[-1].ts if candles else None,
+        "stop_pct": stop_pct, "target_pct": target_pct,
         "modeled_round_trip_cost_pct": fee_round_trip, "expected_net_edge_pct": expected_net_edge,
         "blockers": blockers,
     }
@@ -469,7 +484,7 @@ class PaperTrader:
                 pos = None
         if pos is None and not state.get("daily_locked") and report.get("status") == "BUY_SETUP":
             f = report["features"]
-            candle_ts = int(snapshot.candles[-1].ts) if snapshot.candles else 0
+            candle_ts = int(report.get("signal_candle_ts") or 0)
             if candle_ts and candle_ts != state.get("last_entry_candle_ts") and ask > bid > 0:
                 equity = self.equity(state)
                 risk_budget = equity * float(self.config["risk_per_trade_pct"])
@@ -592,12 +607,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.doctor:
             try:
                 snap = client.fetch()
+                completed = completed_candles(snap.candles, snap.sampled_at)
                 report = {"ok": True, "source": snap.source, "symbol": snap.symbol,
                           "coin_id": snap.coin_id, "has_price": snap.last_idr is not None,
                           "has_bid_ask": snap.bid_idr is not None and snap.ask_idr is not None,
-                          "candle_count": len(snap.candles), "chart_age_seconds": snap.chart_age_seconds,
+                          "raw_candle_count": len(snap.candles),
+                          "completed_candle_count": len(completed),
+                          "signal_data_ready": len(completed) >= 30 and snap.chart_age_seconds is not None,
+                          "chart_age_seconds": snap.chart_age_seconds,
                           "spread_bps": snap.spread_bps, "warnings": snap.errors or [],
-                          "sampled_at": utc_iso(snap.sampled_at)}
+                          "sampled_at": utc_iso(snap.sampled_at),
+                          "note": "Public market-data check only; never an order or profitability guarantee."}
                 print(json.dumps(report, sort_keys=True))
                 journal.close()
                 return 0 if report["has_price"] and report["has_bid_ask"] else 2
