@@ -232,10 +232,14 @@ def signal_at(
     features15: dict[str, list[float | None]],
     index1: int,
     config: BacktestConfig,
+    close_times5: Sequence[int] | None = None,
+    close_times15: Sequence[int] | None = None,
 ) -> tuple[bool, str, float | None]:
     decision_bar = bars1[index1]
-    idx5 = bisect_right([b.close_time_ms for b in bars5], decision_bar.close_time_ms) - 1
-    idx15 = bisect_right([b.close_time_ms for b in bars15], decision_bar.close_time_ms) - 1
+    times5 = close_times5 if close_times5 is not None else [b.close_time_ms for b in bars5]
+    times15 = close_times15 if close_times15 is not None else [b.close_time_ms for b in bars15]
+    idx5 = bisect_right(times5, decision_bar.close_time_ms) - 1
+    idx15 = bisect_right(times15, decision_bar.close_time_ms) - 1
     if idx5 < 25 or idx15 < 25 or index1 < 25:
         return False, "indicator_warmup", None
 
@@ -306,6 +310,8 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         }
 
     features1, features5, features15 = build_features(bars), build_features(bars5), build_features(bars15)
+    close_times5 = [b.close_time_ms for b in bars5]
+    close_times15 = [b.close_time_ms for b in bars15]
     cash = config.initial_capital_idr
     position: Position | None = None
     pending: tuple[int, float] | None = None  # (signal candle index, ATR at signal)
@@ -418,7 +424,8 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
 
         if index < len(bars) - 1 and position is None and not daily_locked:
             candidate, _reason, current_atr = signal_at(
-                bars, features1, bars5, features5, bars15, features15, index, config
+                bars, features1, bars5, features5, bars15, features15, index, config,
+                close_times5=close_times5, close_times15=close_times15,
             )
             if candidate and current_atr is not None and current_atr > 0:
                 pending = (index, current_atr)
