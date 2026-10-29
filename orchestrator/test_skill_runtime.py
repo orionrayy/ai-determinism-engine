@@ -41,6 +41,9 @@ class SkillRuntimeTests(unittest.TestCase):
             ("document-craft", "hallmark"),
         )
         self.assertEqual(sr.selected_skill_ids("Explain the concept of a reward system"), ())
+        self.assertEqual(sr.selected_skill_ids("Help me with writing Python code"), ())
+        self.assertEqual(sr.selected_skill_ids("Review this academic writing"), ("document-craft",))
+        self.assertEqual(sr.selected_skill_ids("Humanize this Python script"), ())
 
     def test_document_skill_is_authorized_and_added_to_writing_nodes(self):
         nodes = [
