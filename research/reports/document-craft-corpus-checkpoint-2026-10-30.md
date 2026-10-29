@@ -2,7 +2,7 @@
 
 ## Status yang dapat dibuktikan
 
-Korpus saat ini memiliki **7 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 493. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
+Korpus saat ini memiliki **8 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 492. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
 
 | Genre | Dokumen lolos gate |
 |---|---:|
@@ -16,10 +16,10 @@ Korpus saat ini memiliki **7 dokumen individual yang lolos gate provenance dan h
 | Laporan kegiatan | 0 |
 | Laporan kerja/profesional | 0 |
 | Operasional/administratif | 0 |
-| Workbook Excel | 1 |
+| Workbook Excel | 2 |
 | Genre lain — panduan profesional/operasional | 1 |
 
-Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 11 catatan: 7 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, serta 1 lead XLSX metadata-only. Empat catatan non-eligible itu **tidak dihitung** ke angka 7/500.
+Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 12 catatan: 8 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, serta 1 lead XLSX metadata-only. Empat catatan non-eligible itu **tidak dihitung** ke angka 8/500.
 
 ## Sampel yang sudah diverifikasi
 
@@ -102,6 +102,13 @@ The OOXML inspector found 17 visible worksheets: a metadata sheet `Header` plus 
 
 This sample broadens Excel evidence to a genuine experimental-data workbook. It is **not** evidence for formulas, print layout, chart quality or operational/business workbook conventions. Visual inspection in an Excel UI/print preview was not performed, and the scientific validity of the battery measurements was not independently reproduced.
 
+
+**Budget 2020 — Expenditure Data: Estimates of Appropriations 2020/21 (XLSX workbook)** — The Treasury, New Zealand. Official page: https://www.treasury.govt.nz/publications/data/budget-2020-data-estimates-appropriations-2020-21. The Treasury page declares Crown Copyright, Attribution 4.0 International (CC BY 4.0) and identifies this release as superseded. Direct XLSX: https://www.treasury.govt.nz/sites/default/files/2020-05/b20-expenditure-data.xlsx.
+
+GitHub Actions downloaded and inspected the 860,536-byte workbook, SHA-256 `d6a4f00122a05a86bf905f2c43f53cc065b8f033ee080647cf8033961c43aced`. The workbook has 8 visible worksheets: `Intro`, `Explanation`, `Raw Data`, `PivotAppnTypeSpendbyYear`, `GraphAppnTypeSpendbyYear`, `PivotAppnTypeByVote`, `GraphAppnTypeByVote`, and `PivotAppnTypeByPortfolio`. The overall structural tally is 6,512 row elements, 102,477 non-empty cells, two formula cells, two merged ranges, one worksheet with an auto-filter, four worksheets with frozen panes, one defined name, zero hidden sheets, and zero OOXML table parts. The `Raw Data` sheet has dimension A1:Q6304 and 101,427 non-empty cells. The two pivot-style sheets each contain one formula cell, one merged range and frozen panes; the two graph-named sheets have empty cell grids at A1 in the structural parser.
+
+The workbook's separation between orientation, explanation/usage notes, raw rows, pivot summaries and graph-oriented sheets is useful evidence for workbook information architecture. A data filter and frozen panes support navigation in the main table. No cell values or financial figures were retained. The chart objects, screen appearance, print preview, formula outputs and fiscal figures were not visually checked or independently audited. Because the Treasury labels the release superseded, it is included only as a historical format exemplar, not as a source for current fiscal data.
+
 ## Partial and metadata-only leads (not counted toward the target)
 
 - **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
@@ -109,11 +116,11 @@ This sample broadens Excel evidence to a genuine experimental-data workbook. It 
 - **ABK Sekdin.xlsx — Analisis Beban Kerja Sekertaris Dinas Sosial Kabupaten Karanganyar** — official Portal Data Jawa Tengah resource declares CC BY at metadata level, but download requests to two listed hosts returned HTTP 403. No worksheet, formula, formatting, hidden-sheet, or cell-content claims have been made. It remains metadata-only and contributes **zero** to eligibility.
 - **Studi Kasus: Asuhan Keperawatan pada Orang Dewasa dengan Isolasi Sosial** — Journal of Nursing Education and Practice, DOI [10.53801/jnep.v1i01.9](https://doi.org/10.53801/jnep.v1i01.9), CC BY-SA 4.0 and full text public. Only macro-headings are recorded (case-study label, abstract sections, Pendahuluan, Metode, Hasil dan Pembahasan, Kesimpulan, conflict/acknowledgement/funding/references). The full paper contains sensitive patient narrative, so the source is held at `privacy_review=pending`; no case facts, quotes, chronology, or contact details are retained. It contributes **zero** to eligibility until privacy review is resolved.
 
-## Apa yang dapat disimpulkan dari tujuh sampel
+## Sampel 8 — workbook belanja anggaran pemerintah, CC BY 4.0
 
 Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat memperlihatkan variasi dalam satu tradisi publikasi tetapi belum menjadi tiga source family independen. Sebagian ciri berulang—metadata DOI dan lisensi di halaman awal, satu kolom serif, catatan bernomor, bagian referensi dan deklarasi penerbitan—masuk akal diuji sebagai hipotesis untuk artikel-artikel jurnal tersebut. Adanya bagian recommendation yang terpisah pada salah satu artikel serta perbedaan heading/topik memperlihatkan bahwa urutan bab tidak boleh dipaksakan sebagai template universal.
 
-Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Tujuh sampel tetap belum memberi bukti tentang norma LP/asuhan keperawatan, PKL lengkap, praktikum, laporan kegiatan, laporan kerja/profesional, atau workbook operasional/administratif berformula. Satu workbook Excel yang eligible adalah dataset eksperimental terukur dan tidak mewakili laporan keuangan, HR, anggaran atau spreadsheet operasional. Dua skripsi UIN Ar-Raniry berasal dari universitas yang sama tetapi program/topik berbeda; keduanya tidak menjadi dua institusi independen.
+Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Delapan sampel tetap belum memberi bukti tentang norma LP/asuhan keperawatan, PKL lengkap, praktikum, laporan kegiatan, laporan kerja/profesional, atau workbook operasional/administratif berformula. Satu workbook Excel yang eligible adalah dataset eksperimental terukur dan tidak mewakili laporan keuangan, HR, anggaran atau spreadsheet operasional. Dua skripsi UIN Ar-Raniry berasal dari universitas yang sama tetapi program/topik berbeda; keduanya tidak menjadi dua institusi independen.
 
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
 
