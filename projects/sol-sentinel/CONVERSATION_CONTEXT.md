@@ -97,3 +97,8 @@ The backtest has not yet been run against a downloaded historical CSV on the use
 The scanner and paper engine now model venue fee, quoted spread, and slippage as distinct parameters. The paper engine applies adverse spread and slippage adjustments to modeled fills, retains exchange fees separately, and reports execution-friction cost. Negative spread values are rejected. A free-first, manual/scheduled research workflow now captures public Binance candle history, runs the offline backtest and fixed-parameter 60/20/20 evaluation, and uploads artifacts for seven days. It does not send orders.
 
 The workflow has been committed but not manually dispatched during this session; API reachability and actual report artifacts still need validation. Never interpret the simulation as current account equity or as proof of profitability.
+
+
+## Conversation, APIs, tools and progress archive
+
+The detailed user-facing project timeline, API/repository inventory, GitHub connector operation inventory, tool rejection history, CI run IDs, current status and next-step checklist are now preserved in [EXECUTION_LOG.md](EXECUTION_LOG.md). This is a structured digest rather than a verbatim export of the entire displayed chat; private reasoning and secrets are intentionally not stored.
