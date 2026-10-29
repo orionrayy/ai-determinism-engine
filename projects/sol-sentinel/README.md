@@ -40,6 +40,7 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `RISK_POLICY.md`: hard safety limits and live-trading gates.
 - `SOURCES.md`: source inventory, official documentation, and verification caveats.
 - `CONVERSATION_CONTEXT.md`: user-facing conversation digest and continuation handoff.
+- `ORCHESTRATION_MEMORY_ADDENDUM.md`: project-specific continuity note supplementing the root canonical memory.
 - `SESSION_LOG.md`: user-confirmed project context, decisions, and progress checkpoints.
 - `RUNBOOK_TERMUX.md`: install, run, validate, and troubleshoot on Android.
 - `sol_sentinel.py`: standard-library scanner, indicators, signal gating, and JSONL audit output.
