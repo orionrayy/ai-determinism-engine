@@ -1,0 +1,212 @@
+{
+  "registry_version": "1.0.0",
+  "checked_at": "2026-10-30",
+  "purpose": "Discovery targets only; these entries are not individual corpus samples. Check each item's own license, content provenance, privacy, and terms before adding it to manifest.jsonl.",
+  "license_policy": "Journal-level DOAJ metadata is a discovery clue, not proof that every item or third-party attachment uses the same license. Do not automatically download bulk content.",
+  "sources": [
+    {
+      "source_id": "doaj-ijnp",
+      "name": "Indonesian Journal of Nursing Practices",
+      "source_url": "https://doaj.org/toc/2548-592X",
+      "publisher": "Universitas Muhammadiyah Yogyakarta",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2548-592X",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-ijchn",
+      "name": "Indonesian Journal of Community Health Nursing",
+      "source_url": "https://doaj.org/toc/2656-4602",
+      "publisher": "Universitas Airlangga",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2656-4602",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-icnj",
+      "name": "Indonesian Contemporary Nursing Journal",
+      "source_url": "https://doaj.org/toc/2686-116X",
+      "publisher": "Universitas Hasanuddin",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2686-116X",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-jks",
+      "name": "Jurnal Keperawatan Soedirman / The Soedirman Journal of Nursing",
+      "source_url": "https://doaj.org/toc/2579-9320",
+      "publisher": "Universitas Jenderal Soedirman",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2579-9320",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-jkkk",
+      "name": "Jurnal Keperawatan Klinis dan Komunitas",
+      "source_url": "https://doaj.org/toc/2614-4948",
+      "publisher": "Universitas Gadjah Mada",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY-SA",
+      "license_evidence_url": "https://doaj.org/toc/2614-4948",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-jkm",
+      "name": "Jurnal Keperawatan Malang",
+      "source_url": "https://doaj.org/toc/2550-0538",
+      "publisher": "STIKes Panti Waluya Malang",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY-SA",
+      "license_evidence_url": "https://doaj.org/toc/2550-0538",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-ners-muda",
+      "name": "Ners Muda",
+      "source_url": "https://doaj.org/toc/2723-8067",
+      "publisher": "Universitas Muhammadiyah Semarang",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2723-8067",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-fmnj",
+      "name": "Fundamental and Management Nursing Journal",
+      "source_url": "https://doaj.org/toc/2656-4610",
+      "publisher": "Universitas Airlangga",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2656-4610",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-ners",
+      "name": "NERS Jurnal Keperawatan",
+      "source_url": "https://doaj.org/toc/2461-0747",
+      "publisher": "Universitas Andalas",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY-NC-SA",
+      "license_evidence_url": "https://doaj.org/toc/2461-0747",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-jkd",
+      "name": "Jurnal Keperawatan Duta Medika",
+      "source_url": "https://doaj.org/toc/2829-5943",
+      "publisher": "Universitas Duta Bangsa Surakarta",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2829-5943",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "doaj-jkmk",
+      "name": "Jurnal Kepemimpinan dan Manajemen Keperawatan",
+      "source_url": "https://doaj.org/toc/2621-5047",
+      "publisher": "Persatuan Perawat Nasional Indonesia Jawa Tengah",
+      "source_type": "open_access_journal_directory",
+      "genre_targets": [
+        "academic_paper",
+        "research_report",
+        "nursing_lp_askep"
+      ],
+      "license_reported_by_source": "CC BY",
+      "license_evidence_url": "https://doaj.org/toc/2621-5047",
+      "license_level": "journal_metadata",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    },
+    {
+      "source_id": "portal-data-id",
+      "name": "Portal Satu Data Indonesia",
+      "source_url": "https://data.go.id/dataset",
+      "publisher": "Pemerintah Republik Indonesia",
+      "source_type": "official_public_data_catalogue",
+      "genre_targets": [
+        "excel_workbook",
+        "operational_admin",
+        "professional_work_report"
+      ],
+      "license_reported_by_source": null,
+      "license_evidence_url": "https://data.go.id/dataset",
+      "license_level": "unknown_until_dataset_review",
+      "counts_as_document": false,
+      "status": "discovery_only"
+    }
+  ]
+}
