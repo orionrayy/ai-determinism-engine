@@ -56,7 +56,7 @@ Every future result must separate:
 6. transfer/withdrawal fee, if relevant;
 7. unrealized mark-to-market versus realized P&L.
 
-Never claim net profitability using gross candle returns alone. Fee defaults in the scanner are placeholders, not authoritative Reku or Jupiter values; inspect the actual order preview and official fee schedule before a real order.
+Never claim net profitability using gross candle returns alone. The current published Reku Pro fee table is the source for default entry/exit fee components, but mode, applicable taxes, fees, and an actual order preview must be rechecked before use. Spread and slippage remain unmeasured assumptions. Binance candles are not executable Reku SOL/IDR quotes.
 
 ## Secret and approval controls
 
@@ -81,8 +81,9 @@ Pause the system if:
 
 ## Current offline cost assumptions
 
-- Scanner: default fee 42.11 bps round trip, spread 10 bps round trip, slippage 20 bps round trip. These are explicit placeholders, not a current live Reku quote.
-- Backtest/evaluator: default entry fee 10.555 bps, exit fee 31.555 bps, spread 10 bps round trip, slippage 10 bps per side. All are configurable.
+- Published Reku Pro fee table checked 2026-10-29: entry/buy 10.555 bps and exit/sell 31.555 bps; approximate fee sum 42.11 bps for equal nominal values. Source: https://reku.id/fees/crypto. Recheck current mode and final order preview before live use.
+- Scanner default: fee 42.11 bps round trip (fee reference from Reku Pro), spread 10 bps round trip (assumption), slippage 20 bps round trip (assumption).
+- Backtest/evaluator default: entry fee 10.555 bps, exit fee 31.555 bps (published Reku Pro fee components), spread 10 bps round trip (assumption), slippage 10 bps per side (assumption). All are configurable.
 - Spread cost is modeled by adverse half-spread adjustment on each side; slippage is a distinct adverse adjustment. Both are included in fill prices and modeled risk sizing. Exchange fees remain separate in the ledger.
 - These defaults must be replaced with the actual venue/market measurements before interpreting net expectancy. A wrong cost assumption can flip a small trading edge negative.
 
