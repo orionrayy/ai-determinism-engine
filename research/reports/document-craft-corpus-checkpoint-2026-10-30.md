@@ -2,13 +2,13 @@
 
 ## Status yang dapat dibuktikan
 
-Korpus saat ini memiliki **5 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 495. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
+Korpus saat ini memiliki **6 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 494. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
 
 | Genre | Dokumen lolos gate |
 |---|---:|
 | LP/asuhan keperawatan | 0 |
 | Laporan PKL/magang | 0 |
-| Skripsi/tesis/disertasi | 1 |
+| Skripsi/tesis/disertasi | 2 |
 | Makalah/artikel ilmiah | 3 |
 | Laporan praktikum | 0 |
 | Laporan penelitian | 0 |
@@ -83,6 +83,16 @@ Berbeda dari artikel jurnal, panduan ini mengatur navigasi referensi dan pilihan
 
 The front matter includes a title page, originality declaration, abstract and English abstract, preface, table of contents, and separate lists of tables, figures and appendices. The five-chapter structure is Introduction, Literature Review, Research Methodology, Results and Discussion, and Closing; references and appendices follow. The table of contents shows nested background/problem/objective/benefit/scope sections, methods subdivisions, and topic-based result subsections. Page references use dotted leaders; the extracted text shows Roman-numbered front matter and Arabic main-body pagination. A visible inconsistency labels the closing items as 4.1 and 4.2 under Chapter V; this is recorded as a source-specific QA finding, not a norm. This pass did not complete rendered-page visual inspection, so no font, color, margin, or image-quality claims are made.
 
+## Sampel 6 — tugas akhir Teknologi Informasi, 2026
+
+**Implementasi Sistem Penerjemah BISINDO Dua Arah Berbasis MediaPipe dan Artificial Intelligence** — Adea Marlinda, Universitas Islam Negeri Ar-Raniry Banda Aceh, 2026. Official item record: https://repository.ar-raniry.ac.id/58108/. The repository item declares Creative Commons Attribution 4.0; the full PDF text layer is public. No copy of the PDF or its full text is retained.
+
+The cover identifies the document as a Tugas Akhir and includes author/program/faculty/institution/year fields. The front matter includes approval and validation sheets, Indonesian abstract, English abstract, preface, contents, list of figures and list of tables. The body has five chapters: Introduction; Literature Review; Research Methodology; Implementation and Research Results; Conclusions and Recommendations; followed by references. The contents uses nested decimal subsections, dotted leaders and page references; Roman-numbered front matter transitions to Arabic-numbered body pages.
+
+The literature chapter is technology-specific (BISINDO, computer vision, MediaPipe, CNN, MobileNetV2, STT/TTS, Gradio, Colab, workflow automation, evaluation). The methods chapter subdivides system architecture and flow, data acquisition/dataset splitting, preprocessing, training and evaluation. The implementation chapter separates model/dataset processing, gesture/voice modes, webhook integration, functional testing, performance analysis and limitations. This is a useful example of a technical thesis linking literature, method, implementation and evaluation, not a universal thesis template.
+
+A structural QA flag is preserved: the table of contents has a PDF bookmark artifact (“Error! Bookmark not defined”) next to the originality statement; the list of figures also appears to include a numbering/page-order mismatch. These source-specific issues should become QA checks, not patterns to imitate. Rendered visual inspection was not completed for this item, so no claims are made about font, color, margin, or image-rendering quality. Student ID and private acknowledgements are not retained; technical performance claims have not been independently reproduced.
+
 ## Partial and metadata-only leads (not counted toward the target)
 
 - **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
@@ -93,7 +103,7 @@ The front matter includes a title page, originality declaration, abstract and En
 
 Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat memperlihatkan variasi dalam satu tradisi publikasi tetapi belum menjadi tiga source family independen. Sebagian ciri berulang—metadata DOI dan lisensi di halaman awal, satu kolom serif, catatan bernomor, bagian referensi dan deklarasi penerbitan—masuk akal diuji sebagai hipotesis untuk artikel-artikel jurnal tersebut. Adanya bagian recommendation yang terpisah pada salah satu artikel serta perbedaan heading/topik memperlihatkan bahwa urutan bab tidak boleh dipaksakan sebagai template universal.
 
-Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Lima sampel masih tidak memberi bukti tentang norma LP/asuhan keperawatan, laporan PKL, laporan kegiatan, maupun workbook Excel: saat ini belum ada item eligible pada genre tersebut. Satu skripsi UIN Ar-Raniry hanya menambah satu contoh pada genre tesis di satu universitas/disiplin.
+Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Enam sampel masih tidak memberi bukti tentang norma LP/asuhan keperawatan, laporan PKL, laporan kegiatan, maupun workbook Excel: saat ini belum ada item eligible pada genre tersebut. Satu skripsi UIN Ar-Raniry hanya menambah satu contoh pada genre tesis di satu universitas/disiplin.
 
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
 
