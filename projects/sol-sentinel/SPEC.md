@@ -25,7 +25,7 @@ Non-goals:
 
 ## 3. Architecture
 
-1. Market data adapter: retrieve completed SOL/USDT candles from a documented public endpoint. Timestamp every response and reject stale/incomplete data.
+1. Market data adapters: retrieve completed Binance SOLUSDT candles for broad technical context, and separately read Reku's documented public SOL/IDR price, bid/ask, and order book for venue-specific quote/spread/depth measurement. Timestamp each fetch and reject stale, invalid, crossed, or internally inconsistent data. Binance is never an executable Reku price.
 2. Indicator layer: EMA 9/21, RSI 14, ATR 14, relative volume, prior-range breakout. Keep formulas deterministic and tested.
 3. Regime filter: use 15m trend as higher-timeframe context, 5m as setup confirmation, 1m as entry trigger. A no-trade result is valid and often preferable.
 4. Cost model: net expected edge = conservative gross movement assumption - round-trip fees - round-trip slippage - any separately configured transfer/priority costs. Every parameter must be explicit and recorded.
@@ -80,7 +80,7 @@ The initial worker:
 - Appends JSONL audit records if a log path is configured.
 - Never places orders and has no private-key handling code.
 
-Binance is a *reference feed*. It cannot determine exact entry prices or fee schedules on Reku. A venue-specific market-data adapter is a separate future work item pending validation of official documentation and terms.
+Binance is a *reference feed*. It cannot determine exact entry prices or fee schedules on Reku. A read-only Reku public market-data adapter has now been implemented from documented legacy endpoints; live endpoint availability and current API terms must be verified. This adapter does not place orders, and no authenticated order route is approved or assumed.
 
 ## 6. Initial strategy hypothesis (not validated)
 
@@ -131,3 +131,8 @@ All are mandatory:
 Engineering success: reproducible data, correct risk gates, robust offline tests, and observable paper results.
 
 Financial success cannot be promised. The IDR 3,500,000 target is tracked as an aspiration only. Report actual account equity only from verified sources and never infer a balance from strategy performance simulations.
+
+
+## 9. Venue-specific market-data validation
+
+The read-only module `reku_market.py` requests Reku coin metadata, prices, direct bid/ask, and order book from the legacy public API reference at https://api.reku.id/. It records spread (bps), best levels, top-five depth, and optional deviation from a contemporaneous-enough Binance reference converted via a dated USD/IDR rate. Because the documentation is old and the public endpoint responses may vary, the live snapshot is accepted only as market-data evidence when its status and warning fields are valid. It is not a trade signal and offers no order-placement capability. The historical backtest still uses Binance SOLUSDT candles converted with a single daily FX reference; replacing this with verified Reku SOL/IDR chart history is a separate task after the chart endpoint's semantics and continuity are validated.
