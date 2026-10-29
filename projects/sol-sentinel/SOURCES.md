@@ -73,3 +73,12 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 - GitHub connector: inspected repository tree, README, canonical memory, and current main tree SHA; created the isolated feature branch.
 - Web source verification: official Binance, DEX Screener, Jupiter, Helius, Cloudflare, and OJK source pages listed above.
 - Runtime implementation: Python stdlib only; no model API, paid data plan, private credential, or financial side effect.
+
+
+## Automated research workflow
+
+- Workflow file: `.github/workflows/sol-sentinel-research.yml`.
+- Trigger: manual `workflow_dispatch` with a bounded 1/3/7/14/30 day window and a daily scheduled run.
+- Scheduled run time: 14:15 UTC (21:15 Asia/Jakarta), but GitHub Actions schedules run only from the repository default branch. Until this branch is merged, start it manually from the Actions UI if the workflow is available.
+- Actions performed: offline tests, public history capture, offline backtest, fixed-parameter chronological split evaluation, and upload of research outputs for 7 days.
+- No credentials or account APIs are used; it never sends orders. The output CSV contains public market data only, but reports should remain research artifacts and must not be interpreted as live account equity.
