@@ -1,3 +1,4 @@
+import time
 import unittest
 
 import reku_market as market
@@ -51,6 +52,9 @@ class RekuMarketParserTests(unittest.TestCase):
                 raise RuntimeError("HTTP 400 on scoped order book")
             if path == "/orderbookall":
                 return {"b": [[1000.0, 100.0, 10.0]], "s": [[1020.0, 102.0, 10.0]]}
+            if path == "/chart":
+                stamp = int(time.time()) - 60
+                return [[stamp, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
             raise AssertionError("unexpected Reku endpoint " + path)
 
         from unittest.mock import patch
@@ -61,6 +65,8 @@ class RekuMarketParserTests(unittest.TestCase):
         self.assertEqual(report["orderbook_endpoint_used"], "orderbookall")
         self.assertAlmostEqual(report["orderbook"]["spread_bps"], (2.0 / 101.0) * 10_000.0, places=8)
         self.assertAlmostEqual(report["direct_bidask"]["spread_bps"], (2.0 / 101.0) * 10_000.0, places=8)
+        self.assertEqual(report["chart_status"], "OK")
+        self.assertEqual(report["chart_probe"]["last_bar"]["close_idr"], 101.0)
 
     def test_snapshot_marks_partial_if_both_orderbook_endpoints_fail(self):
         def fake_request(path, params=None, timeout=8.0):
@@ -72,6 +78,9 @@ class RekuMarketParserTests(unittest.TestCase):
                 return [{"code": "SOL", "bid": 100.0, "ask": 102.0}]
             if path in ("/orderbook", "/orderbookall"):
                 raise RuntimeError("book endpoint unavailable")
+            if path == "/chart":
+                stamp = int(time.time()) - 60
+                return [[stamp, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
             raise AssertionError("unexpected Reku endpoint " + path)
 
         from unittest.mock import patch
@@ -81,6 +90,18 @@ class RekuMarketParserTests(unittest.TestCase):
         self.assertEqual(report["orderbook_status"], "ERROR")
         self.assertIsNotNone(report["direct_bidask"])
         self.assertIsNone(report["orderbook"])
+
+    def test_chart_row_parser_uses_documented_ohlcv_field_order(self):
+        now_ms = int(time.time() * 1000)
+        payload = [[now_ms / 1000.0, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
+        report = market.parse_chart_payload(payload, interval_minutes=1, now_ms=now_ms)
+        self.assertEqual(report["data_status"], "OK")
+        self.assertEqual(report["last_bar"]["open_idr"], 100.0)
+        self.assertEqual(report["last_bar"]["close_idr"], 101.0)
+        self.assertEqual(report["last_bar"]["low_idr"], 99.0)
+        self.assertEqual(report["last_bar"]["high_idr"], 102.0)
+        with self.assertRaisesRegex(ValueError, "no valid OHLCV"):
+            market.parse_chart_payload([["bad"]], interval_minutes=1, now_ms=now_ms)
 
     def test_cross_venue_reference_uses_explicit_fx_proxy(self):
         result = market.compare_reference(1_815_800.0, 100.0, 18_158.0)
