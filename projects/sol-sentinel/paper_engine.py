@@ -271,8 +271,42 @@ def signal_at(
     return True, "multi_timeframe_breakout", atr5
 
 
-def mark_equity(cash: float, position: Position | None, price: float) -> float:
-    return cash + (position.quantity * price if position else 0.0)
+def mark_equity(
+    cash: float,
+    position: Position | None,
+    price: float,
+    config: BacktestConfig | None = None,
+) -> float:
+    """Mark equity at an estimated liquidation value, including exit friction when configured."""
+    if position is None:
+        return cash
+    liquidation_price = price
+    exit_fee = 0.0
+    if config is not None:
+        adverse_bps_per_side = config.spread_bps_round_trip / 2.0 + config.slippage_bps_per_side
+        liquidation_price = price * (1.0 - adverse_bps_per_side / 10_000.0)
+        exit_fee = position.quantity * liquidation_price * config.exit_fee_bps / 10_000.0
+    return cash + position.quantity * liquidation_price - exit_fee
+
+
+def resolve_exit(
+    bar: Bar,
+    stop_price: float,
+    target_price: float,
+    bars_held: int,
+    maximum_hold_bars: int,
+) -> tuple[str | None, float | None]:
+    """Resolve OHLC exits conservatively; a gap through a stop fills at the worse open."""
+    hit_stop = bar.low <= stop_price
+    hit_target = bar.high >= target_price
+    if hit_stop:
+        reason = "stop_loss" if not hit_target else "stop_and_target_same_bar_stop_first"
+        return reason, min(bar.open, stop_price)
+    if hit_target:
+        return "take_profit", target_price
+    if bars_held >= maximum_hold_bars:
+        return "maximum_hold", bar.close
+    return None, None
 
 
 def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = "") -> dict[str, Any]:
@@ -331,7 +365,7 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         day = datetime.fromtimestamp(bar.open_time_ms / 1000, timezone.utc).date().isoformat()
         if day != active_day:
             active_day = day
-            daily_start_equity = mark_equity(cash, position, bar.open)
+            daily_start_equity = mark_equity(cash, position, bar.open, config)
             daily_locked = False
 
         # Execute a candidate only on the next candle's open; never fill using the signal candle close.
@@ -373,17 +407,10 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         exit_reference: float | None = None
         if position is not None:
             position.bars_held += 1
-            hit_stop = bar.low <= position.stop_price
-            hit_target = bar.high >= position.target_price
-            if hit_stop:
-                exit_reason = "stop_loss" if not hit_target else "stop_and_target_same_bar_stop_first"
-                exit_reference = position.stop_price
-            elif hit_target:
-                exit_reason = "take_profit"
-                exit_reference = position.target_price
-            elif position.bars_held >= config.maximum_hold_bars:
-                exit_reason = "maximum_hold"
-                exit_reference = bar.close
+            exit_reason, exit_reference = resolve_exit(
+                bar, position.stop_price, position.target_price,
+                position.bars_held, config.maximum_hold_bars,
+            )
             if exit_reason and exit_reference is not None:
                 adverse_fill_bps_per_side = config.spread_bps_round_trip / 2.0 + config.slippage_bps_per_side
                 exit_fill = exit_reference * (1.0 - adverse_fill_bps_per_side / 10_000.0)
@@ -417,7 +444,7 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
                 })
                 position = None
 
-        equity = mark_equity(cash, position, bar.close)
+        equity = mark_equity(cash, position, bar.close, config)
         if day == active_day and equity <= daily_start_equity * (1.0 - config.daily_loss_fraction):
             if not daily_locked:
                 lock_events += 1
