@@ -20,7 +20,10 @@ The Reku public API documentation currently discoverable at https://api.reku.id/
 pkg update
 pkg install python
 git clone https://github.com/orionrayy/ai-determinism-engine.git
-cd ai-determinism-engine/projects/sol-sentinel
+cd ai-determinism-engine
+git fetch origin feat/sol-sentinel-paper-v1
+git checkout feat/sol-sentinel-paper-v1
+cd projects/sol-sentinel
 python -m unittest -v
 python sol_sentinel.py --doctor --once
 python sol_sentinel.py --once
