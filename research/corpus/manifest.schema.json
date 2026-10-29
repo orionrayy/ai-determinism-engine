@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/orionrayy/ai-determinism-engine/blob/main/research/corpus/manifest.schema.json",
+  "title": "Hallmark Original Document Corpus Manifest Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_id",
+    "source_family_id",
+    "source_url",
+    "title",
+    "creator",
+    "publisher",
+    "genre",
+    "subgenre",
+    "publication_year",
+    "retrieved_at",
+    "language",
+    "format",
+    "access_basis",
+    "license",
+    "usage_scope",
+    "originality_status",
+    "provenance_confidence",
+    "provenance_evidence",
+    "acquisition_method",
+    "access_status",
+    "anonymization_status",
+    "privacy_review",
+    "verification_status",
+    "sha256",
+    "byte_size",
+    "duplicate_of",
+    "exclusion_reason"
+  ],
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._:-]{2,159}$"
+    },
+    "source_family_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200
+    },
+    "source_url": {
+      "type": "string",
+      "format": "uri",
+      "pattern": "^https?://"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1000
+    },
+    "creator": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 500
+    },
+    "publisher": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "genre": {
+      "enum": [
+        "nursing_lp_askep",
+        "pkl_internship",
+        "thesis_dissertation",
+        "academic_paper",
+        "lab_practicum",
+        "research_report",
+        "proposal",
+        "event_report",
+        "professional_work_report",
+        "operational_admin",
+        "excel_workbook",
+        "other"
+      ]
+    },
+    "subgenre": {
+      "type": "string",
+      "maxLength": 300
+    },
+    "publication_year": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1800,
+      "maximum": 2200
+    },
+    "retrieved_at": {
+      "type": "string",
+      "format": "date"
+    },
+    "language": {
+      "enum": [
+        "id",
+        "en",
+        "other"
+      ]
+    },
+    "format": {
+      "enum": [
+        "pdf",
+        "docx",
+        "xlsx",
+        "xls",
+        "html",
+        "odt",
+        "txt",
+        "csv",
+        "other"
+      ]
+    },
+    "access_basis": {
+      "enum": [
+        "open_license",
+        "public_domain",
+        "explicit_permission",
+        "terms_allow_analysis",
+        "metadata_only",
+        "unclear",
+        "restricted"
+      ]
+    },
+    "license": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "usage_scope": {
+      "enum": [
+        "full_text_analysis",
+        "feature_analysis_only",
+        "metadata_only",
+        "excluded"
+      ]
+    },
+    "originality_status": {
+      "enum": [
+        "original_verified",
+        "appears_original_unverified",
+        "official_template",
+        "duplicate_or_version",
+        "synthetic_or_ai"
+      ]
+    },
+    "provenance_confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ]
+    },
+    "provenance_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000
+      }
+    },
+    "acquisition_method": {
+      "enum": [
+        "official_download",
+        "official_web_view",
+        "api",
+        "user_supplied_permission",
+        "library_metadata_only",
+        "other"
+      ]
+    },
+    "access_status": {
+      "enum": [
+        "accessed",
+        "metadata_only",
+        "inaccessible"
+      ]
+    },
+    "anonymization_status": {
+      "enum": [
+        "not_applicable",
+        "verified",
+        "pending",
+        "excluded"
+      ]
+    },
+    "privacy_review": {
+      "enum": [
+        "not_required",
+        "passed",
+        "pending",
+        "failed"
+      ]
+    },
+    "verification_status": {
+      "enum": [
+        "pending",
+        "verified",
+        "excluded"
+      ]
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "byte_size": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "duplicate_of": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 200
+    },
+    "exclusion_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 5000
+    }
+  }
+}
