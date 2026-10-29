@@ -98,6 +98,15 @@ class RekuHistoryTests(unittest.TestCase):
                 history.request_activity_month(51, 2026, 10, attempts=1)
         mocked.assert_called_once()
 
+    def test_capture_history_stops_after_legacy_endpoint_404(self):
+        from unittest.mock import patch
+        catalogue = {"result": [{"id": 51, "accountcode": "SOL", "accountname": "Solana"}]}
+        with patch.object(history, "request_json", return_value=catalogue), \
+             patch.object(history, "request_activity_month", side_effect=RuntimeError("Reku activity HTTP 404: Not Found")) as request_month:
+            with self.assertRaisesRegex(RuntimeError, "Legacy Reku /activitytrans endpoint unavailable.*HTTP 404"):
+                history.capture_history("SOL", days=30)
+        request_month.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
