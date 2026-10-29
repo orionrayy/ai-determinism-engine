@@ -1,0 +1,40 @@
+name: SOL Sentinel Tests
+
+on:
+  push:
+    branches:
+      - main
+      - feat/sol-sentinel-paper-v1
+    paths:
+      - "projects/sol-sentinel/**"
+      - ".github/workflows/sol-sentinel-tests.yml"
+  pull_request:
+    paths:
+      - "projects/sol-sentinel/**"
+      - ".github/workflows/sol-sentinel-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sol-sentinel-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Compile
+        run: python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/tests/test_sol_sentinel.py
+      - name: Offline unit tests
+        working-directory: projects/sol-sentinel
+        run: python -m unittest discover -s tests -v
+      - name: Ensure no live order adapter exists
+        run: |
+          ! grep -En 'create_order|place_order|sendTransaction|private_key|seed_phrase|withdraw' projects/sol-sentinel/sol_sentinel.py
