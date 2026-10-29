@@ -43,6 +43,7 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `RISK_POLICY.md`: hard safety limits and live-trading gates.
 - `SOURCES.md`: source inventory, official documentation, and verification caveats.
 - `CONVERSATION_CONTEXT.md`: user-facing conversation digest and continuation handoff.
+- `EXECUTION_LOG.md`: chronological user-facing request/decision timeline, API/tool inventory, CI evidence, rejection history and continuation checklist.
 - `ORCHESTRATION_MEMORY_ADDENDUM.md`: project-specific continuity note supplementing the root canonical memory.
 - `SESSION_LOG.md`: user-confirmed project context, decisions, and progress checkpoints.
 - `RUNBOOK_TERMUX.md`: install, run, validate, and troubleshoot on Android.
@@ -71,3 +72,10 @@ The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can ca
 ## Currency consistency
 
 The scanner's market feed is SOLUSDT but the paper engine's reference capital is IDR. The history capture records a dated daily USD/IDR reference, and the simulator converts OHLC prices to IDR before calculating quantity, stop/target levels and nominal P&L. This is a unit-conversion proxy, not a live Reku price; USDT/USD basis and intra-window FX variation are not modeled. The engine fails closed if FX metadata is absent or stale unless a verified manual rate is supplied.
+
+
+## Current checkpoint (2026-10-29)
+
+- Latest previously verified CI run: [40910240121](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40910240121), passed compile and 32 offline tests for commit `e20c3ce0b49969cbaa08706a44fc765e47e01db9`.
+- Current development remains on `feat/sol-sentinel-paper-trader-v1`; draft PR #178 is open and not merged.
+- Full project continuity journal: [EXECUTION_LOG.md](EXECUTION_LOG.md). Re-check the newest head and its CI after any further commits; this status is a point-in-time checkpoint.
