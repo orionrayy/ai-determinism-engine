@@ -281,22 +281,25 @@ def analyse(row,delay):
    else:result.update({"status":"unsupported_archive","error_category":"unsupported_zip"});return result
   elif "html" in ctype or data.lstrip().lower().startswith((b"<!doctype html",b"<html")) or ctype in ("","text/plain"):
    text,fmt,links=parse_html_doc(data,ctype,final)
-   if len(WORDS.findall(text))<300:
-    target=choose_link(links)
-    if target and target.rstrip("/")!=url.rstrip("/"):
-     data2,final2,ctype2,status2=fetch(target)
-     result.update({"artifact_url":final2,"http_status":status2,"content_type":ctype2,"bytes_downloaded":result["bytes_downloaded"]+len(data2),"sha256":hashlib.sha256(data2).hexdigest()})
-     time.sleep(delay)
-     if data2.startswith(b"%PDF-") or ctype2=="application/pdf" or urllib.parse.urlsplit(final2).path.lower().endswith(".pdf"):
-      text,fmt=parse_pdf(data2);kind="pdf_from_record"
-     elif zipfile.is_zipfile(BytesIO(data2)):
-      with zipfile.ZipFile(BytesIO(data2)) as z:names=set(z.namelist())
-      if "xl/workbook.xml" in names:text,fmt=parse_xlsx(data2);kind="xlsx_from_record"
-      elif "word/document.xml" in names:text,fmt=parse_docx(data2);kind="docx_from_record"
-      else:kind="html"
-     else:text,fmt,_=parse_html_doc(data2,ctype2,final2);kind="html"
-    else:kind="html"
-   else:kind="html"
+   target=choose_link(links)
+   record_path=bool(re.search(r"/(?:id/eprint|eprint|handle|record|items?|repository|view|details)(?:/|$)",urllib.parse.urlsplit(final).path,re.I))
+   if target and target.rstrip("/")!=url.rstrip("/"):
+    data2,final2,ctype2,status2=fetch(target)
+    result.update({"artifact_url":final2,"http_status":status2,"content_type":ctype2,"bytes_downloaded":result["bytes_downloaded"]+len(data2),"sha256":hashlib.sha256(data2).hexdigest()})
+    time.sleep(delay)
+    if data2.startswith(b"%PDF-") or ctype2=="application/pdf" or urllib.parse.urlsplit(final2).path.lower().endswith(".pdf"):
+     text,fmt=parse_pdf(data2);kind="pdf_from_record"
+    elif zipfile.is_zipfile(BytesIO(data2)):
+     with zipfile.ZipFile(BytesIO(data2)) as z:names=set(z.namelist())
+     if "xl/workbook.xml" in names:text,fmt=parse_xlsx(data2);kind="xlsx_from_record"
+     elif "word/document.xml" in names:text,fmt=parse_docx(data2);kind="docx_from_record"
+     else:result.update({"status":"unsupported_archive","error_category":"unsupported_attachment_archive"});return result
+    else:
+     text,fmt,links2=parse_html_doc(data2,ctype2,final2);kind="html"
+     if record_path:result.update({"status":"metadata_landing_page","error_category":"no_full_file_link"});return result
+   else:
+    kind="html"
+    if record_path:result.update({"status":"metadata_landing_page","error_category":"no_full_file_link"});return result
   else:result.update({"status":"unsupported_file_type","error_category":"unsupported_file_type"});return result
   tm=text_metrics(text);result["document_type"]=kind;result["format_metrics"]=fmt;result["text_metrics"]=tm;result["document_words"]=tm["word_count"]
   if kind.startswith("xlsx"):enough=fmt.get("sheet_count",0)>0 and fmt.get("nonempty_cells_total",0)>=50
