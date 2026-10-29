@@ -112,3 +112,35 @@ SOL Sentinel's public-only research pipeline now has verified current Reku marke
 - New diagnostics report multi-label rejection reasons, exact rejection combinations, order attempts/fills, minimum-order rejections, gross/average win/loss and net expectancy. Zero-trade win rate and expectancy are null to represent undefined statistics.
 - Simulated minimum order is explicitly configured: Reku Pro Rp30,000 and theoretical Lightning floor Rp5,000, from Reku's public help page. The current research run [40928032346](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346) was in progress when recorded; append its final artifact/metrics only after inspection.
 - No live trade, cancellation, money transfer, withdrawal, or credential use. Termux remains untested. PR #178 remains draft and unmerged; do not merge until current main/PR state is reconciled.
+
+
+## Verified end-of-session checkpoint — 2026-10-30 (SOL_SENTINEL_SESSION_2026-10-30_VERIFIED_FINAL)
+
+### Execution identity and reproducible evidence
+- Candidate source commit: \`7d74015ecb99c0f1768baddd40b1643399c5bea2\`; a later documentation-only commit on this branch records the checkpoint. PR #178 remains draft/open/unmerged: https://github.com/orionrayy/ai-determinism-engine/pull/178.
+- SOL Sentinel Tests run #268: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385 — succeeded on candidate code SHA; job log reports 70 tests passed.
+- SOL Sentinel Research run #25: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346 — succeeded on same candidate code SHA; artifact #12921441578, 1,223,457 bytes at inspection and seven-day retention.
+- Data hash: \`ccc89cec753644f11248bc75ac8b7b13fd9042ef4eb1d5a72074a75cdb9e8b26\`, 43,200 one-minute Binance SOLUSDT bars spanning 2026-09-29 18:08 UTC to 2026-10-29 18:07:59.999 UTC.
+- FX metadata: USD/IDR 18,158.0 dated 2026-10-29, Frankfurter reference; the simulator treats this as a USDT denomination proxy, not a live conversion quote or executable Reku price.
+
+### Backtest and signal diagnostics
+- Chronological split was fixed at 60/20/20: development 25,920 bars, validation 8,640 bars, OOS 8,640 bars. Every segment returned zero candidates, zero entry attempts/fills, zero trades and IDR 0 net P&L. Expectancy, win rate and profit factor are null/undefined at zero trades; do not interpret drawdown 0 as evidence of safety.
+- Full-window overlapping filter counters: 1m breakout not confirmed 40,141; 1m relative-volume confirmation missing 34,800; 5m momentum not confirmed 28,248; 15m trend not confirmed 25,313; 5m RSI outside entry range 23,648; 1m momentum exhaustion/missing 1,787; cost-gate rejections 198. Counts are multi-label events, not mutually-exclusive candle counts.
+- Most common combined failure of 15m trend + 5m momentum + 5m RSI + 1m breakout + 1m volume was 11,543 development / 6,959 validation / 2,079 OOS observations. Evidence shows a stacked-filter bottleneck but does not prove one threshold alone is the root cause. No threshold was loosened as part of this checkpoint.
+- Split cost-gate counts were 119 development / 43 validation / 34 OOS. Full-window count is 198; difference arises from split-specific warm-up/boundaries and must not be interpreted as an independent signal count.
+- Cost sensitivity is predeclared, not auto-selected. Reku Pro fee components total 42.11 bps. Baseline assumptions add 10 bps round-trip spread and 20 bps round-trip slippage, giving 72.11 bps modeled cost and 97.11 bps minimum gross move with the configured 25 bps net-edge buffer. One timestamped Reku snapshot measured 27.359781 bps midpoint spread; its sensitivity with the same fees/slippage totals 89.469781 bps (114.469781 bps including the buffer). The snapshot is not a historical spread series.
+- The theoretical Lightning fee-only floor (zero spread/slippage, non-executable assumption) generated 10 trades but lost IDR 3,893.219 net (-1.29774%), PF 0.2760, max drawdown 1.62433%. This is not evidence of a tradable edge.
+
+### Spread root-cause finding and implemented guard
+- Midpoint spread is \`((ask-bid)/((ask+bid)/2))*10000\`. Bid 100 / ask 102 gives 198.01980198 bps; bid 99 / ask 101 gives 200 bps. The historical ~198.0198 vs expected 200 discrepancy is mathematically consistent with fixture/expectation mismatch, not necessarily a calculation defect. The exact historical pre-fix fixture was not re-run independently during this session.
+- Commit \`7d74015\` contains robust price type/finite/positive/crossed-quote validation, boolean rejection, half-sum midpoint overflow guard, and tests for missing, invalid, extreme, tiny, zero-spread and numeric-string inputs.
+- Simulator diagnostic counters now expose multi-reason combinations, order attempts, simulated fills, order-size rejections, daily-loss-lock blocked bars and trade-quality metrics. Zero-trade win-rate/expectancy/PF are null rather than fabricated zero.
+
+### Venue, operational mode and blockers
+- The public Reku snapshot for this research run reported bid IDR 1,825,000, ask IDR 1,830,000, spread 27.359781 bps, orderbook OK, chart probe OK. These are historical-to-capture-time observations.
+- Native Reku transaction history is still unavailable/unverified: the legacy public \`/v2/activitytrans\` route returned HTTP 404 and is recorded as \`endpoint_not_found\`. No missing candles or fills were invented.
+- Official sources checked 2026-10-30: Reku fees https://reku.id/fees/crypto; CFX update https://reku.id/information/informasi-penyesuaian-biaya-cfx; Binance REST https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md; Binance public market data https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md; Frankfurter FX https://api.frankfurter.dev/v2/rate/USD/IDR. Binance SOLUSDT plus USD/IDR proxy is not native Reku SOL/IDR execution history.
+- Operational status remains \`RESEARCH_ONLY\`; final research disposition is \`INSUFFICIENT_EVIDENCE\`, not \`PAPER_READY\`. No real orders, cancellation, transfer, deposit, withdrawal, credential or account-security operation was performed. Real execution remains disabled.
+- Termux/Android has not been accessed or tested. Local clone/test rerun was blocked because this session's container could not resolve \`github.com\`; CI logs are the verified test evidence.
+- A full audit and additive canonical-memory checkpoint are proposed in docs-only PR #180: https://github.com/orionrayy/ai-determinism-engine/pull/180; report path \`projects/sol-sentinel/RESEARCH_AUDIT_2026-10-30.md\`.
+- Continuation gates: reconcile PR #178 with current main without force-push; verify native Reku data/venue semantics; preserve frozen OOS until a new independent evaluation is defined; investigate filter interactions one factor at a time on development/validation; show positive net expectancy after realistic costs with adequate sample; validate restart/SQLite invariants; execute the Termux runbook on the actual device.
