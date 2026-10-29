@@ -1351,3 +1351,26 @@ This is a required next-phase acceptance contract from the user. It is a roadmap
 - Cost sensitivity remains as previously defined: Reku Pro 72.11 bps modeled fees + assumed spread/slippage (97.11 bps including 25 bps edge buffer); one-snapshot spread scenario 89.469781 bps (114.469781 including buffer). The theoretical Lightning fee-only floor (22.11 bps with zero spread/slippage) still yields 10 trades, net \`-IDR 3,893.219\`, return \`-1.29774%\`, PF \`0.2760\`, max drawdown \`1.62433%\`. No cost scenario establishes a tradable edge.
 - Operational state remains \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. PR #178 remains draft/open/unmerged; its recorded base SHA \`eaa864a...\` differs from current main. No live order/account activity occurred; Termux/Android remains untested. No merge, force-push or main branch modification was performed by this session.
 - Current implementation head and 79-test evidence must be kept distinct from research run #27's code SHA. Always include both commit and dataset identities when citing these metrics.
+
+
+## Final reconciliation and validation — 2026-10-30 (session-2026-10-30-sol-sentinel-final-verification)
+
+### Latest commits and CI status
+- Current \`main\`: \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`. The SOL Sentinel candidate PR #178 branch is \`feat/sol-sentinel-paper-trader-v1\`; its head before the last documentation-only append was \`5f18753d4f5f059195b9b2e815627652e6564ca8\`, followed by final reconciliation journal commit \`3d2054da51ebb34f98380c50257e61735e650475\`.
+- Latest completed tests at the source/code branch head before that last documentation-only append: [run #280](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40931067383), 79 tests passed, 0 failed (log: 0.115s). Duplicate run #279 also passed. The last append changes only project documentation; inspect its automatically triggered check before stating the newest journal-only commit is green.
+- Research [run #27](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930361106) completed successfully on source implementation SHA \`833e57a13022c3efe6ff5115df2b2e0697072817\`; artifact #12922686248, 1,223,413 bytes. The subsequent independent-indicator test commit is \`8fb11f7081a355958add549052b1ecec90464423\`; the report explicitly separates the research code SHA from the latest test-only/docs commits.
+- Docs branch \`docs/sol-sentinel-continuity-20261030\` was based on main SHA \`d5672c84...\`; current audit PR #180 remains draft/open/unmerged. Its latest verified Orchestrator Tests run #2250 succeeded: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930987014.
+- Final canonical root file now has multiple idempotently keyed follow-up markers, and the audit report has an appended section for each later dataset/code correction. Each write was followed by a fresh GitHub file read.
+
+### Branch reconciliation finding (not merge-authorized)
+- GitHub compare of current main and PR #178 head reports \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=167\`, \`behind_by=2\`, and 27 changed files. PR metadata says \`mergeable=true\`, but that is not evidence of safe or reviewed history. The implementation branch is not merged; no rebase, force-push, protection-rule change, or main modification occurred. Perform human review of the complete 167-commit delta and its relationship with the 2 newer main commits before any integration.
+- PR #178 stays draft/open; the separate documentation report/memory update is PR #180, also draft/open and based on current main. Neither was merged.
+
+### Ledger and candle integrity
+- SQLite previously used \`INSERT OR IGNORE\`, meaning a reused \`run_id\` with altered report data could hide conflicts while trade rows were independently considered for insertion. Commit \`2cac2368e2a6fa992335a07926a4994770be1e7f\` now uses exact report/trade-row comparison: identical replays are no-ops; conflicting report or damaged/missing trade row sets fail closed. It validates duplicate/blank IDs and finite P&L/JSON and enables foreign keys.
+- Commit \`833e57a13022c3efe6ff5115df2b2e0697072817\` validates completed 1m candle close-time boundaries and direct OHLCV input, preventing malformed timestamps from exposing later timeframe data during indicator selection.
+- Test-only commit \`8fb11f7081a355958add549052b1ecec90464423\` adds hand-calculated EMA/RSI/ATR tests. Latest fully verified test log at this point: 79 passed; exact current journal-only head check is tracked separately.
+
+### Persistence incident and recovery
+- The first memory append attempt accidentally retained the old blob due an idempotency check against the already-appended string. A post-write read detected the issue; the checkpoint was rewritten with the new blob, re-read, and checked for markers. This note records the failed attempt and correction so future continuation does not mistake the first tree creation for successful persistence.
+- Current verified readiness: \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. Zero OOS trades; no valid profitability claim. Native Reku trade history unavailable via legacy HTTP 404; Termux not run; zero live orders or account actions in this session.
