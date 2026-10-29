@@ -407,7 +407,7 @@ class IndodaxPublicMarketDataAdapter:
     pair id from the current /api/pairs catalogue, e.g. "solidr".
     """
 
-    BASE_URL = "https://indodax.com/api/depth/"
+    BASE_URL = "https://indodax.com/api/"
     PAIRS_URL = "https://indodax.com/api/pairs"
     MAX_RESPONSE_BYTES = 1_000_000
     RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
@@ -574,7 +574,7 @@ class IndodaxPublicMarketDataAdapter:
         if pair_id != expected_pair_id:
             raise AdapterContractError("venue_symbol does not match the market base/quote assets")
         request_started_at = datetime.now(timezone.utc)
-        payload = self._get_public_json(self.BASE_URL + pair_id)
+        payload = self._get_public_json(self.BASE_URL + "depth/" + pair_id)
         if not isinstance(payload, dict) or ("error" in payload and payload["error"]):
             raise VenueDataError("INDODAX depth response is not a valid order-book object")
         bid = self._best_level(payload.get("buy"), side="buy")
