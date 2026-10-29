@@ -29,6 +29,20 @@ Checked: 2026-10-29. Links are references for the project, not a claim that each
 - SQLite: https://sqlite.org/
 - GitHub repository for project and audit trail: https://github.com/orionrayy/ai-determinism-engine
 
+## Free-first projects researched but not wired into the current implementation
+
+| Project/service | Link | Role considered | Decision |
+|---|---|---|---|
+| Jupiter Swap API | https://developers.jup.ag/ | Solana DEX quote/routing/execution | Deferred. This project stays on Reku market-data/paper trading until the user chooses a wallet/DEX execution path and a separate security review is completed. |
+| Helius | https://www.helius.dev/docs and https://www.helius.dev/pricing | Solana RPC, transaction monitoring | Deferred; not required for a Reku-only paper scanner. Free quotas and availability may change. |
+| DEX Screener API | https://docs.dexscreener.com/api/reference | Pool/price/volume cross-check | Candidate for future independent data comparison, not used as execution truth. |
+| GeckoTerminal API | https://www.geckoterminal.com/dex-api | Historical DEX pool data | Candidate for research and additional validation; not a replacement for Reku executable quotes. |
+| Solana Kit | https://github.com/anza-xyz/kit | TypeScript Solana SDK | Deferred because current release is Python/Termux and does not submit transactions. |
+| Solders | https://github.com/kevinheavey/solders | Python Solana transaction types and signing primitives | Not required by read-only release. Do not add a signer until a distinct approved execution module exists. |
+| LiteSVM | https://github.com/LiteSVM/litesvm | Local program/transaction testing | Future only; the current project does not build or deploy Solana programs. |
+| backtesting.py | https://github.com/kernc/backtesting.py | OHLCV strategy backtests | Not added to preserve zero-dependency Termux compatibility; implement reproducible lightweight replay first or evaluate its AGPL-3.0 license before adoption. |
+| Binance public Spot API | https://developers.binance.com/en/docs/products/spot/rest-api | Independent SOL/USDT trend context | Not used by this release. If added, label it as a separate venue/quote and never use it as an assumed Reku fill price. |
+
 ## Evidence limitations
 
 - Build environment DNS access failed for `api.reku.id`, so a live endpoint response could not be independently observed during implementation.
