@@ -52,3 +52,12 @@ Analisis fitur terstruktur berada di `research/corpus/features.jsonl`; metadata 
 5. Uji visual DOCX/PDF/Excel hasil generator masih belum dilakukan. Inspeksi satu PDF sumber tidak boleh dilaporkan sebagai validasi visual output Hallmark.
 
 Belum ada klaim peningkatan empiris mutu Document Craft.
+
+
+## Pipeline discovery metadata yang ditambahkan
+
+- `research/corpus/harvest_doaj_candidates.py` menggunakan endpoint OAI-PMH artikel publik DOAJ dengan request berukuran terbatas, timeout, batas halaman, delay antar-request, filter ISSN dengan validasi checksum, resumption token, deduplikasi ID kandidat, dan penulisan atomik.
+- Harvester menyimpan metadata bibliografis dan tautan artikel; tidak menyimpan abstrak atau mengunduh PDF. Setiap kandidat ditandai `corpus_eligible=false`, lisensi konten artikel belum diverifikasi, dan tidak pernah dipromosikan otomatis ke manifest penelitian.
+- DOAJ menyatakan metadata artikel/jurnal yang diterbitkannya tersedia dengan waiver CC0, tetapi lisensi konten artikel yang ditunjuk harus diperiksa secara terpisah. Referensi: https://doaj.org/terms/ dan https://doaj.org/docs/oai-pmh/.
+- Uji pipeline memakai fixture XML dan mock jaringan untuk memeriksa ISSN, parsing, hak penggunaan, token pagination, idempotensi dan mode dry-run. **Live harvest belum dijalankan**, sehingga jumlah metadata kandidat yang benar-benar diambil dari feed pada checkpoint ini = 0.
+- CI memvalidasi skrip dan fixture, bukan availability feed saat ini. Sampel utama tetap 1/500 (`INSUFFICIENT_EVIDENCE`).
