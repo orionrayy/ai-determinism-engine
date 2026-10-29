@@ -143,7 +143,7 @@ class AdapterContractTests(unittest.TestCase):
         self.assertEqual(parsed.path, "/tradingview/history_v2")
         self.assertEqual(query, {
             "from": [str(start // 1000)],
-            "symbol": ["SOLIDR"],
+            "symbol": ["solidr"],
             "tf": ["1"],
             "to": [str((end // 1000) - 1)],
         })
