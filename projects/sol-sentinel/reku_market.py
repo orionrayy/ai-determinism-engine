@@ -234,8 +234,21 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
 
     orderbook_status = "OK"
     orderbook_error = None
-    try:
-        book = parse_orderbook(request_json("/orderbook", {"id": coin_id}))
+    orderbook_endpoint_used = None
+    book = None
+    endpoint_errors: list[str] = []
+    for endpoint in ("orderbook", "orderbookall"):
+        try:
+            book = parse_orderbook(request_json(f"/{endpoint}", {"id": coin_id}))
+            orderbook_endpoint_used = endpoint
+            break
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+            endpoint_errors.append(f"{endpoint}: {type(exc).__name__}: {str(exc)[:140]}")
+    if book is None:
+        orderbook_status = "ERROR"
+        orderbook_error = " | ".join(endpoint_errors)[:360]
+        book_stats = None
+    else:
         book_spread = spread_metrics(
             book["bids"][0]["price_idr"],
             book["asks"][0]["price_idr"],
@@ -243,6 +256,7 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
         top_bid = book["bids"][0]
         top_ask = book["asks"][0]
         book_stats = {
+            "endpoint": orderbook_endpoint_used,
             "best_bid_idr": book_spread["bid_idr"],
             "best_ask_idr": book_spread["ask_idr"],
             "mid_idr": book_spread["mid_idr"],
@@ -257,10 +271,6 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
             "bids_top5_notional_idr": sum(x["total_idr"] for x in book["bids"][:5]),
             "asks_top5_notional_idr": sum(x["total_idr"] for x in book["asks"][:5]),
         }
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-        orderbook_status = "ERROR"
-        orderbook_error = f"{type(exc).__name__}: {str(exc)[:200]}"
-        book_stats = None
 
     warnings = []
     if book_stats is not None:
@@ -289,6 +299,7 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
             "GET https://api.reku.id/v2/price",
             "GET https://api.reku.id/v2/bidask",
             f"GET https://api.reku.id/v2/orderbook?id={coin_id}",
+            f"GET https://api.reku.id/v2/orderbookall?id={coin_id} (fallback)",
         ],
         "coin_id": coin_id,
         "coin_catalogue": {
@@ -308,6 +319,7 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
         },
         "direct_bidask": direct_spread,
         "orderbook_status": orderbook_status,
+        "orderbook_endpoint_used": orderbook_endpoint_used,
         "orderbook_error": orderbook_error,
         "orderbook": book_stats,
         "warnings": warnings,
