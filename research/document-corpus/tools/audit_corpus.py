@@ -370,12 +370,19 @@ def main():
  a.output_dir.mkdir(parents=True,exist_ok=True);all_rows=load_rows(a.input_dir)
  primary=[r for r in all_rows if eligible(r,False)];secondary=[r for r in all_rows if eligible(r,True) and r not in primary]
  candidates=(interleave(primary)+interleave(secondary))[:a.max_attempts];results=[];seen=set()
- for i,row in enumerate(candidates,1):
-  key=sid(normurl(row["url"]))
-  if key in seen:continue
-  seen.add(key);r=analyse(row,a.delay);r["sequence"]=i;results.append(r)
-  if i%25==0:print(f"progress attempted={i} fully_analyzed={sum(z.get('status')=='analyzed_full_document' for z in results)} target={a.target}",flush=True)
-  if sum(z.get("status")=="analyzed_full_document" for z in results)>=a.target:break
+ for offset in range(0,len(candidates),6):
+  batch=[]
+  for i,row in enumerate(candidates[offset:offset+6],start=offset+1):
+   key=sid(normurl(row["url"]))
+   if key not in seen:seen.add(key);batch.append((i,row))
+  with ThreadPoolExecutor(max_workers=6) as ex:
+   pending={ex.submit(analyse,row,a.delay):(i,row) for i,row in batch}
+   for future in as_completed(pending):
+    i,row=pending[future];r=future.result();r["sequence"]=i;results.append(r)
+  full=sum(z.get("status")=="analyzed_full_document" for z in results)
+  print(f"progress attempted={len(results)} fully_analyzed={full} target={a.target} workers=6",flush=True)
+  if full>=a.target:break
+ results.sort(key=lambda x:x.get("sequence",0))
  successful=[r for r in results if r.get("status")=="analyzed_full_document"]
  summary,report=report_for(results,len(all_rows),a.target)
  write_jsonl(a.output_dir/"all_attempts.jsonl",results);write_jsonl(a.output_dir/"full_documents.jsonl",successful)
