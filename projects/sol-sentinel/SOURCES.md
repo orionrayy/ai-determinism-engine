@@ -18,6 +18,10 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 
 ### Reku
 - Status/coin availability: https://reku.id/status
+- Current published fee table: https://reku.id/fees/crypto (checked 2026-10-29).
+- Current CFX fee adjustment notice (effective 2026-10-01): https://reku.id/information/informasi-penyesuaian-biaya-cfx
+- Published Pro Mode fee components: buy 0.1% trading + 0% PPN + 0.00555% CFX = 0.10555% (10.555 bps); sell 0.1% trading + 0.21% PPh + 0.00555% CFX = 0.31555% (31.555 bps). The sum at equal nominal notional is approximately 0.42110% (42.11 bps) before spread/slippage and subject to the mode and current order preview.
+- Published minimum order: IDR 30,000 for Pro Mode and IDR 5,000 for Lightning: https://reku.id/help/batas-minimal-rupiah-dalam-order-jual-beli
 - Public API endpoint catalogue (historical; treat as unverified until live docs/terms confirm): https://api.reku.id/v2/openapi.json
 - User context: Reku KYC is already complete; user reports IDR 300,000 deposited. User screenshot showed a limit-price UI at IDR 1,820,000 and an IDR 150,000 buy size, with estimated 0.08241759 SOL; open order count was 0 at screenshot time.
 - Known gap: public market-data APIs have been referenced historically, but a currently supported authenticated order-placement API and permission to automate Reku trades were not verified in this research. Do not automate Reku orders using undocumented endpoints.
@@ -92,3 +96,8 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 - Usage: the history-capture script records a USD/IDR reference rate and date in the local CSV sidecar. The offline simulator converts SOLUSDT prices to IDR before sizing and calculating nominal P&L, because the configured capital is in IDR.
 - Important caveat: the system uses USD/IDR as a proxy for USDT/IDR and applies a single daily rate to the sampled window. It does not model the USDT premium/discount, FX changes within the historical window, or Reku SOL/IDR executable prices. This rate is for unit consistency and indicative reporting only, not a transaction rate.
 - Attribution/docs: https://frankfurter.dev/ . Check the response date and fail closed on stale/missing rates. A verified manual `--quote-to-idr-rate` may be supplied with a descriptive `--quote-to-idr-source` override.
+
+
+## Market data endpoint correction — 2026-10-29
+
+The first GitHub Actions capture against `api.binance.com` returned HTTP 451 in the runner. Binance's official Market Data Only documentation lists `https://data-api.binance.vision` for public endpoints including `GET /api/v3/klines`. The collector and scanner now use that documented host. First end-to-end research validation succeeded with a 7-day capture and generated downloadable artifacts; see `EXECUTION_LOG.md` for run IDs and results.
