@@ -1356,3 +1356,12 @@ Checkpoint lanjutan sesudah penambahan metadata harvester dan sampel pertama. Br
 3. Belum ada validasi visual keluaran Hallmark untuk DOCX/PDF/Excel. Inspeksi yang dilakukan hanya pada beberapa halaman PDF sumber satu artikel; ini bukan validasi output generator.
 4. Harvester baru diuji dengan fixture; lakukan live harvest bertahap dan periksa kepatuhan feed sebelum mengandalkannya sebagai jalur produksi korpus.
 5. Perlu menambah sampel dari beberapa source family dan genre yang berbeda, melakukan pemeriksaan lisensi/privacy per-item, lalu melakukan analisis struktural terukur sebelum mengubah prompt atau mengklaim pola.
+
+## Verifikasi CI setelah pembaruan status korpus (2026-10-30)
+
+Verifikasi ulang setelah perubahan dokumentasi korpus/laporan pada `1cf53f3e967ee9078b625b1d27fef30f80d5ede4`:
+- `Orchestrator Tests`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486838
+- `Hallmark skill validation`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486874
+- `Hallmark corpus validation`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486798
+- Ketiga check di atas selesai pada SHA yang sama. Perubahan selanjutnya pada memori ini akan memicu CI baru; status final harus diperiksa lagi pada SHA baru.
+- PR #179 tetap open, belum merged, branch terpisah dari `main`.
