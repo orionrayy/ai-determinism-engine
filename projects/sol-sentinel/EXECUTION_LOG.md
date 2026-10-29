@@ -356,3 +356,29 @@ Reconciliation is **not cleared**: compare current \`main\` \`d5672c84...\` agai
 ## Final compare refresh — 2026-10-30
 
 The last fresh GitHub compare, performed after all current documentation commits were pushed, reports current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` versus feature head \`3d2054da51ebb34f98380c50257e61735e650475\`: \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=168\`, \`behind_by=2\`, 27 files in PR #178. This supersedes the earlier point-in-time count of 167 commits ahead recorded in previous notes. \`mergeable=true\` is only API metadata and does not authorize merge; keep PR #178 draft and obtain review of the full history delta before integration. No rebase, force-push, merge, or change to main was performed.
+
+
+## Continuation update — native INDODAX history and cross-venue safe backtest (2026-10-30 WIB)
+
+### Verified implementation and CI
+
+- Feature branch checkpoint before this log append: `e25b2990433673d3a79db8912c504e96b4bce204`.
+- Latest verified code/unit-test check at that checkpoint: [SOL Sentinel Tests #40948901551](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948901551), successful, **135 tests passed, 0 failed**. The test suite is offline except for separate research workflow steps; this CI success alone is not live-trading readiness.
+- New files: `execution_adapters.py`, `test_execution_adapters.py`, `PLATFORM_ADAPTER_DECISION_2026-10-30.md`, `capture_indodax_history.py`, `test_capture_indodax_history.py`.
+- The adapter exposes separate market data, capital-source metadata, custody, transfer-planning, order execution, signer, chain submitter and ledger contracts. Only public market data, mock fixtures, in-memory ledger and deterministic paper execution exist. There is no live order adapter or signer.
+- Native IDR denomination integration is present in the paper engine and chronological evaluator: capture metadata identifies venue/pair/currency, SHA-256 and data status are checked when present, native IDR bars use FX factor 1.0, and reports state source denomination and fee model. Native INDODAX data require explicit `--fee-model indodax-custom`, entry/exit fees, round-trip spread, slippage, minimum order value and a source label. The Reku fee-sensitivity presets reject native IDR files instead of silently reusing the wrong venue's cost model.
+- Guard fixes/regressions: conflicting duplicate market/history candles, invalid fraction/zero-value Reku trade rows, stale or invalid quote/route data, non-boolean verified-network flags, zero-value transfer remainder, missing/stale transfer fee evidence, tick/lot/minimum validation, same-key different-order replay, and live-mode gate remain fail-closed.
+
+### Public-data smoke test and strategy evidence
+
+- Read-only native INDODAX capture passed in [research workflow #40948205968](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948205968) on workflow/code checkpoint `e7cc7ab2a810028af5a13d43c011674792a08a57`: 30 days / 43,200 contiguous 1m native SOL/IDR candles, SHA-256 `9dd63e357e3a8f4ba168bccd65edf3fe621d3758884a97549e8425c812ab2316`, range 2026-09-29 20:22:00 UTC to 2026-10-29 20:21:59.999 UTC. `data_status=OK`, source `https://indodax.com/tradingview/history_v2`, `fx_conversion_applied=false`. This is a successful public endpoint smoke test from GitHub's runner, not a user's device or account/deposit verification.
+- On the same workflow family, native Reku activity history still returned HTTP 404 for legacy `/v2/activitytrans`. Reku's separate public quote snapshot returned `data_status=OK`; that does not restore the unavailable history endpoint.
+- The full 30-day Binance SOLUSDT research pass in [run #40948530609](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948530609) succeeded, dataset SHA-256 `08cb2e654c42e198d71817d2e92d7c354f4ef0206a7e9a352a2eff4b486395ae`, 43,200 bars. The baseline and all fixed 60/20/20 segments still showed zero candidates/trades; the theoretical Reku-Lightning fee-only floor was the exception with 10 simulated trades and approximately IDR -3,893.22, assuming zero spread/slippage. No strategy parameters were relaxed. This native INDODAX capture was not yet backtested with INDODAX fees.
+- A new full research run on the latest code head was queued/running when this note was written. Do not claim a new full research result until its exact run and artifact have completed and been inspected.
+
+### Current blockers and handoff
+
+- PR #178 remains draft/open/unmerged. At the most recent compare, the branch was diverged from `main`, 235 commits ahead / 2 behind, merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`, 34 changed files. This includes substantial unrelated/recent history; do not merge/rebase/reset/force-push blindly.
+- PR #180 remains draft/open/unmerged and carries the canonical memory/audit branch. Append this checkpoint to `ORCHESTRATION_MEMORY.md` and `RESEARCH_AUDIT_2026-10-30.md` on the docs branch as the session's continuity record.
+- Do not move funds. Before native INDODAX backtest, read the actual current profile fee components and select Lite/Pro minimum explicitly. Current official help lists minimum IDR 10,000 on Lite and IDR 25,000 for direct Pro (with Pro-interface orders IDR 10,000–24,999 routed through Lite); market metadata is not a substitute for mode constraints. Current network-specific SOL deposit/withdraw fees and the destination deposit screen must be checked before any separately approved transfer.
+- Termux/Android compatibility remains untested. Current strategy remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
