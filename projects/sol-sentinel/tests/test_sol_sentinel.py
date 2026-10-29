@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 import unittest
 
 from sol_sentinel import (
@@ -83,6 +84,33 @@ class PaperJournalTests(unittest.TestCase):
             status = journal.status(dict(DEFAULT_CONFIG))
             self.assertEqual(status["state"]["cash_idr"], 300_000.0)
             self.assertIsNone(status["state"]["position"])
+            journal.close()
+
+    def test_paper_trade_enters_and_exits_without_live_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            config = dict(DEFAULT_CONFIG)
+            journal = Journal(os.path.join(tmp, "paper.sqlite3"))
+            trader = PaperTrader(journal, config)
+            now = int(time.time())
+            first = MarketSnapshot(now, "test", "SOL/IDR", 9, 101, 100, 101,
+                                   10, 0.0, 10000, [], chart_age_seconds=0, errors=[])
+            entry_report = {"status": "BUY_SETUP", "features": {}, "signal_candle_ts": now - 600,
+                            "stop_pct": 0.01, "target_pct": 0.02}
+            entry = trader.process(first, entry_report)
+            self.assertTrue(entry["position_open"])
+            self.assertLess(entry["cash_idr"], config["initial_capital_idr"])
+            self.assertEqual(entry["mode"], "paper_only")
+
+            second = MarketSnapshot(now + 1, "test", "SOL/IDR", 9, 105, 104, 105,
+                                    10, 0.0, 10000, [], chart_age_seconds=0, errors=[])
+            exit_report = {"status": "WAIT", "features": {}, "signal_candle_ts": now - 300}
+            after = trader.process(second, exit_report)
+            self.assertFalse(after["position_open"])
+            self.assertGreater(after["daily_realized_pnl_idr"], 0)
+            row = journal.db.execute("SELECT status,pnl_net_idr,exit_reason FROM trades").fetchone()
+            self.assertEqual(row["status"], "closed")
+            self.assertGreater(row["pnl_net_idr"], 0)
+            self.assertEqual(row["exit_reason"], "target_observed")
             journal.close()
 
 
