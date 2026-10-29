@@ -1,5 +1,6 @@
 import unittest
 import urllib.error
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -114,6 +115,66 @@ class AdapterContractTests(unittest.TestCase):
         self.assertEqual(custody.get_balance("sol", "solana"), Decimal("0.25"))
         with self.assertRaisesRegex(a.AdapterContractError, "not configured"):
             custody.get_balance("USDC", "SOLANA")
+
+    def test_indodax_native_idr_history_fetches_documented_ohlc_schema(self):
+        spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 6, 0)
+        start = 1_800_000_000_000
+        end = start + 2 * 60_000
+        now = end + 60_000
+        payload = [
+            {"Time": start // 1000, "Open": 100.0, "High": 102.0, "Low": 99.0, "Close": 101.0, "Volume": "10.5"},
+            {"Time": (start + 60_000) // 1000, "Open": 101.0, "High": 103.0, "Low": 100.0, "Close": 102.0, "Volume": "0"},
+        ]
+        requests = []
+        def fake_transport(url, timeout):
+            requests.append((url, timeout))
+            return payload
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=fake_transport, attempts=1)
+        bars = adapter.get_history(spec, start, end, interval_minutes=1, now_ms=now)
+        self.assertEqual(len(bars), 2)
+        self.assertEqual(bars[0].open, Decimal("100.0"))
+        self.assertEqual(bars[0].volume, Decimal("10.5"))
+        self.assertEqual(bars[1].volume, Decimal("0"))
+        self.assertEqual(bars[0].quote_currency, "IDR")
+        self.assertEqual(bars[0].close_time_ms, start + 59_999)
+        self.assertEqual(len(requests), 1)
+        parsed = urllib.parse.urlparse(requests[0][0])
+        query = urllib.parse.parse_qs(parsed.query)
+        self.assertEqual(parsed.path, "/tradingview/history_v2")
+        self.assertEqual(query, {
+            "from": [str(start // 1000)],
+            "symbol": ["SOLIDR"],
+            "tf": ["1"],
+            "to": [str((end // 1000) - 1)],
+        })
+
+    def test_indodax_native_history_fails_closed_on_gaps_and_conflicting_rows(self):
+        spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 6, 0)
+        start = 1_800_000_000_000
+        end = start + 2 * 60_000
+        now = end + 60_000
+        first = {"Time": start // 1000, "Open": 100, "High": 102, "Low": 99, "Close": 101, "Volume": 1}
+        gap_adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: [first], attempts=1)
+        with self.assertRaisesRegex(a.VenueDataError, "incomplete"):
+            gap_adapter.get_history(spec, start, end, now_ms=now)
+        conflicting = dict(first, Close=101.5)
+        duplicate_adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: [first, conflicting], attempts=1)
+        with self.assertRaisesRegex(a.VenueDataError, "conflicting duplicate"):
+            duplicate_adapter.get_history(spec, start, start + 60_000, now_ms=now)
+
+    def test_indodax_native_history_validates_range_before_network(self):
+        spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 6, 0)
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: self.fail("transport should not be called"), attempts=1)
+        start = 1_800_000_000_000
+        with self.assertRaisesRegex(a.AdapterContractError, "align"):
+            adapter.get_history(spec, start + 1, start + 60_001, now_ms=start + 120_000)
+        with self.assertRaisesRegex(a.AdapterContractError, "30-day"):
+            adapter.get_history(spec, start, start + 31 * 86_400_000, now_ms=start + 32 * 86_400_000)
+        with self.assertRaisesRegex(a.AdapterContractError, "in the future"):
+            adapter.get_history(spec, start, start + 60_000, now_ms=start + 30_000)
+        usdt = a.MarketSpec("INDODAX", "SOL/USDT", "solusdt", "SOL", "USDT", "0.01", "0.000001", "1", 9, 6)
+        with self.assertRaisesRegex(a.AdapterContractError, "IDR-quoted"):
+            adapter.get_history(usdt, start, start + 60_000, now_ms=start + 120_000)
 
     def test_indodax_public_depth_adapter_parses_best_levels_without_credentials(self):
         spec = a.MarketSpec(
