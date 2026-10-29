@@ -1403,3 +1403,12 @@ Checkpoint setelah korpus bertambah menjadi empat sampel.
 - PR #179 tetap terbuka, mergeable, dan belum digabung. Branch kandidat saja yang diubah.
 
 Gate berikutnya: periksa CI di SHA akhir, lanjutkan pengumpulan sampel berizin dari genre baru, dan baru kemudian bangun baseline output AI. Tidak ada klaim peningkatan kualitas penulisan sampai eksperimen empiris selesai.
+
+## Artefak inventaris korpus untuk audit CI (2026-10-30)
+
+- Tambah langkah upload artifact terpin pada `.github/workflows/hallmark-corpus-validation.yml`. CI mengarsipkan `corpus-summary.json` dan `features-summary.json` selama 14 hari untuk inspeksi; berkas itu hanya metadata, hasil gate, distribusi, warning dan analisis traceability, tidak berisi PDF atau full text.
+- Pipeline sekarang menjalankan `validate_features.py` setelah tes corpus unit. Validator fitur mengikat setiap analisis kepada record manifest, source family, URL provenance, serta metode inspeksi visual/teks. Kasus tanpa traceability fail closed; ketidakpastian faktual dan batas generalisasi dilaporkan sebagai warning.
+- `research/corpus/README.md` dan laporan riset diperbarui untuk menjelaskan validator serta artifact.
+- Status korpus: 4/500, genre `academic_paper=3`, `other=1`, sisa 496, `INSUFFICIENT_EVIDENCE`. Live DOAJ harvest = belum berhasil; 0 metadata kandidat feed live.
+- Sebelum artefak workflow baru ditambahkan, ketiga check lulus pada `04f01303c4d14f757331cb88bb350d8112e6a9bc`. Tambahan workflow/dokumentasi ini memicu eksekusi CI baru; re-query status checks pada HEAD berikutnya sebelum finalisasi.
+- PR #179 tetap open, belum merge. Tidak ada perubahan langsung ke `main`.
