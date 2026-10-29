@@ -60,12 +60,12 @@ Exit code `0` berarti bentuk manifest dapat diproses; status target akan tetap `
 
 ## Status korpus pada checkpoint 2026-10-30
 
-- Dokumen individual yang masuk manifest dengan provenance kuat: 1 artikel ilmiah akses terbuka, DOI `10.15294/ijicle.v2i3.38417`. Lisensi CC BY-SA 4.0 dicatat berdasarkan halaman artikel, halaman hak cipta jurnal, dan pernyataan pada PDF.
-- Sampel yang memenuhi gate eligibility sesuai manifest: 1 dari target 500; sisa target 499; status `INSUFFICIENT_EVIDENCE`.
-- Genre saat ini: `academic_paper` = 1. Semua genre lainnya = 0 sampel tervalidasi.
-- Registry penemuan berisi 11 direktori/katalog sumber, tetapi tidak dihitung sebagai dokumen.
-- Harvester metadata DOAJ dan tes fixture XML telah ditambahkan. Live harvest dari OAI-PMH belum dijalankan pada sesi ini; jumlah kandidat yang benar-benar diambil lewat feed = 0.
-- Satu sampel telah diberi analisis struktur manual pada `features.jsonl`; analisis tersebut eksploratif dan tidak cukup untuk menggeneralisasi pola satu genre.
-- Belum ada eksperimen Document Craft baseline-vs-kandidat atau validasi visual keluaran DOCX/PDF/Excel; visual yang diperiksa sejauh ini hanya PDF sumber satu artikel.
+- Dokumen individual dengan provenance kuat dalam manifest: **4 dokumen unik** — tiga artikel ilmiah akses terbuka CC BY-SA 4.0 dari jurnal ICCLE dan satu panduan profesional World Bank CC BY 3.0 IGO. Hak dan sumber dicatat per item.
+- Sampel yang memenuhi gate eligibility sesuai manifest: **4 dari target 500**; tersisa 496; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi: `academic_paper` = 3, `other` (panduan operasional/profesional) = 1; semua genre lainnya = 0 sampel tervalidasi.
+- Registry penemuan berisi 11 direktori/katalog sumber; jumlah tersebut bukan dokumen. Harvester metadata DOAJ dan tes fixture XML tersedia, tetapi live harvest dari OAI-PMH belum berhasil dijalankan di sesi ini karena lingkungan tidak dapat mengakses endpoint; jumlah kandidat feed yang benar-benar diambil = 0.
+- Keempat sampel memiliki fitur struktur manual di `features.jsonl`. Tiga artikel ICCLE berasal dari jurnal/penerbit yang sama, sehingga tidak dianggap tiga source family independen untuk membuktikan norma genre; satu panduan World Bank memperluas sampel ke genre dokumen profesional.
+- Inspeksi visual sumber dilakukan secara terbatas: beberapa halaman per PDF, bukan seluruh halaman. Ini bukan validasi visual keluaran generator.
+- Belum ada eksperimen Document Craft baseline-vs-kandidat, penilaian reviewer, atau bukti empiris peningkatan kualitas.
 
-Sampel artikel ini bukan otomatis gold-standard kualitas. Klaim faktualnya belum diverifikasi independen; analisis menyimpan fitur struktur, bukan salinan PDF atau teks lengkap.
+Korpus ini masih eksploratif. Klaim faktual sumber belum diverifikasi independen secara menyeluruh. Metadata dan ciri turunan disimpan tanpa salinan PDF atau teks penuh.
