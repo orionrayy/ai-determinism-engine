@@ -116,3 +116,12 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 - Latest CI for that exact head: run `40911083700`, success; compile and offline unit tests passed, 32 tests in 0.099 seconds.
 - Observed current main SHA `d5672c84a0ae184c3a95d3f925925887ece71aa4` differs from the PR-reported base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`. Do not merge until this difference is reconciled.
 - The network-dependent historical research workflow remains unverified end-to-end. No actual trade or wallet transaction has occurred.
+
+
+## 2026-10-29 — End-to-end history and sensitivity result
+
+- Successful public capture and baseline/holdout run `40914239047`: 43,200 completed SOLUSDT 1m candles for 2026-09-29 to 2026-10-29; Frankfurter USD/IDR reference 18,158 dated 2026-10-29. Baseline and all fixed chronological segments produced zero trades.
+- Initial sensitivity run `40915191550`: Reku Pro baseline and Pro fee-only floor produced no trades; Lightning fee-only floor with assumed zero spread/slippage produced 10 trades and net P&L approximately -IDR 3,893 (-1.30%), max drawdown approximately 1.62%. This theoretical floor is not a live execution model.
+- Expanded-stat run `40915499872` failed closed on Frankfurter timeout after capture; no backtest/sensitivity was generated. Added bounded FX reference retry logic and two tests (retry succeeds after a transient timeout; retry exhausts after the configured bound).
+- Test run `40916160706` passed after the retry change. Retry-enabled research run `40916209196` was in progress at the last read and must be verified before this checkpoint is called end-to-end green.
+- Data and simulated P&L are research outputs, not live account equity. No trades were submitted.
