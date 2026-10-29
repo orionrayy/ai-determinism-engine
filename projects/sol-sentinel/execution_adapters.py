@@ -59,6 +59,7 @@ class MarketSpec:
     min_notional_quote: Decimal
     base_decimals: int
     quote_decimals: int
+    min_quantity_base: Decimal = Decimal("0")
 
     def __post_init__(self) -> None:
         for field in ("venue", "symbol", "venue_symbol", "base_asset", "quote_asset"):
@@ -73,6 +74,7 @@ class MarketSpec:
         object.__setattr__(self, "price_tick", _decimal(self.price_tick, "price_tick"))
         object.__setattr__(self, "quantity_step", _decimal(self.quantity_step, "quantity_step"))
         object.__setattr__(self, "min_notional_quote", _decimal(self.min_notional_quote, "min_notional_quote", allow_zero=True))
+        object.__setattr__(self, "min_quantity_base", _decimal(self.min_quantity_base, "min_quantity_base", allow_zero=True))
         for field in ("base_decimals", "quote_decimals"):
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 18:
@@ -187,6 +189,8 @@ def validate_order(
         reasons.append("price_tick_mismatch")
     if intent.notional_quote < market.min_notional_quote:
         reasons.append("minimum_notional_not_met")
+    if intent.quantity_base < market.min_quantity_base:
+        reasons.append("minimum_base_quantity_not_met")
 
     age = Decimal(str((current - quote.observed_at).total_seconds()))
     spread = quote.spread_bps
@@ -401,6 +405,7 @@ class IndodaxPublicMarketDataAdapter:
     """
 
     BASE_URL = "https://indodax.com/api/depth/"
+    PAIRS_URL = "https://indodax.com/api/pairs"
     MAX_RESPONSE_BYTES = 1_000_000
     RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
@@ -434,7 +439,7 @@ class IndodaxPublicMarketDataAdapter:
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise VenueDataError("INDODAX public API returned invalid JSON") from None
 
-    def _get_depth(self, url: str) -> Any:
+    def _get_public_json(self, url: str) -> Any:
         last_error: Exception | None = None
         for attempt in range(self._attempts):
             try:
@@ -450,9 +455,64 @@ class IndodaxPublicMarketDataAdapter:
             if attempt + 1 < self._attempts:
                 time.sleep(min(2.0, self._pause_seconds * (2 ** attempt)))
         raise VenueDataError(
-            f"INDODAX public depth request failed after {self._attempts} attempt(s): "
+            f"INDODAX public API request failed after {self._attempts} attempt(s): "
             f"{type(last_error).__name__ if last_error else 'unknown error'}"
         ) from None
+
+    def get_market_spec(self, symbol: str = "SOL/IDR") -> MarketSpec:
+        """Load the exact current pair increments from the public /api/pairs catalogue."""
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise AdapterContractError("symbol must be a non-empty canonical pair such as SOL/IDR")
+        canonical = symbol.replace("/", "").replace("-", "").strip().upper()
+        if not canonical.isalnum() or len(canonical) > 30:
+            raise AdapterContractError("symbol must contain only asset codes and an optional separator")
+        payload = self._get_public_json(self.PAIRS_URL)
+        if not isinstance(payload, list):
+            raise VenueDataError("INDODAX public /api/pairs response must be an array")
+        matches = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            pair_symbol = str(item.get("symbol", "")).replace("/", "").upper()
+            pair_id = str(item.get("id", "")).lower()
+            description = str(item.get("description", "")).replace("/", "").upper()
+            if canonical in (pair_symbol, description) or canonical.lower() == pair_id:
+                matches.append(item)
+        if len(matches) != 1:
+            raise VenueDataError(f"INDODAX pair catalogue matched {len(matches)} rows for {canonical}; refusing ambiguity")
+        pair = matches[0]
+        base_asset = str(pair.get("traded_currency_unit") or pair.get("traded_currency") or "").upper()
+        quote_asset = str(pair.get("base_currency") or "").upper()
+        pair_id = str(pair.get("id") or "").lower()
+        price_tick = pair.get("price_precision")
+        if price_tick is None or str(price_tick).strip() in ("", "0", "0.0"):
+            price_tick = pair.get("pricescale")
+        quantity_step = pair.get("quantity_increment")
+        min_notional = pair.get("trade_min_base_currency")
+        min_quantity = pair.get("trade_min_traded_currency")
+        if not all((base_asset, quote_asset, pair_id)) or any(
+            value is None or str(value).strip() == "" for value in
+            (price_tick, quantity_step, min_notional, min_quantity)
+        ):
+            raise VenueDataError("INDODAX pair metadata omitted a required tick, step, or order minimum")
+        try:
+            step_decimal = _decimal(quantity_step, "quantity_increment")
+            base_decimals = max(0, -step_decimal.normalize().as_tuple().exponent)
+            return MarketSpec(
+                venue="INDODAX",
+                symbol=f"{base_asset}/{quote_asset}",
+                venue_symbol=pair_id,
+                base_asset=base_asset,
+                quote_asset=quote_asset,
+                price_tick=_decimal(price_tick, "price_tick"),
+                quantity_step=step_decimal,
+                min_notional_quote=_decimal(min_notional, "trade_min_base_currency", allow_zero=True),
+                base_decimals=base_decimals,
+                quote_decimals=0 if quote_asset == "IDR" else 6,
+                min_quantity_base=_decimal(min_quantity, "trade_min_traded_currency", allow_zero=True),
+            )
+        except AdapterContractError as exc:
+            raise VenueDataError(f"INDODAX pair metadata invalid: {exc}") from None
 
     @staticmethod
     def _best_level(levels: Any, *, side: str) -> Decimal:
@@ -481,7 +541,7 @@ class IndodaxPublicMarketDataAdapter:
         pair_id = market.venue_symbol.lower()
         if not pair_id or len(pair_id) > 40 or not pair_id.isalnum():
             raise AdapterContractError("venue_symbol must be the alphanumeric pair id returned by /api/pairs")
-        payload = self._get_depth(self.BASE_URL + pair_id)
+        payload = self._get_public_json(self.BASE_URL + pair_id)
         if not isinstance(payload, dict) or ("error" in payload and payload["error"]):
             raise VenueDataError("INDODAX depth response is not a valid order-book object")
         bid = self._best_level(payload.get("buy"), side="buy")
