@@ -50,3 +50,32 @@ INDODAX current trade fee, withdrawal fee, API throttles, and market filters are
 3. Validate quote freshness and cost inputs under realistic spread/latency scenarios; measure the route's actual observable spread rather than borrowing Reku fees for another exchange.
 4. Repair strategy evidence separately: zero trades on the last historical 60/20/20 evaluation means INSUFFICIENT_EVIDENCE. Do not loosen filters to manufacture trades.
 5. Run a forward paper campaign only after the selected venue-specific quote adapter and its assumptions are proven; keep live execution disabled.
+
+
+## Verified native-history smoke test (2026-10-29 UTC)
+
+GitHub Actions research run [#40948205968](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948205968), at code/workflow commit `e7cc7ab2a810028af5a13d43c011674792a08a57`, made read-only public requests and completed native INDODAX history capture successfully:
+
+- `data_status=OK`; 30 days; exactly 43,200 contiguous 1-minute candles.
+- Range: 2026-09-29 20:22:00 UTC through 2026-10-29 20:21:59.999 UTC.
+- Venue/pair/currency: INDODAX SOL/IDR; no FX conversion.
+- Dataset SHA-256: `9dd63e357e3a8f4ba168bccd65edf3fe621d3758884a97549e8425c812ab2316`.
+- Public market filters observed in the contemporaneous `/api/pairs` response: price tick `1` IDR, quantity increment `1e-8` SOL, per-market quote minimum IDR 10,000 and per-market minimum base quantity `0.00559952`. These are point-in-time public metadata; the selected interface mode may apply a higher minimum.
+- The artifact also shows the Reku legacy native activity-history endpoint returned HTTP 404 in the same run, while the Reku public market snapshot returned `data_status=OK`. This is a data-history endpoint failure, not proof that Reku SOL withdrawals are unavailable.
+
+The artifact belongs to the run above and has 7-day retention. This smoke test verifies the public endpoint from GitHub's runner, not from the user's Android device and not the correctness/availability of a recipient's deposit network. It was captured before the later native-IDR paper-engine denomination guard was merged into the branch; current code tests cover identity FX conversion and metadata-hash guards. The latest full strategy research result is not updated by this capture alone.
+
+## Native-currency execution gating
+
+The paper engine and chronological evaluator now resolve source venue/pair/quote currency from capture metadata, verify the CSV digest when the sidecar carries one, and normalize native INDODAX IDR candles with identity conversion (rate 1.0). The fee-sensitive backtest refuses native IDR unless `--fee-model indodax-custom` is supplied with explicit entry/exit fee, spread, slippage, minimum-notional and a source label. Reku cost presets reject native INDODAX data. This prevents a data-currency conversion bug and prevents a silent cross-venue cost-model substitution; it does not establish profitable native-market signals.
+
+Example public-data-only capture:
+
+```sh
+python projects/sol-sentinel/capture_indodax_history.py --symbol SOL/IDR --days 30 \
+  --output ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv \
+  --metadata-output ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv.meta.json
+```
+
+Do not run a native-IDR backtest until the actual fee model and selected mode's minimum order value have been verified and explicitly supplied. Current trade fee components are displayed in INDODAX Profile/Trading Fees; the generic market metadata minimum (Rp10,000 in the captured snapshot) is not a substitute for the direct-Pro mode minimum (Rp25,000 per current official help, with Lite available at Rp10,000). Source: https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX.
+
