@@ -343,3 +343,35 @@ The same research run showed:
 ### Branch/PR state and next action
 
 PR #178 remains draft/open/unmerged. PR #180 remains draft/open/unmerged and carries the canonical memory/audit docs. Branch divergence is substantial, so compare/review the entire delta before any eventual integration; no merge/rebase/force-push was performed. No transfer, order, wallet signing, secret, or account action occurred. Android/Termux remains untested. Strategy readiness and live readiness remain blocked.
+
+
+## Full research reconciliation — run #57, 30-day dual-source capture (2026-10-30 WIB)
+
+Latest complete current-logic research: [SOL Sentinel Research #40949409224](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949409224), code engine commit `cb3ebab0b22a82f5ed1c9a6e748cfb5930d1439a`. Engine/backtest code is unchanged at the current implementation head `39d093b6e44635431475ea635f018327310793fd`; the intervening commit was a test-only adjustment. Exact-head test CI [#40949432502](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949432502) succeeded with 135 tests / 0 failures.
+
+### Datasets observed
+
+| Source | Status | Coverage | Dataset SHA-256 | Notes |
+|---|---|---:|---|---|
+| Binance SOLUSDT 1m | Capture/backtest success | 43,200 bars; 2026-09-29 20:29:00 UTC to 2026-10-29 20:28:59.999 UTC | `cb685aa993bbde9e2abec8c9c350e98097ba97d6b7c50fa323de1921ed1a7a47` | USDT reference converted with dated USD/IDR proxy, not venue-executable prices |
+| INDODAX SOL/IDR 1m | Public read-only capture `OK` | 43,200 bars; 2026-09-29 20:30:00 UTC to 2026-10-29 20:29:59.999 UTC | `08f20992fed30c0921dee547e4cb4623c4dbf3b3c74ef732ce895ebc1fcf5633` | Native IDR, no FX conversion; captured but not backtested with INDODAX-specific costs |
+
+### Strategy diagnosis, separated from code execution
+
+For the completed Binance baseline, `signal_candidates=0`, entry attempts/fills=0, closed trades=0. Final equity equals starting equity only because no position was opened; expectancy, win rate and profit factor are undefined, not zero-return performance evidence. All fixed chronological 60/20/20 segments also have zero trades.
+
+Full-window overlapping rejection counters were: 25,424 `15m_trend_not_confirmed`; 40,161 `1m_breakout_not_confirmed`; 1,786 `1m_momentum_exhaustion_or_missing`; 34,801 `1m_volume_confirmation_missing`; 28,329 `5m_momentum_not_confirmed`; 23,759 `5m_rsi_outside_entry_range`; 195 `estimated_net_edge_below_threshold`. These counts overlap because one bar can fail multiple checks; they cannot be summed to infer unique failed bars or used to claim a single threshold caused all zero trades. Since the engine recorded no candidates before order-size/fill, there is no evidence here of a broken order fill or ledger causing the zero-trade result. Do not loosen the rules just to manufacture trade count.
+
+The predeclared Reku Lightning fee-only floor (zero spread/slippage) yielded 10 simulated trades and approximately IDR -3,893.22 net with profit factor about 0.276. It is an intentionally unrealistic mathematical lower bound, not an executable venue cost or forecast. Reku Pro/other normal cost scenarios yielded no candidates/trades. The native INDODAX data captured in run #57 have not been backtested because current all-in fees and selected mode must be explicitly verified and supplied; the Reku cost presets now reject native IDR input.
+
+### Error status refresh
+
+- **Fixed and regression-tested:** conflicting duplicate candles, malformed/fractional/zero-value Reku activity trades, source currency/venue identity, sidecar status/hash checking, native-IDR identity conversion, cross-venue fee preset rejection, and zero/non-finite native venue minimum/fee input protection.
+- **Public-readonly verified:** native INDODAX `/api/pairs`, `/api/depth/{pair_id}` and TradingView history call path were exercised by successful GitHub Actions public requests. The history artifact confirms full contiguous candles. This is not account/credential/withdrawal/deposit verification.
+- **Still unavailable:** legacy Reku `/v2/activitytrans` continues to return HTTP 404. Do not substitute incomplete legacy data as a complete tape.
+- **Not yet proven:** native INDODAX strategy P&L with explicit verified venue costs; current user account fees/network support; Termux; paper-forward behavior; live executor/signing boundary.
+- **Current-head research:** run #58 [#40949432867](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949432867) was still in progress at the last check. Its engine code matches run #57; do not claim it is completed until the run state and artefacts confirm that.
+
+### Integration state
+
+PR #178 remains draft/open/unmerged; latest pre-checkpoint comparison to `main` was diverged (239 ahead / 2 behind, merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`). PR #180 remains draft/open/unmerged and contains this audit and canonical memory addendum. No merge, rebase, reset, force-push, wallet connection, signing, transfer or live order was performed. Readiness remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
