@@ -370,6 +370,8 @@ def fetch_snapshot(symbol: str = "SOL") -> dict[str, Any]:
             "GET https://api.reku.id/v2/bidask",
             f"GET https://api.reku.id/v2/orderbook?id={coin_id}",
             f"GET https://api.reku.id/v2/orderbookall?id={coin_id} (fallback)",
+            f"GET https://api.reku.id/v2/chart?t=2&f=1&id={coin_id} (1-minute chart probe)",
+            f"GET https://api.reku.id/v2/chart?t=2&f=5&id={coin_id} (5-minute fallback)",
         ],
         "coin_id": coin_id,
         "coin_catalogue": {
