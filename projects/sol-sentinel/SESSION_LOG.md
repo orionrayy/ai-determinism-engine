@@ -62,3 +62,28 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 4. Research and test historical data chronologically (training, validation, untouched out-of-sample) with costs, spread, slippage, no-fill and latency assumptions.
 5. Record expectancy, profit factor, maximum drawdown, sample size and sensitivity analysis; do not tune only to a target outcome.
 6. Require explicit user approval and a separate security review before any live execution integration.
+
+
+## 2026-10-29 — Paper engine and chronological evaluation checkpoint
+
+### Implemented
+- `paper_engine.py`: offline-only cost-aware backtest for contiguous 1-minute OHLCV CSV, with completed 5m/15m aggregation, deterministic signal hypothesis, modeled entry/exit fees and per-side slippage, position sizing, stop/target/max-hold exits, conservative stop-first same-bar handling, drawdown metrics, and SQLite ledger persistence with deterministic run identity.
+- `capture_history.py`: bounded public Binance kline history capture for up to 30 days, capped pages, bounded retries, gap validation, CSV, SHA-256, and metadata sidecar. Read-only only.
+- `evaluate_splits.py`: fixed-parameter chronological 60/20/20 development/validation/out-of-sample evaluation. No automatic parameter optimization. Each segment uses independent initial capital and results are not compounded across segments.
+- `test_paper_engine.py` and `test_evaluate_splits.py`: offline validation for history parsing, aggregation, configuration guards, gap rejection, ledger idempotency, and split boundaries.
+- CI compile list now includes scanner, capture, paper engine, evaluator, and tests. Unit test discovery covers all test modules.
+
+### Debug and validation history
+- Initial CI uncovered fixture issues: an epoch timestamp that did not align to complete five-minute buckets and a gap fixture that produced only 99 rows. Fixtures were corrected without relaxing production data-integrity checks.
+- Latest verified workflow run: `40906164183`, commit `41f60c53ff7801d3b3729c27f5bd338854538386`, conclusion `success`. Compile and offline unit-test steps passed.
+- Do not carry forward stale failed runs as current status; the latest run above is green for its exact commit.
+- Termux runtime/network access has not yet been executed or verified from the user's device.
+- No real order, wallet creation, signing, transfer, withdrawal, or trade was executed.
+
+### Next steps
+1. Test public history capture and scanner on Termux; retain capture CSV and metadata locally, not in the public repo.
+2. Run the backtest and chronological evaluation on real historical data with actual current venue fee assumptions and conservative slippage.
+3. Inspect sample count, per-segment net P&L, profit factor, drawdown, cost sensitivity, and trade logs. Do not claim strategy edge if trade count is small or segments disagree.
+4. Improve the fill/cost model and include trade-level spread and latency assumptions before paper deployment.
+5. Verify current official Reku market-data/API docs, terms, minimum order/withdrawal and fees.
+6. Keep live execution blocked until an official permitted route, isolated signer, idempotency/reconciliation, kill switch, risk caps, out-of-sample evidence, and explicit user approval are all present.
