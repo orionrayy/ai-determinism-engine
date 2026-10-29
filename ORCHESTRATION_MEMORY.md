@@ -1458,3 +1458,35 @@ Semua perubahan di branch kandidat `feat/hallmark-corpus-benchmark-v1`; PR #179 
 - `research/corpus/manifest.jsonl`, `features.jsonl`, README, laporan checkpoint dan memori kanonis diperbarui. Laporan sample 7 menyatakan bahwa workbook ini adalah eksperimen data nyata, bukan contoh workbook operasional atau formula-heavy.
 - PR #179 tetap terbuka dan tidak digabung; tidak ada perubahan ke `main`. Revalidasi tiga CI check pada HEAD terbaru tetap diperlukan, sebab dokumen/manifest/features berubah setelah run yang memeriksa XLSX.
 - Tetap belum ada Document Craft baseline-vs-candidate experiment, blind human scoring/inter-rater agreement, dan bukti perbaikan kualitas tulisan. Sumber/struktur ini hanya membangun dataset dan QA harness; tidak boleh menyatakan Hallmark kualitasnya sudah meningkat.
+
+## Checkpoint workbook anggaran pemerintah — 2026-10-30
+
+Semua perubahan tetap berada di branch `feat/hallmark-corpus-benchmark-v1` dan PR #179 yang masih terbuka; `main` tidak diubah.
+
+### Hitungan korpus terbaru
+- Manifest `research/corpus/manifest.jsonl`: **12 catatan total**, terdiri dari **8 eligible**, 2 partial access, 1 artikel nursing case berstatus privacy-pending, dan 1 lead XLSX metadata-only. Target 500; remaining 492; status `INSUFFICIENT_EVIDENCE`.
+- Eligible distribution: `academic_paper=3` (tiga artikel ICCLE dari satu jurnal/penerbit), `other=1` (panduan World Bank ID4D CC BY 3.0 IGO), `thesis_dissertation=2` (dua tugas akhir UIN Ar-Raniry, CC BY 4.0), `excel_workbook=2` (dataset OCV baterai POLITEHNICA Bucharest CC BY 4.0 dan workbook anggaran Treasury Selandia Baru CC BY 4.0).
+- Tiga artikel ICCLE bukan tiga source-family independen untuk aturan universal; dua skripsi berasal dari satu kampus; dua workbook Excel berbeda tujuan (dataset terukur dan workbook anggaran historis). Delapan sampel masih jauh dari representatif.
+
+### Workbook Treasury yang baru terinspeksi
+- Sumber resmi: https://www.treasury.govt.nz/publications/data/budget-2020-data-estimates-appropriations-2020-21; page license menyatakan Crown Copyright Attribution 4.0 International (CC BY 4.0), dan status rilis adalah superseded.
+- Direct XLSX: https://www.treasury.govt.nz/sites/default/files/2020-05/b20-expenditure-data.xlsx
+- GitHub Actions berhasil mengunduh 860,536-byte workbook. SHA-256 `d6a4f00122a05a86bf905f2c43f53cc065b8f033ee080647cf8033961c43aced`.
+- `research/corpus/inspect_xlsx_structure.py` mengembalikan 8 worksheet terlihat: Intro, Explanation, Raw Data, dua pivot summaries, dua chart-named tabs, dan PivotAppnTypeByPortfolio. Total 6,512 row elements, 102,477 non-empty cells, 2 formula cells, 2 merged ranges, 1 auto-filter sheet, 4 sheets with frozen panes, 1 defined name, 0 hidden sheets, 0 OOXML table parts; styles 24 cellXfs, 19 fonts, 2 fills, 1 border. Raw Data dimension A1:Q6304 (101,427 non-empty cells). Tidak ada nilai sel yang dikembalikan atau disimpan.
+- Treasury workbook ditambahkan sebagai `doc-nz-treasury-budget-2020-expenditure-xlsx` dan fitur struktur di `features.jsonl`. Ini workbook anggaran publik bersejarah, bukan sumber nilai fiskal terkini; formula/cell values tidak diaudit dan grafis tidak dicek melalui rendered UI/print preview.
+- Battery XLSX tetap eligible sebagai dataset data eksperimental: 17 visible sheets (Header + 16 traces), size 466,798 bytes, SHA-256 `9b8c541675256c08c24cc6ebeb486a46d07c533a70bf4dabcca4955dba90e08a`, 0 formulas, 23 merged ranges di Header. Dua spreadsheet eligible kini mewakili dua jenis tujuan, bukan semua genre Excel.
+- `research/corpus/features.jsonl` memuat **11 catatan analisis**: delapan eligible feature records dan tiga non-eligible notes (dua partial + satu nursing case pending privacy). Item metadata-only Karanganyar tidak memiliki fitur isi.
+- `research/corpus/README.md` dan `research/reports/document-craft-corpus-checkpoint-2026-10-30.md` diperbarui menjadi 8/500. Perbaikan heading laporan terakhir menempatkan Sampel 8 sebelum section non-eligible dan mengembalikan heading kesimpulan.
+
+### Gates non-eligible yang harus dipertahankan
+- Laporan PKL Polije: summary dan Bab I publik CC BY-SA, laporan lengkap restricted; `access_status=partial`; tidak dihitung.
+- KIAN/asuhan keperawatan STIKes Muhammadiyah Ciamis: file awal publik, bab kasus/pembahasan restricted; privacy/license review pending; tidak dihitung.
+- Nursing case paper DOI `10.53801/jnep.v1i01.9`, CC BY-SA 4.0, full text accessible but contains sensitive patient narrative. Macro-headings only recorded; `anonymization_status=pending`, `privacy_review=pending`, `verification_status=pending`; not eligible.
+- ABK Sekdin.xlsx: metadata portal CC BY but workbook download returns HTTP 403; `access_status=metadata_only`; no workbook structure claims; not eligible.
+- Live DOAJ OAI-PMH harvesting has not succeeded. Fixture/mocked tests are not live discovery; live feed candidates = 0.
+
+### CI status / next acceptance gate
+- At SHA `3595ab172460a044b902056068a4cfcd7a8d9f85`, the latest corpus validation ran both XLSX fetch/structure inspection steps, feature traceability validator, provenance tests, and incomplete-target assertion successfully; Orchestrator Tests and Hallmark skill validation also completed success. Check run links were `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40938492288`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40938492102`, `https://github.com/orionrayy/ai-determinism-engine/actions/runs/40938492143`. New manifest/features/docs changes after that SHA require CI re-run at current HEAD.
+- Workflow produces a corpus inventory artifact for 14 days with counts and structural summaries, no cell values.
+- No Document Craft baseline-vs-candidate quality experiment, blind human scoring/inter-rater reliability, generated DOCX/PDF/Excel rendering QA, or evidence of improvement exists yet. Keep all claims limited to corpus/pipeline/test progress.
+- Do not merge PR #179 automatically. It remains open pending review and green checks at the exact final HEAD.
