@@ -1412,3 +1412,27 @@ Gate berikutnya: periksa CI di SHA akhir, lanjutkan pengumpulan sampel berizin d
 - Status korpus: 4/500, genre `academic_paper=3`, `other=1`, sisa 496, `INSUFFICIENT_EVIDENCE`. Live DOAJ harvest = belum berhasil; 0 metadata kandidat feed live.
 - Sebelum artefak workflow baru ditambahkan, ketiga check lulus pada `04f01303c4d14f757331cb88bb350d8112e6a9bc`. Tambahan workflow/dokumentasi ini memicu eksekusi CI baru; re-query status checks pada HEAD berikutnya sebelum finalisasi.
 - PR #179 tetap open, belum merge. Tidak ada perubahan langsung ke `main`.
+
+## Checkpoint sumber primer dan akses parsial — 2026-10-30
+
+Semua perubahan di branch kandidat `feat/hallmark-corpus-benchmark-v1`; PR #179 tetap belum merge dan `main` tidak disentuh.
+
+### Hitungan terbaru (manifest 8 catatan)
+- **5/500 dokumen memenuhi gate eligibility**, sisa 495, `INSUFFICIENT_EVIDENCE`.
+- Eligible: `academic_paper=3` (tiga artikel ICCLE, satu penerbit/jurnal), `other=1` (panduan ID4D World Bank CC BY 3.0 IGO), `thesis_dissertation=1` (skripsi teknik lingkungan UIN Ar-Raniry, item-level CC BY 4.0).
+- 2 catatan akses parsial, belum eligible: (a) laporan PKL Polije/SIPORA — summary dan Bab I publik CC BY-SA 4.0, berkas laporan lengkap dibatasi; (b) KIAN/asuhan keperawatan STIKes Muhammadiyah Ciamis — sebagian file publik berlisensi Creative Commons Attribution, bab kasus dan diskusi dibatasi, privacy review masih pending.
+- 1 lead XLSX metadata-only: resource beban kerja Sekretaris Dinas Sosial Kabupaten Karanganyar menyatakan CC BY pada metadata, tetapi unduhan ke dua host resmi menghasilkan HTTP 403. Sheet, formula, formatting, hidden sheet, dan isi sel belum diperiksa; tidak dihitung.
+- `research/corpus/features.jsonl` memiliki tujuh analisis/catatan: lima untuk item eligible dan dua catatan struktural yang secara eksplisit dibatasi ke bagian publik. Tidak ada PDF atau teks lengkap disimpan ke GitHub.
+
+### Perubahan gate
+- `access_status` dalam schema/validator ditambah nilai `partial`. Status ini sengaja tidak memenuhi gate eligibility, karena hanya ringkasan atau sebagian bab yang bisa diakses.
+- `test_validate_corpus.py` mendapat test yang memastikan dokumen berstatus partial tidak pernah menambah hitungan target.
+- `research/corpus/validate_features.py` menghubungkan setiap analisis ke manifest, source family dan URL bukti. Catatan parsial ditampilkan sebagai warning; tidak diperlakukan sebagai contoh eligible.
+- Skripsi UIN Ar-Raniry memberi struktur Bab I–V, abstrak dwibahasa, kata pengantar, daftar isi, daftar tabel/gambar/lampiran, dan pola nomor halaman. Anomali penomoran subbagian BAB V dicatat sebagai cacat khusus dokumen, bukan pedoman umum. Sumber menyatakan CC BY 4.0 dan punya pernyataan orisinalitas. Tidak menyimpan nomor mahasiswa atau URL file yang memuat kontak.
+- Laporan Polije Bab I menunjukkan tujuan/manfaat, lokasi/waktu dan metode pelaksanaan PKL, tetapi laporan lengkap masih dibatasi. KIAN hanya dicatat dari nama berkas dan metadata publik; tidak menyimpan isi kasus medis.
+
+### Status uji
+- CI terakhir yang terverifikasi pada SHA `c25d1add0fa8a0139ed54a48d3223635dd5fa257` lulus pada Orchestrator Tests, Hallmark skill validation, dan Hallmark corpus validation (yang termasuk tes traceability dan artifact inventory).
+- Commit setelah itu mengubah schema, validator, test, manifest, features, README dan laporan; wajib cek ulang tiga workflow pada HEAD terbaru sebelum merge.
+- Kualitas Document Craft belum diuji dengan output baseline-vs-candidate, blind scoring, inter-rater agreement atau visual/functional validation file DOCX/PDF/Excel. Tidak ada klaim peningkatan empiris.
+- Live DOAJ harvesting masih belum terjadi. Fixture tests lulus, tetapi feed live tidak dapat diakses dari lingkungan ini. Metadata discovery berbeda dari dokumen penelitian.
