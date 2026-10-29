@@ -1,6 +1,6 @@
 # SOL Sentinel
 
-A free-first, read-only SOL scalping research and paper-trading project intended to integrate with \`orionrayy/ai-determinism-engine\`.
+A free-first, read-only SOL scalping research and paper-trading project intended to integrate with `orionrayy/ai-determinism-engine`.
 
 **Current phase: Phase 0 — public-market scanner and research.** This branch does not place orders, connect to Reku accounts, create wallets, sign transactions, or move funds. It cannot guarantee a financial target.
 
@@ -24,26 +24,26 @@ Investigate whether a rule-based SOL strategy can produce positive net expectanc
 
 Requires Python 3.10+ and network access; no third-party package is required.
 
-\`\`\`sh
+```sh
 python projects/sol-sentinel/sol_sentinel.py
 python projects/sol-sentinel/sol_sentinel.py --json
 python projects/sol-sentinel/sol_sentinel.py --watch-seconds 30
 python projects/sol-sentinel/sol_sentinel.py --fee-bps-round-trip 42.11 --slippage-bps-round-trip 20
 python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
-\`\`\`
+```
 
 The fee/slippage parameters are assumptions and must be set to the actual selected venue and execution path. The default data venue is Binance public SOL/USDT, not Reku SOL/IDR.
 
 ## Files
 
-- \`SPEC.md\`: system contract, DAG, interfaces, phases, and acceptance criteria.
-- \`RISK_POLICY.md\`: hard safety limits and live-trading gates.
-- \`SOURCES.md\`: source inventory, official documentation, and verification caveats.
-- \`SESSION_LOG.md\`: user-confirmed project context, decisions, and progress checkpoints.
-- \`RUNBOOK_TERMUX.md\`: install, run, validate, and troubleshoot on Android.
-- \`sol_sentinel.py\`: standard-library scanner, indicators, signal gating, and JSONL audit output.
-- \`test_sol_sentinel.py\`: offline tests.
-- \`../../.github/workflows/sol-sentinel-tests.yml\`: continuous integration for this module.
+- `SPEC.md`: system contract, DAG, interfaces, phases, and acceptance criteria.
+- `RISK_POLICY.md`: hard safety limits and live-trading gates.
+- `SOURCES.md`: source inventory, official documentation, and verification caveats.
+- `SESSION_LOG.md`: user-confirmed project context, decisions, and progress checkpoints.
+- `RUNBOOK_TERMUX.md`: install, run, validate, and troubleshoot on Android.
+- `sol_sentinel.py`: standard-library scanner, indicators, signal gating, and JSONL audit output.
+- `test_sol_sentinel.py`: offline tests.
+- `../../.github/workflows/sol-sentinel-tests.yml`: continuous integration for this module.
 
 ## Integration principle
 
