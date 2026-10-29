@@ -78,3 +78,8 @@ Use the fixed-parameter development/validation/out-of-sample evaluator after the
 `python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json`
 
 The evaluator splits the input by time in a 60/20/20 ratio. Each segment begins at the configured initial capital independently, and every result uses the same fixed strategy parameters. Do not tune parameters against the out-of-sample segment. The default minimum segment length is 600 complete 1-minute bars, so very short histories are rejected. This is an initial research check, not statistical proof of a profitable edge; require adequate trades and representative regimes.
+
+
+## Cost assumptions
+
+The scanner accepts `--fee-bps-round-trip`, `--spread-bps-round-trip`, and `--slippage-bps-round-trip`. The backtest/evaluator accept `--entry-fee-bps`, `--exit-fee-bps`, `--spread-bps-round-trip`, and `--slippage-bps-per-side`. These separate estimates to make assumptions visible. Do not set spread/slippage to zero just to obtain more signals. The historical default values are placeholders and should be changed only using verified venue costs or a documented sensitivity test.
