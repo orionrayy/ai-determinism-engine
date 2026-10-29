@@ -169,7 +169,7 @@ def timeframe_metrics(candles: Sequence[Candle], interval: str) -> dict[str, Any
 
 def evaluate_signal(
     metrics: dict[str, dict[str, Any]], fee_bps_round_trip: float = 42.11,
-    slippage_bps_round_trip: float = 20.0, min_net_edge_bps: float = 25.0,
+    spread_bps_round_trip: float = 10.0, slippage_bps_round_trip: float = 20.0, min_net_edge_bps: float = 25.0,
     volume_ratio_min: float = 1.5,
 ) -> dict[str, Any]:
     required = {"1m", "5m", "15m"}
@@ -177,7 +177,7 @@ def evaluate_signal(
         return {"signal": "NO_TRADE", "reasons": ["missing_timeframe_metrics"]}
     reasons: list[str] = []
     m1, m5, m15 = metrics["1m"], metrics["5m"], metrics["15m"]
-    costs_bps = fee_bps_round_trip + slippage_bps_round_trip
+    costs_bps = fee_bps_round_trip + spread_bps_round_trip + slippage_bps_round_trip
     atr14, close5 = m5.get("atr14"), m5.get("close")
     gross_target_bps = (
         float(atr14) / float(close5) * 10_000.0 * 1.5
@@ -207,6 +207,7 @@ def evaluate_signal(
         "reasons": reasons,
         "cost_model": {
             "fee_bps_round_trip": fee_bps_round_trip,
+            "spread_bps_round_trip": spread_bps_round_trip,
             "slippage_bps_round_trip": slippage_bps_round_trip,
             "total_cost_bps": costs_bps, "min_net_edge_bps": min_net_edge_bps,
             "assumption_only": True,
@@ -235,6 +236,7 @@ def scan_once(args: argparse.Namespace) -> dict[str, Any]:
             "data_status": "OK", "metrics": metrics,
             **evaluate_signal(
                 metrics, fee_bps_round_trip=args.fee_bps_round_trip,
+                spread_bps_round_trip=args.spread_bps_round_trip,
                 slippage_bps_round_trip=args.slippage_bps_round_trip,
                 min_net_edge_bps=args.min_net_edge_bps, volume_ratio_min=args.volume_ratio_min,
             ),
@@ -264,7 +266,10 @@ def emit(record: dict[str, Any], as_json: bool) -> None:
     edge = record.get("edge_model")
     if edge:
         print(
-            f"Cost budget={record['cost_model']['total_cost_bps']:.2f} bps; "
+            f"Cost budget={record['cost_model']['total_cost_bps']:.2f} bps "
+            f"(fees={record['cost_model']['fee_bps_round_trip']:.2f}, "
+            f"spread={record['cost_model']['spread_bps_round_trip']:.2f}, "
+            f"slippage={record['cost_model']['slippage_bps_round_trip']:.2f}); "
             f"gross ATR budget={edge['gross_move_budget_bps']:.2f} bps; "
             f"estimated net edge={edge['estimated_net_edge_bps']:.2f} bps"
         )
@@ -278,6 +283,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--symbol", default="SOLUSDT", help="public Binance spot market symbol (default: SOLUSDT)")
     parser.add_argument("--fee-bps-round-trip", type=float, default=42.11,
                         help="assumed total round-trip venue fee in basis points; verify actual fees")
+    parser.add_argument("--spread-bps-round-trip", type=float, default=10.0,
+                        help="assumed quoted spread cost for a full entry/exit round trip")
     parser.add_argument("--slippage-bps-round-trip", type=float, default=20.0,
                         help="assumed total round-trip slippage budget in basis points")
     parser.add_argument("--min-net-edge-bps", type=float, default=25.0,
@@ -290,7 +297,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--watch-seconds", type=int, default=0,
                         help="repeat scans; minimum 15 seconds, 0 means run once")
     args = parser.parse_args(argv)
-    for field in ("fee_bps_round_trip", "slippage_bps_round_trip", "min_net_edge_bps", "volume_ratio_min"):
+    for field in ("fee_bps_round_trip", "spread_bps_round_trip", "slippage_bps_round_trip", "min_net_edge_bps", "volume_ratio_min"):
         value = getattr(args, field)
         if not math.isfinite(value) or value < 0:
             parser.error(f"--{field.replace('_', '-')} must be finite and non-negative")
