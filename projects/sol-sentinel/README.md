@@ -129,3 +129,12 @@ The adapter reads the documented public Reku API only: coin catalogue, price, bi
 - Latest verified tests at the code checkpoint immediately before this note: [CI #40948901551](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948901551), 135 tests, 0 failures. Latest complete 30-day Binance research [run #40948530609](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948530609) still had zero candidates/trades in the baseline and all fixed time splits; the theoretical fee-only floor remains net negative. A full research run on any newer code head must be treated separately.
 - Source identity is now explicit: Binance SOLUSDT remains research reference only; Reku is an acquisition/on-ramp candidate only; INDODAX SOL/IDR is the initial CEX adapter candidate, but its exact current fee mode and a user's destination network acceptance are not certified by public market-data tests.
 - See `PLATFORM_ADAPTER_DECISION_2026-10-30.md`, `RUNBOOK_TERMUX.md`, and `EXECUTION_LOG.md`. PR #178 remains draft/open/unmerged and its branch history is diverged from `main`; do not merge or reconcile destructively.
+
+
+## Latest verified checkpoint — public depth quote and native IDR history
+
+- Successful read-only research [#40950218320](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320) captured 43,200 native INDODAX SOL/IDR 1m candles and a current top-of-book quote. Dataset SHA-256 `c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30`; data_status OK; no FX conversion.
+- Live public depth snapshot: `market_quote_status=OK`; bid Rp1,777,113; ask Rp1,779,923; spread ~15.7997 bps at 2026-10-29T20:37:47Z. Earlier snapshot was ~25.6669 bps; these are point-in-time quotes, not a spread history.
+- Latest exact feature-head CI [#40950649418](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950649418) passed 137 offline tests. A successful CI run does not establish profitability.
+- Current 30-day strategy research remains zero candidates/trades across fixed 60/20/20 splits. Native INDODAX data is collected but still must not be backtested using Reku fees; selected fee mode and current all-in fee components must be verified and explicitly supplied.
+- Reku remains acquisition/on-ramp candidate only, INDODAX is a candidate execution venue, and Jupiter remains quote-only. No live executor, signer, transfer sender or order route exists. Strategy readiness remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
