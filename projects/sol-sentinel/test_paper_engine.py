@@ -42,6 +42,22 @@ class DataAndIndicatorTests(unittest.TestCase):
         self.assertEqual(rate, 1.0)
         self.assertIn("FX conversion disabled", source)
 
+    def test_source_market_metadata_rejects_sidecar_status_error_and_csv_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "history.csv"
+            csv_path.write_text("fixture-data", encoding="utf-8")
+            sidecar = Path(str(csv_path) + ".meta.json")
+            base_meta = {
+                "venue": "INDODAX", "pair": "SOL/IDR",
+                "input_price_currency": "IDR",
+            }
+            sidecar.write_text(json.dumps(dict(base_meta, data_status="ERROR")), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "data_status=ERROR"):
+                engine.resolve_input_market_metadata(csv_path)
+            sidecar.write_text(json.dumps(dict(base_meta, dataset_sha256="0" * 64)), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "SHA-256 does not match"):
+                engine.resolve_input_market_metadata(csv_path)
+
     def test_source_market_metadata_rejects_mismatched_overrides_and_unknown_currencies(self):
         with tempfile.TemporaryDirectory() as tmp:
             csv_path = Path(tmp) / "native.csv"
