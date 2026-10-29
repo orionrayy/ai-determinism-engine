@@ -5,10 +5,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from paper_engine import BacktestConfig
-from cost_sensitivity import build_scenarios, load_reku_spread_reference
+from cost_sensitivity import build_scenarios, load_reku_spread_reference, run_sensitivity
 
 
 class CostSensitivityTests(unittest.TestCase):
+    def test_reku_cost_presets_reject_native_indodax_idr_csv(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "native.csv"
+            csv_path.write_text("open_time_ms,close_time_ms,open,high,low,close,volume\\n", encoding="utf-8")
+            Path(str(csv_path) + ".meta.json").write_text(json.dumps({
+                "venue": "INDODAX",
+                "pair": "SOL/IDR",
+                "input_price_currency": "IDR",
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "native INDODAX SOL/IDR requires a separately declared venue-specific cost model"):
+                run_sensitivity(csv_path, quote_to_idr_rate=1.0)
+
     def test_scenario_costs_match_published_reku_components(self):
         scenarios = {name: (description, config) for name, description, config in build_scenarios(BacktestConfig())}
         pro = scenarios["reku_pro_baseline"][1]
