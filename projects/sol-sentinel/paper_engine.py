@@ -37,6 +37,11 @@ class BacktestConfig:
     initial_capital_idr: float = 300_000.0
     quote_to_idr_rate: float = 16_000.0
     quote_to_idr_source: str = "placeholder assumption; replace from capture metadata"
+    input_venue: str = "Binance"
+    input_symbol: str = "SOLUSDT"
+    input_price_currency: str = "USDT"
+    fee_model_name: str = "REKU_PRO_REFERENCE_ASSUMPTION"
+    fee_model_source: str = "Reku published fee components; source/mode assumptions must be rechecked"
     risk_fraction: float = 0.005
     max_exposure_fraction: float = 0.50
     daily_loss_fraction: float = 0.03
@@ -66,8 +71,20 @@ class BacktestConfig:
             value = getattr(self, name)
             if not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be finite and >= 0")
-        if not isinstance(self.quote_to_idr_source, str) or not self.quote_to_idr_source.strip():
-            raise ValueError("quote_to_idr_source must be a non-empty source label")
+        for name in ("input_venue", "input_symbol", "input_price_currency", "fee_model_name", "fee_model_source"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} must be a non-empty label")
+        currency = self.input_price_currency.upper()
+        if currency not in ("USDT", "IDR"):
+            raise ValueError("input_price_currency must be USDT or IDR")
+        if currency == "IDR":
+            if self.input_venue.upper() != "INDODAX" or self.input_symbol.upper().replace("/", "") != "SOLIDR":
+                raise ValueError("native IDR candles require INDODAX SOL/IDR metadata")
+            if self.quote_to_idr_rate != 1.0:
+                raise ValueError("native IDR candles must use quote_to_idr_rate=1.0 (no FX conversion)")
+            if self.fee_model_name != "INDODAX_CUSTOM":
+                raise ValueError("native INDODAX backtests require explicit INDODAX_CUSTOM fee model")
         if self.maximum_hold_bars != int(self.maximum_hold_bars):
             raise ValueError("maximum_hold_bars must be an integer")
 
@@ -349,8 +366,9 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         if current.open_time_ms - previous.open_time_ms != ONE_MINUTE_MS:
             raise ValueError("backtest bars must be contiguous 1m candles")
 
-    # Convert every OHLC price to IDR before position sizing/P&L; keep volumes/timestamps unchanged.
-    fx = config.quote_to_idr_rate
+    # Binance SOLUSDT bars require the dated USD/IDR proxy. Native INDODAX SOL/IDR
+    # bars are already IDR-denominated and must never be converted a second time.
+    fx = 1.0 if config.input_price_currency.upper() == "IDR" else config.quote_to_idr_rate
     bars = [Bar(
         open_time_ms=bar.open_time_ms, open=bar.open * fx, high=bar.high * fx,
         low=bar.low * fx, close=bar.close * fx, volume=bar.volume,
@@ -587,13 +605,24 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "schema_version": SCHEMA_VERSION,
         "mode": "OFFLINE_BACKTEST_ONLY",
         "execution_enabled": False,
-        "symbol": "SOLUSDT",
-        "venue_reference": "Binance public SOLUSDT candles converted by a daily USD/IDR reference rate; not Reku SOL/IDR executable prices",
-        "source_quote_currency": "USDT",
+        "symbol": config.input_symbol,
+        "input_venue": config.input_venue,
+        "venue_reference": (
+            "Native INDODAX SOL/IDR public candles; no FX conversion applied; modeled fills and costs are assumptions"
+            if config.input_price_currency.upper() == "IDR"
+            else "Binance public SOLUSDT candles converted by a dated USD/IDR reference; not Reku or another venue's executable prices"
+        ),
+        "source_quote_currency": config.input_price_currency.upper(),
         "simulation_price_currency": "IDR",
         "quote_to_idr_rate": config.quote_to_idr_rate,
         "quote_to_idr_source": config.quote_to_idr_source,
-        "quote_to_idr_assumption": "A daily USD/IDR reference is used as a proxy for USDT/IDR; stablecoin premium/discount and venue-specific IDR pricing are not modeled.",
+        "quote_to_idr_assumption": (
+            "Native IDR prices are already denominated in the simulator currency; FX conversion is disabled."
+            if config.input_price_currency.upper() == "IDR"
+            else "A dated USD/IDR reference proxies USDT/IDR; stablecoin premium/discount and execution-venue prices are not modeled."
+        ),
+        "fee_model_name": config.fee_model_name,
+        "fee_model_source": config.fee_model_source,
         "dataset_sha256": dataset_sha256,
         "period_start": iso_utc(bars[0].open_time_ms),
         "period_end": iso_utc(bars[-1].close_time_ms),
@@ -737,12 +766,85 @@ def persist_ledger(db_path: str | Path, report: dict[str, Any], run_id: str) -> 
         )
 
 
+def resolve_input_market_metadata(
+    csv_path: str | Path,
+    input_venue_override: str | None = None,
+    input_symbol_override: str | None = None,
+    input_price_currency_override: str | None = None,
+) -> dict[str, str]:
+    """Resolve price denomination and venue from the capture sidecar or explicit CLI declarations.
+
+    Never infer native IDR data to be USDT data. If no sidecar exists, callers must
+    explicitly declare venue, pair and quote currency together.
+    """
+    sidecar = Path(str(Path(csv_path).expanduser()) + ".meta.json")
+    metadata: dict[str, Any] = {}
+    if sidecar.exists():
+        try:
+            loaded = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read capture metadata sidecar: {exc}") from exc
+        if not isinstance(loaded, dict):
+            raise ValueError("capture metadata sidecar must be a JSON object")
+        metadata = loaded
+
+    raw_venue = metadata.get("venue")
+    raw_symbol = metadata.get("pair") or metadata.get("symbol")
+    raw_currency = metadata.get("input_price_currency")
+    supplied = {
+        "input_venue": input_venue_override,
+        "input_symbol": input_symbol_override,
+        "input_price_currency": input_price_currency_override,
+    }
+    values = {
+        "input_venue": str(raw_venue).strip() if raw_venue else None,
+        "input_symbol": str(raw_symbol).strip() if raw_symbol else None,
+        "input_price_currency": str(raw_currency).strip().upper() if raw_currency else None,
+    }
+    for key, override in supplied.items():
+        if override is None:
+            continue
+        if not isinstance(override, str) or not override.strip():
+            raise ValueError(f"{key} override must be a non-empty string")
+        normalized = override.strip().upper() if key == "input_price_currency" else override.strip()
+        if values[key] is not None:
+            existing = values[key].upper() if key in ("input_venue", "input_symbol", "input_price_currency") else values[key]
+            if existing != normalized:
+                raise ValueError(f"{key} override conflicts with capture metadata ({values[key]})")
+        else:
+            values[key] = normalized
+
+    missing = [key for key, value in values.items() if not value]
+    if missing:
+        raise ValueError(
+            "missing source market metadata: " + ", ".join(missing) +
+            "; provide a capture sidecar or explicitly declare --input-venue, --input-symbol, and --input-price-currency"
+        )
+    venue = values["input_venue"]
+    symbol = values["input_symbol"]
+    currency = values["input_price_currency"]
+    if currency == "IDR":
+        if venue.upper() != "INDODAX" or symbol.upper().replace("/", "") != "SOLIDR":
+            raise ValueError("only native INDODAX SOL/IDR input is currently supported for IDR-denominated backtests")
+    elif currency == "USDT":
+        if venue.upper() != "BINANCE" or symbol.upper().replace("/", "") != "SOLUSDT":
+            raise ValueError("USDT reference backtests currently require Binance SOLUSDT capture metadata")
+    else:
+        raise ValueError(f"unsupported source quote currency: {currency}")
+    return {"venue": venue, "symbol": symbol, "price_currency": currency}
+
+
 def resolve_quote_to_idr(
     csv_path: str | Path,
     rate_override: float | None = None,
     source_override: str = "",
+    source_metadata: dict[str, str] | None = None,
 ) -> tuple[float, str]:
-    """Resolve an explicit CLI FX rate or the rate stored beside a captured CSV."""
+    """Resolve a dated FX proxy for USDT data, or identity conversion for native IDR candles."""
+    if source_metadata and source_metadata.get("price_currency") == "IDR":
+        if rate_override is not None and float(rate_override) != 1.0:
+            raise ValueError("native IDR candles reject an FX override other than 1.0")
+        return 1.0, "native INDODAX SOL/IDR candle prices; FX conversion disabled"
     if rate_override is not None:
         rate = float(rate_override)
         source = source_override.strip() or "manual CLI override"
@@ -782,18 +884,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--quote-to-idr-rate", type=float, default=None,
                         help="manual USD/IDR reference override; otherwise read capture CSV metadata")
     parser.add_argument("--quote-to-idr-source", default="", help="source label for a manual FX override")
+    parser.add_argument("--input-venue", default=None, help="required source venue when capture sidecar is missing")
+    parser.add_argument("--input-symbol", default=None, help="required source pair when capture sidecar is missing")
+    parser.add_argument("--input-price-currency", choices=("USDT", "IDR"), default=None, help="required source quote currency when capture sidecar is missing")
+    parser.add_argument("--fee-model", choices=("reku-pro-reference", "indodax-custom"), default=None,
+                        help="INDODAX native candles require indodax-custom and explicit fee/minimum inputs")
+    parser.add_argument("--fee-source", default="", help="source label for explicitly supplied venue fee rates")
     parser.add_argument("--initial-capital-idr", type=float, default=300_000.0)
     parser.add_argument("--risk-fraction", type=float, default=0.005)
     parser.add_argument("--max-exposure-fraction", type=float, default=0.50)
     parser.add_argument("--daily-loss-fraction", type=float, default=0.03)
-    parser.add_argument("--entry-fee-bps", type=float, default=10.555, help="assumption; verify current venue fee")
-    parser.add_argument("--exit-fee-bps", type=float, default=31.555, help="assumption; verify current venue fee")
+    parser.add_argument("--entry-fee-bps", type=float, default=None, help="venue-specific assumed entry fee in bps; required for INDODAX")
+    parser.add_argument("--exit-fee-bps", type=float, default=None, help="venue-specific assumed exit fee in bps; required for INDODAX")
     parser.add_argument("--spread-bps-round-trip", type=float, default=10.0, help="assumed entry/exit spread cost")
     parser.add_argument("--slippage-bps-per-side", type=float, default=10.0, help="assumption per side")
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
-    parser.add_argument("--minimum-order-notional-idr", type=float, default=30_000.0,
-                        help="modeled venue minimum order notional in IDR (default Reku Pro reference)")
+    parser.add_argument("--minimum-order-notional-idr", type=float, default=None,
+                        help="modeled venue/mode minimum in IDR; required for INDODAX native data")
     parser.add_argument("--stop-atr-multiple", type=float, default=1.0)
     parser.add_argument("--target-atr-multiple", type=float, default=1.5)
     parser.add_argument("--maximum-hold-bars", type=int, default=30)
@@ -802,20 +910,48 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         data_path = Path(args.csv).expanduser()
-        quote_to_idr_rate, quote_to_idr_source = resolve_quote_to_idr(
-            data_path, args.quote_to_idr_rate, args.quote_to_idr_source
+        source_market = resolve_input_market_metadata(
+            data_path, args.input_venue, args.input_symbol, args.input_price_currency
         )
+        quote_to_idr_rate, quote_to_idr_source = resolve_quote_to_idr(
+            data_path, args.quote_to_idr_rate, args.quote_to_idr_source, source_market
+        )
+        fee_model = args.fee_model or "reku-pro-reference"
+        if source_market["price_currency"] == "IDR":
+            if fee_model != "indodax-custom":
+                raise ValueError("native INDODAX SOL/IDR requires --fee-model indodax-custom; Reku fee defaults are not transferable")
+            if args.entry_fee_bps is None or args.exit_fee_bps is None or args.minimum_order_notional_idr is None:
+                raise ValueError("INDODAX native backtest requires explicit --entry-fee-bps, --exit-fee-bps, and --minimum-order-notional-idr")
+            if not args.fee_source.strip():
+                raise ValueError("INDODAX native backtest requires --fee-source labeling the verified source/assumption")
+            entry_fee_bps, exit_fee_bps = args.entry_fee_bps, args.exit_fee_bps
+            minimum_order_notional = args.minimum_order_notional_idr
+            fee_model_name = "INDODAX_CUSTOM"
+            fee_model_source = args.fee_source.strip()
+        else:
+            if fee_model != "reku-pro-reference":
+                raise ValueError("Binance SOLUSDT source currently supports only the labeled Reku Pro reference cost scenario")
+            entry_fee_bps = 10.555 if args.entry_fee_bps is None else args.entry_fee_bps
+            exit_fee_bps = 31.555 if args.exit_fee_bps is None else args.exit_fee_bps
+            minimum_order_notional = 30_000.0 if args.minimum_order_notional_idr is None else args.minimum_order_notional_idr
+            fee_model_name = "REKU_PRO_REFERENCE_ASSUMPTION"
+            fee_model_source = args.fee_source.strip() or "Reku published fee components; not an INDODAX fee claim"
         config = BacktestConfig(
             initial_capital_idr=args.initial_capital_idr,
             quote_to_idr_rate=quote_to_idr_rate,
             quote_to_idr_source=quote_to_idr_source,
+            input_venue=source_market["venue"],
+            input_symbol=source_market["symbol"],
+            input_price_currency=source_market["price_currency"],
+            fee_model_name=fee_model_name,
+            fee_model_source=fee_model_source,
             risk_fraction=args.risk_fraction,
             max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
-            entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
+            entry_fee_bps=entry_fee_bps, exit_fee_bps=exit_fee_bps,
             spread_bps_round_trip=args.spread_bps_round_trip,
             slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
             minimum_relative_volume=args.minimum_relative_volume,
-            minimum_order_notional_idr=args.minimum_order_notional_idr,
+            minimum_order_notional_idr=minimum_order_notional,
             stop_atr_multiple=args.stop_atr_multiple,
             target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
         )
