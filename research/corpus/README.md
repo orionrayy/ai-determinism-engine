@@ -1,6 +1,6 @@
 # Hallmark — korpus referensi Document Craft
 
-Baseline awal pipeline pada 2026-10-30 menggunakan manifest kosong. Setelah pemeriksaan sumber primer, manifest saat ini memuat satu artikel ilmiah akses terbuka yang terverifikasi untuk analisis fitur; detail dan distribusi terkini berada pada bagian status di bawah. Angka 500 adalah target penerimaan, bukan jumlah hasil pencarian. Registry sumber/kandidat metadata tidak dihitung sebagai sampel.
+Baseline awal pipeline pada 2026-10-30 menggunakan manifest kosong. Manifest sekarang mencatat lima dokumen yang lolos gate eligibility, dua catatan berstatus akses parsial, dan satu lead spreadsheet yang hanya terverifikasi pada metadata. Status dan distribusi terkini dilaporkan terpisah; target 500 tidak dipenuhi oleh metadata kandidat atau dokumen yang hanya diakses sebagian.
 
 ## Prinsip penerimaan
 
@@ -64,12 +64,15 @@ Exit code `0` berarti bentuk manifest dapat diproses; status target akan tetap `
 
 ## Status korpus pada checkpoint 2026-10-30
 
-- Dokumen individual dengan provenance kuat dalam manifest: **4 dokumen unik** — tiga artikel ilmiah akses terbuka CC BY-SA 4.0 dari jurnal ICCLE dan satu panduan profesional World Bank CC BY 3.0 IGO. Hak dan sumber dicatat per item.
-- Sampel yang memenuhi gate eligibility sesuai manifest: **4 dari target 500**; tersisa 496; status `INSUFFICIENT_EVIDENCE`.
-- Distribusi: `academic_paper` = 3, `other` (panduan operasional/profesional) = 1; semua genre lainnya = 0 sampel tervalidasi.
-- Registry penemuan berisi 11 direktori/katalog sumber; jumlah tersebut bukan dokumen. Harvester metadata DOAJ dan tes fixture XML tersedia, tetapi live harvest dari OAI-PMH belum berhasil dijalankan di sesi ini karena lingkungan tidak dapat mengakses endpoint; jumlah kandidat feed yang benar-benar diambil = 0.
-- Keempat sampel memiliki fitur struktur manual di `features.jsonl`. Tiga artikel ICCLE berasal dari jurnal/penerbit yang sama, sehingga tidak dianggap tiga source family independen untuk membuktikan norma genre; satu panduan World Bank memperluas sampel ke genre dokumen profesional.
-- Inspeksi visual sumber dilakukan secara terbatas: beberapa halaman per PDF, bukan seluruh halaman. Ini bukan validasi visual keluaran generator.
-- Belum ada eksperimen Document Craft baseline-vs-kandidat, penilaian reviewer, atau bukti empiris peningkatan kualitas.
+- Manifest memuat **8 catatan**: 5 item lolos gate eligibility, 2 item berstatus akses parsial, dan 1 lead workbook yang hanya terverifikasi pada metadata.
+- Sampel yang memenuhi gate eligibility: **5 dari target 500**; sisa 495; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi eligible: `academic_paper` = 3, `other` (panduan profesional World Bank) = 1, `thesis_dissertation` = 1. Genre eligible lainnya = 0.
+- Lima item eligible terdiri dari tiga artikel ICCLE CC BY-SA 4.0, panduan World Bank CC BY 3.0 IGO, dan skripsi teknik lingkungan UIN Ar-Raniry CC BY 4.0. Setiap lisensi dicek pada laman item/sumber resmi masing-masing.
+- Dua partial items: satu laporan PKL Polije (summary + Chapter I publik berlisensi, laporan penuh dibatasi) dan satu KIAN/asuhan keperawatan (file publik awal; bab kasus dan pembahasan dibatasi). Keduanya disimpan sebagai catatan pending dan **tidak dihitung** sampai akses, privacy, dan hak penuh selesai ditinjau.
+- Satu lead workbook pemerintah daerah mencatat metadata resmi CC BY untuk XLSX, tetapi download dari dua host mengembalikan HTTP 403. Sheet, formula, format, isi, dan risiko data pekerja belum diperiksa; status tetap metadata-only dan tidak dihitung.
+- Distribusi fitur: lima analisis struktur pada item eligible dan dua catatan struktur parsial, semuanya ada di `features.jsonl`; satu spreadsheet metadata-only belum memiliki analisis isi.
+- Registry penemuan berisi 11 direktori/katalog sumber, bukan dokumen. Harvester DOAJ dan fixture tests tersedia, tetapi live harvest dari OAI-PMH belum berhasil; kandidat feed live = 0.
+- Analisis visual terhadap sumber tidak lengkap: beberapa PDF punya inspeksi visual terpilih, sedangkan skripsi UIN Ar-Raniry dan dua catatan partial tidak mendapat rendering QA. Ini bukan validasi visual output generator.
+- Belum ada eksperimen Document Craft baseline-vs-kandidat, penilaian reviewer blind, inter-rater agreement, ataupun bukti empiris peningkatan kualitas.
 
-Korpus ini masih eksploratif. Klaim faktual sumber belum diverifikasi independen secara menyeluruh. Metadata dan ciri turunan disimpan tanpa salinan PDF atau teks penuh.
+Korpus masih eksploratif dan jauh dari target. Klaim faktual sumber belum diverifikasi independen secara menyeluruh. Metadata dan fitur turunan disimpan tanpa salinan PDF atau teks penuh.
