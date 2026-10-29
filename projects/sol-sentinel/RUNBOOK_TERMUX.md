@@ -117,3 +117,22 @@ The adapter calls the public endpoints documented at https://api.reku.id/: `/v2/
 ### Reku public quote caveat
 
 A prior GitHub Actions snapshot returned last price Rp1,845,000, bid Rp1,840,000 and ask Rp1,845,000 (about 27.14 bps quoted spread), but the legacy `/v2/orderbook?id=51` route returned HTTP 400 and the output was labelled `PARTIAL`. The code now tries the documented `/v2/orderbookall?id=...` fallback. Use a fresh report's `data_status`, `orderbook_status`, endpoint used, and capture timestamp. This old snapshot must not be used as the current market quote.
+
+
+## Jupiter V2 quote-only probe (read-only)
+
+This step is optional and is for route/quote observation only. It does not require a wallet address, does not sign or submit a transaction, and explicitly refuses an unexpected transaction payload from the quote endpoint. The returned quote is not a guaranteed fill.
+
+Use a raw amount in the input token's smallest unit; for wrapped SOL, 1 SOL = 1,000,000,000 lamports. Example to quote 0.01 SOL -> USDC:
+
+```sh
+python projects/sol-sentinel/jupiter_quote_probe.py --amount-units 10000000
+```
+
+By default, the script uses the keyless Jupiter Developer Platform path, subject to the documented keyless rate limit. For a free developer API key, set `JUPITER_API_KEY` in the local Termux environment only; never paste it into chat, commit it to Git, or include it in logs. The current free API plan is 1 request/second; a keyless request has a lower rate limit. Check current plan/limits before relying on the service:
+- https://developers.jup.ag/pricing
+- https://developers.jup.ag/changelog/developer-platform
+
+Official Swap V2 order docs: https://developers.jup.ag/docs/swap/order-and-execute
+
+The probe prints raw input/output units and any available estimated price impact/fee fields. Convert using verified token mint decimals; do not compare raw lamports and USDC units directly. A complete cost model also requires priority fee, possible account rent, transfer-to/from-exchange costs, and eventual IDR off-ramp costs. **The probe never executes a trade.** This code path is strictly read-only and not a paper-fill or production executor.
