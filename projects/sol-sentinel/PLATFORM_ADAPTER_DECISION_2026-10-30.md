@@ -90,3 +90,13 @@ The updated read-only native-history collector also requests one public INDODAX 
 - Metadata reported price tick IDR 1, quantity increment 1e-8 SOL, per-market quote minimum IDR 10,000 and minimum base quantity 0.00563136 SOL. These are captured public-market filters, not the account-mode minimum; current official help separately lists Lite minimum IDR 10,000 and direct-Pro minimum IDR 25,000.
 
 This confirms that the public pair catalogue, depth and native history endpoints responded from the GitHub runner. It does not confirm private order permissions, user account deposit network, withdrawals, fill semantics or current account fee tier. One quote is not a historical spread series or a guaranteed fill. Reku’s legacy activity-history endpoint still returned HTTP 404 in the same research workflow; its separate public market snapshot was available.
+
+
+## Latest quote sample — research run #40950218320
+
+The subsequent successful current-workflow capture [#40950218320](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320) also returned native IDR history and a valid public depth quote:
+- Native history SHA-256 `c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30`, 43,200 contiguous 1m candles from 2026-09-29 20:36:00 UTC to 2026-10-29 20:35:59.999 UTC, data_status OK, no FX conversion.
+- Depth quote at `2026-10-29T20:37:47.062073Z`: bid Rp1,777,113; ask Rp1,779,923; midpoint Rp1,778,518; spread 15.7996714 bps; `market_quote_status=OK`, `market_quote_error=null`, `orders_enabled=false`.
+- The preceding successful sample in run #40950150440 was wider (~25.6669 bps). These are two timestamped book observations, not a historical spread curve. Use measured quote series for costs; do not freeze a single snapshot over the backtest.
+- The same current run confirms the Binance source strategy still generated zero candidates/closed trades in the baseline and fixed 60/20/20 segments. Native INDODAX was captured but not backtested with unverified account/mode fees.
+
