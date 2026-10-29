@@ -120,3 +120,12 @@ The detailed user-facing project timeline, API/repository inventory, GitHub conn
 - Initial cost-sensitivity report: [40915191550](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40915191550). Reku Pro baseline (published fee components plus assumed spread/slippage) and Pro fee-only theoretical floor produced zero trades. Lightning fee-only theoretical floor with zero spread/slippage generated 10 trades but lost approximately IDR 3,893 (-1.30%); this is not a realistic executable quote.
 - A later rerun (40915499872) failed closed because the daily FX reference request timed out. The FX fetcher now has bounded retries, with unit tests, and a retry-enabled full pipeline run `40916209196` is in progress at the last checkpoint. Do not claim that last run succeeded until its final status and artifacts are inspected.
 - The exact user prompt sequence and major execution milestones are preserved in `CHAT_TRANSCRIPT.md`; the detailed tool/API inventory and run IDs are in `EXECUTION_LOG.md`.
+
+
+## Latest continuation checkpoint — 2026-10-30 WIB
+
+Current verified code head is `ca3e13391634609377617ef26ca6ef255059de3d` on `feat/sol-sentinel-paper-trader-v1`. CI run [40921862301](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921862301) passed 63 offline tests. Full research run [40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237) completed successfully with artifact [12918995790](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237/artifacts/12918995790).
+
+The live Reku read-only probe now successfully calls the order book using `symbol=SOL_IDR`; a sample snapshot returned bid IDR 1,835,000, ask IDR 1,840,000 and spread 27.21 bps. The chart endpoint is usable at 5-minute interval; the 1-minute request returned HTTP 500 and is no longer probed first. The legacy `/activitytrans` route returns HTTP 404, so native Reku transaction history remains unavailable and the collector records the blocker rather than repeatedly retrying.
+
+The 30-day Binance reference backtest still produces zero trades under the current signal/cost gate. This means no profitability evidence has been established. Live orders remain disabled. PR #178 remains draft/unmerged; reconcile its recorded base SHA with the current `main` SHA before merge. Read `EXECUTION_LOG.md` for the detailed event and test history.
