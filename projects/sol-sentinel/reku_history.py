@@ -315,6 +315,13 @@ def capture_history(symbol: str = "SOL", days: int = 30) -> tuple[list[Bar], lis
             month_counts[key] = len(trades)
             all_trades.extend(trades)
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
+            # A definitive 404 means this legacy route no longer exists; stop
+            # immediately rather than repeating the same unsupported request.
+            if "HTTP 404" in str(exc):
+                raise RuntimeError(
+                    f"Legacy Reku /activitytrans endpoint unavailable (HTTP 404) for {key}; "
+                    "stop collection until a currently supported public history endpoint is verified."
+                ) from exc
             month_counts[key] = 0
             api_errors.append(f"{key}: {type(exc).__name__}: {str(exc)[:180]}")
         if index + 1 < len(month_keys):
