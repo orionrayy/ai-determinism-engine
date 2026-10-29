@@ -301,3 +301,45 @@ Jupiter remains quote-only; free API key limit is 1 RPS, keyless is 0.5 RPS. Sol
 ### Safety / gate status
 
 No transfer, order, wallet connection, signature, private key, production credential, or secret was used. No live execution adapter exists. `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE` remains mandatory until strategy evidence, direct public endpoint validation, network and fee proof, Termux verification, paper-forward observation, and all required readiness gates pass.
+
+
+## Current reconciliation update — native INDODAX candles and source-aware costs (2026-10-30 WIB)
+
+### Latest verified CI and changed contracts
+
+- Code head: `39d093b6e44635431475ea635f018327310793fd`, branch `feat/sol-sentinel-paper-trader-v1`.
+- Exact-head push test run [#40949432502](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949432502) succeeded with 135 offline tests and 0 failures. The PR-triggered duplicate run was still running when this update was created.
+- Native IDR data adapter/capture exists in `execution_adapters.py` and `capture_indodax_history.py`; regression files include `test_execution_adapters.py`, `test_capture_indodax_history.py`, and updates to paper/evaluator tests. A read-only adapter has no order/sign/transfer method. The live policy gate remains closed.
+
+### Newly verified public endpoint observation
+
+Successful [research run #40948530609](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948530609) captured 30 days of native INDODAX SOL/IDR history: 43,200 contiguous 1m bars, `data_status=OK`, no FX conversion, dataset SHA-256 `4297c660ed1c3485bb5641babb5a286b8738290e88f8bb18c9f58bb903fa687b`; range 2026-09-29 20:24:00 UTC to 2026-10-29 20:23:59.999 UTC; pair ID `solidr`. This was a public, unauthenticated request from a GitHub Actions runner. It does not verify account eligibility, SOL deposit network, withdrawal fee/minimum, order permissions, or Android/Termux behavior.
+
+The same research run showed:
+- Reku public market snapshot returned `data_status=OK`.
+- Legacy Reku public activity history returned HTTP 404; native Reku transaction tape is not available through that route.
+- The Binance SOLUSDT strategy baseline produced 0 signal candidates and 0 trades. The fixed 60/20/20 splits also produced 0 candidates/trades.
+- The Reku Lightning fee-only floor (zero spread/slippage, explicitly theoretical) generated 10 simulated trades and roughly IDR -3,893.22 net. Do not treat this as an executable strategy or forecast.
+
+### Error/mitigation register — current
+
+| Priority | Finding | Root cause | Fix / state |
+|---|---|---|---|
+| P1 | Native IDR prices could be multiplied by USD/IDR if reused through the old Binance-centric backtest path | Quote currency/source was not modeled as a first-class input; native IDR and USDT were not contractually distinct | Source venue/pair/currency now comes from capture sidecar or explicit declaration; native IDR uses rate 1.0 and report records no FX conversion. Regression covers IDR identity and USDT single conversion. |
+| P1 | Reku cost sensitivity could have been run against a native INDODAX IDR file | Preset scenarios encoded Reku fees but were not venue-gated | `cost_sensitivity.py` now rejects native IDR data, explaining that a separate venue-specific fee model is required. |
+| P1 | A native IDR backtest could proceed with a declared but zero order minimum or non-finite fee assumptions | Explicit non-null checks did not alone enforce viable numeric bounds | `resolve_fee_inputs()` now rejects non-finite/negative fees and spread/slippage and rejects a non-positive minimum order notional before backtest config creation. A regression test was added; latest CI was still queued for that exact last patch at the time of writing. |
+| P1 | Bad capture provenance could be consumed as if valid | Sidecar source/status/hash are external inputs | Backtest source resolver rejects non-OK sidecar status and mismatched CSV SHA-256 when a digest is supplied. Regression covers error status/hash mismatch. |
+| P2 | Public native market/history endpoint was undocumented at code boundary and had not been smoke-tested | Previous adapter was mocked only | Actual GitHub Actions public-readonly capture succeeded for 43,200 bars. Current code includes strict history range, completeness, timestamp, duplicate and OHLC integrity checks. This proves endpoint/data capture only, not execution. |
+| P2 | Reku activity history endpoint still HTTP 404 | Legacy `/v2/activitytrans` route is not currently available from the public research call | Collector remains read-only, reports `endpoint_not_found`, and does not fake/substitute a complete tape. |
+| P1 | Strategy edge remains unproven | Zero trade candidates on current completed baseline; no closed-trade statistics are estimable | Keep `INSUFFICIENT_EVIDENCE` / `RESEARCH_ONLY`; no thresholds were relaxed. |
+
+### Fee and network compatibility decision
+
+- Reku remains the acquisition/on-ramp candidate. It is not a mandatory trading venue and its fee values must not be copied into the INDODAX simulator. Exact current account SOL withdrawal network, fee and minimum must be checked in the official app before a separate, explicitly authorized transfer.
+- INDODAX public SOL/IDR historical capture works from the runner. The same point-in-time pair metadata reported price tick IDR 1, quantity step 1e-8 SOL, API quote minimum IDR 10,000 and minimum base quantity 0.00559952 SOL. These are per-market filters, not selected account-mode minimums. Official help describes Lite minimum IDR 10,000 and direct Pro minimum IDR 25,000 (orders IDR 10,000–24,999 in Pro interface route via Lite); exact current all-in fee components are displayed in the account Profile/Trading Fees UI: https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX.
+- Do not use placeholder fee inputs as actual costs. Native INDODAX backtest now requires explicit `--fee-model indodax-custom`, entry/exit rates, spread, slippage, a positive mode-specific minimum and a source label. A successful simulator run with guessed costs is not a valid profitability claim.
+- Jupiter remains a quote-only self-custody/DEX candidate. No signing/submission or wallet access was implemented.
+
+### Branch/PR state and next action
+
+PR #178 remains draft/open/unmerged. PR #180 remains draft/open/unmerged and carries the canonical memory/audit docs. Branch divergence is substantial, so compare/review the entire delta before any eventual integration; no merge/rebase/force-push was performed. No transfer, order, wallet signing, secret, or account action occurred. Android/Termux remains untested. Strategy readiness and live readiness remain blocked.
