@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -409,16 +410,33 @@ class IndodaxPublicMarketDataAdapter:
     MAX_RESPONSE_BYTES = 1_000_000
     RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
-    def __init__(self, *, timeout: float = 5.0, attempts: int = 2, pause_seconds: float = 0.25, transport: Any = None) -> None:
+    def __init__(
+        self,
+        *,
+        timeout: float = 5.0,
+        attempts: int = 2,
+        pause_seconds: float = 0.25,
+        min_request_interval_seconds: float = 0.35,
+        transport: Any = None,
+    ) -> None:
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0.1 <= timeout <= 20:
             raise AdapterContractError("timeout must be between 0.1 and 20 seconds")
         if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 3:
             raise AdapterContractError("attempts must be an integer in 1..3")
         if isinstance(pause_seconds, bool) or not isinstance(pause_seconds, (int, float)) or not 0 <= pause_seconds <= 2:
             raise AdapterContractError("pause_seconds must be between 0 and 2 seconds")
+        if (
+            isinstance(min_request_interval_seconds, bool)
+            or not isinstance(min_request_interval_seconds, (int, float))
+            or not 0 <= min_request_interval_seconds <= 2
+        ):
+            raise AdapterContractError("min_request_interval_seconds must be between 0 and 2 seconds")
         self._timeout = float(timeout)
         self._attempts = attempts
         self._pause_seconds = float(pause_seconds)
+        self._min_request_interval_seconds = float(min_request_interval_seconds)
+        self._last_request_at: float | None = None
+        self._request_lock = threading.Lock()
         self._transport = transport or self._http_get_json
 
     @classmethod
@@ -439,10 +457,22 @@ class IndodaxPublicMarketDataAdapter:
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise VenueDataError("INDODAX public API returned invalid JSON") from None
 
+    def _pace_request(self) -> None:
+        """Serialize requests and stay below the documented 180/min public limit."""
+        with self._request_lock:
+            now = time.monotonic()
+            if self._last_request_at is not None and self._min_request_interval_seconds > 0:
+                remaining = self._min_request_interval_seconds - (now - self._last_request_at)
+                if remaining > 0:
+                    time.sleep(remaining)
+                    now = time.monotonic()
+            self._last_request_at = now
+
     def _get_public_json(self, url: str) -> Any:
         last_error: Exception | None = None
         for attempt in range(self._attempts):
             try:
+                self._pace_request()
                 return self._transport(url, self._timeout)
             except urllib.error.HTTPError as exc:
                 last_error = exc
