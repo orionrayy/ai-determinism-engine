@@ -46,6 +46,7 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `SOURCES.md`: source inventory, official documentation, and verification caveats.
 - `CONVERSATION_CONTEXT.md`: user-facing conversation digest and continuation handoff.
 - `EXECUTION_LOG.md`: chronological user-facing request/decision timeline, API/tool inventory, CI evidence, rejection history and continuation checklist.
+- `CHAT_TRANSCRIPT.md`: verbatim user prompts for this project sequence plus execution milestone digest.
 - `ORCHESTRATION_MEMORY_ADDENDUM.md`: project-specific continuity note supplementing the root canonical memory.
 - `SESSION_LOG.md`: user-confirmed project context, decisions, and progress checkpoints.
 - `RUNBOOK_TERMUX.md`: install, run, validate, and troubleshoot on Android.
@@ -83,3 +84,11 @@ The scanner's market feed is SOLUSDT but the paper engine's reference capital is
 - Latest previously verified CI run: [40910240121](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40910240121), passed compile and 32 offline tests for commit `e20c3ce0b49969cbaa08706a44fc765e47e01db9`.
 - Current development remains on `feat/sol-sentinel-paper-trader-v1`; draft PR #178 is open and not merged.
 - Full project continuity journal: [EXECUTION_LOG.md](EXECUTION_LOG.md). Re-check the newest head and its CI after any further commits; this status is a point-in-time checkpoint.
+
+
+## Research checkpoint — 2026-10-29
+
+- Public historical capture now uses Binance's official market-data-only host after GitHub Actions returned HTTP 451 from the general API host.
+- Successful 30-day pipeline: [research run 40914239047](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914239047), 43,200 candles, baseline strategy 0 trades.
+- Fixed-parameter cost sensitivity found no Pro-mode trades even at the fee-only floor (spread/slippage set to zero). A Lightning fee-only mathematical floor produced 10 trades and approximately IDR -3,893 net over the dataset, before any actual quote spread/slippage; this is not a live execution estimate.
+- Details, run IDs, artifacts, tool/source inventory, and exact user request quotations are in [EXECUTION_LOG.md](EXECUTION_LOG.md) and [CHAT_TRANSCRIPT.md](CHAT_TRANSCRIPT.md).
