@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      CAPTURE_DAYS: ${{ inputs.days || '3' }}
+      CAPTURE_DAYS: ${{ inputs.days || '7' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
