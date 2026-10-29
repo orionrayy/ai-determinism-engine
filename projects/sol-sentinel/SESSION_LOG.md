@@ -106,3 +106,13 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 - Current branch is `feat/sol-sentinel-paper-trader-v1`; draft PR #178 remains open/unmerged. The canonical root `ORCHESTRATION_MEMORY.md` is unchanged; project addendum is used instead because the large-file update was rejected.
 - The current project includes scanner, bounded history capture, daily USD/IDR reference metadata, IDR unit conversion, cost-aware offline backtest/SQLite ledger, fixed-parameter chronological 60/20/20 evaluator, unit tests, CI, and a bounded research workflow. No historical dataset has yet been used to claim profitability.
 - Next verification: inspect latest CI after this journal update, then validate one end-to-end history-capture/backtest/evaluator run. Research workflow is not yet dispatched; on-demand/scheduled invocation normally requires the workflow on the default branch.
+
+
+## 2026-10-29 — Latest read-back checkpoint
+
+- The complete continuity file `EXECUTION_LOG.md` is now linked from the project README.
+- PR #178 remains draft/open and unmerged.
+- Latest read-back head at this checkpoint: `8d8c91738b5f237e715206f662db417bbb509b63`.
+- Latest CI for that exact head: run `40911083700`, success; compile and offline unit tests passed, 32 tests in 0.099 seconds.
+- Observed current main SHA `d5672c84a0ae184c3a95d3f925925887ece71aa4` differs from the PR-reported base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`. Do not merge until this difference is reconciled.
+- The network-dependent historical research workflow remains unverified end-to-end. No actual trade or wallet transaction has occurred.
