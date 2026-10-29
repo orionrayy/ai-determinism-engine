@@ -434,8 +434,15 @@ class PaperTrader:
         self.config = config
 
     def equity(self, state: dict[str, Any], mark_bid: float | None = None) -> float:
+        """Net liquidation equity after modeled exit slippage and sell fee."""
         pos = state.get("position")
-        return float(state["cash_idr"]) + (float(pos["quantity"]) * float(mark_bid or pos["entry_fill"]) if pos else 0.0)
+        cash = float(state["cash_idr"])
+        if not pos:
+            return cash
+        reference = float(mark_bid if mark_bid is not None else pos.get("mark_bid", pos["entry_fill"]))
+        exit_fill = reference * (1.0 - float(self.config["round_trip_slippage_pct"]) / 2.0)
+        exit_fee = exit_fill * float(pos["quantity"]) * float(self.config["sell_fee_pct"])
+        return cash + max(0.0, exit_fill * float(pos["quantity"]) - exit_fee)
 
     def update_day(self, state: dict[str, Any], equity: float) -> None:
         today = datetime.now().date().isoformat()
@@ -445,10 +452,8 @@ class PaperTrader:
             state["daily_realized_pnl_idr"] = 0.0
             state["daily_locked"] = False
         day_start = max(1.0, float(state.get("day_start_equity_idr", equity)))
-        daily_pnl = float(state.get("daily_realized_pnl_idr", 0.0))
-        pos = state.get("position")
-        if pos and pos.get("mark_bid"):
-            daily_pnl += float(pos["quantity"]) * (float(pos["mark_bid"]) - float(pos["entry_fill"]))
+        # Equity is net-liquidation value: realized and unrealized P&L, fees, and modeled exit costs.
+        daily_pnl = equity - day_start
         if daily_pnl <= -day_start * float(self.config["max_daily_loss_pct"]):
             state["daily_locked"] = True
 
@@ -491,7 +496,8 @@ class PaperTrader:
                 stop_pct = float(report["stop_pct"])
                 round_trip_cost_pct = (float(self.config["buy_fee_pct"]) + float(self.config["sell_fee_pct"])
                                        + float(self.config["round_trip_slippage_pct"]))
-                risk_per_idr = ask * (stop_pct + round_trip_cost_pct)
+                spread_pct = max(0.0, float(snapshot.spread_bps or 0.0)) / 10_000.0
+                risk_per_idr = ask * (stop_pct + round_trip_cost_pct + spread_pct)
                 qty_by_risk = risk_budget / risk_per_idr if risk_per_idr > 0 else 0.0
                 max_notional = equity * float(self.config["max_position_pct"])
                 qty_by_notional = max_notional / ask
