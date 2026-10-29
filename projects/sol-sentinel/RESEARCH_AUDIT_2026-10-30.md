@@ -181,3 +181,43 @@ A final fresh compare after all current branch documentation commits reports PR 
 ## Latest fixed-head comparison
 
 At the final feature journal head \`7e1b62df19a950f79f58eea2a0a1a118fdb03d2d\`, GitHub reports the PR #178 branch is diverged from main \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`: merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, 169 commits ahead, 2 behind, 27 files in the PR diff. This supersedes earlier point-in-time 167/168 ahead counts. Keep the implementation PR draft and do not rewrite/merge its history without a dedicated review. No such integration action was performed in this session.
+
+
+## Addendum — current infrastructure probe and CI reconciliation (2026-10-30)
+
+This addendum supersedes earlier branch-head and CI fields where they differ; the historical dataset/run findings below remain the last reproducible research evidence, not a newly rerun backtest.
+
+### Current repository state
+
+- Main: `d5672c84a0ae184c3a95d3f925925887ece71aa4`.
+- Implementation branch current head at this checkpoint: `0b5dac9f3ac64c1753437fcc4afe96b8171cc079`.
+- PR #178 remains open and draft, not merged: https://github.com/orionrayy/ai-determinism-engine/pull/178.
+- Current compare against main: `diverged`, 175 commits ahead / 2 behind, common base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`, 29 changed files. Do not rebase or merge blindly; this branch includes a large project history.
+- Current feature-branch CI: SOL Sentinel Tests runs #293/#294 on head `0b5dac9f...`, both passed: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936825849 and https://github.com/orionrayy/ai-determinism-engine/actions/runs/40936815027.
+- The suite comprises 88 discovered `test_*` methods by source count at this head. GitHub Actions confirms the compile and unittest-discovery steps succeeded. The log output was not retrieved directly by the API connector, so the 88 number is independently derived from checked test source files, not copied from the runner summary.
+- The previous 79-test run #284 is historical; #293/#294 are the latest verification for the quote-probe patch and updated Termux runbook/workflow.
+- Latest research workflow #27 remains on earlier source commit `833e57a13022c3efe6ff5115df2b2e0697072817`; no fresh backtest on the newly changed head is claimed. The dataset SHA remains `6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14` for that historical run.
+
+### New read-only Jupiter probe
+
+- Added `projects/sol-sentinel/jupiter_quote_probe.py` at source commit `ed203fcae1ed0176c27959330865e69e2fb282a7`.
+- Added 9 fixture-based tests in `projects/sol-sentinel/test_jupiter_quote_probe.py` at commit `a0849839638c509cc5289c1c3d84f16c95eb08d7`.
+- Added compile coverage for both files at commit `88918e8fe666e26406b1939bda6ad94c9ea9a16d`; documented a Termux read-only command at commit `0b5dac9f3ac64c1753437fcc4afe96b8171cc079`.
+- Probe creates a Jupiter Swap V2 `/order` request without `taker`, so the code path is quote-only. It does not sign or submit; it rejects an unexpected transaction field, validates amount/mints and response fields, bounds timeout/response size, and never prints a supplied API key.
+- Source docs: https://developers.jup.ag/docs/swap/order-and-execute and https://developers.jup.ag/pricing. The actual Jupiter live quote endpoint was **not** called in this audit because a real response is not required for fixture-based CI; live API schema/rate limits remain to be verified with a controlled read-only invocation from the user's environment.
+- Latest quote-probe CI succeeded, but CI is only implementation and regression evidence, not trading strategy evidence.
+
+### Infrastructure and target economics
+
+See `projects/sol-sentinel/INFRASTRUCTURE_DECISION_2026-10-30.md` for the full official-source comparison, fee arithmetic, unknowns and preregistered gates. Key decision: use Reku as an on-ramp candidate, a dedicated self-custody Solana wallet as custody/signing boundary, and Jupiter V2 only for quote collection initially. Do not yet route live funds: current SOL external withdrawal charge/minimum and supported on-ramp/off-ramp path are not verified from a current official UI snapshot. Pintu Pro fee schedule was checked as a comparator, but official automated API support was not confirmed and it is not selected as a bot venue.
+
+Published fee component arithmetic for same nominal Rp300,000 buy and sell:
+- Reku Pro 0.4211% ≈ Rp1,263.30, before spread/slippage/withdrawal.
+- Reku Lightning 0.2211% ≈ Rp663.30, before spread/slippage/withdrawal.
+- Pintu Pro maker 0.4611% ≈ Rp1,383.30; taker 0.5611% ≈ Rp1,683.30, before spread/slippage/transfer. This is a fee table comparison, not a claim that Pintu is cheaper or an API-compatible execution venue.
+- Solana base fee reference is 5,000 lamports/signature, with optional priority fee; failed transactions still pay network fees.
+- Rp300,000 -> Rp3,500,000 equity is 11.6667x starting capital, equal to +1,066.67% cumulative return. Target remains aspirational and is not a forecast.
+
+### Decision and readiness
+
+Current mode remains `RESEARCH_ONLY`; strategy status remains `INSUFFICIENT_EVIDENCE`. The last strategy run has 0 trades in development, validation and OOS, so win rate, profit factor and expectancy cannot be estimated. No parameter changes were made to force a trade. No exchange order, wallet transfer, deposit, withdrawal, production credential, private key, transaction signature or submission was used. Do not advance to paper/live execution solely because CI passes.
