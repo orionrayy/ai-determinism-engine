@@ -1428,3 +1428,15 @@ This was measured after finalizing the feature branch journal at \`7e1b62df19a95
 3. Capture synchronized quote samples and full path fees including current SOL withdrawal/return compatibility before comparing local CEX to wallet/DEX economics.
 4. Diagnose zero-trade strategy via fixed one-filter-at-a-time ablations on development data and freeze candidate before validation/OOS.
 5. Keep all execution disabled until strategy, cost, forward paper and security gates are met; any real-money pilot requires separate explicit authorization.
+
+
+### Follow-up verification after the current-memory checkpoint
+<!-- SOL_SENTINEL_SESSION_2026-10-30_POSTWRITE_VERIFY_E9F037A -->
+
+- At the post-write verification instant, docs branch head `e9f037a3855168e707c2f5667aef2c6e954f20a5` had passed current Docs CI run #2290: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40937496241.
+- The docs branch compared `ahead` of current main `d5672c84a0ae184c3a95d3f925925887ece71aa4`, 12 ahead / 0 behind, three changed paths (canonical memory, infrastructure decision, research audit). PR #180 remained draft/open/unmerged. This note is a point-in-time verification; check branch/head and CI again after future documentation changes.
+- Implementation branch head `0b5dac9f3ac64c1753437fcc4afe96b8171cc079` remained diverged 175 ahead / 2 behind, 29 changed files. PR #178 remained draft/open/unmerged. SOL Sentinel CI #294/#295 succeeded; the latest research run is still #27 on earlier code SHA `833e57a13022c3efe6ff5115df2b2e0697072817`, with dataset SHA `6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14`.
+- The 88 unit-test methods are confirmed by source enumeration across 8 test modules; both code compile and unittest-discovery steps succeeded on the current implementation head. No new research backtest on `0b5dac9f...` is claimed.
+- The explicit infrastructure decision remains Reku as an on-ramp candidate, isolated self-custody wallet, Jupiter V2 quote-only probe, and no automated signing/submission. Exact current SOL withdrawal fee/limits and an end-to-end IDR off-ramp cost remain unverified.
+- Readiness remains `RESEARCH_ONLY` / `INSUFFICIENT_EVIDENCE`. No real orders, transfers, deposits, withdrawals, private keys, or production credentials were used.
+
