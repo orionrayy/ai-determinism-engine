@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -382,6 +385,115 @@ class ExecutionPolicy:
         if not self.approval_reference.strip():
             raise AdapterContractError("live mode requires a traceable approval reference")
         raise AdapterContractError("no live execution adapter is implemented in SOL Sentinel")
+
+
+
+class VenueDataError(RuntimeError):
+    """Public venue market data could not be safely retrieved or parsed."""
+
+
+class IndodaxPublicMarketDataAdapter:
+    """Read-only INDODAX public depth adapter; never accesses balances or places orders.
+
+    Official public REST docs list https://indodax.com/api/depth/$pair_id and
+    specify that public endpoints need no API key. The caller must provide the
+    pair id from the current /api/pairs catalogue, e.g. "solidr".
+    """
+
+    BASE_URL = "https://indodax.com/api/depth/"
+    MAX_RESPONSE_BYTES = 1_000_000
+    RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+    def __init__(self, *, timeout: float = 5.0, attempts: int = 2, pause_seconds: float = 0.25, transport: Any = None) -> None:
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0.1 <= timeout <= 20:
+            raise AdapterContractError("timeout must be between 0.1 and 20 seconds")
+        if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 3:
+            raise AdapterContractError("attempts must be an integer in 1..3")
+        if isinstance(pause_seconds, bool) or not isinstance(pause_seconds, (int, float)) or not 0 <= pause_seconds <= 2:
+            raise AdapterContractError("pause_seconds must be between 0 and 2 seconds")
+        self._timeout = float(timeout)
+        self._attempts = attempts
+        self._pause_seconds = float(pause_seconds)
+        self._transport = transport or self._http_get_json
+
+    @classmethod
+    def _http_get_json(cls, url: str, timeout: float) -> Any:
+        request = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "SOL-Sentinel-ReadOnly/1.0"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status != 200:
+                raise VenueDataError(f"INDODAX public API HTTP {response.status}")
+            raw = response.read(cls.MAX_RESPONSE_BYTES + 1)
+        if len(raw) > cls.MAX_RESPONSE_BYTES:
+            raise VenueDataError("INDODAX public API response exceeded 1 MB safety limit")
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise VenueDataError("INDODAX public API returned invalid JSON") from None
+
+    def _get_depth(self, url: str) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(self._attempts):
+            try:
+                return self._transport(url, self._timeout)
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if exc.code not in self.RETRYABLE_HTTP_CODES:
+                    raise VenueDataError(f"INDODAX public API HTTP {exc.code}") from None
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last_error = exc
+            except VenueDataError:
+                raise
+            if attempt + 1 < self._attempts:
+                time.sleep(min(2.0, self._pause_seconds * (2 ** attempt)))
+        raise VenueDataError(
+            f"INDODAX public depth request failed after {self._attempts} attempt(s): "
+            f"{type(last_error).__name__ if last_error else 'unknown error'}"
+        ) from None
+
+    @staticmethod
+    def _best_level(levels: Any, *, side: str) -> Decimal:
+        if not isinstance(levels, list):
+            raise VenueDataError(f"INDODAX depth {side} must be an array")
+        prices: list[Decimal] = []
+        for level in levels:
+            if not isinstance(level, (list, tuple)) or len(level) < 2:
+                continue
+            try:
+                price = _decimal(level[0], f"{side} price")
+                quantity = _decimal(level[1], f"{side} quantity")
+            except AdapterContractError:
+                continue
+            if price > 0 and quantity > 0:
+                prices.append(price)
+        if not prices:
+            raise VenueDataError(f"INDODAX depth contains no valid {side} levels")
+        return max(prices) if side == "buy" else min(prices)
+
+    def get_quote(self, market: MarketSpec) -> MarketQuote:
+        if market.venue.upper() != "INDODAX":
+            raise AdapterContractError("Indodax adapter requires venue=INDODAX")
+        if market.quote_asset.upper() != "IDR":
+            raise AdapterContractError("This public depth adapter currently supports IDR-quoted pairs only")
+        pair_id = market.venue_symbol.lower()
+        if not pair_id or len(pair_id) > 40 or not pair_id.isalnum():
+            raise AdapterContractError("venue_symbol must be the alphanumeric pair id returned by /api/pairs")
+        payload = self._get_depth(self.BASE_URL + pair_id)
+        if not isinstance(payload, dict) or ("error" in payload and payload["error"]):
+            raise VenueDataError("INDODAX depth response is not a valid order-book object")
+        bid = self._best_level(payload.get("buy"), side="buy")
+        ask = self._best_level(payload.get("sell"), side="sell")
+        return MarketQuote(
+            venue="INDODAX",
+            symbol=market.symbol,
+            bid=bid,
+            ask=ask,
+            observed_at=datetime.now(timezone.utc),
+            source="INDODAX public /api/depth (client receive timestamp)",
+        )
 
 
 class StaticMockMarketDataAdapter:
