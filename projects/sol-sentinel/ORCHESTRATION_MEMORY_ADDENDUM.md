@@ -86,3 +86,10 @@ The detailed conversational decision timeline, APIs/repositories, GitHub tool in
 - Last verified green head before these final handoff notes: `8d8c91738b5f237e715206f662db417bbb509b63`; CI run `40911083700` passed compilation and 32 offline tests.
 - PR #178 is still a draft and unmerged. The PR's recorded base SHA differs from the currently observed `main` SHA; inspect and reconcile before merge.
 - No live trading or wallet operation was performed. End-to-end network research, Termux runtime, and historical profitability remain unverified.
+
+
+## Historical data and cost-model checkpoint — 2026-10-29
+
+Successful 30-day research run `40914239047` captured 43,200 public Binance SOLUSDT 1m candles with a dated USD/IDR reference. Baseline/60-20-20 segments had no trades. Initial sensitivity run `40915191550` found no trades with the Reku Pro fee reference even at the Pro fee-only floor. A theoretical Lightning fee-only floor (zero spread/slippage) made 10 simulated trades but lost about IDR 3,893 (-1.30%). This theoretical floor omits quote friction and is not a live scenario.
+
+The later expanded-statistics run `40915499872` failed closed because Frankfurter timed out. The FX reference fetcher now has bounded retries and passing offline tests; retry-enabled full pipeline run `40916209196` was in progress at the last read. Recheck the final result before updating status. No live trade, wallet operation or actual target attainment has occurred.
