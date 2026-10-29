@@ -139,6 +139,54 @@ class AdapterContractTests(unittest.TestCase):
         self.assertFalse(hasattr(adapter, "execute"))
         self.assertFalse(hasattr(adapter, "sign"))
 
+    def test_indodax_pair_catalogue_loads_tick_step_and_both_order_minimums(self):
+        pair_row = {
+            "id": "solidr", "symbol": "SOLIDR",
+            "base_currency": "idr", "traded_currency": "sol",
+            "traded_currency_unit": "SOL", "price_precision": "1000",
+            "quantity_increment": "0.000001", "trade_min_base_currency": "10000",
+            "trade_min_traded_currency": "0.001",
+        }
+        urls = []
+        adapter = a.IndodaxPublicMarketDataAdapter(
+            transport=lambda url, timeout: (urls.append(url) or [pair_row]),
+            attempts=1,
+        )
+        spec = adapter.get_market_spec("SOL/IDR")
+        self.assertEqual(spec.venue_symbol, "solidr")
+        self.assertEqual(spec.symbol, "SOL/IDR")
+        self.assertEqual(spec.base_asset, "SOL")
+        self.assertEqual(spec.quote_asset, "IDR")
+        self.assertEqual(spec.price_tick, Decimal("1000"))
+        self.assertEqual(spec.quantity_step, Decimal("0.000001"))
+        self.assertEqual(spec.min_notional_quote, Decimal("10000"))
+        self.assertEqual(spec.min_quantity_base, Decimal("0.001"))
+        self.assertEqual(spec.base_decimals, 6)
+        self.assertEqual(urls, ["https://indodax.com/api/pairs"])
+
+    def test_indodax_pair_catalogue_fails_closed_on_ambiguous_or_incomplete_metadata(self):
+        duplicate = [
+            {"id": "solidr", "symbol": "SOLIDR", "base_currency": "idr", "traded_currency": "sol", "traded_currency_unit": "SOL", "price_precision": 1000, "quantity_increment": "0.000001", "trade_min_base_currency": 10000, "trade_min_traded_currency": "0.001"},
+            {"id": "sol_idr", "symbol": "SOLIDR", "base_currency": "idr", "traded_currency": "sol", "traded_currency_unit": "SOL", "price_precision": 1000, "quantity_increment": "0.000001", "trade_min_base_currency": 10000, "trade_min_traded_currency": "0.001"},
+        ]
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: duplicate, attempts=1)
+        with self.assertRaisesRegex(a.VenueDataError, "matched 2 rows"):
+            adapter.get_market_spec("SOL/IDR")
+        incomplete = [{"id": "solidr", "symbol": "SOLIDR", "base_currency": "idr", "traded_currency": "sol", "traded_currency_unit": "SOL", "quantity_increment": "0.000001", "trade_min_base_currency": 10000, "trade_min_traded_currency": "0.001"}]
+        with self.assertRaisesRegex(a.VenueDataError, "omitted a required tick"):
+            a.IndodaxPublicMarketDataAdapter(transport=lambda *_: incomplete, attempts=1).get_market_spec("SOL/IDR")
+
+    def test_market_validation_enforces_minimum_base_quantity(self):
+        spec = a.MarketSpec(
+            venue="X", symbol="SOL/IDR", venue_symbol="solidr",
+            base_asset="SOL", quote_asset="IDR", price_tick="1000",
+            quantity_step="0.000001", min_notional_quote="10000",
+            base_decimals=6, quote_decimals=0, min_quantity_base="0.001",
+        )
+        small = intent(qty="0.0009", price="1801000")
+        check = a.validate_order(small, spec, quote(), now=NOW)
+        self.assertIn("minimum_base_quantity_not_met", check.reasons)
+
     def test_indodax_public_depth_adapter_retries_transient_timeout(self):
         spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 9, 0)
         attempts = []
