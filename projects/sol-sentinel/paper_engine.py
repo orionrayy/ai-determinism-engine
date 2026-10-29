@@ -40,6 +40,7 @@ class BacktestConfig:
     daily_loss_fraction: float = 0.03
     entry_fee_bps: float = 10.555
     exit_fee_bps: float = 31.555
+    spread_bps_round_trip: float = 10.0
     slippage_bps_per_side: float = 10.0
     minimum_net_edge_bps: float = 25.0
     minimum_relative_volume: float = 1.5
@@ -58,7 +59,7 @@ class BacktestConfig:
             value = getattr(self, name)
             if not math.isfinite(value) or not 0 < value < 1:
                 raise ValueError(f"{name} must be between 0 and 1")
-        for name in ("entry_fee_bps", "exit_fee_bps", "slippage_bps_per_side", "minimum_net_edge_bps", "minimum_relative_volume"):
+        for name in ("entry_fee_bps", "exit_fee_bps", "spread_bps_round_trip", "slippage_bps_per_side", "minimum_net_edge_bps", "minimum_relative_volume"):
             value = getattr(self, name)
             if not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be finite and >= 0")
@@ -263,7 +264,7 @@ def signal_at(
     if failures:
         return False, ",".join(failures), atr5
 
-    total_cost_bps = config.entry_fee_bps + config.exit_fee_bps + 2 * config.slippage_bps_per_side
+    total_cost_bps = config.entry_fee_bps + config.exit_fee_bps + config.spread_bps_round_trip + 2 * config.slippage_bps_per_side
     gross_target_bps = (float(atr5) * config.target_atr_multiple / close5) * 10_000.0
     if gross_target_bps - total_cost_bps < config.minimum_net_edge_bps:
         return False, "estimated_net_edge_below_threshold", atr5
@@ -338,12 +339,13 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
             signal_index, signal_atr = pending
             pending = None
             reference = bar.open
-            entry_fill = reference * (1.0 + config.slippage_bps_per_side / 10_000.0)
+            adverse_fill_bps_per_side = config.spread_bps_round_trip / 2.0 + config.slippage_bps_per_side
+            entry_fill = reference * (1.0 + adverse_fill_bps_per_side / 10_000.0)
             equity_at_open = mark_equity(cash, None, reference)
             risk_cash = equity_at_open * config.risk_fraction
             stop_distance = signal_atr * config.stop_atr_multiple
             estimated_round_trip_fraction = (
-                config.entry_fee_bps + config.exit_fee_bps + 2 * config.slippage_bps_per_side
+                config.entry_fee_bps + config.exit_fee_bps + config.spread_bps_round_trip + 2 * config.slippage_bps_per_side
             ) / 10_000.0
             risk_per_unit = stop_distance + entry_fill * estimated_round_trip_fraction
             qty_by_risk = risk_cash / risk_per_unit if risk_per_unit > 0 else 0.0
@@ -383,7 +385,8 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
                 exit_reason = "maximum_hold"
                 exit_reference = bar.close
             if exit_reason and exit_reference is not None:
-                exit_fill = exit_reference * (1.0 - config.slippage_bps_per_side / 10_000.0)
+                adverse_fill_bps_per_side = config.spread_bps_round_trip / 2.0 + config.slippage_bps_per_side
+                exit_fill = exit_reference * (1.0 - adverse_fill_bps_per_side / 10_000.0)
                 exit_fee = position.quantity * exit_fill * config.exit_fee_bps / 10_000.0
                 cash += position.quantity * exit_fill - exit_fee
                 total_exit_fees += exit_fee
@@ -404,7 +407,10 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
                     "quantity": position.quantity,
                     "entry_fee_idr": position.entry_fee_idr,
                     "exit_fee_idr": exit_fee,
-                    "gross_pnl_after_slippage_idr": gross_pnl,
+                    "pnl_before_exchange_fees_idr": gross_pnl,
+                    "entry_execution_friction_idr": max(0.0, (position.entry_fill_price - position.entry_reference_price) * position.quantity),
+                    "exit_execution_friction_idr": max(0.0, (exit_reference - exit_fill) * position.quantity),
+                    "execution_friction_cost_idr": max(0.0, (position.entry_fill_price - position.entry_reference_price) * position.quantity) + max(0.0, (exit_reference - exit_fill) * position.quantity),
                     "net_pnl_idr": net_pnl,
                     "bars_held": position.bars_held,
                     "exit_reason": exit_reason,
@@ -447,7 +453,7 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
             "entry_reference_price": position.entry_reference_price, "entry_fill_price": position.entry_fill_price,
             "exit_reference_price": exit_reference, "exit_fill_price": exit_fill,
             "quantity": position.quantity, "entry_fee_idr": position.entry_fee_idr, "exit_fee_idr": exit_fee,
-            "gross_pnl_after_slippage_idr": gross_pnl, "net_pnl_idr": net_pnl,
+            "pnl_before_exchange_fees_idr": gross_pnl, "net_pnl_idr": net_pnl,
             "bars_held": position.bars_held, "exit_reason": "end_of_data_forced_close",
         })
         position = None
@@ -492,6 +498,9 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "entry_fees_idr": total_entry_fees,
         "exit_fees_idr": total_exit_fees,
         "total_fees_idr": total_entry_fees + total_exit_fees,
+        "total_execution_friction_idr": sum(float(trade.get("execution_friction_cost_idr", 0.0)) for trade in trades),
+        "modeled_spread_bps_round_trip": config.spread_bps_round_trip,
+        "modeled_slippage_bps_per_side": config.slippage_bps_per_side,
         "daily_loss_lock_events": lock_events,
         "trades": trades,
         "equity_curve": curve,
@@ -558,6 +567,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--daily-loss-fraction", type=float, default=0.03)
     parser.add_argument("--entry-fee-bps", type=float, default=10.555, help="assumption; verify current venue fee")
     parser.add_argument("--exit-fee-bps", type=float, default=31.555, help="assumption; verify current venue fee")
+    parser.add_argument("--spread-bps-round-trip", type=float, default=10.0, help="assumed entry/exit spread cost")
     parser.add_argument("--slippage-bps-per-side", type=float, default=10.0, help="assumption per side")
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
@@ -570,7 +580,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = BacktestConfig(
         initial_capital_idr=args.initial_capital_idr, risk_fraction=args.risk_fraction,
         max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
-        entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
+        entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps, spread_bps_round_trip=args.spread_bps_round_trip,
         slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
         minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
         target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
@@ -595,7 +605,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "mode", "execution_enabled", "run_id", "period_start", "period_end", "bars_1m",
             "initial_equity_idr", "final_equity_idr", "net_pnl_idr", "net_return_pct",
             "closed_trades", "win_rate_pct", "profit_factor", "max_drawdown_pct",
-            "total_fees_idr", "daily_loss_lock_events", "ledger_path",
+            "total_fees_idr", "total_execution_friction_idr", "daily_loss_lock_events", "ledger_path",
         ) if key in report}
         summary["warning"] = "OFFLINE BACKTEST ONLY — no orders placed; no future return implied."
         print(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True))
