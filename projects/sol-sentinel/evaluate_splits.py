@@ -57,9 +57,10 @@ def split_chronologically(
 def summarize(report: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "period_start", "period_end", "bars_1m", "initial_equity_idr",
-        "final_equity_idr", "net_pnl_idr", "net_return_pct", "closed_trades",
-        "win_rate_pct", "profit_factor", "max_drawdown_pct", "total_fees_idr", "total_execution_friction_idr",
-        "daily_loss_lock_events",
+        "final_equity_idr", "net_pnl_idr", "net_return_pct",
+        "signal_evaluations", "signal_warmup_bars", "signal_candidates", "signal_rejection_counts",
+        "closed_trades", "win_rate_pct", "profit_factor", "max_drawdown_pct",
+        "total_fees_idr", "total_execution_friction_idr", "daily_loss_lock_events",
     )
     return {key: report[key] for key in keys}
 
