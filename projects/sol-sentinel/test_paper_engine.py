@@ -26,6 +26,57 @@ def make_bar(index, close=None, volume=10.0):
 
 
 class DataAndIndicatorTests(unittest.TestCase):
+    def test_source_market_metadata_recognizes_native_indodax_idr_and_disables_fx(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "INDODAX_SOLIDR_1m.csv"
+            sidecar = Path(str(csv_path) + ".meta.json")
+            sidecar.write_text(json.dumps({
+                "venue": "INDODAX",
+                "pair": "SOL/IDR",
+                "input_price_currency": "IDR",
+                "dataset_sha256": "fixture",
+            }), encoding="utf-8")
+            market = engine.resolve_input_market_metadata(csv_path)
+            rate, source = engine.resolve_quote_to_idr(csv_path, source_metadata=market)
+        self.assertEqual(market, {"venue": "INDODAX", "symbol": "SOL/IDR", "price_currency": "IDR"})
+        self.assertEqual(rate, 1.0)
+        self.assertIn("FX conversion disabled", source)
+
+    def test_source_market_metadata_rejects_mismatched_overrides_and_unknown_currencies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "native.csv"
+            sidecar = Path(str(csv_path) + ".meta.json")
+            sidecar.write_text(json.dumps({
+                "venue": "INDODAX", "pair": "SOL/IDR", "input_price_currency": "IDR"
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "conflicts with capture metadata"):
+                engine.resolve_input_market_metadata(csv_path, input_price_currency_override="USDT")
+            sidecar.write_text(json.dumps({
+                "venue": "Other", "pair": "SOL/EUR", "input_price_currency": "EUR"
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "unsupported source quote currency"):
+                engine.resolve_input_market_metadata(csv_path)
+
+    def test_idr_normalization_is_identity_and_usdt_is_converted_once(self):
+        bar = make_bar(0, close=1_800_000.0)
+        native = engine.normalize_bars_to_idr([bar], input_price_currency="IDR", quote_to_idr_rate=1.0)[0]
+        reference = engine.normalize_bars_to_idr([bar], input_price_currency="USDT", quote_to_idr_rate=16_000.0)[0]
+        self.assertEqual(native.open, bar.open)
+        self.assertEqual(native.close, bar.close)
+        self.assertEqual(reference.open, bar.open * 16_000.0)
+        self.assertEqual(reference.close, bar.close * 16_000.0)
+        with self.assertRaisesRegex(ValueError, "native IDR bars require quote_to_idr_rate=1.0"):
+            engine.normalize_bars_to_idr([bar], input_price_currency="IDR", quote_to_idr_rate=16_000.0)
+
+    def test_native_idr_backtest_config_requires_indodax_and_custom_fee_model(self):
+        with self.assertRaisesRegex(ValueError, "native IDR candles require INDODAX"):
+            engine.BacktestConfig(input_price_currency="IDR", quote_to_idr_rate=1.0).validate()
+        with self.assertRaisesRegex(ValueError, "require explicit INDODAX_CUSTOM"):
+            engine.BacktestConfig(
+                input_venue="INDODAX", input_symbol="SOL/IDR",
+                input_price_currency="IDR", quote_to_idr_rate=1.0,
+            ).validate()
+
     def test_fx_resolution_prefers_explicit_override(self):
         rate, source = engine.resolve_quote_to_idr("does-not-need-to-exist.csv", 16_500.0, "test override")
         self.assertEqual(rate, 16_500.0)
