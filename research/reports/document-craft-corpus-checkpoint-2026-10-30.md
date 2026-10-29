@@ -2,13 +2,13 @@
 
 ## Status yang dapat dibuktikan
 
-Korpus saat ini memiliki **4 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 496. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
+Korpus saat ini memiliki **5 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 495. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
 
 | Genre | Dokumen lolos gate |
 |---|---:|
 | LP/asuhan keperawatan | 0 |
 | Laporan PKL/magang | 0 |
-| Skripsi/tesis/disertasi | 0 |
+| Skripsi/tesis/disertasi | 1 |
 | Makalah/artikel ilmiah | 3 |
 | Laporan praktikum | 0 |
 | Laporan penelitian | 0 |
@@ -19,7 +19,7 @@ Korpus saat ini memiliki **4 dokumen individual yang lolos gate provenance dan h
 | Workbook Excel | 0 |
 | Genre lain — panduan profesional/operasional | 1 |
 
-Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual.
+Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest juga menyimpan dua catatan partial (laporan PKL dan KIAN) serta satu lead XLSX metadata-only; ketiganya **tidak dihitung** ke angka 5/500.
 
 ## Sampel yang sudah diverifikasi
 
@@ -77,11 +77,23 @@ Belum ada klaim peningkatan empiris mutu Document Craft.
 
 Berbeda dari artikel jurnal, panduan ini mengatur navigasi referensi dan pilihan operasional: halaman awal memiliki Version History, daftar tabel/gambar/boxes, About this Guide, abbreviations dan acknowledgements; isi utama terbagi menjadi I. Introduction, II. Designing an ID System, III. Topics, dan IV. Resources. Daftar isi menggunakan level heading bertingkat, indentasi, titik pemimpin menuju nomor halaman, dan perpindahan dari penomoran Romawi front matter ke halaman utama bernomor Arab. Sampul memakai blok navy/cyan/oranye, logo institusi, judul besar dan tanggal edisi. Pola ini cocok untuk panduan yang sering dirujuk, bukan template skripsi atau laporan PKL. Komponen pihak ketiga tidak diambil atau direpublikasikan.
 
-## Apa yang dapat disimpulkan dari empat sampel
+## Sampel 5 — skripsi teknik lingkungan, 2020
+
+**Laju Dekomposisi Karbon Pada Sampah Organik Pada Perencanaan Penutupan Tempat Pemrosesan Akhir (TPA) Kota Banda Aceh** — Muhammad Mefan Juansah, UIN Ar-Raniry, 2020. Official item: https://repository.ar-raniry.ac.id/17817/. The item-level page states Creative Commons Attribution 4.0; the PDF includes an originality declaration. The extracted PDF text layer spans 64 container pages and lists 53 thesis pages excluding front matter. No PDF or full text was retained; no student identifier or contact-like filename details were stored.
+
+The front matter includes a title page, originality declaration, abstract and English abstract, preface, table of contents, and separate lists of tables, figures and appendices. The five-chapter structure is Introduction, Literature Review, Research Methodology, Results and Discussion, and Closing; references and appendices follow. The table of contents shows nested background/problem/objective/benefit/scope sections, methods subdivisions, and topic-based result subsections. Page references use dotted leaders; the extracted text shows Roman-numbered front matter and Arabic main-body pagination. A visible inconsistency labels the closing items as 4.1 and 4.2 under Chapter V; this is recorded as a source-specific QA finding, not a norm. This pass did not complete rendered-page visual inspection, so no font, color, margin, or image-quality claims are made.
+
+## Partial and metadata-only leads (not counted toward the target)
+
+- **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
+- **Asuhan Keperawatan pada Klien Harga Diri Rendah dengan Penerapan Terapi Kognitif** — STIKes Muhammadiyah Ciamis repository, 2022. Public files include cover/approval/abstract/Chapter I/bibliography under a file-level Creative Commons Attribution notice; the clinical case and discussion chapters are restricted. Privacy and version-of-license review remain pending. No patient-level facts are retained. The record contributes **zero** to eligibility.
+- **ABK Sekdin.xlsx — Analisis Beban Kerja Sekertaris Dinas Sosial Kabupaten Karanganyar** — official Portal Data Jawa Tengah resource declares CC BY at metadata level, but download requests to two listed hosts returned HTTP 403. No worksheet, formula, formatting, hidden-sheet, or cell-content claims have been made. It remains metadata-only and contributes **zero** to eligibility.
+
+## Apa yang dapat disimpulkan dari lima sampel
 
 Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat memperlihatkan variasi dalam satu tradisi publikasi tetapi belum menjadi tiga source family independen. Sebagian ciri berulang—metadata DOI dan lisensi di halaman awal, satu kolom serif, catatan bernomor, bagian referensi dan deklarasi penerbitan—masuk akal diuji sebagai hipotesis untuk artikel-artikel jurnal tersebut. Adanya bagian recommendation yang terpisah pada salah satu artikel serta perbedaan heading/topik memperlihatkan bahwa urutan bab tidak boleh dipaksakan sebagai template universal.
 
-Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Empat sampel tidak memberi bukti tentang pola LP/asuhan keperawatan, laporan PKL, skripsi Indonesia, laporan kegiatan, maupun workbook Excel; seluruh genre tersebut masih bernilai nol.
+Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Lima sampel masih tidak memberi bukti tentang norma LP/asuhan keperawatan, laporan PKL, laporan kegiatan, maupun workbook Excel: saat ini belum ada item eligible pada genre tersebut. Satu skripsi UIN Ar-Raniry hanya menambah satu contoh pada genre tesis di satu universitas/disiplin.
 
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
 
