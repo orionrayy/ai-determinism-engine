@@ -84,3 +84,5 @@ Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat me
 Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Empat sampel tidak memberi bukti tentang pola LP/asuhan keperawatan, laporan PKL, skripsi Indonesia, laporan kegiatan, maupun workbook Excel; seluruh genre tersebut masih bernilai nol.
 
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
+
+Keterlacakan analisis diverifikasi oleh `research/corpus/validate_features.py`, dengan tes untuk referensi manifest, source family, URL bukti, analisis duplikat dan kelengkapan metode inspeksi. Workflow CI menyimpan ringkasan mesin `corpus-summary.json` dan `features-summary.json` sebagai artifact selama 14 hari. Ringkasan itu bersifat status inventaris, bukan hasil benchmark kualitas.
