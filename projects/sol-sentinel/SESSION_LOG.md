@@ -125,3 +125,12 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 - Expanded-stat run `40915499872` failed closed on Frankfurter timeout after capture; no backtest/sensitivity was generated. Added bounded FX reference retry logic and two tests (retry succeeds after a transient timeout; retry exhausts after the configured bound).
 - Test run `40916160706` passed after the retry change. Retry-enabled research run `40916209196` was in progress at the last read and must be verified before this checkpoint is called end-to-end green.
 - Data and simulated P&L are research outputs, not live account equity. No trades were submitted.
+
+
+## 2026-10-30 — Live API repair and latest verified state
+
+- Latest CI [40921862301](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921862301) passed compilation and **63 offline tests** on head `ca3e13391634609377617ef26ca6ef255059de3d`.
+- Full research pipeline [40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237) passed and published artifact [12918995790](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237/artifacts/12918995790). It captured 43,200 Binance SOLUSDT 1m candles; baseline/60-20-20 still had zero trades.
+- Live read-only Reku probe confirmed current query format `symbol=SOL_IDR`; order book now returns 40 bid and 40 ask levels. The test snapshot had bid IDR 1,835,000, ask IDR 1,840,000 and spread 27.210884 bps. Chart works at 5m with 84 points; the unsupported 1m probe was removed.
+- The legacy Reku `/activitytrans` endpoint returns HTTP 404. The native history collector now stops after the first 404 and writes explicit `endpoint_not_found` metadata. Native Reku OHLCV history remains blocked; backtesting still relies on Binance reference candles.
+- Draft PR #178 remains unmerged. Its base SHA differs from current `main`; reconcile before merge. No real orders or wallet effects occurred.
