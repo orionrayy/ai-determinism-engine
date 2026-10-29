@@ -67,3 +67,8 @@ A direct update of the full root `ORCHESTRATION_MEMORY.md` was attempted but blo
 The feature branch now includes bounded public-candle capture, a cost-aware offline backtest/SQLite ledger, and fixed-parameter chronological 60/20/20 evaluation with a distinct out-of-sample segment. Associated offline tests are included in the project's CI.
 
 Latest verified CI: run `40906164183`, commit `41f60c53ff7801d3b3729c27f5bd338854538386`, success. No user-device testing, live market order, account connection, or financial side effect has occurred. Keep all downloaded candles and reports with account-specific values on-device; never commit private data into this public repository.
+
+
+## Cost model and workflow update — 2026-10-29
+
+The scanner and offline paper engine separate fee, spread, and slippage assumptions. The new `.github/workflows/sol-sentinel-research.yml` is a free-first research workflow for bounded public candle capture, offline backtesting, chronological evaluation, and short-retention artifacts. It is not a live trading workflow. Its first manual dispatch is still required to validate actual GitHub Actions public-data reachability and report generation.
