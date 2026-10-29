@@ -1295,3 +1295,30 @@ This is a required next-phase acceptance contract from the user. It is a roadmap
 - Do not add intentional mistakes, fabricate a personal experience, imitate a named living author, or claim the document was authored by a human when that is not established. This work is about quality and contextual fit, not evading AI-detection systems or promising detector outcomes.
 - Continue using the required repository contracts for privacy, provenance, trustworthy citations, free-first operation, authorization, idempotency and honest verification status.
 
+## Hallmark corpus pipeline and routing fix checkpoint (2026-10-30)
+
+This checkpoint records repository work on branch `feat/hallmark-corpus-benchmark-v1`; it is not merged to `main` and the CI result must be checked against the candidate commit before claiming validation.
+
+### Verified repository state before this candidate
+- `main` head at inspection: `d5672c84a0ae184c3a95d3f925925887ece71aa4`.
+- Hallmark import PR #175 merged at `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`; runtime/Document Craft PR #177 merged at `4d207fe3c420afe27fe66a4c3e5159d46bdf2640`.
+- `Orchestrator Tests` and `Hallmark skill validation` passed for `4d207fe3c420afe27fe66a4c3e5159d46bdf2640`; `Orchestrator Tests` passed for the inspected `main` head. These do not prove corpus validity or writing-quality improvement.
+- The repository tree had no `research/` directory before this candidate. Runtime source and `orchestrator/test_skill_runtime.py` were read from GitHub.
+
+### Candidate changes prepared
+- Added `research/corpus/manifest.schema.json`, `genre-taxonomy.json`, `evaluation-rubric.md`, `source_registry.json`, `manifest.jsonl`, `README.md`, `validate_corpus.py`, and `test_validate_corpus.py`.
+- The manifest is intentionally empty pending item-level provenance, rights, access, privacy, format, and originality validation. Current verified corpus count: **0**; target 500 status: `INSUFFICIENT_EVIDENCE`. Do not count source directories/journal registries as documents.
+- Source registry currently records 11 discovery-only entries (10 DOAJ journal directories and Portal Satu Data Indonesia). The license labels are reported as journal-level discovery metadata; item-specific license and content provenance must still be verified before any individual document enters the manifest.
+- Validator uses Python stdlib only. It checks JSONL shape, required fields/enums, safe HTTP(S) URLs, dates, hashes, rights/access, provenance and privacy gates, duplicate record identifiers, canonical URL/hash duplicates, genre distributions, and target status. It intentionally does not fetch source materials or bypass access controls.
+- Added automated tests for empty-manifest fail-closed status, eligibility, metadata-only rights/access, templates/synthetic samples, duplicates, duplicate IDs, malformed JSON, URLs containing credentials, and target-underflow exit code.
+- During runtime audit, `_DOCUMENT_INTENT` contained generic alternatives `writing` and `humaniz(?:e|ed|ing)`; these could route requests such as “writing Python code” to Document Craft. Candidate removes those generic triggers while preserving explicit document phrases, and adds three selector regression cases. This is a code-level defect hypothesis with regression coverage; runtime CI has not yet confirmed the patch.
+- Added `.github/workflows/hallmark-corpus-validation.yml` to compile the pipeline, validate metadata JSON, run corpus tests, and assert that an unmet target exits with code 3 instead of fabricating success.
+- GitHub repository edits were made only on the isolated candidate branch. A local clone attempt was blocked by DNS/network unavailability; therefore local full-suite execution is not claimed. Candidate CI and review are the next validation gates.
+
+### Evidence policy and next acceptance gates
+1. Confirm workflow syntax and all corpus unit tests pass on the candidate commit.
+2. Confirm existing `orchestrator/test_skill_runtime.py` and full `Orchestrator Tests` still pass, including the new selector regression cases.
+3. Audit the corpus validator's generated report and correct any regression before merging; do not merge solely to show activity.
+4. Individually verify licensed original items. Record access and rights evidence; do not place restricted full text, patient/person data, or private company documents in Git.
+5. Reach 500 only when 500 unique items satisfy the eligibility policy. Until then report the actual count and `INSUFFICIENT_EVIDENCE`.
+6. No baseline-to-candidate document-quality experiment or visual DOCX/PDF/Excel validation has yet been run. No quality-improvement claim is authorized.
