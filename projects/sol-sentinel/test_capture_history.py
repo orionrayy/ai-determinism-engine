@@ -1,4 +1,5 @@
 import json
+import time
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -61,6 +62,22 @@ class CaptureValidationTests(unittest.TestCase):
     def test_capture_rejects_unbounded_page_count_without_network(self):
         with self.assertRaisesRegex(ValueError, "max-pages must be"):
             capture_history.capture("SOLUSDT", "1m", 3, 61)
+
+    def test_capture_page_parser_rejects_conflicting_duplicates_and_bad_trade_count(self):
+        now = int(time.time() * 1000)
+        first_open = ((now - 180_000) // 60_000) * 60_000
+        valid = [first_open, "100", "102", "99", "101", "1.5", first_open + 59_999, "151.5", 4]
+        conflicting = [first_open, "100", "103", "99", "101", "1.5", first_open + 59_999, "151.5", 4]
+        invalid_trade_count = [first_open + 60_000, "101", "103", "100", "102", "1.2", first_open + 119_999, "122.4", 1.5]
+        with patch.object(capture_history, "fetch_page", return_value=[valid, conflicting]), \\
+             patch.object(capture_history.time, "sleep"):
+            with self.assertRaisesRegex(ValueError, "Conflicting duplicate candle"):
+                capture_history.capture("SOLUSDT", "1m", 1, 60)
+        # Invalid source rows are rejected; if that leaves no sufficient contiguous data the capture fails closed.
+        with patch.object(capture_history, "fetch_page", return_value=[valid, invalid_trade_count]), \\
+             patch.object(capture_history.time, "sleep"):
+            with self.assertRaises(ValueError):
+                capture_history.capture("SOLUSDT", "1m", 1, 60)
 
 
 if __name__ == "__main__":
