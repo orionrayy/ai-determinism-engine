@@ -214,3 +214,54 @@ A fresh read-back immediately before this note showed:
 - No end-to-end public history capture/backtest report has been run yet, no Termux runtime check has been done, and no live trading action has occurred.
 
 This entry is documentation-only. It changes no scanner or trading logic. Since every new commit can trigger CI, the exact final head and its CI should be obtained from the PR/Actions links above rather than inferred from a fixed SHA stored in a log.
+
+
+## 13. End-to-end historical research and cost sensitivity — 2026-10-29
+
+### Endpoint failure and recovery
+- First pipeline run `40913304159` failed during the public candle capture with HTTP 451 from the general Binance REST host. No backtest was run on that failed attempt.
+- Official Binance docs identify `https://data-api.binance.vision` as the market-data-only host for public endpoints, including `GET /api/v3/klines`: https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md
+- Collector and scanner now use `https://data-api.binance.vision/api/v3/klines`. Subsequent runs succeeded.
+
+### Successful seven-day baseline
+- Run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914013908
+- Artifact: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914013908/artifacts/12915391700
+- Data: 10,080 completed 1m candles, 2026-10-22 through 2026-10-29.
+- FX reference: USD/IDR 18,158, dated 2026-10-29 (Frankfurter; USD used as a proxy for USDT, not a trading quote).
+- Result: 0 candidate entries / 0 closed trades; initial/final simulation equity both IDR 300,000. This is no-trade/no-evidence, not breakeven performance.
+
+### Successful thirty-day baseline
+- Run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914239047
+- Artifact: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914239047/artifacts/12914478212
+- Data: 43,200 completed 1m candles, 2026-09-29 through 2026-10-29.
+- FX reference: USD/IDR 18,158, dated 2026-10-29; used as a single reference rate across the dataset. This does not reproduce historic FX or USDT basis.
+- Baseline strategy: 0 candidates, 0 trades, IDR 0 simulated P&L because no position was opened.
+- Development segment: 25,920 bars; 119 otherwise technically eligible setups rejected by the modeled net-edge/cost gate.
+- Validation segment: 8,640 bars; 43 such setups rejected by the cost gate.
+- Out-of-sample segment: 8,640 bars; 34 such setups rejected by the cost gate.
+- Across the 30-day split evaluation, the cost gate rejected 196 technically qualifying setups in total (119 + 43 + 34). The main Pro baseline modeled 72.11 bps round-trip friction: 42.11 bps fee reference + 10 bps assumed spread + 20 bps assumed round-trip slippage. With the minimum net-edge buffer of 25 bps, the required gross movement budget in the signal gate is 97.11 bps. These spread/slippage values are assumptions, not measurements.
+- The reason counters overlap for bars that fail multiple technical checks; the specific `estimated_net_edge_below_threshold` count is only recorded when other technical criteria passed first.
+
+### Current published Reku costs checked
+- Official fee page: https://reku.id/fees/crypto (checked 2026-10-29).
+- Pro buy: 0.1% trading + 0% PPN + 0.00555% CFX = 0.10555% (10.555 bps).
+- Pro sell: 0.1% trading + 0.21% PPh + 0.00555% CFX = 0.31555% (31.555 bps).
+- Approximate sum at equal nominal value: 42.11 bps before spread/slippage. Refresh the current fee page and actual order preview before any real use.
+- CFX adjustment announcement, effective 2026-10-01: https://reku.id/information/informasi-penyesuaian-biaya-cfx
+
+### Fixed cost-sensitivity comparison
+- Code: `cost_sensitivity.py`; tests: `test_cost_sensitivity.py`.
+- Research run with the sensitivity module: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40915191550
+- Artifact: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40915191550/artifacts/12914798752
+- Scenarios are predeclared; technical rules do not change, and no scenario is auto-selected by historical performance.
+- Reku Pro baseline: 72.11 bps total modeled cost; zero candidates/trades.
+- Pro with lower hypothetical execution friction: 57.11 bps; zero candidates/trades.
+- Pro fee-only theoretical floor (zero spread/slippage): 42.11 bps; zero candidates/trades.
+- Lightning fee-only theoretical floor (zero quote spread/slippage): 22.11 bps; 10 closed trades, net simulated P&L approximately IDR -3,893, net return -1.30%, max drawdown about 1.62%. The scenario omits real Lightning quote spread/slippage and must not be treated as executable or as a suggestion to trade.
+- This result reinforces that loosening cost assumptions does not demonstrate an edge; the only scenario that generated trades in this dataset was an unrealistic fee-floor sensitivity and it lost money.
+
+### Test and artifact status
+- CI run after the sensitivity module: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40915091684; success.
+- Run log reported 35 unit tests passing at the preceding sensitivity code checkpoint.
+- A second, final research run with expanded per-scenario statistics was started at run `40915499872`; read its final status before describing it as complete. Its run history/artifact should supersede older sensitivity results once successful.
+- Artifacts expire seven days after creation. Never infer a permanent report path from a transient artifact URL.
