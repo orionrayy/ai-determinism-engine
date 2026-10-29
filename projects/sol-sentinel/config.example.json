@@ -1,0 +1,17 @@
+{
+  "initial_capital_idr": 300000,
+  "max_position_pct": 0.50,
+  "risk_per_trade_pct": 0.005,
+  "max_daily_loss_pct": 0.03,
+  "max_spread_bps": 35,
+  "min_relative_volume": 1.2,
+  "min_net_edge_pct": 0.004,
+  "round_trip_slippage_pct": 0.002,
+  "buy_fee_pct": 0.0010555,
+  "sell_fee_pct": 0.0031555,
+  "stop_atr_multiple": 1.5,
+  "minimum_stop_pct": 0.008,
+  "reward_risk_ratio": 2.0,
+  "poll_interval_seconds": 30,
+  "max_candle_age_seconds": 600
+}
