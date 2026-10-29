@@ -87,3 +87,12 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 4. Improve the fill/cost model and include trade-level spread and latency assumptions before paper deployment.
 5. Verify current official Reku market-data/API docs, terms, minimum order/withdrawal and fees.
 6. Keep live execution blocked until an official permitted route, isolated signer, idempotency/reconciliation, kill switch, risk caps, out-of-sample evidence, and explicit user approval are all present.
+
+
+## 2026-10-29 — Explicit execution friction and research workflow
+
+- The cost model now separates round-trip fee, quoted spread, and slippage assumptions in the read-only scanner.
+- The offline backtest models round-trip spread through an adverse half-spread adjustment at entry and exit, applies slippage as a separate per-side price adjustment, keeps exchange fees separate in the ledger, and reports modeled execution-friction costs.
+- The chronological evaluator accepts a separate spread assumption.
+- Added validation that rejects negative spread values, plus a bounded public-only `.github/workflows/sol-sentinel-research.yml` that can capture historical candles, run offline backtest/evaluation, and upload artifacts for seven days. This workflow has not yet been manually dispatched in this session; its market-data step and artifacts need a real run to validate network/runtime behavior.
+- The live trading route remains unimplemented; no orders, transfers or wallet operations have occurred.
