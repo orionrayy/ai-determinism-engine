@@ -609,9 +609,47 @@ def persist_ledger(db_path: str | Path, report: dict[str, Any], run_id: str) -> 
             )
 
 
+def resolve_quote_to_idr(
+    csv_path: str | Path,
+    rate_override: float | None = None,
+    source_override: str = "",
+) -> tuple[float, str]:
+    """Resolve an explicit CLI FX rate or the rate stored beside a captured CSV."""
+    if rate_override is not None:
+        rate = float(rate_override)
+        source = source_override.strip() or "manual CLI override"
+    else:
+        sidecar = Path(str(Path(csv_path).expanduser()) + ".meta.json")
+        if not sidecar.exists():
+            raise ValueError(
+                "No quote-to-IDR rate supplied and no capture metadata sidecar found. "
+                "Re-run capture_history.py or pass --quote-to-idr-rate with a verified reference."
+            )
+        try:
+            metadata = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read capture metadata sidecar: {exc}") from exc
+        rate = metadata.get("quote_to_idr_rate")
+        rate_date = str(metadata.get("quote_to_idr_date", "unknown date"))
+        source = f"{metadata.get('quote_to_idr_source', 'captured FX reference')} (date={rate_date})"
+        age_days = metadata.get("quote_to_idr_age_days")
+        if age_days is None or not isinstance(age_days, (int, float)) or age_days < 0 or age_days > 5:
+            raise ValueError("capture metadata does not contain a fresh enough USD/IDR reference rate")
+        if not rate:
+            reason = metadata.get("quote_to_idr_error", "missing quote_to_idr_rate")
+            raise ValueError(f"no valid quote-to-IDR reference in capture metadata: {reason}")
+        rate = float(rate)
+    if not math.isfinite(rate) or not 1_000 <= rate <= 50_000:
+        raise ValueError("quote-to-IDR rate must be finite and between 1,000 and 50,000")
+    return rate, source
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", required=True, help="local 1m OHLCV CSV; see capture_history.py")
+    parser.add_argument("--quote-to-idr-rate", type=float, default=None,
+                        help="manual USD/IDR reference override; otherwise read capture CSV metadata")
+    parser.add_argument("--quote-to-idr-source", default="", help="source label for a manual FX override")
     parser.add_argument("--initial-capital-idr", type=float, default=300_000.0)
     parser.add_argument("--risk-fraction", type=float, default=0.005)
     parser.add_argument("--max-exposure-fraction", type=float, default=0.50)
@@ -628,17 +666,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--report-path", default="", help="optional private local JSON report path")
     parser.add_argument("--db-path", default="~/.sol-sentinel/paper_ledger.sqlite3", help="local SQLite ledger; set empty string to disable")
     args = parser.parse_args(argv)
-    config = BacktestConfig(
-        initial_capital_idr=args.initial_capital_idr, risk_fraction=args.risk_fraction,
-        max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
-        entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps, spread_bps_round_trip=args.spread_bps_round_trip,
-        slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
-        minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
-        target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
-    )
     try:
-        config.validate()
         data_path = Path(args.csv).expanduser()
+        quote_to_idr_rate, quote_to_idr_source = resolve_quote_to_idr(
+            data_path, args.quote_to_idr_rate, args.quote_to_idr_source
+        )
+        config = BacktestConfig(
+            initial_capital_idr=args.initial_capital_idr,
+            quote_to_idr_rate=quote_to_idr_rate,
+            quote_to_idr_source=quote_to_idr_source,
+            risk_fraction=args.risk_fraction,
+            max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
+            entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
+            spread_bps_round_trip=args.spread_bps_round_trip,
+            slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
+            minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
+            target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
+        )
+        config.validate()
         data_sha = hashlib.sha256(data_path.read_bytes()).hexdigest()
         bars = read_bars_csv(data_path)
         report = backtest(bars, config, data_sha)
