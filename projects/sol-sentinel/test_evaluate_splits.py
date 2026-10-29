@@ -1,7 +1,7 @@
 import unittest
 
 import evaluate_splits
-from paper_engine import Bar, ONE_MINUTE_MS
+from paper_engine import BacktestConfig, Bar, ONE_MINUTE_MS
 
 
 BASE_MS = 1_760_000_100_000
@@ -21,6 +21,32 @@ def make_bars(count):
 
 
 class ChronologicalSplitTests(unittest.TestCase):
+    def test_native_idr_evaluation_preserves_native_price_denomination(self):
+        bars = make_bars(3000)
+        config = BacktestConfig(
+            initial_capital_idr=300_000.0,
+            quote_to_idr_rate=1.0,
+            quote_to_idr_source="native INDODAX SOL/IDR fixture; FX disabled",
+            input_venue="INDODAX",
+            input_symbol="SOL/IDR",
+            input_price_currency="IDR",
+            fee_model_name="INDODAX_CUSTOM",
+            fee_model_source="fixture costs only",
+            entry_fee_bps=10.0,
+            exit_fee_bps=20.0,
+            spread_bps_round_trip=15.0,
+            slippage_bps_per_side=5.0,
+            minimum_order_notional_idr=25_000.0,
+        )
+        report = evaluate_splits.evaluate(bars, config, dataset_sha256="fixture-native-idr")
+        self.assertEqual(report["source_quote_currency"], "IDR")
+        self.assertEqual(report["symbol"], "SOL/IDR")
+        self.assertEqual(report["input_venue"], "INDODAX")
+        self.assertEqual(report["quote_to_idr_rate"], 1.0)
+        self.assertIn("FX conversion is disabled", report["quote_to_idr_assumption"])
+        self.assertEqual(report["fee_model_name"], "INDODAX_CUSTOM")
+        self.assertEqual(report["config"]["minimum_order_notional_idr"], 25_000.0)
+
     def test_split_is_chronological_disjoint_and_exact(self):
         bars = make_bars(3000)
         splits = evaluate_splits.split_chronologically(bars)
