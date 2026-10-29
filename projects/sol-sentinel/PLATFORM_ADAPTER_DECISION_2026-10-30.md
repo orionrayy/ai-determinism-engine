@@ -29,7 +29,7 @@ INDODAX current trade fee, withdrawal fee, API throttles, and market filters are
 
 ## Adapter contracts added
 
-- Market data: canonical symbol + quote identity + UTC timestamp + bid/ask validation.
+- Market data: canonical symbol + quote identity + UTC timestamp + bid/ask validation. The new `IndodaxPublicMarketDataAdapter` uses the official public `/api/pairs` catalogue to load pair ID, price increment, quantity increment, minimum quote notional and minimum base quantity, then reads `/api/depth/{pair_id}` with bounded timeout, response-size limit, small bounded transient-error retries, and strict book validation. It makes no credentialed request. CI uses fixture transport only; this session did not call the real endpoint from the runner.
 - Capital source: metadata contract, not private account data.
 - Custody: balance lookup contract separated from the exchange/order API.
 - Transfer route planner: validates that source/destination network names match, both ends are verified, and minimum/fee values are known. It never sends a transfer.
