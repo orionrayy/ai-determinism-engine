@@ -147,3 +147,22 @@ The new source-aware engine enforces:
 - CSV sidecar status and source digest are checked before source metadata is trusted.
 
 Run #58 was re-triggered because the test suite changed after adding the finite fee/minimum regression. It is expected to repeat the current strategy backtest using the same engine logic, not alter the previously observed edge. The decision remains **do not enable live trading** until strategy is validated after costs, account/network/fee facts are verified, Termux tests pass, and separate explicit approval/readiness gates exist.
+
+
+## Live native-depth evidence — latest successful research run #60 (2026-10-30 WIB)
+
+Run [#40950218320](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320) completed successfully on workflow head `89a8d7181954a1524379d3b03fa77e703eb9331d). The current feature branch’s later changes are documentation-only; exact-head test CI [#40950649418](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950649418) passed 137 tests, 0 failures.
+
+The read-only native capture result is:
+- 43,200 contiguous 1-minute SOL/IDR candles, 30-day range 2026-09-29 20:36:00 UTC through 2026-10-29 20:35:59.999 UTC.
+- Dataset SHA-256 `c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30`.
+- Public depth response `market_quote_status=OK`, no error, source INDODAX public `/api/depth/solidr`, request-start timestamp 2026-10-29T20:37:47.062073Z: bid Rp1,777,113; ask Rp1,779,923; mid Rp1,778,518; spread ~15.7997 bps. `orders_enabled=false`.
+- Market metadata in that snapshot: price tick IDR 1, quantity increment 1e-8 SOL, market quote minimum IDR 10,000, minimum base quantity 0.00563136 SOL.
+
+An earlier successful depth probe [#40950150440](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950150440) showed a wider spread of ~25.6669 bps two minutes earlier, reinforcing that the quoted spread is a time-stamped observation rather than a stable historical cost. This is live read-only endpoint evidence from GitHub's runner; it is not a fill, authenticated order result, user-account permission, or wallet deposit/withdrawal test.
+
+### Decision
+
+INDODAX is the initial centralized venue adapter candidate for source-aware paper experiments, not a production-approved venue. Native IDR history can now be captured and the public top-of-book endpoint has been smoke-tested. Before backtesting the native series, verify the current fee tier in the account UI, explicitly select the Lite/Pro minimum, and supply documented entry/exit fee plus measured spread and slippage. Keep Reku costs restricted to the Binance SOLUSDT reference scenario. The latest complete strategy result still has zero candidates/trades in every 60/20/20 segment and therefore does not establish positive expectancy.
+
+The optional Reku native activity-history step continues to return HTTP 404 in the successful research run, with the collector marked non-fatal; the Reku public market snapshot itself reports OK. No real order, transfer, signing, private key, or credential was used. The live gate remains closed.
