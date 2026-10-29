@@ -84,6 +84,20 @@ class CorpusValidationTests(unittest.TestCase):
         self.assertIn("rights_or_access_basis_not_verified", blockers)
         self.assertIn("document_content_not_accessed", blockers)
 
+    def test_partial_access_does_not_count_as_a_complete_corpus_sample(self):
+        candidate = record(
+            access_status="partial",
+            verification_status="pending",
+            originality_status="appears_original_unverified",
+            usage_scope="feature_analysis_only",
+            notes="Only openly licensed summary and introductory chapter are accessible; full document is restricted.",
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            report = vc.load_manifest(self.write_manifest(Path(tmp), [candidate]), target=1)
+        self.assertEqual(report["eligible_unique_original_documents"], 0)
+        self.assertEqual(report["target_status"], "INSUFFICIENT_EVIDENCE")
+        self.assertIn("document_content_not_accessed", report["items"][0]["blockers"])
+
     def test_template_and_synthetic_documents_are_not_original_samples(self):
         rows = [
             record(record_id="doc-template-001", source_family_id="family-template-001",
