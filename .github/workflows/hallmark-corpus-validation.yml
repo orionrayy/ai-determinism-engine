@@ -38,7 +38,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Compile research pipeline
-        run: python -m py_compile research/corpus/validate_corpus.py research/corpus/test_validate_corpus.py research/corpus/harvest_doaj_candidates.py research/corpus/test_harvest_doaj_candidates.py
+        run: python -m py_compile research/corpus/validate_corpus.py research/corpus/test_validate_corpus.py research/corpus/harvest_doaj_candidates.py research/corpus/test_harvest_doaj_candidates.py research/corpus/validate_features.py research/corpus/test_validate_features.py
       - name: Validate JSON metadata contracts
         run: |
           python -m json.tool research/corpus/manifest.schema.json >/dev/null
@@ -48,6 +48,8 @@ jobs:
         run: python -m unittest discover -s research/corpus -p "test_*.py" -v
       - name: Produce an honest baseline summary
         run: python research/corpus/validate_corpus.py research/corpus/manifest.jsonl --json > corpus-summary.json
+      - name: Validate structure-analysis traceability
+        run: python research/corpus/validate_features.py research/corpus/manifest.jsonl research/corpus/features.jsonl --json > features-summary.json
       - name: Assert incomplete target is reported, not fabricated
         shell: bash
         run: |
