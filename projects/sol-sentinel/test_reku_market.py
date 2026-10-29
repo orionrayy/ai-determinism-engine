@@ -105,6 +105,31 @@ class RekuMarketParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no valid OHLCV bars"):
             market.parse_chart_payload([["bad timestamp", 100, 101, 99, 102, 10, 1010]], interval_minutes=1, now_ms=1_800_000_000_000)
 
+    def test_snapshot_uses_current_symbol_param_for_orderbook(self):
+        def fake_request(path, params=None, timeout=8.0):
+            if path == "/coins":
+                return {"result": [{"id": 51, "accountcode": "SOL", "accountname": "Solana"}]}
+            if path == "/price":
+                return [{"id": 51, "cd": "SOL", "c": 101.0, "o": 100.0, "h": 102.0, "l": 99.0, "v": 1000}]
+            if path == "/bidask":
+                return [{"code": "SOL", "bid": 100.0, "ask": 102.0}]
+            if path == "/orderbook":
+                self.assertEqual(params, {"symbol": "SOL_IDR"})
+                return {"b": [[1000.0, 100.0, 10.0]], "s": [[1020.0, 102.0, 10.0]]}
+            if path == "/chart":
+                stamp = int(time.time()) - 60
+                return [[stamp, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
+            raise AssertionError("unexpected Reku endpoint " + path)
+
+        from unittest.mock import patch
+        with patch.object(market, "request_json", side_effect=fake_request) as mocked:
+            report = market.fetch_snapshot("SOL")
+        self.assertEqual(report["orderbook_status"], "OK")
+        self.assertEqual(report["orderbook_endpoint_used"], "orderbook")
+        self.assertEqual(report["orderbook_query_used"], {"symbol": "SOL_IDR"})
+        orderbook_calls = [call for call in mocked.call_args_list if call.args[0] in ("/orderbook", "/orderbookall")]
+        self.assertEqual(len(orderbook_calls), 1)
+
     def test_snapshot_falls_back_to_documented_all_orderbooks_endpoint(self):
         def fake_request(path, params=None, timeout=8.0):
             if path == "/coins":
