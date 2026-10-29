@@ -298,6 +298,27 @@ class AdapterContractTests(unittest.TestCase):
         self.assertFalse(decision.approved_for_planning)
         self.assertEqual(decision.estimated_amount_received, Decimal("0"))
 
+    def test_transfer_route_rejects_fee_that_consumes_entire_amount(self):
+        route = a.TransferRoute(
+            "Reku", "Destination", "SOL", "Solana", "Solana",
+            Decimal("0.1"), Decimal("0.1"), Decimal("0"),
+            source_network_verified=True, destination_network_verified=True,
+            cost_verified_at=NOW,
+        )
+        decision = a.assess_transfer_route(route, Decimal("0.1"), now=NOW)
+        self.assertFalse(decision.approved_for_planning)
+        self.assertIn("withdrawal_fee_consumes_entire_amount", decision.reasons)
+        self.assertIsNone(decision.estimated_amount_received)
+        self.assertFalse(decision.transfer_sent)
+
+    def test_transfer_route_rejects_non_boolean_network_verification_flags(self):
+        with self.assertRaisesRegex(a.AdapterContractError, "source_network_verified must be a boolean"):
+            a.TransferRoute(
+                "Reku", "Destination", "SOL", "Solana", "Solana",
+                Decimal("0.01"), Decimal("0.001"), Decimal("0.001"),
+                source_network_verified="false", destination_network_verified=True,
+            )
+
     def test_transfer_route_rejects_network_mismatch_and_under_minimum(self):
         route = a.TransferRoute(
             "Reku", "Destination", "SOL", "Solana", "Ethereum",
