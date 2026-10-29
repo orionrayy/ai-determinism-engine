@@ -49,7 +49,7 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 ## Current implementation state
 
 - Branch: `feat/sol-sentinel-paper-trader-v1`.
-- Scanner code, specification, risk policy, sources, session log, Termux runbook, unit tests, and CI workflow are committed on the feature branch.
+- Scanner code, specification, risk policy, sources, conversation context, session log, Termux runbook, unit tests, and CI workflow are committed on the feature branch.
 - GitHub Actions run `40898402582` for commit `e34a1cd8d74d76967df580cd563bfbbb20ac6d7f`: workflow conclusion `success`; compile and offline-unit-test steps passed.
 - The scanner is read-only and explicitly sets `order_placement_enabled=false`; it has not been run from the user's Termux device yet.
 - No wallet was created, no SOL was purchased, and no live order, transfer, or withdrawal was submitted by the assistant.
