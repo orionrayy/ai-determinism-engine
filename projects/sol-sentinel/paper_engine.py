@@ -35,6 +35,8 @@ class Bar:
 @dataclass(frozen=True)
 class BacktestConfig:
     initial_capital_idr: float = 300_000.0
+    quote_to_idr_rate: float = 16_000.0
+    quote_to_idr_source: str = "placeholder assumption; replace from capture metadata"
     risk_fraction: float = 0.005
     max_exposure_fraction: float = 0.50
     daily_loss_fraction: float = 0.03
@@ -49,7 +51,7 @@ class BacktestConfig:
     maximum_hold_bars: int = 30
 
     def validate(self) -> None:
-        positive = ("initial_capital_idr", "stop_atr_multiple", "target_atr_multiple", "maximum_hold_bars")
+        positive = ("initial_capital_idr", "quote_to_idr_rate", "stop_atr_multiple", "target_atr_multiple", "maximum_hold_bars")
         for name in positive:
             value = getattr(self, name)
             if not math.isfinite(float(value)) or float(value) <= 0:
@@ -63,6 +65,8 @@ class BacktestConfig:
             value = getattr(self, name)
             if not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} must be finite and >= 0")
+        if not isinstance(self.quote_to_idr_source, str) or not self.quote_to_idr_source.strip():
+            raise ValueError("quote_to_idr_source must be a non-empty source label")
         if self.maximum_hold_bars != int(self.maximum_hold_bars):
             raise ValueError("maximum_hold_bars must be an integer")
 
@@ -317,6 +321,14 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         if current.open_time_ms - previous.open_time_ms != ONE_MINUTE_MS:
             raise ValueError("backtest bars must be contiguous 1m candles")
 
+    # Convert every OHLC price to IDR before position sizing/P&L; keep volumes/timestamps unchanged.
+    fx = config.quote_to_idr_rate
+    bars = [Bar(
+        open_time_ms=bar.open_time_ms, open=bar.open * fx, high=bar.high * fx,
+        low=bar.low * fx, close=bar.close * fx, volume=bar.volume,
+        close_time_ms=bar.close_time_ms,
+    ) for bar in bars]
+
     bars5 = aggregate_bars(bars, 5)
     bars15 = aggregate_bars(bars, 15)
     if len(bars5) < 30 or len(bars15) < 30:
@@ -467,7 +479,8 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
     if position is not None:
         last = bars[-1]
         exit_reference = last.close
-        exit_fill = exit_reference * (1.0 - config.slippage_bps_per_side / 10_000.0)
+        adverse_fill_bps_per_side = config.spread_bps_round_trip / 2.0 + config.slippage_bps_per_side
+        exit_fill = exit_reference * (1.0 - adverse_fill_bps_per_side / 10_000.0)
         exit_fee = position.quantity * exit_fill * config.exit_fee_bps / 10_000.0
         cash += position.quantity * exit_fill - exit_fee
         total_exit_fees += exit_fee
@@ -509,7 +522,12 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "mode": "OFFLINE_BACKTEST_ONLY",
         "execution_enabled": False,
         "symbol": "SOLUSDT",
-        "venue_reference": "Binance public spot candles; not Reku SOL/IDR executable prices",
+        "venue_reference": "Binance public SOLUSDT candles converted by a daily USD/IDR reference rate; not Reku SOL/IDR executable prices",
+        "source_quote_currency": "USDT",
+        "simulation_price_currency": "IDR",
+        "quote_to_idr_rate": config.quote_to_idr_rate,
+        "quote_to_idr_source": config.quote_to_idr_source,
+        "quote_to_idr_assumption": "A daily USD/IDR reference is used as a proxy for USDT/IDR; stablecoin premium/discount and venue-specific IDR pricing are not modeled.",
         "dataset_sha256": dataset_sha256,
         "period_start": iso_utc(bars[0].open_time_ms),
         "period_end": iso_utc(bars[-1].close_time_ms),
@@ -537,6 +555,8 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "equity_curve": curve,
         "warnings": [
             "Historical simulation is not a profit forecast.",
+            "USDT candle prices are converted to IDR using the configured daily USD/IDR reference; this is a unit conversion assumption, not an executable exchange rate.",
+            "Exact Reku SOL/IDR prices, FX variation within the sampled period, and USDT premium/discount are not modeled.",
             "Fees and slippage are configurable assumptions; replace with verified venue-specific values.",
             "Intrabar stop/target ordering is ambiguous in OHLC data; stop-first is assumed conservatively.",
             "This backtest does not model exchange queue priority, latency, partial fills, outages, tax, or Reku-specific price differences.",
