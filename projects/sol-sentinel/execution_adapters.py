@@ -294,6 +294,9 @@ class TransferRoute:
             value = getattr(self, field)
             if value is not None:
                 object.__setattr__(self, field, _decimal(value, field, allow_zero=True))
+        for field in ("source_network_verified", "destination_network_verified"):
+            if not isinstance(getattr(self, field), bool):
+                raise AdapterContractError(f"{field} must be a boolean verified-state flag")
         if self.cost_verified_at is not None:
             object.__setattr__(self, "cost_verified_at", _aware_utc(self.cost_verified_at, "cost_verified_at"))
 
