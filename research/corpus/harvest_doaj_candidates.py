@@ -174,13 +174,14 @@ def parse_records(xml_bytes: bytes, target_issns: set[str]) -> tuple[list[dict],
         titles = _texts(metadata, "title")
         identifiers = _texts(metadata, "identifier")
         relations = _texts(metadata, "relation")
+        journal_sources = _texts(metadata, "source")
         creators = _texts(metadata, "creator")
         dates = _texts(metadata, "date")
         publishers = _texts(metadata, "publisher")
         languages = _texts(metadata, "language")
         subjects = _texts(metadata, "subject")
         types = _texts(metadata, "type")
-        all_ids = identifiers + relations + [oai_id]
+        all_ids = identifiers + relations + journal_sources + [oai_id]
         record_issns = _issns_in_values(all_ids)
         matching_issns = sorted(record_issns & target_issns)
         if not matching_issns:
@@ -211,6 +212,7 @@ def parse_records(xml_bytes: bytes, target_issns: set[str]) -> tuple[list[dict],
             "source_url": source_url,
             "full_text_links": [v[:2000] for v in relations if v.startswith(("https://", "http://"))][:10],
             "journal_issns": matching_issns,
+            "journal_source_metadata": journal_sources[:10],
             "language_metadata": languages[:10],
             "subjects": subjects[:30],
             "dc_type": types[:5],
