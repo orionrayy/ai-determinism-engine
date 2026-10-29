@@ -112,3 +112,8 @@ After capturing Binance history (to provide the dated FX proxy), run:
 `python projects/sol-sentinel/reku_market.py --symbol SOL --binance-csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/reku_sol_idr_market.json`
 
 The adapter calls the public endpoints documented at https://api.reku.id/: `/v2/coins`, `/v2/price`, `/v2/bidask`, and `/v2/orderbook?id=...`. It records direct spread in basis points, order-book best levels and top-five notional depth, and optional cross-venue reference deviation. No login or credentials are used. The documentation is legacy, so use the report's `data_status` and `warnings`: `OK` means the fields parsed coherently, `PARTIAL` means quote/book consistency could not be fully validated, and `ERROR` means no reliable snapshot. Do not treat the USD/IDR proxy as a transaction rate or the adapter as an order API.
+
+
+### Reku public quote caveat
+
+A prior GitHub Actions snapshot returned last price Rp1,845,000, bid Rp1,840,000 and ask Rp1,845,000 (about 27.14 bps quoted spread), but the legacy `/v2/orderbook?id=51` route returned HTTP 400 and the output was labelled `PARTIAL`. The code now tries the documented `/v2/orderbookall?id=...` fallback. Use a fresh report's `data_status`, `orderbook_status`, endpoint used, and capture timestamp. This old snapshot must not be used as the current market quote.
