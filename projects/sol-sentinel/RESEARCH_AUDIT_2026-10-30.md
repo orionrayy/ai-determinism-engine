@@ -375,3 +375,34 @@ The predeclared Reku Lightning fee-only floor (zero spread/slippage) yielded 10 
 ### Integration state
 
 PR #178 remains draft/open/unmerged; latest pre-checkpoint comparison to `main` was diverged (239 ahead / 2 behind, merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`). PR #180 remains draft/open/unmerged and contains this audit and canonical memory addendum. No merge, rebase, reset, force-push, wallet connection, signing, transfer or live order was performed. Readiness remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
+
+
+## Current final-source validation — INDODAX depth probe and run #60 (2026-10-30 WIB)
+
+### Latest exact-read evidence
+
+- Research workflow [#40950218320](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320) completed successfully on workflow/code head `89a8d7181954a1524379d3b03fa77e703eb9331d`. Latest branch-head unit CI after doc-only changes [#40950649418](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950649418) succeeded: 137 tests, 0 failures.
+- INDODAX native history: 43,200 contiguous 1m candles; SHA-256 `c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30`; period 2026-09-29 20:36:00 UTC to 2026-10-29 20:35:59.999 UTC; IDR source currency; no FX conversion; status OK.
+- The same run's public depth probe returned `market_quote_status=OK`, `market_quote_error=null`, `orders_enabled=false`. Snapshot timestamp 2026-10-29T20:37:47.062073Z; bid IDR 1,777,113; ask IDR 1,779,923; midpoint IDR 1,778,518; spread 15.799671411815905 bps. This is a public-read-only book observation, not a guaranteed fill or historical spread series.
+- Earlier run [#40950150440](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950150440) recorded a second valid public depth snapshot (bid Rp1,775,886 / ask Rp1,780,450 / spread ~25.6669 bps) and another native history dataset. Different point-in-time spreads are evidence not to use a single quote as a 30-day constant except in clearly labeled sensitivity calculations.
+- Native metadata in run #60: API market minimum IDR 10,000, minimum base quantity 0.00563136 SOL, price tick IDR 1, quantity step 1e-8 SOL. Account/mode minimum and fee remain separate, and not verified for the user's account.
+
+### Most recent 30-day strategy result
+
+In run #60 the Binance SOLUSDT input had 43,200 1m bars and dataset SHA-256 `bcc67c412280453fc5c499f9e0179ab8a118b331766470f0b59a8a18f62305e7`. The baseline and every fixed chronological 60/20/20 segment still had zero signal candidates and zero closed trades; expectancy, win rate and profit factor were undefined. The hypothetical Reku Lightning fee-only floor still produced 10 simulations and net P&L roughly IDR -3,893.22 with spread and slippage assumed zero. Thus strategy viability remains unproven; no thresholds were loosened.
+
+The research workflow printed an exit-code-2 error for the optional legacy Reku activity-history collector due HTTP 404, but that step is configured `continue-on-error: true`; the overall research run succeeded, and the metadata marks the Reku history source ERROR. The Reku public market snapshot remained OK. This must not be read as a transfer outage finding or as a failed strategy backtest.
+
+### Clarification of prior live endpoint scope
+
+Earlier checkpoints said that live smoke testing was still required for INDODAX depth. That was true before #40950150440. As of #40950218320, the public unauthenticated `/api/pairs`, native TradingView OHLC history and `/api/depth/solidr` quote path have each been exercised successfully from GitHub Actions. They are now public market-data integration evidence; none implies authentication, order submission, user-account permissions, deposit-network support or Android/Termux validation.
+
+### Remaining P1 gates
+
+1. Verify selected INDODAX mode, actual all-in fee components from Profile/Trading Fees and the correct mode minimum. Public market metadata (IDR 10,000 in this snapshot) is not the same as the direct-Pro minimum IDR 25,000 (Lite IDR 10,000) described by the current official help page: https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX.
+2. Supply measured/documented spread and explicitly labeled slippage assumptions before native IDR paper backtest/evaluation. Never pass Reku fees into native INDODAX.
+3. Confirm the precise SOL network on the official Reku withdrawal preview and destination deposit screen, without sending a transfer.
+4. Test the runbook on actual Termux and conduct a forward paper period with the chosen venue's quotes/fill assumptions.
+5. Keep live execution blocked until all gates and separate explicit approval exist.
+
+PR #178 remains draft/open/unmerged and diverged from main (last checked 239 ahead / 2 behind; merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`). PR #180 remains draft/open/unmerged. No real order, transfer, wallet signature, private key, or account credential was used.
