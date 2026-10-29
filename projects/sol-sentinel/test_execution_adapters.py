@@ -1,4 +1,5 @@
 import unittest
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -113,6 +114,60 @@ class AdapterContractTests(unittest.TestCase):
         self.assertEqual(custody.get_balance("sol", "solana"), Decimal("0.25"))
         with self.assertRaisesRegex(a.AdapterContractError, "not configured"):
             custody.get_balance("USDC", "SOLANA")
+
+    def test_indodax_public_depth_adapter_parses_best_levels_without_credentials(self):
+        spec = a.MarketSpec(
+            venue="INDODAX", symbol="SOL/IDR", venue_symbol="solidr",
+            base_asset="SOL", quote_asset="IDR", price_tick="1000",
+            quantity_step="0.000001", min_notional_quote="10000",
+            base_decimals=9, quote_decimals=0,
+        )
+        requests = []
+        payload = {
+            "buy": [["1809000", "0.1"], ["1810000", "0.2"], ["bad", "1"]],
+            "sell": [["1820000", "0.1"], ["1815000", "0.3"]],
+        }
+        def fake_transport(url, timeout):
+            requests.append((url, timeout))
+            return payload
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=fake_transport, timeout=2.0)
+        observed = adapter.get_quote(spec)
+        self.assertEqual(observed.bid, Decimal("1810000"))
+        self.assertEqual(observed.ask, Decimal("1815000"))
+        self.assertEqual(observed.source, "INDODAX public /api/depth (client receive timestamp)")
+        self.assertEqual(requests, [("https://indodax.com/api/depth/solidr", 2.0)])
+        self.assertFalse(hasattr(adapter, "execute"))
+        self.assertFalse(hasattr(adapter, "sign"))
+
+    def test_indodax_public_depth_adapter_retries_transient_timeout(self):
+        spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 9, 0)
+        attempts = []
+        payload = {"buy": [["1810000", "0.2"]], "sell": [["1815000", "0.3"]]}
+        def fake_transport(url, timeout):
+            attempts.append(url)
+            if len(attempts) == 1:
+                raise TimeoutError("temporary timeout")
+            return payload
+        from unittest.mock import patch
+        with patch.object(a.time, "sleep"):
+            q = a.IndodaxPublicMarketDataAdapter(transport=fake_transport, attempts=2).get_quote(spec)
+        self.assertEqual(len(attempts), 2)
+        self.assertEqual(q.bid, Decimal("1810000"))
+
+    def test_indodax_public_depth_fails_closed_on_wrong_venue_and_invalid_book(self):
+        spec = a.MarketSpec("Other", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 9, 0)
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=lambda *_: self.fail("transport must not run"))
+        with self.assertRaisesRegex(a.AdapterContractError, "venue=INDODAX"):
+            adapter.get_quote(spec)
+        good_spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 9, 0)
+        with self.assertRaisesRegex(a.VenueDataError, "no valid sell"):
+            a.IndodaxPublicMarketDataAdapter(
+                transport=lambda *_: {"buy": [["1810000", "0.2"]], "sell": [["bad", "0.3"]]}
+            ).get_quote(good_spec)
+        with self.assertRaisesRegex(a.AdapterContractError, "IDR-quoted"):
+            a.IndodaxPublicMarketDataAdapter(transport=lambda *_: {}).get_quote(
+                a.MarketSpec("INDODAX", "SOL/USDT", "solusdt", "SOL", "USDT", "0.01", "0.000001", "1", 9, 6)
+            )
 
     def test_transfer_plan_rejects_stale_fee_evidence(self):
         route = a.TransferRoute(
