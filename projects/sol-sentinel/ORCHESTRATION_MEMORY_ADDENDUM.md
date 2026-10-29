@@ -72,3 +72,8 @@ Latest verified CI: run `40906164183`, commit `41f60c53ff7801d3b3729c27f5bd33885
 ## Cost model and workflow update — 2026-10-29
 
 The scanner and offline paper engine separate fee, spread, and slippage assumptions. The new `.github/workflows/sol-sentinel-research.yml` is a free-first research workflow for bounded public candle capture, offline backtesting, chronological evaluation, and short-retention artifacts. It is not a live trading workflow. Its first manual dispatch is still required to validate actual GitHub Actions public-data reachability and report generation.
+
+
+## Continuity archive update — 2026-10-29
+
+The detailed conversational decision timeline, APIs/repositories, GitHub tool inventory, known rejections, CI debugging evidence and continuation plan are recorded in `EXECUTION_LOG.md` and indexed from `README.md`. Before any further writes, reread the current PR head and latest CI. The last fully inspected green run before the journal commits was `40910240121` (commit `e20c3ce0b49969cbaa08706a44fc765e47e01db9`, 32 tests passed). This needs to be refreshed after the current commit sequence.
