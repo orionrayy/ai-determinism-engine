@@ -46,7 +46,7 @@ jobs:
 
       - name: Compile and test
         run: |
-          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py
+          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py projects/sol-sentinel/reku_history.py
           python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 
       - name: Capture public history and dated FX reference (bounded retries)
@@ -63,6 +63,14 @@ jobs:
             --symbol SOL \
             --binance-csv research-output/SOLUSDT_1m.csv \
             --output research-output/reku_sol_idr_market.json
+
+      - name: Capture native Reku SOL/IDR activity history
+        continue-on-error: true
+        run: |
+          python projects/sol-sentinel/reku_history.py \
+            --symbol SOL --days 30 \
+            --output research-output/REKU_SOLIDR_1m.csv \
+            --metadata-output research-output/REKU_SOLIDR_1m.csv.meta.json
 
       - name: Run cost-aware offline backtest
         run: |
@@ -159,6 +167,20 @@ jobs:
           print("- warnings:", report.get("warnings", []))
           print("- error:", report.get("error") or report.get("cross_venue_comparison_error") or report.get("orderbook_error"))
           PY
+            fi
+
+            if [ -f research-output/REKU_SOLIDR_1m.csv.meta.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path("research-output/REKU_SOLIDR_1m.csv.meta.json").read_text())
+          print("Native Reku SOL/IDR transaction history capture (read-only):")
+          for key in ("data_status","requested_days","valid_trade_rows","generated_1m_bars","coverage_fraction","first_trade_utc","last_trade_utc","last_trade_age_seconds","synthetic_no_trade_minutes","api_errors","warnings","csv_sha256"):
+              print(f"- {key}: {meta.get(key)}")
+          PY
+            else
+              echo "Native Reku SOL/IDR history sidecar not created; inspect the collector step log."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
