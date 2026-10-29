@@ -7,7 +7,7 @@ from pathlib import Path
 import paper_engine as engine
 
 
-BASE_MS = 1_760_000_000_000
+BASE_MS = 1_760_000_040_000
 
 
 def make_bar(index, close=None, volume=10.0):
