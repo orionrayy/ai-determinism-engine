@@ -22,9 +22,13 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 - Current CFX fee adjustment notice (effective 2026-10-01): https://reku.id/information/informasi-penyesuaian-biaya-cfx
 - Published Pro Mode fee components: buy 0.1% trading + 0% PPN + 0.00555% CFX = 0.10555% (10.555 bps); sell 0.1% trading + 0.21% PPh + 0.00555% CFX = 0.31555% (31.555 bps). The sum at equal nominal notional is approximately 0.42110% (42.11 bps) before spread/slippage and subject to the mode and current order preview.
 - Published minimum order: IDR 30,000 for Pro Mode and IDR 5,000 for Lightning: https://reku.id/help/batas-minimal-rupiah-dalam-order-jual-beli
-- Public API endpoint catalogue (historical; treat as unverified until live docs/terms confirm): https://api.reku.id/v2/openapi.json
+- Public API reference: https://api.reku.id/ (legacy documentation; last indexed around 2024–2025, so live availability and current terms must be revalidated). It documents public read-only endpoints: `GET /v2/coins`, `GET /v2/price`, `GET /v2/bidask`, `GET /v2/orderbook?id={coin_id}`, and `GET /v2/chart?t={type}&f={minutes}&id={coin_id}`.
+- JSON schema catalogue (also treat as legacy until verified): https://api.reku.id/v2/openapi.json
 - User context: Reku KYC is already complete; user reports IDR 300,000 deposited. User screenshot showed a limit-price UI at IDR 1,820,000 and an IDR 150,000 buy size, with estimated 0.08241759 SOL; open order count was 0 at screenshot time.
 - Known gap: public market-data APIs have been referenced historically, but a currently supported authenticated order-placement API and permission to automate Reku trades were not verified in this research. Do not automate Reku orders using undocumented endpoints.
+
+- Project adapter: `projects/sol-sentinel/reku_market.py` uses only those documented GET market-data endpoints to gather SOL/IDR last price, direct bid/ask, order-book spread and top-five depth. It is explicitly read-only. It can optionally compare the current Reku close with the latest captured Binance SOLUSDT close converted by a dated USD/IDR proxy; the comparison is indicative, not an executable arbitrage signal.
+- Live read-only API validation: see the latest run under https://github.com/orionrayy/ai-determinism-engine/actions/workflows/sol-sentinel-research.yml. The workflow continues if Reku endpoints fail and retains an error report; no fallback quote is fabricated.
 
 ## Solana swap / chain components (future phase only)
 
