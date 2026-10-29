@@ -91,3 +91,41 @@ This means the previously documented end-to-end route is **not blocked by a publ
 - Current official INDODAX SOL/IDR page displays about Rp1,822,124 last price and Rp5.9bn 24h IDR volume at the time of the crawl; do not hard-code these. Spread, fee tier, endpoint latency, API trade rules and this user's account/network deposit availability are not yet verified. https://indodax.com/trade/SOLIDR
 - Reku remains acquisition/on-ramp only; verify the precise SOL network/withdrawal fee/minimum from the official app before any separately approved transfer. No funds were moved.
 - Status remains `RESEARCH_ONLY` / `INSUFFICIENT_EVIDENCE`; research run #27 still shows zero trades in all 60/20/20 splits. `ExecutionPolicy(LIVE)` rejects unconditionally because no live executor exists.
+
+
+## Latest integration state — native SOL/IDR history verified, fee gates tightened (2026-10-30)
+
+### Source choice
+
+INDODAX is now the leading *candidate* centralized execution venue for future SOL/IDR paper integration because the unauthenticated public pair catalogue and native OHLC-history endpoint returned a coherent, contiguous 30-day result in a GitHub Actions smoke test. The test used run [#40948530609](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948530609) and observed:
+- `data_status=OK`; 43,200 SOL/IDR one-minute candles.
+- SHA-256 `4297c660ed1c3485bb5641babb5a286b8738290e88f8bb18c9f58bb903fa687b`.
+- Input quote currency IDR; no FX conversion; first open 2026-09-29 20:24:00 UTC; last close 2026-10-29 20:23:59.999 UTC.
+- Pair ID `solidr`; public history endpoint `https://indodax.com/tradingview/history_v2`.
+
+This is a real public-data endpoint smoke test, not a test of order placement, account permissions, SOL deposit/withdrawal route, or Android/Termux. The artifact retention is short (7 days), so retain the dataset hash and the run URL in the audit rather than assuming the artifact remains downloadable indefinitely.
+
+### Newly resolved integration bug class
+
+The backtest/evaluator contracts now identify source venue, pair and quote currency. Binance SOLUSDT input remains an explicitly labeled USDT reference transformed with the dated USD/IDR proxy. Native INDODAX SOL/IDR input uses identity rate 1.0 and disables FX conversion; the report identifies the native IDR venue and fee model. CSV sidecar data status/hash are checked before source metadata is accepted. Reku fee sensitivity presets refuse a native IDR source. Native IDR backtests require explicitly supplied fee, spread, slippage and order minimum, plus a fee-source label; non-finite/negative fee assumptions and a zero minimum are rejected.
+
+### Fee decision remains open pending account-specific verification
+
+The snapshot's pair metadata reported IDR 10,000 quote minimum and SOL base minimum 0.00559952, but neither is a complete account mode/fee contract. Official INDODAX help says Lite minimum is IDR 10,000 and direct Pro minimum is IDR 25,000, with Pro interface orders IDR 10,000–24,999 routed via Lite. It also says current exact all-in fee components appear in the account Profile/Trading Fees screen, with the changed fee structure effective 1 October 2026. Before native IDR backtest:
+1. Verify account mode and current fee components in the official UI.
+2. Choose the applicable mode floor and supply that value explicitly.
+3. Measure the live public bid/ask spread over a defined observation window; do not extrapolate one quote as historical spread.
+4. Label all unmeasured slippage/latency values as assumptions and test sensitivity without tuning to OOS.
+
+Official references:
+- API endpoints/schema/rate: https://indodax.com/downloads/INDODAXCOM-API-DOCUMENTATION.pdf
+- Fee and minimum policy: https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX
+- Pro API permissions: https://help.indodax.com/hc/en-us/articles/5315217255833-How-to-Integrate-the-INDODAX-API
+
+### Economic/strategy status
+
+Latest complete 30-day Binance research run [#40948530609](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40948530609) still produced zero candidates/trades on the baseline and zero trades in each fixed 60/20/20 split. The theoretical Reku-Lightning fee-only floor produced 10 trades and net P&L around IDR -3,893.22 while assuming zero spread and slippage; it is not an executable estimate. Native INDODAX candles were captured in this run but were not backtested with INDODAX-specific fee inputs. No new positive edge claim is established.
+
+### Release gate
+
+The implementation remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`. Latest verified unit CI at the associated current feature checkpoint succeeded with 135 offline tests. The new fee-gate patch is triggering another full CI run; update the final audit only after exact-head status is confirmed. No transfers, orders, signatures, credential use, or modifications to `main` were performed. PR #178 and PR #180 remain draft/open/unmerged.
