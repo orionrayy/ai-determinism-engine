@@ -511,6 +511,10 @@ class IndodaxPublicMarketDataAdapter:
         canonical = symbol.replace("/", "").replace("-", "").strip().upper()
         if not canonical.isalnum() or len(canonical) > 30:
             raise AdapterContractError("symbol must contain only asset codes and an optional separator")
+        mode_floor = (
+            _decimal(mode_minimum_notional_quote, "mode_minimum_notional_quote")
+            if mode_minimum_notional_quote is not None else None
+        )
         payload = self._get_public_json(self.PAIRS_URL)
         if not isinstance(payload, list):
             raise VenueDataError("INDODAX public /api/pairs response must be an array")
@@ -543,8 +547,7 @@ class IndodaxPublicMarketDataAdapter:
         try:
             step_decimal = _decimal(quantity_step, "quantity_increment")
             api_minimum = _decimal(min_notional, "trade_min_base_currency", allow_zero=True)
-            if mode_minimum_notional_quote is not None:
-                mode_floor = _decimal(mode_minimum_notional_quote, "mode_minimum_notional_quote")
+            if mode_floor is not None:
                 api_minimum = max(api_minimum, mode_floor)
             base_decimals = max(0, -step_decimal.normalize().as_tuple().exponent)
             return MarketSpec(
