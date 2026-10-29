@@ -55,7 +55,7 @@ jobs:
             --symbol SOLUSDT --interval 1m --days "$CAPTURE_DAYS" \
             --output research-output/SOLUSDT_1m.csv
 
-      - name: Capture read-only Reku SOL/IDR market snapshot (order-book fallback and midpoint spread validation)
+      - name: Probe Reku quote, order-book fallback, and native chart history
         continue-on-error: true
         run: |
           python projects/sol-sentinel/reku_market.py \
@@ -149,6 +149,11 @@ jobs:
           print("- orderbook_status:", report.get("orderbook_status"))
           print("- orderbook_endpoint_used:", report.get("orderbook_endpoint_used"))
           print("- orderbook_spread_bps:", (report.get("orderbook") or {}).get("spread_bps"))
+          print("- chart_status:", report.get("chart_status"))
+          print("- chart_interval_minutes:", (report.get("chart_probe") or {}).get("interval_minutes"))
+          print("- chart_points_returned:", (report.get("chart_probe") or {}).get("points_returned"))
+          print("- chart_last_time_utc:", (report.get("chart_probe") or {}).get("last_time_utc"))
+          print("- chart_error:", report.get("chart_probe_error"))
           print("- cross_venue_comparison:", report.get("cross_venue_comparison"))
           print("- warnings:", report.get("warnings", []))
           print("- error:", report.get("error") or report.get("cross_venue_comparison_error") or report.get("orderbook_error"))
