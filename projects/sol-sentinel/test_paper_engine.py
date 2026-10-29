@@ -48,6 +48,10 @@ class DataAndIndicatorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             engine.BacktestConfig(risk_fraction=1.2).validate()
 
+    def test_config_rejects_negative_spread_assumption(self):
+        with self.assertRaisesRegex(ValueError, "spread_bps_round_trip"):
+            engine.BacktestConfig(spread_bps_round_trip=-1.0).validate()
+
     def test_csv_reader_rejects_gaps(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bars.csv"
