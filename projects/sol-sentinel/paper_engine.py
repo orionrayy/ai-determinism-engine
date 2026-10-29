@@ -453,7 +453,11 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
             "entry_reference_price": position.entry_reference_price, "entry_fill_price": position.entry_fill_price,
             "exit_reference_price": exit_reference, "exit_fill_price": exit_fill,
             "quantity": position.quantity, "entry_fee_idr": position.entry_fee_idr, "exit_fee_idr": exit_fee,
-            "pnl_before_exchange_fees_idr": gross_pnl, "net_pnl_idr": net_pnl,
+            "pnl_before_exchange_fees_idr": gross_pnl,
+            "entry_execution_friction_idr": max(0.0, (position.entry_fill_price - position.entry_reference_price) * position.quantity),
+            "exit_execution_friction_idr": max(0.0, (exit_reference - exit_fill) * position.quantity),
+            "execution_friction_cost_idr": max(0.0, (position.entry_fill_price - position.entry_reference_price) * position.quantity) + max(0.0, (exit_reference - exit_fill) * position.quantity),
+            "net_pnl_idr": net_pnl,
             "bars_held": position.bars_held, "exit_reason": "end_of_data_forced_close",
         })
         position = None
