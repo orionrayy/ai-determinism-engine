@@ -901,6 +901,20 @@ def resolve_fee_inputs(
             raise ValueError("INDODAX native backtest requires explicit " + ", ".join(missing))
         if not isinstance(fee_source, str) or not fee_source.strip():
             raise ValueError("INDODAX native backtest requires --fee-source labeling the verified source/assumption")
+        for flag, value in (
+            ("--entry-fee-bps", entry_fee_bps),
+            ("--exit-fee-bps", exit_fee_bps),
+            ("--spread-bps-round-trip", spread_bps_round_trip),
+            ("--slippage-bps-per-side", slippage_bps_per_side),
+        ):
+            if isinstance(value, bool) or not math.isfinite(float(value)) or float(value) < 0:
+                raise ValueError(f"{flag} must be finite and non-negative")
+        if (
+            isinstance(minimum_order_notional_idr, bool)
+            or not math.isfinite(float(minimum_order_notional_idr))
+            or float(minimum_order_notional_idr) <= 0
+        ):
+            raise ValueError("--minimum-order-notional-idr must be finite and positive")
         return {
             "entry_fee_bps": entry_fee_bps,
             "exit_fee_bps": exit_fee_bps,
