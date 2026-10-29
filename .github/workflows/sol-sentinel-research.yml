@@ -80,6 +80,7 @@ jobs:
         run: |
           python projects/sol-sentinel/cost_sensitivity.py \
             --csv research-output/SOLUSDT_1m.csv \
+            --reku-market-json research-output/reku_sol_idr_market.json \
             --output research-output/cost_sensitivity.json
 
       - name: Publish research summary
@@ -126,6 +127,8 @@ jobs:
           from pathlib import Path
           report=json.loads(Path("research-output/cost_sensitivity.json").read_text())
           print("Cost sensitivity (predeclared; not auto-optimized):")
+          print("- Reku spread reference:", report.get("reku_spread_reference"))
+          print("- Reku spread reference unavailable:", report.get("reku_spread_reference_error"))
           for item in report.get("scenarios", []):
               print(f"- {item['scenario']}: cost_bps={item['modeled_round_trip_cost_bps']}, min_gross_bps={item['minimum_gross_move_bps_in_signal_gate']}, candidates={item['signal_candidates']}, trades={item['closed_trades']}, net_pnl_idr={item['net_pnl_idr']}, return_pct={item['net_return_pct']}, win_rate_pct={item['win_rate_pct']}, profit_factor={item['profit_factor']}")
               print(f"  fees_idr={item['total_fees_idr']}, execution_friction_idr={item['total_execution_friction_idr']}")
