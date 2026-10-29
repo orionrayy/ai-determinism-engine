@@ -6,7 +6,7 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 
 ### Binance Spot public market data
 - Docs: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints
-- Public klines endpoint: `GET /api/v3/klines`.
+- Public klines endpoint: `GET https://data-api.binance.vision/api/v3/klines` (official market-data-only host, no API key): https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md
 - Use: reference SOLUSDT candle feed at 1m/5m/15m without account credentials.
 - Caveat: Binance spot data are not the executable Reku SOL/IDR price. Regional availability and endpoint uptime must be checked on the user's device. Respect documented rate limits.
 
