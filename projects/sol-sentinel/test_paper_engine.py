@@ -34,7 +34,6 @@ class DataAndIndicatorTests(unittest.TestCase):
                 "venue": "INDODAX",
                 "pair": "SOL/IDR",
                 "input_price_currency": "IDR",
-                "dataset_sha256": "fixture",
             }), encoding="utf-8")
             market = engine.resolve_input_market_metadata(csv_path)
             rate, source = engine.resolve_quote_to_idr(csv_path, source_metadata=market)
