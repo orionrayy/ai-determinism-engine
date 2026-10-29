@@ -6,7 +6,7 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 
 ### Binance Spot public market data
 - Docs: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints
-- Public klines endpoint: \`GET /api/v3/klines\`.
+- Public klines endpoint: `GET /api/v3/klines`.
 - Use: reference SOLUSDT candle feed at 1m/5m/15m without account credentials.
 - Caveat: Binance spot data are not the executable Reku SOL/IDR price. Regional availability and endpoint uptime must be checked on the user's device. Respect documented rate limits.
 
@@ -60,8 +60,8 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 
 - Project repository: https://github.com/orionrayy/ai-determinism-engine
 - Canonical orchestration context: https://github.com/orionrayy/ai-determinism-engine/blob/main/ORCHESTRATION_MEMORY.md
-- Base commit observed before this work: \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\` (GitHub API tree response at branch setup). The ORCHESTRATION_MEMORY.md baseline may refer to an earlier observed head; always query current refs before modifying.
-- Implementation branch: \`feat/sol-sentinel-paper-trader-v1\`
+- Base commit observed before this work: `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5` (GitHub API tree response at branch setup). The ORCHESTRATION_MEMORY.md baseline may refer to an earlier observed head; always query current refs before modifying.
+- Implementation branch: `feat/sol-sentinel-paper-trader-v1`
 
 ## Regulatory note
 
