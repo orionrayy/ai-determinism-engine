@@ -38,7 +38,8 @@ The GitHub Actions workflow runs the same audit on the dedicated research branch
 
 ## Current checkpoint
 
-- 898 unique source candidates discovered across six batches.
+- 1,090 unique source URLs inventoried across eight discovery batches. Metadata-only filtering currently flags 838 as eligible for retrieval attempts, including 403 direct-file candidates; these counts are not validated-document counts.
 - Candidate filter, downloader, PDF/DOCX/XLSX/HTML extractors and report aggregation are implemented in the audit tool.
+- The dedicated `benchmark/` directory now contains a genre-matched original-vs-generated comparison protocol, blinded review rubric and preliminary structural observations from public-source spot checks.
 - Acceptance target: 500 full-document analyses.
 - Manual authenticity/licence review and visual quality control remain required; neither is inferred from successful extraction.
