@@ -104,8 +104,29 @@ class AdapterContractTests(unittest.TestCase):
         with self.assertRaisesRegex(a.AdapterContractError, "different order intent"):
             adapter.execute(intent(qty="0.02"), market(), quote(), now=NOW)
 
+    def test_mock_market_data_capital_and_custody_adapters_are_separated(self):
+        market_spec = market()
+        adapter = a.StaticMockMarketDataAdapter([quote()])
+        self.assertEqual(adapter.get_quote(market_spec), quote())
+        self.assertEqual(a.MockCapitalSourceAdapter().source_id(), "reku-onramp-reference")
+        custody = a.MockCustodyAdapter({("SOL", "SOLANA"): Decimal("0.25")})
+        self.assertEqual(custody.get_balance("sol", "solana"), Decimal("0.25"))
+        with self.assertRaisesRegex(a.AdapterContractError, "not configured"):
+            custody.get_balance("USDC", "SOLANA")
+
+    def test_transfer_plan_rejects_stale_fee_evidence(self):
+        route = a.TransferRoute(
+            "Reku", "Indodax", "SOL", "Solana", "Solana",
+            Decimal("0.01"), Decimal("0.002"), Decimal("0.001"),
+            source_network_verified=True, destination_network_verified=True,
+            cost_verified_at=NOW - timedelta(days=2),
+        )
+        decision = a.PlanningOnlyTransferAdapter().plan(route, Decimal("0.1"))
+        self.assertIn("route_cost_verification_stale", decision.reasons)
+        self.assertFalse(decision.transfer_sent)
+
     def test_live_mode_is_unimplemented_even_when_flags_are_supplied(self):
-        policy = a.ExecutionPolicy(a.ExecutionMode.LIVE, True, True, "approval-reference")
+        policy = a.ExecutionPolicy("LIVE", True, True, "approval-reference")
         with self.assertRaisesRegex(a.AdapterContractError, "no live execution adapter"):
             policy.validate()
         with self.assertRaisesRegex(a.AdapterContractError, "explicit user approval"):
@@ -117,7 +138,7 @@ class AdapterContractTests(unittest.TestCase):
             Decimal("0.01"), None, Decimal("0.001"),
             source_network_verified=True, destination_network_verified=True,
         )
-        decision = a.assess_transfer_route(route, Decimal("1"))
+        decision = a.assess_transfer_route(route, Decimal("1"), now=NOW)
         self.assertFalse(decision.approved_for_planning)
         self.assertIn("withdrawal_fee_unknown", decision.reasons)
         self.assertIn("minimum_deposit_unknown", decision.reasons)
@@ -130,7 +151,7 @@ class AdapterContractTests(unittest.TestCase):
             source_network_verified=True, destination_network_verified=True,
             cost_verified_at=NOW,
         )
-        decision = a.assess_transfer_route(route, Decimal("0.1"))
+        decision = a.assess_transfer_route(route, Decimal("0.1"), now=NOW)
         self.assertTrue(decision.approved_for_planning)
         self.assertEqual(decision.estimated_amount_received, Decimal("0.098"))
         self.assertFalse(decision.transfer_sent)
@@ -141,7 +162,7 @@ class AdapterContractTests(unittest.TestCase):
             Decimal("0.1"), Decimal("0.01"), Decimal("0.05"),
             source_network_verified=True, destination_network_verified=True,
         )
-        decision = a.assess_transfer_route(route, Decimal("0.05"))
+        decision = a.assess_transfer_route(route, Decimal("0.05"), now=NOW)
         self.assertIn("network_mismatch", decision.reasons)
         self.assertIn("below_minimum_withdrawal", decision.reasons)
 
