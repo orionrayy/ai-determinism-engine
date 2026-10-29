@@ -190,3 +190,15 @@ No automated trading connector, Reku authenticated API or wallet signer was used
 ## 10. Privacy, legal and operational constraints
 
 This repository is public. Preserve user-requested project context without including private identifiers or credentials. KYC avoidance is not a design objective for bypassing legal requirements; self-custody/DEX activity does not imply exemption from applicable rules. IDR 300,000 is the reported starting capital; IDR 3,500,000 is a target only. The project must never trade on an LLM's confidence alone.
+
+
+## 11. Latest checkpoint after continuity journal was added
+
+Read-back verification at 2026-10-29:
+- PR #178 remains open and draft, not merged.
+- Latest branch head observed at this checkpoint: `8d8c91738b5f237e715206f662db417bbb509b63`.
+- Latest verified CI run for that exact head: [40911083700](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40911083700), conclusion `success`. Compile and offline tests passed; log reports 32 tests in 0.099 seconds.
+- Current `main` SHA observed: `d5672c84a0ae184c3a95d3f925925887ece71aa4`; the PR object still reported base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`. Reconcile this difference before any merge; no rebase/merge was performed.
+- Repository tree includes `EXECUTION_LOG.md` plus the scanner, capture, paper engine, split evaluator, tests and project docs listed in section 2.
+- This validates source compilation and offline unit tests only. The historical research workflow has not been run end-to-end on actual network data; no profitability or live trading claim is established.
+- Subsequent edits will create a new head and may trigger new CI; re-read GitHub before relying on this snapshot.
