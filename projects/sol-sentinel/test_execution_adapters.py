@@ -307,7 +307,7 @@ class AdapterContractTests(unittest.TestCase):
         )
         decision = a.assess_transfer_route(route, Decimal("0.1"), now=NOW)
         self.assertFalse(decision.approved_for_planning)
-        self.assertIn("withdrawal_fee_consumes_entire_amount", decision.reasons)
+        self.assertIn("no_transfer_value_remaining", decision.reasons)
         self.assertIsNone(decision.estimated_amount_received)
         self.assertFalse(decision.transfer_sent)
 
