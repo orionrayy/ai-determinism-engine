@@ -494,8 +494,18 @@ class IndodaxPublicMarketDataAdapter:
             f"{type(last_error).__name__ if last_error else 'unknown error'}"
         ) from None
 
-    def get_market_spec(self, symbol: str = "SOL/IDR") -> MarketSpec:
-        """Load the exact current pair increments from the public /api/pairs catalogue."""
+    def get_market_spec(
+        self,
+        symbol: str = "SOL/IDR",
+        *,
+        mode_minimum_notional_quote: Decimal | None = None,
+    ) -> MarketSpec:
+        """Load public pair filters and optionally enforce an explicit venue-mode floor.
+
+        Official help distinguishes the IDR 25,000 direct-Pro minimum from the
+        IDR 10,000 Lite minimum. Supply a floor only when the research config
+        explicitly selects a mode; market metadata alone is not that mode rule.
+        """
         if not isinstance(symbol, str) or not symbol.strip():
             raise AdapterContractError("symbol must be a non-empty canonical pair such as SOL/IDR")
         canonical = symbol.replace("/", "").replace("-", "").strip().upper()
@@ -532,6 +542,10 @@ class IndodaxPublicMarketDataAdapter:
             raise VenueDataError("INDODAX pair metadata omitted a required tick, step, or order minimum")
         try:
             step_decimal = _decimal(quantity_step, "quantity_increment")
+            api_minimum = _decimal(min_notional, "trade_min_base_currency", allow_zero=True)
+            if mode_minimum_notional_quote is not None:
+                mode_floor = _decimal(mode_minimum_notional_quote, "mode_minimum_notional_quote")
+                api_minimum = max(api_minimum, mode_floor)
             base_decimals = max(0, -step_decimal.normalize().as_tuple().exponent)
             return MarketSpec(
                 venue="INDODAX",
@@ -541,7 +555,7 @@ class IndodaxPublicMarketDataAdapter:
                 quote_asset=quote_asset,
                 price_tick=_decimal(price_tick, "price_tick"),
                 quantity_step=step_decimal,
-                min_notional_quote=_decimal(min_notional, "trade_min_base_currency", allow_zero=True),
+                min_notional_quote=api_minimum,
                 base_decimals=base_decimals,
                 quote_decimals=0 if quote_asset == "IDR" else 6,
                 min_quantity_base=_decimal(min_quantity, "trade_min_traded_currency", allow_zero=True),
