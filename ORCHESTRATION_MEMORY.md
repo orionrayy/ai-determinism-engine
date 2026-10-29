@@ -1374,3 +1374,8 @@ This is a required next-phase acceptance contract from the user. It is a roadmap
 ### Persistence incident and recovery
 - The first memory append attempt accidentally retained the old blob due an idempotency check against the already-appended string. A post-write read detected the issue; the checkpoint was rewritten with the new blob, re-read, and checked for markers. This note records the failed attempt and correction so future continuation does not mistake the first tree creation for successful persistence.
 - Current verified readiness: \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. Zero OOS trades; no valid profitability claim. Native Reku trade history unavailable via legacy HTTP 404; Termux not run; zero live orders or account actions in this session.
+
+
+## Final compare refresh — 2026-10-30
+
+The last fresh GitHub compare, performed after all current documentation commits were pushed, reports current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` versus feature head \`3d2054da51ebb34f98380c50257e61735e650475\`: \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=168\`, \`behind_by=2\`, 27 files in PR #178. This supersedes the earlier point-in-time count of 167 commits ahead recorded in previous notes. \`mergeable=true\` is only API metadata and does not authorize merge; keep PR #178 draft and obtain review of the full history delta before integration. No rebase, force-push, merge, or change to main was performed.

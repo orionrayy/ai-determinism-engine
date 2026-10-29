@@ -171,3 +171,8 @@ This section supersedes the earlier run #25 capture metrics as the latest resear
 - The canonical memory first write had a stale-blob mistake due to checking idempotency after appending the marker. Read-after-write validation caught it; a new blob was created, verified and then extended with the latest code/research follow-ups. The current memory file and this report are both read back from the documentation branch. The docs PR #180 is draft/open and based on current main.
 - The latest source dataset from research #27 is SHA-256 \`6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14\` over 43,200 Binance SOLUSDT 1m candles from \`2026-09-29T18:23:00+00:00\` to \`2026-10-29T18:22:59.999000+00:00\`. All 60/20/20 segments had zero trades, fills, and P&L from absent positions; expectancy, win rate and PF are null. Read the prior follow-up for split event counts and cost sensitivities.
 - Readiness remains \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. No live orders or account actions; Termux not tested; native Reku activity history blocked by HTTP 404. Target Rp3,500,000 remains aspirational.
+
+
+## Latest compare refresh
+
+A final fresh compare after all current branch documentation commits reports PR #178 as diverged from main: merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, 168 commits ahead, 2 behind, 27 changed files; current main SHA \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`, feature branch head \`3d2054da51ebb34f98380c50257e61735e650475\`. This supersedes the earlier point-in-time count of 167 ahead. Keep the PR draft/unmerged; no history rewriting or integration was attempted.
