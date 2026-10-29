@@ -128,22 +128,7 @@ jobs:
           code=$?
           set -e
           if [ "$code" -ne 0 ]; then
-            python - <<'PY'
-            import json
-            from pathlib import Path
-            detail = Path("doaj-discovery-error.txt").read_text(encoding="utf-8", errors="replace")[:240]
-            report = {
-                "status": "LIVE_DISCOVERY_UNAVAILABLE",
-                "source": "DOAJ OAI-PMH",
-                "pages_requested": 2,
-                "live_candidates_added": 0,
-                "candidate_inventory_is_corpus": False,
-                "failure_detail": detail,
-                "content_rights_warning": "No article content was downloaded. This failure does not affect the eligible corpus count.",
-                "target_500_status": "INSUFFICIENT_EVIDENCE"
-            }
-            Path("doaj-discovery-summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + chr(10), encoding="utf-8")
-            PY
+            python -c 'import json, pathlib; p=pathlib.Path("doaj-discovery-error.txt"); detail=p.read_text(encoding="utf-8", errors="replace")[:240]; report={"status":"LIVE_DISCOVERY_UNAVAILABLE","source":"DOAJ OAI-PMH","pages_requested":2,"live_candidates_added":0,"candidate_inventory_is_corpus":False,"failure_detail":detail,"content_rights_warning":"No article content was downloaded. This failure does not affect the eligible corpus count.","target_500_status":"INSUFFICIENT_EVIDENCE"}; pathlib.Path("doaj-discovery-summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2)+chr(10), encoding="utf-8")'
             : > candidates.jsonl
             echo "WARNING: DOAJ live metadata discovery unavailable; the CI remains non-blocking and no candidate is counted."
           fi
