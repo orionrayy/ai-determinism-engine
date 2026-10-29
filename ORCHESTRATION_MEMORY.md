@@ -1246,3 +1246,12 @@ E. Finish rights ledger, commercial-license validation, export/package checksums
 - v0.8.4 behavior: free-arm render omits the unrelated/unheld basket; carry mode applies a cycle-phased basket tilt whose measured range is 5.1566 degrees. Wrist/handle contact error remains 0, maximum bone-length error about 8.53e-14 px, ground penetration 0. Temporal metrics still show stance drift near 1.14e-13 px/frame; max joint acceleration 7.58 px/frame².
 - Review contact sheets show cleaner scene semantics: no floating prop in free-arm mode, visible restrained tilt in carry mode. Character movement remains schematic and not accepted as natural/production-ready. Full-speed acceptance, proper weight transfer, shoulder/arm/head synchronization, grip/finger articulation, foot-crossing review, general rigid-body dynamics, editor/rigging subsystems, browser-vs-FFmpeg parity and full 240-second film integration remain open.
 - The durable requirements contract is https://github.com/orionrayy/projects/blob/main/docs/MOTION_STUDIO_CANONICAL_TARGETS.md. Keep its entire rigging, IK/FK, weight painting/deformation, mirroring/pivots, walk/run, overlapping/secondary action, timeline, audio, subtitles, asset-rights, and Full Motion Analysis QA checklist as the canonical follow-up scope.
+
+
+## Hallmark workspace design skill integration (2026-10-29)
+
+Imported the upstream `Nutlope/hallmark` skill package into `.agents/skills/hallmark/` for repository-scoped Codex/agent use. The import is pinned to upstream commit `8f6969f8922caabde9de1784959eae11ddf68073` (2026-10-28) and includes all 182 files from upstream `skills/hallmark/`, including `SKILL.md`, references, theme previews/catalogue, scripts, fixtures, and the MIT license. Repository documentation is in `.agents/skills/README.md` and `.agents/skills/hallmark/UPSTREAM.md`.
+
+Validation is wired through `.github/workflows/hallmark-skill-validation.yml`: the upstream installer is invoked in `--dry-run` mode to validate references/themes without installing into the runner's home directory, and the Node scripts receive syntax checks. No npm dependencies, API keys, paid services, or browser binaries are installed by this integration. The Together AI image-generation path remains optional and is not called automatically.
+
+This package is a workspace-level coding-agent skill, not an automatic registration in `orchestrator/enterprise_runtime/skills.py`. Runtime execution must continue to use the existing `SkillManifest` identity/digest, trust, network, billing, and permission authorization boundary.
