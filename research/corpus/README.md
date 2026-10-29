@@ -43,9 +43,13 @@ Exit code `0` berarti bentuk manifest dapat diproses; status target akan tetap `
 6. Bandingkan kualitas struktur, substansi, bukti/sitasi, bahasa, konsistensi, dan format. Catat temuan negatif, ketidakpastian, serta variasi valid antarinstitusi.
 7. Klaim peningkatan hanya jika hasil terukur dapat direproduksi dan tidak menunjukkan regresi bermakna pada genre lain.
 
-## Status awal yang terukur
+## Status korpus pada checkpoint 2026-10-30
 
-- Dokumen manifest yang lolos validasi: 0 (manifest kosong pada checkpoint awal).
-- Target: 500 dokumen unik yang terverifikasi.
-- Status: `INSUFFICIENT_EVIDENCE`.
-- Tidak ada klaim benchmark kualitas atau validasi visual DOCX/PDF/Excel pada checkpoint ini.
+- Dokumen individual yang masuk manifest dengan provenance kuat: 1 artikel ilmiah akses terbuka, DOI `10.15294/ijicle.v2i3.38417`. Lisensi CC BY-SA 4.0 dicatat berdasarkan halaman artikel, halaman hak cipta jurnal, dan pernyataan pada PDF.
+- Sampel yang memenuhi gate eligibility sesuai manifest: 1 dari target 500; sisa target 499; status `INSUFFICIENT_EVIDENCE`.
+- Genre saat ini: `academic_paper` = 1. Semua genre lainnya = 0 sampel tervalidasi.
+- Registry penemuan berisi 11 direktori/katalog sumber, tetapi tidak dihitung sebagai dokumen.
+- Satu sampel telah diberi analisis struktur manual pada `features.jsonl`; analisis tersebut eksploratif dan tidak cukup untuk menggeneralisasi pola satu genre.
+- Belum ada eksperimen Document Craft baseline-vs-kandidat atau validasi visual keluaran DOCX/PDF/Excel; visual yang diperiksa sejauh ini hanya PDF sumber satu artikel.
+
+Sampel artikel ini bukan otomatis gold-standard kualitas. Klaim faktualnya belum diverifikasi independen; analisis menyimpan fitur struktur, bukan salinan PDF atau teks lengkap.
