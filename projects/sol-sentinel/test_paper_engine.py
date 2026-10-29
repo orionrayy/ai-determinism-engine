@@ -1,4 +1,5 @@
 import csv
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -25,6 +26,30 @@ def make_bar(index, close=None, volume=10.0):
 
 
 class DataAndIndicatorTests(unittest.TestCase):
+    def test_fx_resolution_prefers_explicit_override(self):
+        rate, source = engine.resolve_quote_to_idr("does-not-need-to-exist.csv", 16_500.0, "test override")
+        self.assertEqual(rate, 16_500.0)
+        self.assertEqual(source, "test override")
+
+    def test_fx_resolution_reads_fresh_capture_sidecar(self):
+        from datetime import datetime, timezone
+        with tempfile.TemporaryDirectory() as tmp:
+            csv_path = Path(tmp) / "SOLUSDT_1m.csv"
+            sidecar = Path(str(csv_path) + ".meta.json")
+            sidecar.write_text(json.dumps({
+                "quote_to_idr_rate": 16_250.0,
+                "quote_to_idr_date": datetime.now(timezone.utc).date().isoformat(),
+                "quote_to_idr_source": "Frankfurter test reference",
+            }), encoding="utf-8")
+            rate, source = engine.resolve_quote_to_idr(csv_path)
+            self.assertEqual(rate, 16_250.0)
+            self.assertIn("Frankfurter test reference", source)
+
+    def test_fx_resolution_rejects_missing_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(ValueError, "No quote-to-IDR rate supplied"):
+                engine.resolve_quote_to_idr(Path(tmp) / "missing.csv")
+
     def test_timestamp_parses_milliseconds_seconds_and_iso(self):
         self.assertEqual(engine.parse_timestamp_ms("1760000000000"), 1_760_000_000_000)
         self.assertEqual(engine.parse_timestamp_ms("1760000000"), 1_760_000_000_000)
