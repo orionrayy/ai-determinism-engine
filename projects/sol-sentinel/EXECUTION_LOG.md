@@ -265,3 +265,12 @@ This entry is documentation-only. It changes no scanner or trading logic. Since 
 - Run log reported 35 unit tests passing at the preceding sensitivity code checkpoint.
 - A second, final research run with expanded per-scenario statistics was started at run `40915499872`; read its final status before describing it as complete. Its run history/artifact should supersede older sensitivity results once successful.
 - Artifacts expire seven days after creation. Never infer a permanent report path from a transient artifact URL.
+
+
+## 14. FX timeout failure and bounded-retry recovery — 2026-10-29
+
+- Run `40915499872` failed after history capture: the Frankfurter request timed out while attaching the daily USD/IDR reference. The CSV metadata recorded the error; the backtest correctly failed closed and did not use a fabricated or stale FX rate. Because the backtest step failed, the expanded sensitivity summary from that run was not produced.
+- Fixed `capture_history.py` so `fetch_quote_to_idr_reference` performs up to three bounded retries on transient timeout/network/rate-limit/server failures, with exponential short pauses. Non-retryable HTTP statuses and invalid/stale rates still fail closed.
+- Added offline tests for transient timeout recovery and exhausting the retry bound. CI for the capture module/tests passed on run `40916160706`; the job reported the full project suite passing. Current retry-enabled full research workflow run: `40916209196`, launched on head `6ea5fd72945045c03ae2112fe3d9e870f2586c0a`; its final status must be read before claiming end-to-end success.
+- The seven-day and earlier 30-day successful research runs remain valid evidence for their exact artifacts. The earlier 30-day sensitivity result from run `40915191550` remains usable as a preliminary report, but that workflow version did not publish all the extra per-scenario metrics added later.
+- Current conclusion does not change: the Pro baseline has zero trades over the 30-day sample; the only trade-producing scenario observed was a deliberately unrealistic Lightning fee-only floor with zero spread and slippage, and that scenario lost roughly IDR 3,893 over 10 trades.
