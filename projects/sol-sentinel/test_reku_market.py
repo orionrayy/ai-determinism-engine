@@ -71,21 +71,22 @@ class RekuMarketParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "positive integer"):
             market.parse_chart_payload([], interval_minutes=0, now_ms=1_800_000_000_000)
 
-    def test_fetch_chart_probe_preserves_stale_1m_fallback_reason(self):
+    def test_fetch_chart_probe_preserves_stale_5m_fallback_reason(self):
         now_ms = int(time.time() * 1000)
 
         def fake_request(path, params=None, timeout=8.0):
             self.assertEqual(path, "/chart")
-            return [[now_ms - 200_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
+            self.assertIn(params["f"], (5, 15))
+            return [[now_ms - 1_000_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
 
         from unittest.mock import patch
         with patch.object(market, "request_json", side_effect=fake_request):
             report, error = market.fetch_chart_probe(51)
         self.assertIsNone(error)
-        self.assertEqual(report["interval_minutes"], 5)
+        self.assertEqual(report["interval_minutes"], 15)
         self.assertTrue(report["fallback_used"])
         self.assertEqual(len(report["prior_attempt_errors"]), 1)
-        self.assertIn("f=1: chart data stale", report["prior_attempt_errors"][0])
+        self.assertIn("f=5: chart data stale", report["prior_attempt_errors"][0])
 
     def test_request_json_includes_http_error_body_for_diagnostics(self):
         err = urllib.error.HTTPError(
@@ -127,6 +128,7 @@ class RekuMarketParserTests(unittest.TestCase):
         self.assertEqual(report["data_status"], "OK")
         self.assertEqual(report["orderbook_status"], "OK")
         self.assertEqual(report["orderbook_endpoint_used"], "orderbookall")
+        self.assertEqual(report["orderbook_query_used"], {"symbol": "SOL_IDR"})
         self.assertAlmostEqual(report["orderbook"]["spread_bps"], (2.0 / 101.0) * 10_000.0, places=8)
         self.assertAlmostEqual(report["direct_bidask"]["spread_bps"], (2.0 / 101.0) * 10_000.0, places=8)
         self.assertEqual(report["chart_status"], "OK")
