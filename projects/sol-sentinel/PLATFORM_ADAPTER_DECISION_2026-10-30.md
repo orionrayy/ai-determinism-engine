@@ -35,7 +35,7 @@ INDODAX current trade fee, withdrawal fee, API throttles, and market filters are
 
 ## Adapter contracts added
 
-- Market data: canonical symbol + quote identity + UTC timestamp + bid/ask validation. The new `IndodaxPublicMarketDataAdapter` uses the official public `/api/pairs` catalogue to load pair ID, price increment, quantity increment, minimum quote notional and minimum base quantity, then reads `/api/depth/{pair_id}` with bounded timeout, response-size limit, small bounded transient-error retries, and strict book validation. It makes no credentialed request. CI uses fixture transport only; this session did not call the real endpoint from the runner.
+- Market data: canonical symbol + quote identity + UTC timestamp + bid/ask validation. The new `IndodaxPublicMarketDataAdapter` uses the public `/api/pairs` catalogue to load pair ID, price increment, quantity increment, minimum quote notional and minimum base quantity, then reads `/api/depth/{pair_id}` with bounded timeout, response-size limit, paced requests, bounded transient-error retries, and strict book validation. CI uses fixture transport for deterministic tests; separate readonly research run #40950150440 called the public endpoint live and recorded a valid bid/ask snapshot.
 - Capital source: metadata contract, not private account data.
 - Custody: balance lookup contract separated from the exchange/order API.
 - Transfer route planner: validates that source/destination network names match, both ends are verified, and minimum/fee values are known. It never sends a transfer.
@@ -79,3 +79,14 @@ python projects/sol-sentinel/capture_indodax_history.py --symbol SOL/IDR --days 
 
 Do not run a native-IDR backtest until the actual fee model and selected mode's minimum order value have been verified and explicitly supplied. Current trade fee components are displayed in INDODAX Profile/Trading Fees; the generic market metadata minimum (Rp10,000 in the captured snapshot) is not a substitute for the direct-Pro mode minimum (Rp25,000 per current official help, with Lite available at Rp10,000). Source: https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX.
 
+
+
+## Live public market-depth probe — 2026-10-29 UTC
+
+The updated read-only native-history collector also requests one public INDODAX depth snapshot as a best-effort probe. Research run [#40950150440](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950150440) completed successfully with:
+- Native history status `OK`, 43,200 contiguous SOL/IDR 1m candles over 30 days.
+- Dataset SHA-256 `502cc5bda01b8c72ccd02f4ac8da8f0fa041bebe0615bb416fb0642b4028fa4a`, range 2026-09-29 20:34:00 UTC through 2026-10-29 20:33:59.999 UTC.
+- The public depth probe returned `market_quote_status=OK` at `2026-10-29T20:35:44.793998+00:00`: bid Rp1,775,886; ask Rp1,780,450; midpoint Rp1,778,168; spread about 25.6669 bps. Source records request-start time as a conservative timestamp. No orders were enabled.
+- Metadata reported price tick IDR 1, quantity increment 1e-8 SOL, per-market quote minimum IDR 10,000 and minimum base quantity 0.00563136 SOL. These are captured public-market filters, not the account-mode minimum; current official help separately lists Lite minimum IDR 10,000 and direct-Pro minimum IDR 25,000.
+
+This confirms that the public pair catalogue, depth and native history endpoints responded from the GitHub runner. It does not confirm private order permissions, user account deposit network, withdrawals, fill semantics or current account fee tier. One quote is not a historical spread series or a guaranteed fill. Reku’s legacy activity-history endpoint still returned HTTP 404 in the same research workflow; its separate public market snapshot was available.
