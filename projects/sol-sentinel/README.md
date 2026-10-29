@@ -32,6 +32,7 @@ python projects/sol-sentinel/sol_sentinel.py --watch-seconds 30
 python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv
 python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json
+python projects/sol-sentinel/cost_sensitivity.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/cost_sensitivity.json
 python projects/sol-sentinel/sol_sentinel.py --fee-bps-round-trip 42.11 --spread-bps-round-trip 10 --slippage-bps-round-trip 20
 python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 ```
@@ -52,6 +53,8 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `capture_history.py`: bounded public Binance 1m history capture with CSV hash and metadata sidecar.
 - `paper_engine.py`: cost-aware offline backtest with SQLite paper ledger; never sends orders.
 - `evaluate_splits.py`: fixed-parameter chronological 60/20/20 evaluation, including an untouched out-of-sample segment.
+- `cost_sensitivity.py`: predeclared scenarios compare published Reku Pro fee components with clearly labeled lower-friction and fee-floor assumptions; no automatic selection by P&L.
+- `test_cost_sensitivity.py`: scenario and invariant tests.
 - `test_paper_engine.py`: replay, data-integrity, and ledger tests.
 - `test_sol_sentinel.py`: offline tests.
 - `../../.github/workflows/sol-sentinel-tests.yml`: continuous integration for this module.
@@ -67,7 +70,7 @@ The repository is public. Do not commit wallet seed phrases, private keys, API s
 
 ## Automated historical research
 
-The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can capture a bounded public candle window, run the offline backtest, and evaluate fixed parameters on chronological 60/20/20 splits. It is research automation only, not a live trading bot. Because GitHub requires `workflow_dispatch` and scheduled workflows to exist on the default branch, the workflow must be merged to the default branch before it can be run manually from Actions or execute on its daily schedule. Artifacts are retained for seven days.
+The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can capture a bounded public candle window, run the offline backtest, evaluate fixed parameters on chronological 60/20/20 splits, and compare predeclared cost scenarios. It is research automation only, not a live trading bot. Because GitHub requires `workflow_dispatch` and scheduled workflows to exist on the default branch, the workflow must be merged to the default branch before it can be run manually from Actions or execute on its daily schedule. Artifacts are retained for seven days.
 
 
 ## Currency consistency
