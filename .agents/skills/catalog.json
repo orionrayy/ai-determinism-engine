@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "description": "Explicit allowlist of repository-local prompt skills. Adding a directory alone does not make it executable or trusted.",
+  "skills": [
+    {
+      "skill_id": "hallmark",
+      "version": "2.0.0",
+      "description": "Design and review website/front-end interfaces for distinctive, accessible, responsive design instead of generic generated-looking UI.",
+      "capabilities": [
+        "ui_design",
+        "frontend_implementation",
+        "visual_review",
+        "accessibility"
+      ],
+      "prompt_file": ".agents/skills/hallmark/SKILL.md",
+      "git_blob_sha": "d27771723e827baa5e2b34d01492783a42df9174",
+      "source": "https://github.com/Nutlope/hallmark@8f6969f8922caabde9de1784959eae11ddf68073",
+      "trust_level": "standard",
+      "billing_class": "free_public",
+      "network_class": "none",
+      "side_effecting": false,
+      "resource_profile": {
+        "cpu_class": "local-text",
+        "memory_mb": 32,
+        "max_concurrent": 1,
+        "max_output_bytes": 32768
+      }
+    },
+    {
+      "skill_id": "document-craft",
+      "version": "1.0.0",
+      "description": "Author, revise, research and quality-check academic papers, assignments, essays, practicum/lab reports, internship/PKL reports and professional documents in natural, evidence-grounded prose.",
+      "capabilities": [
+        "academic_writing",
+        "document_editing",
+        "citation_integrity",
+        "report_writing",
+        "document_quality_review"
+      ],
+      "prompt_file": ".agents/skills/document-craft/SKILL.md",
+      "git_blob_sha": "d8dcd1f0b3d3565671e459574444d0d593a2642a",
+      "source": "orionrayy/ai-determinism-engine repository-local skill",
+      "trust_level": "standard",
+      "billing_class": "free_public",
+      "network_class": "none",
+      "side_effecting": false,
+      "resource_profile": {
+        "cpu_class": "local-text",
+        "memory_mb": 24,
+        "max_concurrent": 1,
+        "max_output_bytes": 16384
+      }
+    }
+  ]
+}

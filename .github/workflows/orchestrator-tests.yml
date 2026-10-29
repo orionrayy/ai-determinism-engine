@@ -39,6 +39,7 @@ on:
       - ".github/workflows/bridge-deploy.yml"
       - "test_actions_config.py"
       - "contracts/**"
+      - ".agents/skills/**"
       - ".orchestrator/state.json"
   pull_request:
     paths:
@@ -59,6 +60,7 @@ on:
       - ".github/workflows/orchestrator-agent-federation.yml"
       - "test_actions_config.py"
       - "contracts/**"
+      - ".agents/skills/**"
   workflow_dispatch:
 
 permissions:

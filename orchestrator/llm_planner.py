@@ -6,6 +6,11 @@ import urllib.parse
 import urllib.request
 
 try:
+    from .skill_runtime import routing_prompt_hint
+except ImportError:
+    from skill_runtime import routing_prompt_hint
+
+try:
     from .agent_fabric import assign_role, role_instruction
     from .connector_bridge import (
         ConnectorBridgeError,
@@ -139,6 +144,7 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         'Prefer tools that require no credentials. Include a final validate node whose dependencies cover the outputs it must verify. For validation nodes, define contract.required_fields and/or contract.min_sources when deterministically checkable; declare artifacts as a list of expected deliverables. '
         'Live connector inventory (sanitized; empty means unavailable): ' + inventory_text + '. '
         'Only use connector/action pairs present in that live inventory when tool=connector_bridge. '
+        'Repository-local skill guidance: ' + routing_prompt_hint(goal) + '. '
         'For action_specs, honor required fields and declared primitive types exactly; do not invent connector fields. '
         'Goal: ' + goal
     )

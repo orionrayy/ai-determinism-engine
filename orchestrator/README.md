@@ -36,3 +36,15 @@ GitHub Actions cannot directly invoke the ChatGPT-installed connector catalog (F
 ## Alternative visual engines
 
 Activepieces and Windmill both have free/open-source paths; n8n also publishes a self-hosted Community Edition. For a zero-new-builder-dependency route, this repository uses GitHub Actions instead.
+
+
+## Repository-local skill routing
+
+The planner adds deterministic intent hints from `.agents/skills/catalog.json`. After planning or fallback, the orchestrator verifies and authorizes the selected skill context before adding it to relevant LLM nodes.
+
+- **Hallmark v2.0.0** handles website/front-end/UI design, responsive behavior, accessibility, and visual review.
+- **Document Craft v1.0.0** handles makalah/academic papers, essays, practicum/lab reports, internship/PKL reports, proposals and professional documents. It prioritizes natural, specific prose, authentic author voice when supplied, and strict evidence/citation integrity.
+
+The router verifies the prompt file against a pinned Git blob SHA, creates a `SkillManifest`, registers and authorizes it through `enterprise_runtime.SkillRegistry`, then injects its text only into matching LLM nodes. Context is guidance, not executable code. Routing is local and free-first; it does not invoke an external API. Mixed writing/UI tasks are routed by node role, capability and instruction so unrelated guidance is not applied indiscriminately.
+
+"Humanized" means readable, non-formulaic, evidence-grounded writing; it does not mean fabricating experiences or evading AI-detection systems. Missing practicum observations, measurements, quotes and citations must be identified rather than invented.
