@@ -119,7 +119,8 @@ jobs:
           report=json.loads(Path("research-output/cost_sensitivity.json").read_text())
           print("Cost sensitivity (predeclared; not auto-optimized):")
           for item in report.get("scenarios", []):
-              print(f"- {item['scenario']}: cost_bps={item['modeled_round_trip_cost_bps']}, min_gross_bps={item['minimum_gross_move_bps_in_signal_gate']}, candidates={item['signal_candidates']}, trades={item['closed_trades']}, net_pnl_idr={item['net_pnl_idr']}, return_pct={item['net_return_pct']}")
+              print(f"- {item['scenario']}: cost_bps={item['modeled_round_trip_cost_bps']}, min_gross_bps={item['minimum_gross_move_bps_in_signal_gate']}, candidates={item['signal_candidates']}, trades={item['closed_trades']}, net_pnl_idr={item['net_pnl_idr']}, return_pct={item['net_return_pct']}, win_rate_pct={item['win_rate_pct']}, profit_factor={item['profit_factor']}")
+              print(f"  fees_idr={item['total_fees_idr']}, execution_friction_idr={item['total_execution_friction_idr']}")
               print(f"  rejection_counts={item['signal_rejection_counts']}")
           PY
             fi
