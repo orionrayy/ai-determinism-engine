@@ -116,7 +116,8 @@ class DoajByIssnTests(unittest.TestCase):
         self.assertFalse(item["full_text_downloaded"])
         self.assertNotIn("abstract", item)
         self.assertNotIn("license", item)
-        self.assertNotIn("abstract", json.dumps(item).lower())
+        self.assertNotIn('"abstract":', json.dumps(item).lower())
+        self.assertNotIn("this abstract must never", json.dumps(item).lower())
         self.assertEqual(len(requested), 2)
         self.assertTrue(all("pageSize=10" in url for url, _ in requested))
         self.assertTrue(all(timeout == 15 for _, timeout in requested))
@@ -208,7 +209,7 @@ class DoajByIssnTests(unittest.TestCase):
 
         self.assertEqual(result["summary"]["status"], "LIVE_DISCOVERY_UNAVAILABLE")
         self.assertEqual(len(result["summary"]["errors"]), 2)
-        self.assertTrue(all("api_response_exceeded_8MiB_limit" in e["error"] for e in result["summary"]["errors"]))
+        self.assertTrue(all("api_response_exceeded_8MiB_limit" in e["error"] for e in result["summary"]["errors"]), msg=repr(result["summary"]["errors"]))
 
     def test_invalid_limits_fail_closed(self):
         with tempfile.TemporaryDirectory() as tmp:
