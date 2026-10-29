@@ -129,3 +129,21 @@ Latest complete 30-day Binance research run [#40948530609](https://github.com/or
 ### Release gate
 
 The implementation remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`. Latest verified unit CI at the associated current feature checkpoint succeeded with 135 offline tests. The new fee-gate patch is triggering another full CI run; update the final audit only after exact-head status is confirmed. No transfers, orders, signatures, credential use, or modifications to `main` were performed. PR #178 and PR #180 remain draft/open/unmerged.
+
+
+## Final research and input-cost gate reconciliation (2026-10-30 WIB)
+
+The complete research run [#40949409224](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949409224) completed successfully at engine code SHA `cb3ebab0b22a82f5ed1c9a6e748cfb5930d1439a`; strategy/backtest code is unchanged at current code head `39d093b6e44635431475ea635f018327310793fd`. Exact-head CI [#40949432502](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949432502) passed 135 offline tests. The newest run #58 [#40949432867](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40949432867) was still in progress at the last check; do not claim it complete before final state/artifacts are available.
+
+The full Binance SOLUSDT dataset had 43,200 1m bars, hash `cb685aa993bbde9e2abec8c9c350e98097ba97d6b7c50fa323de1921ed1a7a47`. Baseline and development/validation/OOS all produced zero candidates/trades. Rejection counts show multiple simultaneous filters (trend, breakout, volume, momentum/RSI) and only 195 estimated-net-edge rejections in the full window; because counts overlap, no single filter is proven to be the sole cause. No strategy threshold was changed to force trades.
+
+The same workflow captured native INDODAX SOL/IDR 1m history: 43,200 contiguous bars, SHA `08f20992fed30c0921dee547e4cb4623c4dbf3b3c74ef732ce895ebc1fcf5633`, status OK, no FX conversion. This is evidence that the public history endpoint works from GitHub Actions. It is not evidence that INDODAX offers the user's account a specific fee tier, that an account can withdraw/deposit on a selected network, or that the strategy is tradable.
+
+The new source-aware engine enforces:
+- Binance SOLUSDT inputs are explicitly USDT reference and get a dated USD/IDR proxy.
+- Native INDODAX SOL/IDR inputs remain IDR and must use FX identity 1.0.
+- Native IDR data cannot use Reku Pro/Lightning sensitivity presets.
+- Native IDR backtest requires `indodax-custom`, finite non-negative fee/spread/slippage, a strictly positive mode-specific IDR minimum, and a fee-source label.
+- CSV sidecar status and source digest are checked before source metadata is trusted.
+
+Run #58 was re-triggered because the test suite changed after adding the finite fee/minimum regression. It is expected to repeat the current strategy backtest using the same engine logic, not alter the previously observed edge. The decision remains **do not enable live trading** until strategy is validated after costs, account/network/fee facts are verified, Termux tests pass, and separate explicit approval/readiness gates exist.
