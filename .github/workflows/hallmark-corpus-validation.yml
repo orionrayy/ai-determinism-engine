@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python research/corpus/harvest_doaj_candidates.py --json --max-pages 2 --max-records 200 --timeout 20 --min-interval 1 --output candidates.jsonl > doaj-discovery-summary.json 2> doaj-discovery-error.txt
+          python research/corpus/harvest_doaj_candidates.py --json --max-pages 2 --max-records 600 --timeout 20 --min-interval 1 --output candidates.jsonl > doaj-discovery-summary.json 2> doaj-discovery-error.txt
           code=$?
           set -e
           if [ "$code" -ne 0 ]; then
