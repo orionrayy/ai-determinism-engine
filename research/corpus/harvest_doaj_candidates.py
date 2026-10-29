@@ -46,16 +46,36 @@ def normalize_issn(value: str) -> str | None:
     match = ISSN_RE.fullmatch(value.strip())
     if not match:
         return None
+    first_seven = match.group(1) + match.group(2)[:3]
+    check_char = match.group(2)[3].upper()
+    weighted_sum = sum(int(digit) * weight for digit, weight in zip(first_seven, range(8, 1, -1)))
+    expected = (11 - (weighted_sum % 11)) % 11
+    expected_char = "X" if expected == 10 else str(expected)
+    if check_char != expected_char:
+        return None
     return match.group(1) + "-" + match.group(2).upper()
 
 
 def _issns_in_values(values: Iterable[str]) -> set[str]:
     found: set[str] = set()
     for value in values:
-        for match in ISSN_RE.finditer(value):
-            candidate = match.group(1) + "-" + match.group(2).upper()
-            if normalize_issn(candidate):
-                found.add(candidate)
+        stripped = value.strip()
+        direct = normalize_issn(stripped)
+        if direct:
+            found.add(direct)
+            continue
+        labeled = re.fullmatch(r"(?i)ISSN\\s*[:=]?\\s*([0-9]{4}-?[0-9]{3}[0-9X])", stripped)
+        if labeled:
+            normalized = normalize_issn(labeled.group(1))
+            if normalized:
+                found.add(normalized)
+            continue
+        # Some catalogues identify the journal by its canonical /toc/<ISSN> URL.
+        toc = re.search(r"/toc/([0-9]{4}-?[0-9]{3}[0-9X])/?$", stripped, re.IGNORECASE)
+        if toc:
+            normalized = normalize_issn(toc.group(1))
+            if normalized:
+                found.add(normalized)
     return found
 
 
