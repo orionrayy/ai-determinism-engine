@@ -96,3 +96,13 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 - The chronological evaluator accepts a separate spread assumption.
 - Added validation that rejects negative spread values, plus a bounded public-only `.github/workflows/sol-sentinel-research.yml` that can capture historical candles, run offline backtest/evaluation, and upload artifacts for seven days. This workflow has not yet been manually dispatched in this session; its market-data step and artifacts need a real run to validate network/runtime behavior.
 - The live trading route remains unimplemented; no orders, transfers or wallet operations have occurred.
+
+
+## 2026-10-29 — Durable conversation/tool journal checkpoint
+
+- Added `EXECUTION_LOG.md` to preserve the user-facing request/decision timeline, the source/API inventory, GitHub connector operations used, known tool rejections, CI debugging history, and exact continuation checklist. It deliberately excludes private chain-of-thought, secrets, and raw screenshots.
+- Added a link from the project README to the execution journal.
+- Latest fully inspected green CI baseline before these new documentation commits: run `40910240121`, commit `e20c3ce0b49969cbaa08706a44fc765e47e01db9`; Python compile and offline tests succeeded, log reported 32 tests in 0.082 seconds.
+- Current branch is `feat/sol-sentinel-paper-trader-v1`; draft PR #178 remains open/unmerged. The canonical root `ORCHESTRATION_MEMORY.md` is unchanged; project addendum is used instead because the large-file update was rejected.
+- The current project includes scanner, bounded history capture, daily USD/IDR reference metadata, IDR unit conversion, cost-aware offline backtest/SQLite ledger, fixed-parameter chronological 60/20/20 evaluator, unit tests, CI, and a bounded research workflow. No historical dataset has yet been used to claim profitability.
+- Next verification: inspect latest CI after this journal update, then validate one end-to-end history-capture/backtest/evaluator run. Research workflow is not yet dispatched; on-demand/scheduled invocation normally requires the workflow on the default branch.
