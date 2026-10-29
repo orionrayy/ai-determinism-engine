@@ -142,3 +142,23 @@ Target ekuitas Rp3.500.000 adalah aspirasi proyek, bukan bukti saldo, keuntungan
 - [Frankfurter USD/IDR rate source](https://api.frankfurter.dev/v2/rate/USD/IDR)
 
 **Batas interpretasi:** hasil adalah bukti untuk dataset, konfigurasi, commit, dan waktu run yang dicantumkan. Data publik dapat berubah; artefak GitHub Actions dapat kedaluwarsa; hasil riset bukan rekomendasi transaksi atau janji keuntungan.
+
+
+## Follow-up after ledger and timestamp hardening — 2026-10-30
+
+This section supersedes the earlier run #25 capture metrics as the latest research observation while preserving the original run history above.
+
+### Follow-up code and test commits
+- \`2cac2368e2a6fa992335a07926a4994770be1e7f\`: fixed SQLite replay conflicts. The same \`run_id\` is accepted as idempotent only when the canonical serialized report and its trade rows match exactly; conflicting report data or corrupted/incomplete rows fail closed rather than being silently ignored. Added regression tests for identical run with trades, conflicting report content, and missing rows.
+- \`833e57a13022c3efe6ff5115df2b2e0697072817\`: enforced candle close-time alignment for 1m CSV/direct backtest input and direct OHLCV validity. The loader/backtest rejects a close time other than \`open_time_ms + 59,999\`, non-finite OHLCV, invalid prices, negative volume, and impossible high/low.
+- \`8fb11f7081a355958add549052b1ecec90464423\`: added independent hand-calculated fixtures for EMA, RSI and ATR.
+- Latest branch head test workflow [#278](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930666859): **79 passed, 0 failed**. Research run [#27](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930361106) succeeded on the production-code SHA \`833e57a...\`, with 76 tests in its compile/test step. Artifact [12922686248](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930361106/artifacts/12922686248), 1,223,413 bytes.
+
+### Latest captured dataset and outcome
+- Window: \`2026-09-29T18:23:00+00:00\` through \`2026-10-29T18:22:59.999000+00:00\`; 43,200 1m candles; dataset SHA-256 \`6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14\`.
+- Full baseline: 43,199 signal evaluations; 154,149 multi-label rejection events; zero signal candidates/order attempts/fills/trades; equity IDR 300,000 unchanged; net P&L and return 0 because no trade; expectancy, win rate and profit factor null/undefined.
+- Split outcomes: development 25,920 bars / 92,282 rejection events; validation 8,640 / 29,263; out-of-sample 8,640 / 29,513. All splits zero closed trades.
+- Highest-count joint failure (15m trend, 5m momentum, 5m RSI, 1m breakout, 1m relative-volume) was 11,544 development, 2,215 validation and 2,081 OOS observations. Full-window reason counters include 40,141 1m breakout failures, 34,801 missing 1m volume confirmations and 196 cost-gate rejections; reasons overlap, so totals are not unique candle counts.
+- Latest quote snapshot: best bid IDR 1,825,000, ask IDR 1,830,000, midpoint spread 27.359781 bps, public orderbook/chart probes OK. Native Reku activity history remains unavailable due to a documented endpoint 404; no historical fills or candles were fabricated.
+- Predeclared modeled costs are unchanged. Reku Pro modeled round-trip cost 72.11 bps, 97.11 bps including net-edge buffer; snapshot-spread sensitivity 89.469781 bps, 114.469781 bps including buffer. The theoretical Lightning fee-only case still loses IDR 3,893.219 over 10 trades at -1.29774%, PF 0.2760 and 1.62433% max drawdown under zero-spread/zero-slippage assumptions.
+- Final readiness: \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. Zero OOS trades means no independent evidence for positive net expectancy. The Rp3,500,000 target is aspirational. Real orders were not used, and Android/Termux remains untested.
