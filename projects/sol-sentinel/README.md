@@ -103,3 +103,13 @@ The scanner's market feed is SOLUSDT but the paper engine's reference capital is
 ## Reku public market adapter
 
 The adapter reads the documented public Reku API only: coin catalogue, price, bid/ask and order book. It does not authenticate, place orders or infer order-execution permission. The public API reference is legacy documentation; the current GitHub Actions run is testing live endpoint availability. A report marked `PARTIAL` or `ERROR` must not be used to approve a trade. The 30-day baseline has not demonstrated a tradable edge; zero trades and the negative fee-only Lightning floor are explicit warnings, not reasons to force entries.
+
+
+## Latest verified checkpoint — 2026-10-30 WIB
+
+- Current branch head before these documentation commits: `ca3e13391634609377617ef26ca6ef255059de3d`; latest CI [40921862301](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921862301) passed **63 offline tests**.
+- Full public research run [40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237) succeeded and published [artifact 12918995790](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237/artifacts/12918995790).
+- Current Reku order-book query `symbol=SOL_IDR` now returns a valid book; the timestamped probe had 40 levels per side and spread 27.21 bps. The chart probe uses 5m first; native 1m chart request returned HTTP 500.
+- The documented legacy `/activitytrans` request returns HTTP 404. Native Reku history is explicitly marked unavailable; historical backtest uses Binance public reference candles.
+- The baseline and chronological segments still yield zero trades. No live trading code is enabled. PR #178 remains draft/unmerged and needs base-SHA reconciliation.
+- Detailed evidence and continuation steps: [EXECUTION_LOG.md](EXECUTION_LOG.md).
