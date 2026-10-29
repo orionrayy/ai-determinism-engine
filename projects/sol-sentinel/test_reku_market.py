@@ -39,6 +39,49 @@ class RekuMarketParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "crossed"):
             market.spread_metrics(101.0, 100.0)
 
+    def test_snapshot_falls_back_to_documented_all_orderbooks_endpoint(self):
+        def fake_request(path, params=None, timeout=8.0):
+            if path == "/coins":
+                return {"result": [{"id": 51, "accountcode": "SOL", "accountname": "Solana", "enablebuy": 1, "enablesell": 1}]}
+            if path == "/price":
+                return [{"id": 51, "cd": "SOL", "c": 101.0, "o": 100.0, "h": 102.0, "l": 99.0, "v": 1000, "cp": 1.0}]
+            if path == "/bidask":
+                return [{"code": "SOL", "bid": 100.0, "ask": 102.0}]
+            if path == "/orderbook":
+                raise RuntimeError("HTTP 400 on scoped order book")
+            if path == "/orderbookall":
+                return {"b": [[1000.0, 100.0, 10.0]], "s": [[1020.0, 102.0, 10.0]]}
+            raise AssertionError("unexpected Reku endpoint " + path)
+
+        from unittest.mock import patch
+        with patch.object(market, "request_json", side_effect=fake_request):
+            report = market.fetch_snapshot("SOL")
+        self.assertEqual(report["data_status"], "OK")
+        self.assertEqual(report["orderbook_status"], "OK")
+        self.assertEqual(report["orderbook_endpoint_used"], "orderbookall")
+        self.assertEqual(report["orderbook"]["spread_bps"], 200.0)
+        self.assertEqual(report["direct_bidask"]["spread_bps"], 200.0)
+
+    def test_snapshot_marks_partial_if_both_orderbook_endpoints_fail(self):
+        def fake_request(path, params=None, timeout=8.0):
+            if path == "/coins":
+                return {"result": [{"id": 51, "accountcode": "SOL", "accountname": "Solana"}]}
+            if path == "/price":
+                return [{"id": 51, "cd": "SOL", "c": 101.0}]
+            if path == "/bidask":
+                return [{"code": "SOL", "bid": 100.0, "ask": 102.0}]
+            if path in ("/orderbook", "/orderbookall"):
+                raise RuntimeError("book endpoint unavailable")
+            raise AssertionError("unexpected Reku endpoint " + path)
+
+        from unittest.mock import patch
+        with patch.object(market, "request_json", side_effect=fake_request):
+            report = market.fetch_snapshot("SOL")
+        self.assertEqual(report["data_status"], "PARTIAL")
+        self.assertEqual(report["orderbook_status"], "ERROR")
+        self.assertIsNotNone(report["direct_bidask"])
+        self.assertIsNone(report["orderbook"])
+
     def test_cross_venue_reference_uses_explicit_fx_proxy(self):
         result = market.compare_reference(1_815_800.0, 100.0, 18_158.0)
         self.assertEqual(result["binance_usdt_usd_proxy_idr"], 1_815_800.0)
