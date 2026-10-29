@@ -1436,3 +1436,14 @@ Semua perubahan di branch kandidat `feat/hallmark-corpus-benchmark-v1`; PR #179 
 - Commit setelah itu mengubah schema, validator, test, manifest, features, README dan laporan; wajib cek ulang tiga workflow pada HEAD terbaru sebelum merge.
 - Kualitas Document Craft belum diuji dengan output baseline-vs-candidate, blind scoring, inter-rater agreement atau visual/functional validation file DOCX/PDF/Excel. Tidak ada klaim peningkatan empiris.
 - Live DOAJ harvesting masih belum terjadi. Fixture tests lulus, tetapi feed live tidak dapat diakses dari lingkungan ini. Metadata discovery berbeda dari dokumen penelitian.
+
+## Checkpoint skripsi kedua dan korpus terbaru — 2026-10-30
+
+- Manifest `research/corpus/manifest.jsonl` sekarang memuat **9 catatan**: 6 eligible, 2 partial, 1 metadata-only. Target 500; remaining 494; `INSUFFICIENT_EVIDENCE`.
+- Eligible distribution: `academic_paper=3` (tiga ICCLE journal articles), `other=1` (World Bank ID4D guide, CC BY 3.0 IGO), `thesis_dissertation=2` (dua item UIN Ar-Raniry, CC BY 4.0 masing-masing). Tiga artikel ICCLE berasal dari source family/journal yang sama; dua skripsi dari kampus yang sama tapi program/topik berbeda. Jangan menyebut enam sampel sebagai representasi genre yang beragam.
+- Dokumen baru: `doc-ar-raniry-bisindo-ai-thesis-2026`, berjudul *Implementasi Sistem Penerjemah BISINDO Dua Arah Berbasis MediaPipe dan Artificial Intelligence*. Laman repository resmi https://repository.ar-raniry.ac.id/58108/ menyatakan CC BY 4.0, full PDF text layer dapat diakses. Analisis mencatat cover, approval, bilingual abstracts, preface, lists of figures/tables, struktur 5 bab, nested subsections dan hubungan metode-implementasi-evaluasi. Ada dua kemungkinan source-specific QA flags: "Error! Bookmark not defined" pada daftar isi dan ordering/pagination mismatch di list of figures. Tidak ada klaim visual karena rendered inspection belum dijalankan; NIM/detail pribadi tidak disalin; tidak ada PDF/full text disimpan.
+- `research/corpus/features.jsonl` sekarang punya 8 rekaman analisis: 6 untuk eligible sources dan 2 partial-only notes.
+- Satu partial PKL dan satu partial KIAN tetap pending dan tidak dihitung. XLSX Karanganyar tetap metadata-only (CC BY di portal metadata, tetapi direct download ke dua host 403); cells/formulas belum diinspeksi.
+- README dan laporan checkpoint sudah diperbarui untuk enam eligible records; diperlukan pemeriksaan string status lama untuk memastikan semua ringkasan dokumen cocok dengan 6/9.
+- Pada HEAD sebelumnya `4a7d1aede4bbdf498011f3cb618eda057d8c596e`, tiga CI check lulus dan artifact corpus-summary tersedia. Perubahan schema/manifest/features/laporan setelah itu butuh revalidasi pada HEAD final.
+- Tetap tidak ada benchmark Document Craft baseline-vs-candidate, blind scoring/inter-rater agreement, atau bukti peningkatan kualitas. Generated DOCX/PDF/XLSX visual/functional QA belum dilakukan. Live DOAJ harvesting masih 0 kandidat.
