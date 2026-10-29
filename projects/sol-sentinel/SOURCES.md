@@ -79,6 +79,6 @@ Verification date: 2026-10-29 (Asia/Jakarta). Re-check before any live use; prov
 
 - Workflow file: `.github/workflows/sol-sentinel-research.yml`.
 - Trigger: manual `workflow_dispatch` with a bounded 1/3/7/14/30 day window and a daily scheduled run.
-- Scheduled run time: 14:15 UTC (21:15 Asia/Jakarta), but GitHub Actions schedules run only from the repository default branch. Until this branch is merged, start it manually from the Actions UI if the workflow is available.
+- Scheduled run time: 14:15 UTC (21:15 Asia/Jakarta). GitHub Actions requires workflow_dispatch and scheduled workflows to exist on the repository default branch, so merge this branch before the workflow can be manually dispatched or scheduled.
 - Actions performed: offline tests, public history capture, offline backtest, fixed-parameter chronological split evaluation, and upload of research outputs for 7 days.
 - No credentials or account APIs are used; it never sends orders. The output CSV contains public market data only, but reports should remain research artifacts and must not be interpreted as live account equity.
