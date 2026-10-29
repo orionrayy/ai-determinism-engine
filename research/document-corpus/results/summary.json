@@ -1,0 +1,1139 @@
+{
+  "generated_at_utc": "2026-10-29T18:10:57.273239+00:00",
+  "target_full_documents": 500,
+  "candidate_records_discovered": 1090,
+  "candidate_records_attempted": 838,
+  "full_documents_analyzed": 412,
+  "target_reached": false,
+  "status_counts": {
+    "analyzed_full_document": 412,
+    "fetch_http_error": 244,
+    "fetch_network_error": 90,
+    "fetch_or_parse_error": 20,
+    "insufficient_extracted_content": 53,
+    "metadata_landing_page": 18,
+    "unsupported_archive": 1
+  },
+  "genres_analyzed": 27,
+  "genre_analysis": {
+    "academic_paper": {
+      "count": 8,
+      "formats": {
+        "pdf": 5,
+        "pdf_from_record": 3
+      },
+      "median_word_count": 4363.5,
+      "median_page_or_sheet_count": 17.5,
+      "median_paragraph_words": 28.5,
+      "median_sentence_words": 14.5,
+      "median_colons": 31.0,
+      "median_contrast_frames": 0.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.125,
+        "table_of_contents": 0.375,
+        "abstract_or_summary": 0.5,
+        "introduction_or_background": 0.875,
+        "methods_or_process": 0.625,
+        "results_or_activities": 0.5,
+        "discussion_or_analysis": 0.625,
+        "conclusion_or_recommendations": 0.75,
+        "references": 0.875,
+        "appendices": 0.375,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.125,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "oleh_karena_itu": 27,
+        "selain_itu": 21,
+        "dengan_demikian": 15,
+        "not_only_but_also": 12,
+        "di_sisi_lain": 2
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_tetapi": 14,
+        "various_aspects": 8
+      }
+    },
+    "activity_accountability_report": {
+      "count": 35,
+      "formats": {
+        "pdf": 31,
+        "html": 4
+      },
+      "median_word_count": 2485,
+      "median_page_or_sheet_count": 16,
+      "median_paragraph_words": 18,
+      "median_sentence_words": 19,
+      "median_colons": 29,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.029,
+        "approval_or_signoff": 0.314,
+        "table_of_contents": 0.314,
+        "abstract_or_summary": 0.314,
+        "introduction_or_background": 0.543,
+        "methods_or_process": 0.314,
+        "results_or_activities": 0.629,
+        "discussion_or_analysis": 0.371,
+        "conclusion_or_recommendations": 0.514,
+        "references": 0.143,
+        "appendices": 0.286,
+        "organization_profile": 0.029,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.086,
+        "financial_statements": 0.114
+      },
+      "stock_transition_counts": {
+        "furthermore": 6,
+        "moreover": 10,
+        "not_only_but_also": 31,
+        "selain_itu": 99,
+        "dengan_demikian": 11,
+        "oleh_karena_itu": 25
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 58,
+        "various_aspects": 2
+      }
+    },
+    "annual_or_sustainability_report": {
+      "count": 10,
+      "formats": {
+        "pdf": 7,
+        "pdf_from_record": 3
+      },
+      "median_word_count": 110756.0,
+      "median_page_or_sheet_count": 255.0,
+      "median_paragraph_words": 15.0,
+      "median_sentence_words": 21.5,
+      "median_colons": 551.0,
+      "median_contrast_frames": 12.5,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.9,
+        "table_of_contents": 1.0,
+        "abstract_or_summary": 0.9,
+        "introduction_or_background": 1.0,
+        "methods_or_process": 1.0,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 1.0,
+        "conclusion_or_recommendations": 1.0,
+        "references": 0.7,
+        "appendices": 0.6,
+        "organization_profile": 1.0,
+        "nursing_assessment": 0.2,
+        "internship_activities": 0.3,
+        "financial_statements": 1.0
+      },
+      "stock_transition_counts": {
+        "selain_itu": 220,
+        "di_sisi_lain": 11,
+        "dengan_demikian": 43,
+        "oleh_karena_itu": 55,
+        "furthermore": 48,
+        "moreover": 15,
+        "not_only_but_also": 124,
+        "in_conclusion": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_tetapi": 5,
+        "contrast_not_but": 109,
+        "various_aspects": 13,
+        "contrast_bukan_melainkan": 3,
+        "rapid_development_cliche": 1
+      }
+    },
+    "community_service_report": {
+      "count": 7,
+      "formats": {
+        "pdf": 6,
+        "pdf_from_record": 1
+      },
+      "median_word_count": 3707,
+      "median_page_or_sheet_count": 35,
+      "median_paragraph_words": 45,
+      "median_sentence_words": 18.0,
+      "median_colons": 29,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.286,
+        "approval_or_signoff": 0.429,
+        "table_of_contents": 0.714,
+        "abstract_or_summary": 0.286,
+        "introduction_or_background": 0.714,
+        "methods_or_process": 1.0,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 0.143,
+        "conclusion_or_recommendations": 0.571,
+        "references": 0.286,
+        "appendices": 0.571,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "selain_itu": 10,
+        "oleh_karena_itu": 2,
+        "di_sisi_lain": 1,
+        "dengan_demikian": 1,
+        "not_only_but_also": 4
+      },
+      "contrast_cue_counts": {
+        "various_aspects": 1,
+        "contrast_not_but": 4
+      }
+    },
+    "educational_research_report": {
+      "count": 3,
+      "formats": {
+        "pdf": 2,
+        "pdf_from_record": 1
+      },
+      "median_word_count": 25414,
+      "median_page_or_sheet_count": 120,
+      "median_paragraph_words": 29,
+      "median_sentence_words": 14.0,
+      "median_colons": 256,
+      "median_contrast_frames": 2,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.333,
+        "approval_or_signoff": 0.333,
+        "table_of_contents": 0.667,
+        "abstract_or_summary": 1.0,
+        "introduction_or_background": 1.0,
+        "methods_or_process": 1.0,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 1.0,
+        "conclusion_or_recommendations": 1.0,
+        "references": 0.667,
+        "appendices": 0.667,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.333,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "selain_itu": 42,
+        "dengan_demikian": 12,
+        "oleh_karena_itu": 17,
+        "not_only_but_also": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_melainkan": 1,
+        "contrast_bukan_tetapi": 3,
+        "various_aspects": 1
+      }
+    },
+    "fieldwork_report": {
+      "count": 11,
+      "formats": {
+        "pdf": 10,
+        "pdf_from_record": 1
+      },
+      "median_word_count": 5567,
+      "median_page_or_sheet_count": 17,
+      "median_paragraph_words": 32.0,
+      "median_sentence_words": 18.0,
+      "median_colons": 70,
+      "median_contrast_frames": 2,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.091,
+        "approval_or_signoff": 0.0,
+        "table_of_contents": 0.364,
+        "abstract_or_summary": 0.818,
+        "introduction_or_background": 1.0,
+        "methods_or_process": 0.818,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 0.818,
+        "conclusion_or_recommendations": 1.0,
+        "references": 0.818,
+        "appendices": 0.182,
+        "organization_profile": 0.182,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "selain_itu": 30,
+        "oleh_karena_itu": 11,
+        "dengan_demikian": 7,
+        "not_only_but_also": 35,
+        "in_conclusion": 2,
+        "moreover": 15,
+        "di_sisi_lain": 1,
+        "furthermore": 11
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_melainkan": 1,
+        "contrast_bukan_tetapi": 7,
+        "contrast_not_but": 65,
+        "various_aspects": 8
+      }
+    },
+    "financial_report": {
+      "count": 8,
+      "formats": {
+        "pdf": 8
+      },
+      "median_word_count": 71401.5,
+      "median_page_or_sheet_count": 144.0,
+      "median_paragraph_words": 18.0,
+      "median_sentence_words": 21.5,
+      "median_colons": 323.0,
+      "median_contrast_frames": 2.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 1.0,
+        "table_of_contents": 1.0,
+        "abstract_or_summary": 0.75,
+        "introduction_or_background": 0.875,
+        "methods_or_process": 1.0,
+        "results_or_activities": 0.875,
+        "discussion_or_analysis": 0.875,
+        "conclusion_or_recommendations": 0.75,
+        "references": 0.5,
+        "appendices": 0.375,
+        "organization_profile": 0.125,
+        "nursing_assessment": 0.25,
+        "internship_activities": 0.125,
+        "financial_statements": 1.0
+      },
+      "stock_transition_counts": {
+        "dengan_demikian": 11,
+        "oleh_karena_itu": 24,
+        "not_only_but_also": 1,
+        "furthermore": 10,
+        "selain_itu": 32,
+        "di_sisi_lain": 1,
+        "moreover": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_melainkan": 1,
+        "contrast_not_but": 24,
+        "contrast_bukan_tetapi": 1
+      }
+    },
+    "government_performance_report": {
+      "count": 21,
+      "formats": {
+        "pdf": 19,
+        "pdf_from_record": 1,
+        "html": 1
+      },
+      "median_word_count": 35832,
+      "median_page_or_sheet_count": 152,
+      "median_paragraph_words": 20,
+      "median_sentence_words": 20,
+      "median_colons": 250,
+      "median_contrast_frames": 1,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.048,
+        "approval_or_signoff": 0.333,
+        "table_of_contents": 0.857,
+        "abstract_or_summary": 0.381,
+        "introduction_or_background": 0.905,
+        "methods_or_process": 0.857,
+        "results_or_activities": 0.952,
+        "discussion_or_analysis": 0.476,
+        "conclusion_or_recommendations": 0.952,
+        "references": 0.333,
+        "appendices": 0.81,
+        "organization_profile": 0.333,
+        "nursing_assessment": 0.333,
+        "internship_activities": 0.0,
+        "financial_statements": 0.905
+      },
+      "stock_transition_counts": {
+        "selain_itu": 262,
+        "oleh_karena_itu": 45,
+        "dengan_demikian": 52,
+        "not_only_but_also": 42,
+        "di_sisi_lain": 15,
+        "in_conclusion": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_tetapi": 10,
+        "various_aspects": 11,
+        "contrast_bukan_melainkan": 6,
+        "contrast_not_but": 2,
+        "digital_era_cliche": 3
+      }
+    },
+    "institutional_annual_report": {
+      "count": 20,
+      "formats": {
+        "pdf": 20
+      },
+      "median_word_count": 67264.0,
+      "median_page_or_sheet_count": 215.0,
+      "median_paragraph_words": 22.5,
+      "median_sentence_words": 20.5,
+      "median_colons": 437.5,
+      "median_contrast_frames": 5.5,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.8,
+        "table_of_contents": 0.8,
+        "abstract_or_summary": 0.95,
+        "introduction_or_background": 0.75,
+        "methods_or_process": 0.9,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 0.85,
+        "conclusion_or_recommendations": 0.85,
+        "references": 0.3,
+        "appendices": 0.45,
+        "organization_profile": 0.45,
+        "nursing_assessment": 0.15,
+        "internship_activities": 0.2,
+        "financial_statements": 0.5
+      },
+      "stock_transition_counts": {
+        "furthermore": 84,
+        "not_only_but_also": 136,
+        "moreover": 15,
+        "selain_itu": 181,
+        "di_sisi_lain": 24,
+        "dengan_demikian": 31,
+        "oleh_karena_itu": 64
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 187,
+        "various_aspects": 16,
+        "contrast_bukan_melainkan": 9,
+        "contrast_bukan_tetapi": 10
+      }
+    },
+    "internship_report": {
+      "count": 32,
+      "formats": {
+        "pdf": 16,
+        "pdf_from_record": 16
+      },
+      "median_word_count": 4126.0,
+      "median_page_or_sheet_count": 46.0,
+      "median_paragraph_words": 24.5,
+      "median_sentence_words": 13.5,
+      "median_colons": 38.0,
+      "median_contrast_frames": 0.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.156,
+        "approval_or_signoff": 0.625,
+        "table_of_contents": 0.531,
+        "abstract_or_summary": 0.344,
+        "introduction_or_background": 0.781,
+        "methods_or_process": 0.781,
+        "results_or_activities": 0.688,
+        "discussion_or_analysis": 0.5,
+        "conclusion_or_recommendations": 0.812,
+        "references": 0.719,
+        "appendices": 0.781,
+        "organization_profile": 0.562,
+        "nursing_assessment": 0.031,
+        "internship_activities": 0.594,
+        "financial_statements": 0.031
+      },
+      "stock_transition_counts": {
+        "furthermore": 1,
+        "selain_itu": 36,
+        "oleh_karena_itu": 26,
+        "dengan_demikian": 4,
+        "not_only_but_also": 15,
+        "moreover": 2,
+        "di_sisi_lain": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 3,
+        "contrast_bukan_tetapi": 1,
+        "various_aspects": 7,
+        "contrast_bukan_melainkan": 1,
+        "rapid_development_cliche": 1
+      }
+    },
+    "lab_report": {
+      "count": 5,
+      "formats": {
+        "pdf": 2,
+        "pdf_from_record": 1,
+        "html": 2
+      },
+      "median_word_count": 4285,
+      "median_page_or_sheet_count": 15,
+      "median_paragraph_words": 30.0,
+      "median_sentence_words": 17.5,
+      "median_colons": 37,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.0,
+        "table_of_contents": 0.6,
+        "abstract_or_summary": 0.4,
+        "introduction_or_background": 0.6,
+        "methods_or_process": 0.6,
+        "results_or_activities": 0.6,
+        "discussion_or_analysis": 0.6,
+        "conclusion_or_recommendations": 0.6,
+        "references": 0.6,
+        "appendices": 0.4,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "moreover": 5
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 2
+      }
+    },
+    "meeting_minutes": {
+      "count": 10,
+      "formats": {
+        "pdf": 3,
+        "html": 3,
+        "pdf_from_record": 4
+      },
+      "median_word_count": 2022.5,
+      "median_page_or_sheet_count": 8.0,
+      "median_paragraph_words": 27.5,
+      "median_sentence_words": 21.0,
+      "median_colons": 14.0,
+      "median_contrast_frames": 0.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.2,
+        "table_of_contents": 0.1,
+        "abstract_or_summary": 0.1,
+        "introduction_or_background": 0.5,
+        "methods_or_process": 0.2,
+        "results_or_activities": 0.7,
+        "discussion_or_analysis": 0.5,
+        "conclusion_or_recommendations": 0.5,
+        "references": 0.0,
+        "appendices": 0.4,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.1,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "selain_itu": 1,
+        "oleh_karena_itu": 1,
+        "furthermore": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 1
+      }
+    },
+    "nonprofit_annual_report": {
+      "count": 10,
+      "formats": {
+        "pdf": 10
+      },
+      "median_word_count": 5730.0,
+      "median_page_or_sheet_count": 27.0,
+      "median_paragraph_words": 39.2,
+      "median_sentence_words": 21.8,
+      "median_colons": 35.5,
+      "median_contrast_frames": 2.5,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.2,
+        "table_of_contents": 0.8,
+        "abstract_or_summary": 0.4,
+        "introduction_or_background": 0.2,
+        "methods_or_process": 0.4,
+        "results_or_activities": 0.8,
+        "discussion_or_analysis": 0.3,
+        "conclusion_or_recommendations": 0.3,
+        "references": 0.0,
+        "appendices": 0.0,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.6
+      },
+      "stock_transition_counts": {
+        "not_only_but_also": 10,
+        "furthermore": 3,
+        "moreover": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 31
+      }
+    },
+    "nursing_case_report": {
+      "count": 58,
+      "formats": {
+        "pdf": 39,
+        "pdf_from_record": 18,
+        "html": 1
+      },
+      "median_word_count": 2408.0,
+      "median_page_or_sheet_count": 14.0,
+      "median_paragraph_words": 15.2,
+      "median_sentence_words": 13.5,
+      "median_colons": 35.0,
+      "median_contrast_frames": 0.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.224,
+        "approval_or_signoff": 0.534,
+        "table_of_contents": 0.362,
+        "abstract_or_summary": 0.552,
+        "introduction_or_background": 0.655,
+        "methods_or_process": 0.638,
+        "results_or_activities": 0.793,
+        "discussion_or_analysis": 0.603,
+        "conclusion_or_recommendations": 0.69,
+        "references": 0.707,
+        "appendices": 0.517,
+        "organization_profile": 0.052,
+        "nursing_assessment": 0.81,
+        "internship_activities": 0.0,
+        "financial_statements": 0.103
+      },
+      "stock_transition_counts": {
+        "oleh_karena_itu": 134,
+        "selain_itu": 404,
+        "in_conclusion": 8,
+        "furthermore": 1,
+        "di_sisi_lain": 26,
+        "dengan_demikian": 45,
+        "moreover": 3,
+        "not_only_but_also": 43
+      },
+      "contrast_cue_counts": {
+        "various_aspects": 11,
+        "contrast_bukan_tetapi": 3,
+        "contrast_not_but": 5,
+        "digital_era_cliche": 1
+      }
+    },
+    "operational_report": {
+      "count": 12,
+      "formats": {
+        "pdf": 12
+      },
+      "median_word_count": 3867.0,
+      "median_page_or_sheet_count": 13.5,
+      "median_paragraph_words": 31.0,
+      "median_sentence_words": 20.0,
+      "median_colons": 24.5,
+      "median_contrast_frames": 0.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.417,
+        "table_of_contents": 0.583,
+        "abstract_or_summary": 0.75,
+        "introduction_or_background": 0.917,
+        "methods_or_process": 0.833,
+        "results_or_activities": 0.917,
+        "discussion_or_analysis": 0.833,
+        "conclusion_or_recommendations": 0.917,
+        "references": 0.0,
+        "appendices": 0.667,
+        "organization_profile": 0.083,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.083
+      },
+      "stock_transition_counts": {
+        "furthermore": 6,
+        "not_only_but_also": 1,
+        "moreover": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 7
+      }
+    },
+    "production_report": {
+      "count": 4,
+      "formats": {
+        "pdf": 3,
+        "pdf_from_record": 1
+      },
+      "median_word_count": 35187.5,
+      "median_page_or_sheet_count": 135.5,
+      "median_paragraph_words": 139.0,
+      "median_sentence_words": 17.5,
+      "median_colons": 172.5,
+      "median_contrast_frames": 6.5,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.25,
+        "table_of_contents": 1.0,
+        "abstract_or_summary": 1.0,
+        "introduction_or_background": 1.0,
+        "methods_or_process": 1.0,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 1.0,
+        "conclusion_or_recommendations": 1.0,
+        "references": 1.0,
+        "appendices": 0.75,
+        "organization_profile": 0.25,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.25,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "in_conclusion": 7,
+        "furthermore": 38,
+        "moreover": 22,
+        "not_only_but_also": 7
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 31
+      }
+    },
+    "professional_operational_document": {
+      "count": 10,
+      "formats": {
+        "pdf": 9,
+        "pdf_from_record": 1
+      },
+      "median_word_count": 12032.0,
+      "median_page_or_sheet_count": 69.5,
+      "median_paragraph_words": 27.2,
+      "median_sentence_words": 18.5,
+      "median_colons": 90.5,
+      "median_contrast_frames": 0.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.5,
+        "table_of_contents": 0.9,
+        "abstract_or_summary": 0.4,
+        "introduction_or_background": 0.7,
+        "methods_or_process": 0.8,
+        "results_or_activities": 0.9,
+        "discussion_or_analysis": 0.4,
+        "conclusion_or_recommendations": 0.7,
+        "references": 0.6,
+        "appendices": 0.9,
+        "organization_profile": 0.3,
+        "nursing_assessment": 0.2,
+        "internship_activities": 0.1,
+        "financial_statements": 0.5
+      },
+      "stock_transition_counts": {
+        "oleh_karena_itu": 9,
+        "selain_itu": 45,
+        "dengan_demikian": 6,
+        "not_only_but_also": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 2
+      }
+    },
+    "professional_report": {
+      "count": 22,
+      "formats": {
+        "pdf": 22
+      },
+      "median_word_count": 18004.0,
+      "median_page_or_sheet_count": 57.0,
+      "median_paragraph_words": 83.5,
+      "median_sentence_words": 21.0,
+      "median_colons": 117.5,
+      "median_contrast_frames": 3.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.273,
+        "table_of_contents": 0.818,
+        "abstract_or_summary": 0.818,
+        "introduction_or_background": 0.727,
+        "methods_or_process": 0.727,
+        "results_or_activities": 0.955,
+        "discussion_or_analysis": 0.682,
+        "conclusion_or_recommendations": 0.773,
+        "references": 0.318,
+        "appendices": 0.318,
+        "organization_profile": 0.045,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.182
+      },
+      "stock_transition_counts": {
+        "not_only_but_also": 34,
+        "furthermore": 61,
+        "moreover": 99,
+        "in_conclusion": 4,
+        "selain_itu": 2
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 88,
+        "various_aspects": 2
+      }
+    },
+    "project_accountability_report": {
+      "count": 6,
+      "formats": {
+        "pdf": 6
+      },
+      "median_word_count": 30391.5,
+      "median_page_or_sheet_count": 93.5,
+      "median_paragraph_words": 44.5,
+      "median_sentence_words": 22.5,
+      "median_colons": 243.5,
+      "median_contrast_frames": 3.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.167,
+        "approval_or_signoff": 0.833,
+        "table_of_contents": 0.833,
+        "abstract_or_summary": 0.667,
+        "introduction_or_background": 0.833,
+        "methods_or_process": 0.833,
+        "results_or_activities": 0.833,
+        "discussion_or_analysis": 0.667,
+        "conclusion_or_recommendations": 0.833,
+        "references": 0.333,
+        "appendices": 0.167,
+        "organization_profile": 0.333,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "furthermore": 29,
+        "moreover": 8,
+        "not_only_but_also": 9,
+        "selain_itu": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 20
+      }
+    },
+    "project_closeout_report": {
+      "count": 11,
+      "formats": {
+        "pdf": 9,
+        "pdf_from_record": 2
+      },
+      "median_word_count": 13854,
+      "median_page_or_sheet_count": 46,
+      "median_paragraph_words": 20.5,
+      "median_sentence_words": 20,
+      "median_colons": 137,
+      "median_contrast_frames": 2,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.364,
+        "table_of_contents": 1.0,
+        "abstract_or_summary": 1.0,
+        "introduction_or_background": 0.909,
+        "methods_or_process": 0.909,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 1.0,
+        "conclusion_or_recommendations": 0.909,
+        "references": 0.545,
+        "appendices": 0.727,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "furthermore": 54,
+        "moreover": 17,
+        "not_only_but_also": 20
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 96,
+        "various_aspects": 1
+      }
+    },
+    "proposal_or_project_report": {
+      "count": 3,
+      "formats": {
+        "pdf": 3
+      },
+      "median_word_count": 652,
+      "median_page_or_sheet_count": 3,
+      "median_paragraph_words": 32.0,
+      "median_sentence_words": 13.0,
+      "median_colons": 36,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.333,
+        "approval_or_signoff": 0.667,
+        "table_of_contents": 0.333,
+        "abstract_or_summary": 0.0,
+        "introduction_or_background": 0.333,
+        "methods_or_process": 0.333,
+        "results_or_activities": 0.333,
+        "discussion_or_analysis": 0.333,
+        "conclusion_or_recommendations": 0.333,
+        "references": 0.333,
+        "appendices": 0.667,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "selain_itu": 5,
+        "di_sisi_lain": 1,
+        "dengan_demikian": 5,
+        "oleh_karena_itu": 9,
+        "not_only_but_also": 1
+      },
+      "contrast_cue_counts": {
+        "various_aspects": 2
+      }
+    },
+    "quality_assurance_report": {
+      "count": 9,
+      "formats": {
+        "pdf": 9
+      },
+      "median_word_count": 10617,
+      "median_page_or_sheet_count": 31,
+      "median_paragraph_words": 63,
+      "median_sentence_words": 21.0,
+      "median_colons": 35,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.667,
+        "table_of_contents": 0.444,
+        "abstract_or_summary": 0.889,
+        "introduction_or_background": 0.556,
+        "methods_or_process": 0.778,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 0.778,
+        "conclusion_or_recommendations": 0.778,
+        "references": 0.444,
+        "appendices": 0.667,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "moreover": 8
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 3
+      }
+    },
+    "spreadsheet_workbook": {
+      "count": 31,
+      "formats": {
+        "pdf": 9,
+        "html": 5,
+        "xlsx_from_record": 9,
+        "pdf_from_record": 8
+      },
+      "median_word_count": 1847,
+      "median_page_or_sheet_count": 5,
+      "median_paragraph_words": 94,
+      "median_sentence_words": 22,
+      "median_colons": 17,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.032,
+        "approval_or_signoff": 0.226,
+        "table_of_contents": 0.226,
+        "abstract_or_summary": 0.29,
+        "introduction_or_background": 0.226,
+        "methods_or_process": 0.355,
+        "results_or_activities": 0.516,
+        "discussion_or_analysis": 0.194,
+        "conclusion_or_recommendations": 0.129,
+        "references": 0.097,
+        "appendices": 0.161,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.29
+      },
+      "stock_transition_counts": {
+        "selain_itu": 2,
+        "dengan_demikian": 2,
+        "oleh_karena_itu": 4,
+        "not_only_but_also": 1,
+        "furthermore": 1,
+        "moreover": 1
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_tetapi": 1,
+        "contrast_not_but": 17
+      }
+    },
+    "statistical_report": {
+      "count": 4,
+      "formats": {
+        "pdf": 4
+      },
+      "median_word_count": 162403.0,
+      "median_page_or_sheet_count": 598.5,
+      "median_paragraph_words": 31.0,
+      "median_sentence_words": 14.0,
+      "median_colons": 1219.0,
+      "median_contrast_frames": 1.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.75,
+        "table_of_contents": 1.0,
+        "abstract_or_summary": 0.75,
+        "introduction_or_background": 0.5,
+        "methods_or_process": 1.0,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 0.5,
+        "conclusion_or_recommendations": 1.0,
+        "references": 0.5,
+        "appendices": 0.75,
+        "organization_profile": 0.25,
+        "nursing_assessment": 0.25,
+        "internship_activities": 0.0,
+        "financial_statements": 0.25
+      },
+      "stock_transition_counts": {
+        "selain_itu": 37,
+        "di_sisi_lain": 4,
+        "dengan_demikian": 6,
+        "oleh_karena_itu": 2,
+        "not_only_but_also": 7,
+        "furthermore": 5,
+        "moreover": 7
+      },
+      "contrast_cue_counts": {
+        "various_aspects": 1,
+        "contrast_not_but": 5
+      }
+    },
+    "technical_audit_report": {
+      "count": 17,
+      "formats": {
+        "pdf": 17
+      },
+      "median_word_count": 6354,
+      "median_page_or_sheet_count": 29,
+      "median_paragraph_words": 20.5,
+      "median_sentence_words": 21,
+      "median_colons": 34,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.0,
+        "approval_or_signoff": 0.588,
+        "table_of_contents": 0.706,
+        "abstract_or_summary": 1.0,
+        "introduction_or_background": 0.647,
+        "methods_or_process": 1.0,
+        "results_or_activities": 0.941,
+        "discussion_or_analysis": 0.882,
+        "conclusion_or_recommendations": 0.941,
+        "references": 0.588,
+        "appendices": 0.941,
+        "organization_profile": 0.118,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "in_conclusion": 1,
+        "furthermore": 21,
+        "not_only_but_also": 4,
+        "moreover": 3
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 19,
+        "various_aspects": 1
+      }
+    },
+    "technical_project_report": {
+      "count": 8,
+      "formats": {
+        "pdf": 8
+      },
+      "median_word_count": 10445.5,
+      "median_page_or_sheet_count": 56.5,
+      "median_paragraph_words": 172.5,
+      "median_sentence_words": 19.5,
+      "median_colons": 53.0,
+      "median_contrast_frames": 1.0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.125,
+        "approval_or_signoff": 0.125,
+        "table_of_contents": 0.875,
+        "abstract_or_summary": 0.875,
+        "introduction_or_background": 1.0,
+        "methods_or_process": 0.875,
+        "results_or_activities": 1.0,
+        "discussion_or_analysis": 1.0,
+        "conclusion_or_recommendations": 0.875,
+        "references": 0.625,
+        "appendices": 0.5,
+        "organization_profile": 0.0,
+        "nursing_assessment": 0.0,
+        "internship_activities": 0.0,
+        "financial_statements": 0.0
+      },
+      "stock_transition_counts": {
+        "furthermore": 12,
+        "moreover": 10,
+        "not_only_but_also": 7,
+        "in_conclusion": 2
+      },
+      "contrast_cue_counts": {
+        "contrast_not_but": 25,
+        "various_aspects": 1
+      }
+    },
+    "thesis": {
+      "count": 37,
+      "formats": {
+        "pdf": 11,
+        "pdf_from_record": 25,
+        "html": 1
+      },
+      "median_word_count": 4227,
+      "median_page_or_sheet_count": 24,
+      "median_paragraph_words": 31,
+      "median_sentence_words": 14,
+      "median_colons": 99,
+      "median_contrast_frames": 0,
+      "section_presence_rates": {
+        "cover_or_title_page": 0.216,
+        "approval_or_signoff": 0.459,
+        "table_of_contents": 0.459,
+        "abstract_or_summary": 0.73,
+        "introduction_or_background": 0.676,
+        "methods_or_process": 0.757,
+        "results_or_activities": 0.73,
+        "discussion_or_analysis": 0.514,
+        "conclusion_or_recommendations": 0.73,
+        "references": 0.892,
+        "appendices": 0.568,
+        "organization_profile": 0.243,
+        "nursing_assessment": 0.135,
+        "internship_activities": 0.0,
+        "financial_statements": 0.027
+      },
+      "stock_transition_counts": {
+        "selain_itu": 132,
+        "dengan_demikian": 32,
+        "oleh_karena_itu": 46,
+        "not_only_but_also": 25,
+        "furthermore": 31,
+        "moreover": 28,
+        "di_sisi_lain": 3
+      },
+      "contrast_cue_counts": {
+        "contrast_bukan_tetapi": 6,
+        "various_aspects": 4,
+        "contrast_bukan_melainkan": 8,
+        "contrast_not_but": 38
+      }
+    }
+  },
+  "limitations": [
+    "URL access and extracted structure do not prove all pages were written by a human; manually inspect provenance and author metadata.",
+    "Phrase metrics are contextual review cues, not an AI-authorship detector and not evidence of AI authorship.",
+    "OCR is not run; scanned PDFs may be marked partial. PDF table and visual layout analysis are approximations.",
+    "Stored outputs contain metadata and structural measurements, not the source document body text."
+  ]
+}
