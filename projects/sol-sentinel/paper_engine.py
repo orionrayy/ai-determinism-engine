@@ -630,14 +630,18 @@ def resolve_quote_to_idr(
         except (OSError, json.JSONDecodeError) as exc:
             raise ValueError(f"cannot read capture metadata sidecar: {exc}") from exc
         rate = metadata.get("quote_to_idr_rate")
-        rate_date = str(metadata.get("quote_to_idr_date", "unknown date"))
-        source = f"{metadata.get('quote_to_idr_source', 'captured FX reference')} (date={rate_date})"
-        age_days = metadata.get("quote_to_idr_age_days")
-        if age_days is None or not isinstance(age_days, (int, float)) or age_days < 0 or age_days > 5:
-            raise ValueError("capture metadata does not contain a fresh enough USD/IDR reference rate")
+        rate_date = str(metadata.get("quote_to_idr_date", ""))
         if not rate:
             reason = metadata.get("quote_to_idr_error", "missing quote_to_idr_rate")
             raise ValueError(f"no valid quote-to-IDR reference in capture metadata: {reason}")
+        try:
+            as_of_date = datetime.strptime(rate_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise ValueError("capture metadata has no valid USD/IDR reference date") from exc
+        age_days = (datetime.now(timezone.utc).date() - as_of_date).days
+        if age_days < 0 or age_days > 5:
+            raise ValueError(f"USD/IDR reference is stale ({age_days} days old); recapture history or pass a verified rate")
+        source = f"{metadata.get('quote_to_idr_source', 'captured FX reference')} (date={rate_date}, age={age_days}d)"
         rate = float(rate)
     if not math.isfinite(rate) or not 1_000 <= rate <= 50_000:
         raise ValueError("quote-to-IDR rate must be finite and between 1,000 and 50,000")
