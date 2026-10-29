@@ -12,7 +12,10 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Sequence
 
-from paper_engine import BacktestConfig, Bar, backtest, read_bars_csv, resolve_quote_to_idr
+from paper_engine import (
+    BacktestConfig, Bar, backtest, read_bars_csv, resolve_quote_to_idr,
+    resolve_input_market_metadata, resolve_fee_inputs,
+)
 
 
 DEFAULT_RATIOS = (0.60, 0.20, 0.20)
@@ -91,11 +94,22 @@ def evaluate(
         "schema_version": "sol-sentinel-chronological-evaluation-v1",
         "mode": "OFFLINE_CHRONOLOGICAL_EVALUATION",
         "execution_enabled": False,
-        "symbol": "SOLUSDT",
-        "venue_reference": "Binance public SOLUSDT candles converted by a daily USD/IDR reference; not Reku SOL/IDR executable prices",
-        "source_quote_currency": "USDT", "simulation_price_currency": "IDR",
+        "symbol": config.input_symbol,
+        "input_venue": config.input_venue,
+        "venue_reference": (
+            "Native INDODAX SOL/IDR public candles; no FX conversion applied; modeled fills and costs are assumptions"
+            if config.input_price_currency.upper() == "IDR"
+            else "Binance public SOLUSDT candles converted by a dated USD/IDR reference; not Reku or another venue's executable prices"
+        ),
+        "source_quote_currency": config.input_price_currency.upper(), "simulation_price_currency": "IDR",
         "quote_to_idr_rate": config.quote_to_idr_rate, "quote_to_idr_source": config.quote_to_idr_source,
-        "quote_to_idr_assumption": "A daily USD/IDR reference proxies USDT/IDR; stablecoin premium/discount and Reku prices are not modeled.",
+        "quote_to_idr_assumption": (
+            "Native IDR prices are already denominated in the simulator currency; FX conversion is disabled."
+            if config.input_price_currency.upper() == "IDR"
+            else "A dated USD/IDR reference proxies USDT/IDR; stablecoin premium/discount and execution-venue prices are not modeled."
+        ),
+        "fee_model_name": config.fee_model_name,
+        "fee_model_source": config.fee_model_source,
         "source_dataset_sha256": dataset_sha256,
         "split_ratios": {"development": 0.60, "validation": 0.20, "out_of_sample": 0.20},
         "segment_capital_model": "Each segment starts independently at configured initial equity; returns are not compounded across segments.",
@@ -116,18 +130,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--csv", required=True)
     parser.add_argument("--quote-to-idr-rate", type=float, default=None, help="manual FX override; otherwise use capture sidecar")
     parser.add_argument("--quote-to-idr-source", default="", help="source label for a manual FX override")
+    parser.add_argument("--input-venue", default=None, help="required source venue when capture sidecar is missing")
+    parser.add_argument("--input-symbol", default=None, help="required source pair when capture sidecar is missing")
+    parser.add_argument("--input-price-currency", choices=("USDT", "IDR"), default=None, help="required source quote currency when capture sidecar is missing")
+    parser.add_argument("--fee-model", choices=("reku-pro-reference", "indodax-custom"), default=None)
+    parser.add_argument("--fee-source", default="", help="label for explicitly supplied venue fee rates")
     parser.add_argument("--minimum-segment-bars", type=int, default=600)
     parser.add_argument("--initial-capital-idr", type=float, default=300_000.0)
     parser.add_argument("--risk-fraction", type=float, default=0.005)
     parser.add_argument("--max-exposure-fraction", type=float, default=0.50)
     parser.add_argument("--daily-loss-fraction", type=float, default=0.03)
-    parser.add_argument("--entry-fee-bps", type=float, default=10.555)
-    parser.add_argument("--exit-fee-bps", type=float, default=31.555)
-    parser.add_argument("--spread-bps-round-trip", type=float, default=10.0)
-    parser.add_argument("--slippage-bps-per-side", type=float, default=10.0)
+    parser.add_argument("--entry-fee-bps", type=float, default=None)
+    parser.add_argument("--exit-fee-bps", type=float, default=None)
+    parser.add_argument("--spread-bps-round-trip", type=float, default=None)
+    parser.add_argument("--slippage-bps-per-side", type=float, default=None)
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
-    parser.add_argument("--minimum-order-notional-idr", type=float, default=30_000.0)
+    parser.add_argument("--minimum-order-notional-idr", type=float, default=None)
     parser.add_argument("--stop-atr-multiple", type=float, default=1.0)
     parser.add_argument("--target-atr-multiple", type=float, default=1.5)
     parser.add_argument("--maximum-hold-bars", type=int, default=30)
@@ -135,20 +154,38 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         source = Path(args.csv).expanduser()
+        source_market = resolve_input_market_metadata(
+            source, args.input_venue, args.input_symbol, args.input_price_currency
+        )
         quote_to_idr_rate, quote_to_idr_source = resolve_quote_to_idr(
-            source, args.quote_to_idr_rate, args.quote_to_idr_source
+            source, args.quote_to_idr_rate, args.quote_to_idr_source, source_market
+        )
+        fee_inputs = resolve_fee_inputs(
+            source_market,
+            fee_model=args.fee_model,
+            fee_source=args.fee_source,
+            entry_fee_bps=args.entry_fee_bps,
+            exit_fee_bps=args.exit_fee_bps,
+            spread_bps_round_trip=args.spread_bps_round_trip,
+            slippage_bps_per_side=args.slippage_bps_per_side,
+            minimum_order_notional_idr=args.minimum_order_notional_idr,
         )
         config = BacktestConfig(
             initial_capital_idr=args.initial_capital_idr,
             quote_to_idr_rate=quote_to_idr_rate,
             quote_to_idr_source=quote_to_idr_source,
+            input_venue=source_market["venue"],
+            input_symbol=source_market["symbol"],
+            input_price_currency=source_market["price_currency"],
+            fee_model_name=fee_inputs["fee_model_name"],
+            fee_model_source=fee_inputs["fee_model_source"],
             risk_fraction=args.risk_fraction,
             max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
-            entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
-            spread_bps_round_trip=args.spread_bps_round_trip,
-            slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
+            entry_fee_bps=fee_inputs["entry_fee_bps"], exit_fee_bps=fee_inputs["exit_fee_bps"],
+            spread_bps_round_trip=fee_inputs["spread_bps_round_trip"],
+            slippage_bps_per_side=fee_inputs["slippage_bps_per_side"], minimum_net_edge_bps=args.minimum_net_edge_bps,
             minimum_relative_volume=args.minimum_relative_volume,
-            minimum_order_notional_idr=args.minimum_order_notional_idr,
+            minimum_order_notional_idr=fee_inputs["minimum_order_notional_idr"],
             stop_atr_multiple=args.stop_atr_multiple,
             target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
         )
