@@ -83,17 +83,27 @@ jobs:
           import json
           from pathlib import Path
           data=json.loads(Path("research-output/backtest.json").read_text())
-          for key in ("period_start","period_end","bars_1m","initial_equity_idr","final_equity_idr","net_pnl_idr","net_return_pct","closed_trades","win_rate_pct","profit_factor","max_drawdown_pct","total_fees_idr"):
+          for key in ("period_start","period_end","bars_1m","initial_equity_idr","final_equity_idr","net_pnl_idr","net_return_pct","signal_evaluations","signal_candidates","signal_rejection_counts","closed_trades","win_rate_pct","profit_factor","max_drawdown_pct","total_fees_idr","total_execution_friction_idr"):
               print(f"- {key}: {data.get(key)}")
           print("- mode:", data.get("mode"))
           print("- execution_enabled:", data.get("execution_enabled"))
+          if not data.get("closed_trades"):
+              print("- interpretation: NO TRADES — no profitability evidence; review signal rejections and costs.")
           PY
             else
               echo "Backtest report not available; inspect the failed step."
             fi
             if [ -f research-output/evaluation.json ]; then
               echo
-              echo "Chronological evaluation report generated."
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/evaluation.json").read_text())
+          print("Chronological evaluation (fixed parameters; independent equity per segment):")
+          for name, metrics in report.get("segments", {}).items():
+              print(f"- {name}: bars={metrics.get('bars_1m')}, signals={metrics.get('signal_evaluations')}, candidates={metrics.get('signal_candidates')}, trades={metrics.get('closed_trades')}, net_pnl_idr={metrics.get('net_pnl_idr')}, max_drawdown_pct={metrics.get('max_drawdown_pct')}")
+              print(f"  rejection_counts={metrics.get('signal_rejection_counts')}")
+          PY
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
