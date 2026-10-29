@@ -48,12 +48,17 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 
 ## Current implementation state
 
-This checkpoint's goal is the first read-only scanner release. Do not label it as profitable, calibrated, or production ready.
+- Branch: `feat/sol-sentinel-paper-trader-v1`.
+- Scanner code, specification, risk policy, sources, session log, Termux runbook, unit tests, and CI workflow are committed on the feature branch.
+- GitHub Actions run `40898402582` for commit `e34a1cd8d74d76967df580cd563bfbbb20ac6d7f`: workflow conclusion `success`; compile and offline-unit-test steps passed.
+- The scanner is read-only and explicitly sets `order_placement_enabled=false`; it has not been run from the user's Termux device yet.
+- No wallet was created, no SOL was purchased, and no live order, transfer, or withdrawal was submitted by the assistant.
+- This is an engineering checkpoint, not a performance claim. Strategy profitability and the IDR 3,500,000 target remain unverified.
 
 ### Next work items
-1. Verify branch and all files through GitHub API after creation.
-2. Check CI workflow syntax and run unit tests; fix failures before reporting success.
-3. Validate public API reachability from Termux; environment may behave differently from CI.
-4. Add structured historical capture/replay and paper ledger with realistic Reku fee/spread assumptions.
-5. Research and confirm the official market-data adapter for Reku, current fee schedule, withdrawal fee and minimum amount.
-6. Before any live integration, require explicit user approval and a separate security review.
+1. Run the scanner from the user's Termux device and verify live public market-data reachability.
+2. Add durable candle capture/replay and a cost-aware paper-position ledger.
+3. Validate Reku's official fee schedule, minimum order, withdrawal fee/minimum, and whether any official authenticated order API is supported and permitted.
+4. Research and test historical data chronologically (training, validation, untouched out-of-sample) with costs, spread, slippage, no-fill and latency assumptions.
+5. Record expectancy, profit factor, maximum drawdown, sample size and sensitivity analysis; do not tune only to a target outcome.
+6. Require explicit user approval and a separate security review before any live execution integration.
