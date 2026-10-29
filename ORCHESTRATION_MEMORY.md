@@ -1295,3 +1295,26 @@ This is a required next-phase acceptance contract from the user. It is a roadmap
 - Do not add intentional mistakes, fabricate a personal experience, imitate a named living author, or claim the document was authored by a human when that is not established. This work is about quality and contextual fit, not evading AI-detection systems or promising detector outcomes.
 - Continue using the required repository contracts for privacy, provenance, trustworthy citations, free-first operation, authorization, idempotency and honest verification status.
 
+## Original-document corpus collection and structural-audit execution checkpoint (2026-10-29)
+
+This checkpoint records real source-discovery and pipeline work. It does **not** claim the 500-document acceptance gate has already passed; the first hosted audit run is the validation authority.
+
+### Discovery completed
+- Research branch: `research/original-document-corpus-v1`.
+- Six deduplicated JSONL discovery batches now contain **898 unique source URLs** collected through targeted searches spanning nursing/LP askep, PKL/internship, theses, academic papers, laboratory and fieldwork reports, KKN/community service, LPJ/activity accountability, government performance, annual reports, technical/QA/operations/production reports, minutes, proposals and public spreadsheet workbooks.
+- The current metadata-based filter yielded 594 first-pass candidates before actual network/content validation. This is a candidate count only, not 594 confirmed complete documents.
+- Search excerpts were removed from the corpus files; only source metadata and compact structural evidence flags remain. The source body text is not mirrored into the repository.
+- The initial corpus spans hundreds of distinct hostnames and includes both direct document URLs and repository landing pages. Landing pages are not counted as fully analyzed unless a document artifact can be fetched.
+
+### Audit implementation
+- `research/document-corpus/tools/audit_corpus.py` implements source selection, public retrieval, one-level attachment resolution for repository records, PDF/DOCX/XLSX/HTML extraction, content hashes and structure/style metrics without storing body text.
+- Text signals include word/page/sheet counts, heading/section presence, paragraph/sentence length distributions, lexical diversity, repeated four-grams, punctuation profiles, table-like lines, and context-sensitive counts for stock transitions and contrast frames. Excel analysis records sheet dimensions, formulas, dates, merged cells, tables, charts, data validation, conditional formatting, and freeze panes.
+- `.github/workflows/document-corpus-audit.yml` runs the parser self-test, audits up to 850 candidate URLs until 500 full-artifact analyses are obtained, commits derived metadata/reports under `research/document-corpus/results/`, uploads the result artifact, and fails the acceptance gate if fewer than 500 full documents meet the extraction threshold.
+- The first hosted run is https://github.com/orionrayy/ai-determinism-engine/actions/runs/40915607734. Its state must be checked before reporting completion. A pending or failed workflow is not a successful 500-document audit.
+
+### Analysis acceptance and limitations
+- Count a document only after retrieving a public artifact and extracting adequate text or workbook structure; a repository record page alone does not count. Text artifacts require at least 300 extracted words, and spreadsheets require a readable workbook with populated cells.
+- Automated checks establish public access and extractable structure. They do not forensically prove authorship, lawful reuse, or that every page was written by a human. Manual checks of institution/source record, author/date, genre fit and license/terms remain required; questionable documents must be excluded.
+- Scanned PDFs without selectable text may be partial because this pass does not run OCR. PDF table and layout detection is approximate. Phrase counts are contextual quality signals, not an AI-authorship classifier.
+- The goal remains to compare original documents with model-generated baselines within the same genre and purpose, derive evidenced format-specific rules, and then add regression cases from observed defects. A corpus inventory alone is not proof that Document Craft quality has improved.
+
