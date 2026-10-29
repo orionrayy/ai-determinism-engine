@@ -31,7 +31,7 @@ python projects/sol-sentinel/sol_sentinel.py --watch-seconds 30
 python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv
 python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json
-python projects/sol-sentinel/sol_sentinel.py --fee-bps-round-trip 42.11 --slippage-bps-round-trip 20
+python projects/sol-sentinel/sol_sentinel.py --fee-bps-round-trip 42.11 --spread-bps-round-trip 10 --slippage-bps-round-trip 20
 python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 ```
 
@@ -61,3 +61,8 @@ The existing orchestrator is the supervisory control plane. The scanner is a sma
 ## Privacy
 
 The repository is public. Do not commit wallet seed phrases, private keys, API secrets, account identifiers, screenshots with personal information, or private transaction records. The session log captures only information necessary to track the project and user-requested target.
+
+
+## Automated historical research
+
+The GitHub Actions workflow `.github/workflows/sol-sentinel-research.yml` can capture a bounded public candle window, run the offline backtest, and evaluate fixed parameters on chronological 60/20/20 splits. It is a research automation only, not a live trading bot. Use Actions > SOL Sentinel Research > Run workflow, choose this branch, and select a history length. The daily schedule only runs once the workflow exists on the default branch. Artifacts are retained for seven days.
