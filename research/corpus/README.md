@@ -1,6 +1,6 @@
 # Hallmark — korpus referensi Document Craft
 
-Status awal pada 2026-10-30: pipeline validasi disiapkan; manifest sampel utama sengaja kosong sampai dokumen individual melewati pemeriksaan provenance, hak penggunaan, privasi, dan duplikasi. Angka 500 adalah target penerimaan, bukan jumlah hasil pencarian. Berkas registry sumber hanya berisi tempat penemuan dan **tidak** dihitung sebagai sampel.
+Baseline awal pipeline pada 2026-10-30 menggunakan manifest kosong. Setelah pemeriksaan sumber primer, manifest saat ini memuat satu artikel ilmiah akses terbuka yang terverifikasi untuk analisis fitur; detail dan distribusi terkini berada pada bagian status di bawah. Angka 500 adalah target penerimaan, bukan jumlah hasil pencarian. Registry sumber/kandidat metadata tidak dihitung sebagai sampel.
 
 ## Prinsip penerimaan
 
@@ -64,6 +64,7 @@ Exit code `0` berarti bentuk manifest dapat diproses; status target akan tetap `
 - Sampel yang memenuhi gate eligibility sesuai manifest: 1 dari target 500; sisa target 499; status `INSUFFICIENT_EVIDENCE`.
 - Genre saat ini: `academic_paper` = 1. Semua genre lainnya = 0 sampel tervalidasi.
 - Registry penemuan berisi 11 direktori/katalog sumber, tetapi tidak dihitung sebagai dokumen.
+- Harvester metadata DOAJ dan tes fixture XML telah ditambahkan. Live harvest dari OAI-PMH belum dijalankan pada sesi ini; jumlah kandidat yang benar-benar diambil lewat feed = 0.
 - Satu sampel telah diberi analisis struktur manual pada `features.jsonl`; analisis tersebut eksploratif dan tidak cukup untuk menggeneralisasi pola satu genre.
 - Belum ada eksperimen Document Craft baseline-vs-kandidat atau validasi visual keluaran DOCX/PDF/Excel; visual yang diperiksa sejauh ini hanya PDF sumber satu artikel.
 
