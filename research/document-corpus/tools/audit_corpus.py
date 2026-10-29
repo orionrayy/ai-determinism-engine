@@ -3,6 +3,7 @@
 from __future__ import annotations
 import argparse, csv, hashlib, html, json, math, re, statistics, time, urllib.error, urllib.parse, urllib.request, zipfile
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from io import BytesIO
