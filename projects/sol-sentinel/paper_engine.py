@@ -161,6 +161,9 @@ def read_bars_csv(path: str | Path) -> list[Bar]:
                 raise ValueError(f"impossible high/low at CSV row {line_number}")
             if bar.close_time_ms < bar.open_time_ms:
                 raise ValueError(f"close timestamp precedes open at CSV row {line_number}")
+            expected_close_time = bar.open_time_ms + ONE_MINUTE_MS - 1
+            if bar.close_time_ms != expected_close_time:
+                raise ValueError(f"close timestamp does not match 1m candle interval at CSV row {line_number}")
             bars.append(bar)
     if len(bars) < 100:
         raise ValueError(f"need at least 100 one-minute bars; got {len(bars)}")
@@ -332,6 +335,16 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
     config.validate()
     if len(bars) < 100:
         raise ValueError("at least 100 contiguous 1m bars are required")
+    for index, bar in enumerate(bars):
+        values = (bar.open, bar.high, bar.low, bar.close, bar.volume)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError(f"backtest bar {index} contains non-finite OHLCV")
+        if min(bar.open, bar.high, bar.low, bar.close) <= 0 or bar.volume < 0:
+            raise ValueError(f"backtest bar {index} has non-positive price or negative volume")
+        if bar.high < max(bar.open, bar.close, bar.low) or bar.low > min(bar.open, bar.close, bar.high):
+            raise ValueError(f"backtest bar {index} has impossible high/low")
+        if bar.close_time_ms != bar.open_time_ms + ONE_MINUTE_MS - 1:
+            raise ValueError(f"backtest bar {index} close timestamp does not match 1m candle interval")
     for previous, current in zip(bars, bars[1:]):
         if current.open_time_ms - previous.open_time_ms != ONE_MINUTE_MS:
             raise ValueError("backtest bars must be contiguous 1m candles")

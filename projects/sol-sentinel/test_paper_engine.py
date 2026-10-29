@@ -88,6 +88,19 @@ class DataAndIndicatorTests(unittest.TestCase):
         self.assertFalse(engine.notional_meets_minimum(float("nan"), 1_800_000.0, 30_000.0))
         self.assertFalse(engine.notional_meets_minimum(1.0, float("inf"), 30_000.0))
 
+    def test_csv_reader_rejects_close_timestamp_outside_one_minute_candle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bars.csv"
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                writer.writerow(["open_time_ms", "close_time_ms", "open", "high", "low", "close", "volume"])
+                for i in range(101):
+                    bar = make_bar(i)
+                    close_time = bar.open_time_ms + 2 * engine.ONE_MINUTE_MS - 1 if i == 25 else bar.close_time_ms
+                    writer.writerow([bar.open_time_ms, close_time, bar.open, bar.high, bar.low, bar.close, bar.volume])
+            with self.assertRaisesRegex(ValueError, "close timestamp does not match 1m candle interval"):
+                engine.read_bars_csv(path)
+
     def test_csv_reader_rejects_gaps(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "bars.csv"
@@ -104,6 +117,27 @@ class DataAndIndicatorTests(unittest.TestCase):
 
 
 class BacktestAndLedgerTests(unittest.TestCase):
+    def test_backtest_rejects_close_timestamp_outside_one_minute_candle(self):
+        bars = [make_bar(i) for i in range(120)]
+        original = bars[25]
+        bars[25] = engine.Bar(
+            open_time_ms=original.open_time_ms, open=original.open, high=original.high, low=original.low,
+            close=original.close, volume=original.volume,
+            close_time_ms=original.open_time_ms + 2 * engine.ONE_MINUTE_MS - 1,
+        )
+        with self.assertRaisesRegex(ValueError, "close timestamp does not match 1m candle interval"):
+            engine.backtest(bars, engine.BacktestConfig(), dataset_sha256="bad-close-time")
+
+    def test_backtest_rejects_nonfinite_ohlcv_from_direct_bar_input(self):
+        bars = [make_bar(i) for i in range(120)]
+        original = bars[25]
+        bars[25] = engine.Bar(
+            open_time_ms=original.open_time_ms, open=original.open, high=original.high,
+            low=original.low, close=float("nan"), volume=original.volume, close_time_ms=original.close_time_ms,
+        )
+        with self.assertRaisesRegex(ValueError, "non-finite OHLCV"):
+            engine.backtest(bars, engine.BacktestConfig(), dataset_sha256="nan-close")
+
     def test_gap_through_stop_fills_at_open_not_stop_price(self):
         bar = engine.Bar(open_time_ms=BASE_MS + 60_000, open=95.0, high=100.0, low=94.0, close=96.0, volume=10.0, close_time_ms=BASE_MS + 120_000 - 1)
         reason, reference = engine.resolve_exit(bar, stop_price=98.0, target_price=105.0, bars_held=1, maximum_hold_bars=30)
