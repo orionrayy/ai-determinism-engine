@@ -2,7 +2,7 @@
 
 ## Status yang dapat dibuktikan
 
-Korpus saat ini memiliki **9 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 491. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
+Korpus saat ini memiliki **10 dokumen individual yang lolos gate provenance dan hak penggunaan** dari sasaran 500. Status target: `INSUFFICIENT_EVIDENCE`; sisa 490. Sampel masih kecil dan tidak cukup untuk menyimpulkan kualitas seluruh genre atau peningkatan Document Craft.
 
 | Genre | Dokumen lolos gate |
 |---|---:|
@@ -14,12 +14,12 @@ Korpus saat ini memiliki **9 dokumen individual yang lolos gate provenance dan h
 | Laporan penelitian | 0 |
 | Proposal | 0 |
 | Laporan kegiatan | 0 |
-| Laporan kerja/profesional | 1 |
+| Laporan kerja/profesional | 2 |
 | Operasional/administratif | 0 |
 | Workbook Excel | 2 |
 | Genre lain — panduan profesional/operasional | 1 |
 
-Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 14 catatan: 9 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, 1 lead XLSX metadata-only, dan 1 laporan riset yang dikecualikan karena konflik syarat lisensi. Lima catatan non-eligible itu **tidak dihitung** ke angka 9/500.
+Registry sumber berisi 11 direktori penemuan (10 entri direktori jurnal dari DOAJ dan Portal Satu Data Indonesia). Jumlah itu bukan jumlah dokumen. Hak penggunaan diperiksa per dokumen; label lisensi tingkat jurnal dalam registry tidak otomatis diterapkan ke dokumen individual. Manifest memuat 15 catatan: 10 eligible, 2 partial (PKL dan KIAN), 1 artikel nursing case yang masih pending privacy review, 1 lead XLSX metadata-only, dan 1 laporan riset yang dikecualikan karena konflik syarat lisensi. Lima catatan non-eligible itu **tidak dihitung** ke angka 10/500.
 
 ## Sampel yang sudah diverifikasi
 
@@ -128,6 +128,15 @@ The front matter contains a bilingual Māori/English report title, identifier C.
 
 The hierarchy separates strategic outcomes and operational performance from organisational health/capability, departmental and non-departmental statements, appropriation reporting, the independent audit report, and appendices. Topics include governance/risk, outcome measures, funding/savings, performance information, culture/equity/safety, carbon-neutral reporting, accounting policies and notes. This is useful as a public-sector annual-report architecture, not as a universal report template. Rendered-page visual inspection was not performed; the text/contents review provides no evidence about typography, colors, charts, margins or print quality. Financial, environmental and performance claims were not independently re-audited.
 
+
+## Sampel 10 — laporan tahunan Australian Bureau of Statistics, CC BY 4.0
+
+**Australian Bureau of Statistics Annual Report 2024–25** — Australian Bureau of Statistics, Commonwealth of Australia. Official PDF: https://www.abs.gov.au/about/our-organisation/corporate-reporting/abs-annual-reports/ABS%20Annual%20Report%202024-25_final.pdf. The PDF states Creative Commons Attribution 4.0 International and asks for ABS attribution. The full text layer was accessible; no PDF or complete text was copied into GitHub.
+
+The front matter includes the report title/year, copyright and ISSN, explicit license statement, contact metadata, letter of transmittal to the responsible Minister, acknowledgement of Country, and citation information. The table of contents divides the report into five major sections: Overview; Report on performance; Management and accountability; Appendices; and Reference material. The seven chapters cover the Australian Statistician’s review, ABS at a glance, special articles, annual performance statement, financial statements, corporate governance, and human-resource management. Three appendices address resource statements, climate/environmental sustainability, and errors/omissions; reference material includes abbreviations, glossary, statutory requirements and index.
+
+The architecture places narrative/overview first, then performance and financial statements, followed by governance/workforce, appendices and reference material. The transmittal and statutory context establish accountability to the responsible Minister and Parliament. This differs from the NZ DOC annual report despite the shared annual-report genre: both separate performance and financial reporting, while their sectional hierarchy and governance context vary by jurisdiction. Rendered-page visual inspection was not performed; financial and performance claims have not been independently re-audited.
+
 ## Partial, metadata-only, privacy-pending, and excluded leads (not counted toward the target)
 
 - **Menjadi Data Center Pada Program Amati Indonesia** — Politeknik Negeri Jember/SIPORA, 2022. The public summary and Chapter I are licensed CC BY-SA 4.0; the full-report PDF is restricted to registered users. The accessible chapter presents background, general/specific objectives and benefits, location/period, and implementation methods. The record uses `access_status=partial`, with privacy review pending, and contributes **zero** to the eligibility count until the full access/right/privacy gates can be satisfied.
@@ -136,11 +145,11 @@ The hierarchy separates strategic outcomes and operational performance from orga
 - **Studi Kasus: Asuhan Keperawatan pada Orang Dewasa dengan Isolasi Sosial** — Journal of Nursing Education and Practice, DOI [10.53801/jnep.v1i01.9](https://doi.org/10.53801/jnep.v1i01.9), CC BY-SA 4.0 and full text public. Only macro-headings are recorded (case-study label, abstract sections, Pendahuluan, Metode, Hasil dan Pembahasan, Kesimpulan, conflict/acknowledgement/funding/references). The full paper contains sensitive patient narrative, so the source is held at `privacy_review=pending`; no case facts, quotes, chronology, or contact details are retained. It contributes **zero** to eligibility until privacy review is resolved.
 - **Seaweed in Indonesia: farming, utilization and research** — Wageningen Centre for Development Innovation, Report WCDI-22-220, DOI [10.18174/578007](https://doi.org/10.18174/578007). The source says CC BY 4.0 (Netherlands) but also explicitly prohibits commercial use. Because those conditions conflict and no authoritative clarification was obtained, the manifest record is `usage_scope=excluded`/`verification_status=excluded`; no feature record was created and the report contributes **zero** to eligibility.
 
-## Apa yang dapat disimpulkan dari sembilan sampel
+## Sampel 10 — laporan tahunan Australian Bureau of Statistics, CC BY 4.0
 
 Tiga artikel berasal dari penerbit/jurnal yang sama; karena itu, mereka dapat memperlihatkan variasi dalam satu tradisi publikasi tetapi belum menjadi tiga source family independen. Sebagian ciri berulang—metadata DOI dan lisensi di halaman awal, satu kolom serif, catatan bernomor, bagian referensi dan deklarasi penerbitan—masuk akal diuji sebagai hipotesis untuk artikel-artikel jurnal tersebut. Adanya bagian recommendation yang terpisah pada salah satu artikel serta perbedaan heading/topik memperlihatkan bahwa urutan bab tidak boleh dipaksakan sebagai template universal.
 
-Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Sembilan sampel tetap belum memberi bukti tentang norma LP/asuhan keperawatan, PKL lengkap, praktikum, laporan kegiatan, laporan kerja/profesional, atau workbook operasional/administratif berformula. Satu workbook Excel yang eligible adalah dataset eksperimental terukur dan tidak mewakili laporan keuangan, HR, anggaran atau spreadsheet operasional. Dua skripsi UIN Ar-Raniry berasal dari universitas yang sama tetapi program/topik berbeda; keduanya tidak menjadi dua institusi independen.
+Panduan World Bank menambah satu genre fungsional yang berbeda: struktur modular yang mengutamakan lookup dan keputusan, indeks navigasi yang padat, dan hierarki heading dalam. Variasi antarartikel dan perbedaan artikel-vs-panduan harus dipertahankan. Sepuluh sampel tetap belum memberi bukti tentang norma LP/asuhan keperawatan, PKL lengkap, praktikum, laporan kegiatan, laporan kerja/profesional, atau workbook operasional/administratif berformula. Satu workbook Excel yang eligible adalah dataset eksperimental terukur dan tidak mewakili laporan keuangan, HR, anggaran atau spreadsheet operasional. Dua skripsi UIN Ar-Raniry berasal dari universitas yang sama tetapi program/topik berbeda; keduanya tidak menjadi dua institusi independen.
 
 Analisis fitur per dokumen tersimpan sebagai JSONL pada `research/corpus/features.jsonl`; daftar sumber/hak dan status akses berada pada `research/corpus/manifest.jsonl`. Tidak ada PDF atau teks penuh yang disimpan ke GitHub.
 
