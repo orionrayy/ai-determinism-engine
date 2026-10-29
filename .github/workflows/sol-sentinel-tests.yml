@@ -1,0 +1,37 @@
+name: SOL Sentinel Tests
+
+on:
+  push:
+    branches:
+      - feat/sol-sentinel-paper-trader-v1
+    paths:
+      - "projects/sol-sentinel/**"
+      - ".github/workflows/sol-sentinel-tests.yml"
+  pull_request:
+    paths:
+      - "projects/sol-sentinel/**"
+      - ".github/workflows/sol-sentinel-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sol-sentinel-tests
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/test_sol_sentinel.py
+      - name: Offline unit tests
+        run: python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
