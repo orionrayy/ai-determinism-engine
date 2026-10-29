@@ -164,6 +164,9 @@ def capture(symbol: str, interval: str, days: int, max_pages: int) -> tuple[list
     meta = {
         "schema_version": "sol-sentinel-capture-v1",
         "source": "Binance public spot klines",
+        "venue": "Binance",
+        "pair": symbol.upper(),
+        "input_price_currency": "USDT",
         "symbol": symbol, "interval": interval, "requested_days": days,
         "page_count": pages, "count": len(candles),
         "first_open_time_utc": datetime.fromtimestamp(candles[0]["open_time_ms"] / 1000, timezone.utc).isoformat(),
