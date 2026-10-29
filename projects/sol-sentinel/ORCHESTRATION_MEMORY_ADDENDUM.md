@@ -61,3 +61,9 @@ CI run `40899451163` succeeded for branch head `39ef55b1f8c7da160f90189452431818
 The user requested persistence of context, source links, tools, decisions, and session progress. The structured user-facing summary is `CONVERSATION_CONTEXT.md`; detailed technical choices are `SPEC.md`; current verified milestones are `SESSION_LOG.md`; source and tool URLs are in `SOURCES.md`.
 
 A direct update of the full root `ORCHESTRATION_MEMORY.md` was attempted but blocked by a tool safety check; no specific cause was returned. This separate addendum is the safe, small-file workaround. Do not state that the canonical memory itself was modified.
+
+## Update — 2026-10-29, paper research pipeline
+
+The feature branch now includes bounded public-candle capture, a cost-aware offline backtest/SQLite ledger, and fixed-parameter chronological 60/20/20 evaluation with a distinct out-of-sample segment. Associated offline tests are included in the project's CI.
+
+Latest verified CI: run `40906164183`, commit `41f60c53ff7801d3b3729c27f5bd338854538386`, success. No user-device testing, live market order, account connection, or financial side effect has occurred. Keep all downloaded candles and reports with account-specific values on-device; never commit private data into this public repository.
