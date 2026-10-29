@@ -1365,3 +1365,30 @@ Verifikasi ulang setelah perubahan dokumentasi korpus/laporan pada `1cf53f3e967e
 - `Hallmark corpus validation`: sukses — https://github.com/orionrayy/ai-determinism-engine/actions/runs/40929486798
 - Ketiga check di atas selesai pada SHA yang sama. Perubahan selanjutnya pada memori ini akan memicu CI baru; status final harus diperiksa lagi pada SHA baru.
 - PR #179 tetap open, belum merged, branch terpisah dari `main`.
+
+## Hallmark korpus checkpoint lanjutan — empat dokumen (2026-10-30)
+
+Checkpoint ini menggantikan angka hitungan pada checkpoint Hallmark yang lebih lama di atas; catatan lama tetap dipertahankan sebagai riwayat. Branch kerja: `feat/hallmark-corpus-benchmark-v1`. Perubahan tetap terisolasi dari `main`.
+
+### Status korpus terbaru
+- `research/corpus/manifest.jsonl`: **4 entri yang memenuhi gate manifest** dari target 500; sisa 496; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi: `academic_paper=3` (tiga artikel terbit dalam jurnal/penerbit ICCLE yang sama) dan `other=1` (ID4D Practitioner’s Guide, World Bank Group). Semua genre lain bernilai 0.
+- Rekaman dokumen keempat adalah `doc-worldbank-id4d-guide-2019`; lisensi CC BY 3.0 IGO dicatat dari laman atribusi resmi World Bank dan PDF resmi. Pembatasan komponen pihak ketiga dipertahankan; tidak ada PDF, teks lengkap, tabel/gambar, atau alamat email penulis disimpan ke repo.
+- `research/corpus/features.jsonl` kini berisi empat analisis struktur manual. Inspeksi visual dilakukan secara selektif (beberapa halaman dari masing-masing PDF), bukan seluruh halaman; ini analisis sumber, **bukan** validasi visual keluaran generator.
+- Tiga artikel ICCLE tidak diperlakukan sebagai tiga source family independen yang membuktikan norma seluruh genre. Panduan World Bank menunjukkan arsitektur dokumen profesional yang berbeda; belum ada kesimpulan universal.
+- `research/reports/document-craft-corpus-checkpoint-2026-10-30.md` dan `research/corpus/README.md` diperbarui agar sesuai dengan 4/500.
+- DOAJ discovery harvester diuji dengan fixture/mock dan batas akses, tetapi live harvest masih belum berhasil: viewer web memberi 403 dan runtime container gagal DNS. Jumlah kandidat live feed = 0. Jangan menyatakan sumber/kandidat discovery setara dengan dokumen utama.
+
+### Repositori/PR
+- PR #179: `https://github.com/orionrayy/ai-determinism-engine/pull/179`.
+- Branch candidate, belum merge; jangan merge otomatis.
+- Runtime fix untuk menghindari false-positive skill routing pada permintaan kode sudah punya regression tests; seluruh Orchestrator Tests, Hallmark validation dan corpus validation terakhir yang diverifikasi lulus pada SHA `f0bdfe374a2c55bbb336c59226f3bf2fee9070b5`. Korpus dan laporan berubah setelah SHA itu; CI wajib dicek lagi pada HEAD terbaru.
+- Tidak ada perubahan langsung pada `main`.
+
+### Acceptance gates yang masih terbuka
+1. Jalankan validasi manifest terhadap HEAD terbaru, dan audit setiap record untuk eligibility, URL canonical/hash duplicates dan lisensi. Target tetap 500 dokumen unik.
+2. Tambah variasi sumber/institusi serta genre yang belum terwakili (LP/asuhan keperawatan, PKL/magang, skripsi/tesis, praktikum, proposal, laporan kegiatan/profesional, dan workbook asli).
+3. Live harvest metadata harus dijalankan hanya pada lingkungan yang dapat mengakses endpoint secara sah; metadata tidak memverifikasi lisensi konten.
+4. Benchmark baseline Document Craft belum dibuat. Belum ada scoring baseline-vs-kandidat, blind human review, inter-rater agreement, atau hasil kualitas.
+5. Belum ada validasi visual file output DOCX/PDF/Excel, formula/spreadsheet behavior, atau regression test berdasar kegagalan benchmark.
+6. Tidak boleh menyatakan kualitas meningkat atau korpus selesai sebelum bukti sesuai definisi penerimaan tersedia.
