@@ -79,7 +79,7 @@ jobs:
               out["failure_detail"] = str(exc)[:240]
               print("WARNING: pinned workbook unavailable; keep manifest record metadata-only.")
           Path("battery-workbook-structure.json").write_text(
-              json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+              json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True) + chr(10), encoding="utf-8")
           print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
           PY
       - name: Produce an honest baseline summary
