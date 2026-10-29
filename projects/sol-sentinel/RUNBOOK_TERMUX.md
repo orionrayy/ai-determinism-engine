@@ -19,6 +19,7 @@ python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 python projects/sol-sentinel/sol_sentinel.py --json
 python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m --days 3 --output ~/.sol-sentinel/SOLUSDT_1m.csv
 python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
+python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json
 ```
 
 To run a continuous scanner while the terminal stays active:
@@ -69,3 +70,11 @@ Do not set fees to zero to force a signal. If changing fees, store the reason an
 5. The default fees and slippage are assumptions, not confirmed current Reku fees. Override with explicit values only after checking the official venue fee schedule.
 6. Reject any backtest whose data has gaps, bad timestamps, or insufficient history. Do not tune parameters using the out-of-sample segment.
 7. Expect the strategy to produce zero trades on some datasets; this is valid and preferable to forcing entries.
+
+## Chronological evaluation
+
+Use the fixed-parameter development/validation/out-of-sample evaluator after the basic backtest:
+
+`python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json`
+
+The evaluator splits the input by time in a 60/20/20 ratio. Each segment begins at the configured initial capital independently, and every result uses the same fixed strategy parameters. Do not tune parameters against the out-of-sample segment. The default minimum segment length is 600 complete 1-minute bars, so very short histories are rejected. This is an initial research check, not statistical proof of a profitable edge; require adequate trades and representative regimes.
