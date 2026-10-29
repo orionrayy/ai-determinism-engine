@@ -46,6 +46,14 @@ class IndicatorTests(unittest.TestCase):
         rows = [[0, "10", "11", "9", "NaN", "5", 50_000, "52", 2]]
         self.assertEqual(sentinel.parse_klines(rows, now_ms=100_000), [])
 
+    def test_parse_klines_deduplicates_identical_rows_but_rejects_conflicts(self):
+        row = [0, "10", "11", "9", "10.5", "5", 50_000, "52", 2]
+        parsed = sentinel.parse_klines([row, row.copy()], now_ms=100_000)
+        self.assertEqual(len(parsed), 1)
+        conflicting = [0, "10", "11", "9", "10.6", "5", 50_000, "52.5", 2]
+        with self.assertRaisesRegex(ValueError, "conflicting duplicate candle"):
+            sentinel.parse_klines([row, conflicting], now_ms=100_000)
+
     def test_missing_timeframe_fails_closed(self):
         out = sentinel.evaluate_signal({"1m": {}})
         self.assertEqual(out["signal"], "NO_TRADE")
