@@ -308,7 +308,7 @@ class AdapterContractTests(unittest.TestCase):
         decision = a.assess_transfer_route(route, Decimal("0.1"), now=NOW)
         self.assertFalse(decision.approved_for_planning)
         self.assertIn("no_transfer_value_remaining", decision.reasons)
-        self.assertIsNone(decision.estimated_amount_received)
+        self.assertEqual(decision.estimated_amount_received, Decimal("0"))
         self.assertFalse(decision.transfer_sent)
 
     def test_transfer_route_rejects_non_boolean_network_verification_flags(self):
