@@ -110,3 +110,13 @@ The detailed user-facing project timeline, API/repository inventory, GitHub conn
 - Latest verified head at this checkpoint: `8d8c91738b5f237e715206f662db417bbb509b63`; CI run [40911083700](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40911083700) passed compile and 32 offline tests.
 - PR #178 remains draft/open/unmerged. Observed main SHA `d5672c84a0ae184c3a95d3f925925887ece71aa4` differs from the PR-reported base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`; synchronize/review before merge.
 - Research workflow full network run, Termux testing and historical profitability remain unverified.
+
+
+## Historical validation checkpoint — 2026-10-29
+
+- The first end-to-end capture failed due HTTP 451 from the general Binance REST host. Switching to the official market-data-only host `https://data-api.binance.vision/api/v3/klines` resolved that failure.
+- Successful 7-day run: [40914013908](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914013908), 10,080 1m candles; zero trades under the baseline strategy.
+- Successful 30-day run: [40914239047](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914239047), 43,200 1m candles; baseline and fixed chronological 60/20/20 splits yielded zero trades.
+- Initial cost-sensitivity report: [40915191550](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40915191550). Reku Pro baseline (published fee components plus assumed spread/slippage) and Pro fee-only theoretical floor produced zero trades. Lightning fee-only theoretical floor with zero spread/slippage generated 10 trades but lost approximately IDR 3,893 (-1.30%); this is not a realistic executable quote.
+- A later rerun (40915499872) failed closed because the daily FX reference request timed out. The FX fetcher now has bounded retries, with unit tests, and a retry-enabled full pipeline run `40916209196` is in progress at the last checkpoint. Do not claim that last run succeeded until its final status and artifacts are inspected.
+- The exact user prompt sequence and major execution milestones are preserved in `CHAT_TRANSCRIPT.md`; the detailed tool/API inventory and run IDs are in `EXECUTION_LOG.md`.
