@@ -331,6 +331,9 @@ def harvest(
         if not next_token:
             stop_reason = "feed_exhausted"
             break
+        if source_records >= max_records:
+            stop_reason = "max_records_threshold_reached_after_complete_page"
+            break
         if next_token in seen_tokens:
             raise HarvestError("repeated OAI resumption token; aborting to prevent an infinite loop")
         seen_tokens.add(next_token)
@@ -365,7 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--issn", action="append", default=[], help="target journal ISSN; can be repeated")
     parser.add_argument("--max-pages", type=int, default=2, help="hard request/page cap (default: 2)")
-    parser.add_argument("--max-records", type=int, default=200, help="hard source-record processing cap (default: 200)")
+    parser.add_argument("--max-records", type=int, default=200, help="soft stop threshold checked after each complete OAI page (default: 200)")
     parser.add_argument("--timeout", type=float, default=20.0)
     parser.add_argument("--min-interval", type=float, default=1.0, help="minimum seconds between requests")
     parser.add_argument("--from", dest="from_date", help="optional inclusive OAI date YYYY-MM-DD")
