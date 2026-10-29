@@ -8,7 +8,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import capture_indodax_history as capture
-from execution_adapters import MarketCandle, MarketSpec
+from execution_adapters import MarketCandle, MarketQuote, MarketSpec
 
 
 class FakeIndodaxAdapter:
@@ -65,6 +65,44 @@ class IndodaxNativeCaptureTests(unittest.TestCase):
         self.assertEqual(adapter.calls[0][3], 1)
         self.assertEqual(adapter.calls[0][4], now)
         self.assertTrue(datetime.fromisoformat(captured_at).tzinfo)
+
+    def test_live_quote_probe_records_bid_ask_without_enabling_orders(self):
+        spec = MarketSpec(
+            venue="INDODAX", symbol="SOL/IDR", venue_symbol="solidr",
+            base_asset="SOL", quote_asset="IDR", price_tick="1",
+            quantity_step="0.00000001", min_notional_quote="10000",
+            base_decimals=8, quote_decimals=0,
+        )
+        quote = MarketQuote(
+            venue="INDODAX", symbol="SOL/IDR", bid=Decimal("1800000"),
+            ask=Decimal("1801000"), observed_at=datetime(2026, 10, 30, tzinfo=timezone.utc),
+            source="fixture public depth",
+        )
+        class QuoteAdapter:
+            def get_quote(self, market):
+                self.market = market
+                return quote
+        result = capture.capture_quote_snapshot(QuoteAdapter(), spec)
+        self.assertEqual(result["market_quote_status"], "OK")
+        self.assertEqual(result["market_quote"]["bid_idr"], "1800000")
+        self.assertEqual(result["market_quote"]["ask_idr"], "1801000")
+        self.assertEqual(quote.midpoint, Decimal("1800500"))
+        self.assertFalse(result["orders_enabled"])
+
+    def test_live_quote_probe_failure_is_recorded_without_losing_history_status(self):
+        class QuoteAdapter:
+            def get_quote(self, market):
+                raise RuntimeError("depth endpoint unavailable")
+        result = capture.capture_quote_snapshot(QuoteAdapter(), MarketSpec(
+            venue="INDODAX", symbol="SOL/IDR", venue_symbol="solidr",
+            base_asset="SOL", quote_asset="IDR", price_tick="1",
+            quantity_step="0.00000001", min_notional_quote="10000",
+            base_decimals=8, quote_decimals=0,
+        ))
+        self.assertEqual(result["market_quote_status"], "ERROR")
+        self.assertIsNone(result["market_quote"])
+        self.assertIn("depth endpoint unavailable", result["market_quote_error"])
+        self.assertFalse(result["orders_enabled"])
 
     def test_capture_rejects_invalid_days_and_other_symbols_before_network(self):
         adapter = FakeIndodaxAdapter([])
