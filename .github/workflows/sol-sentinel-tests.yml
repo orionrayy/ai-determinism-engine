@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sol-sentinel-tests
+  group: sol-sentinel-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
