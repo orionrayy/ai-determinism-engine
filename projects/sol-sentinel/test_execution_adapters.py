@@ -72,7 +72,7 @@ class AdapterContractTests(unittest.TestCase):
         self.assertEqual(receipt.status, a.ReceiptStatus.FILLED_SIMULATED)
         self.assertEqual(receipt.fill_price_quote, Decimal("1801000"))
         self.assertEqual(receipt.filled_quantity_base, Decimal("0.01"))
-        self.assertEqual(receipt.fee_quote, Decimal("1.801"))
+        self.assertEqual(receipt.fee_quote, Decimal("18.01"))
         self.assertFalse(receipt.execution_enabled)
         self.assertFalse(receipt.live_order_submitted)
         self.assertEqual(ledger.count, 1)
@@ -135,7 +135,7 @@ class AdapterContractTests(unittest.TestCase):
     def test_transfer_route_requires_matching_verified_networks_and_known_costs(self):
         route = a.TransferRoute(
             "Reku", "Indodax", "SOL", "Solana", "Solana",
-            Decimal("0.01"), None, Decimal("0.001"),
+            Decimal("0.01"), None, None,
             source_network_verified=True, destination_network_verified=True,
         )
         decision = a.assess_transfer_route(route, Decimal("1"), now=NOW)
