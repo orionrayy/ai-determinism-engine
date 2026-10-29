@@ -1392,3 +1392,14 @@ Checkpoint ini menggantikan angka hitungan pada checkpoint Hallmark yang lebih l
 4. Benchmark baseline Document Craft belum dibuat. Belum ada scoring baseline-vs-kandidat, blind human review, inter-rater agreement, atau hasil kualitas.
 5. Belum ada validasi visual file output DOCX/PDF/Excel, formula/spreadsheet behavior, atau regression test berdasar kegagalan benchmark.
 6. Tidak boleh menyatakan kualitas meningkat atau korpus selesai sebelum bukti sesuai definisi penerimaan tersedia.
+
+## Gate tambahan untuk keterlacakan analisis fitur (2026-10-30)
+
+Checkpoint setelah korpus bertambah menjadi empat sampel.
+- Status korpus tetap 4/500 (`academic_paper=3`, `other=1`), sisa 496 dan `INSUFFICIENT_EVIDENCE`. Tidak ada sampel tambahan yang dianggap dari metadata kandidat.
+- Tambah `research/corpus/validate_features.py` dan `test_validate_features.py`. Validator mencocokkan setiap analisis fitur dengan manifest: record ID, source family, URL bukti yang disahkan manifest, metode inspeksi teks/visual, struktur yang teramati, dan batasan review. Baris yatim, family mismatch, URL bukti tak tercatat, duplikat analisis, dan field visual/metode yang hilang menyebabkan error. Ketidakpastian faktual dan batas generalisasi dilaporkan sebagai peringatan, bukan disembunyikan.
+- `.github/workflows/hallmark-corpus-validation.yml` kini mengompilasi validator fitur dan menjalankan output ringkasan `features-summary.json` di runner, di samping korpus validator/test sebelumnya. Ringkasan ini ephemeral di job; ia tidak mengubah manifest atau menaikkan jumlah sampel.
+- CI `Hallmark corpus validation` dan `Hallmark skill validation` lulus pada commit `d5e354a27152e5bfe46488648c470b329e990455`. Orchestrator Tests pada SHA itu dibatalkan karena ada push yang lebih baru; run penuh sebelumnya lulus pada `ffaf058892053098d2f4ba18bd6fe2fe4ce0c1b4`. Perubahan dokumentasi setelah itu perlu divalidasi ulang terhadap HEAD terbaru.
+- PR #179 tetap terbuka, mergeable, dan belum digabung. Branch kandidat saja yang diubah.
+
+Gate berikutnya: periksa CI di SHA akhir, lanjutkan pengumpulan sampel berizin dari genre baru, dan baru kemudian bangun baseline output AI. Tidak ada klaim peningkatan kualitas penulisan sampai eksperimen empiris selesai.
