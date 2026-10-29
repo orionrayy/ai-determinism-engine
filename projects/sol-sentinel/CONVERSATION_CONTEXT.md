@@ -102,3 +102,11 @@ The workflow has been committed but not manually dispatched during this session;
 ## Conversation, APIs, tools and progress archive
 
 The detailed user-facing project timeline, API/repository inventory, GitHub connector operation inventory, tool rejection history, CI run IDs, current status and next-step checklist are now preserved in [EXECUTION_LOG.md](EXECUTION_LOG.md). This is a structured digest rather than a verbatim export of the entire displayed chat; private reasoning and secrets are intentionally not stored.
+
+
+## Latest read-back verification — 2026-10-29
+
+- The detailed journal is [EXECUTION_LOG.md](EXECUTION_LOG.md).
+- Latest verified head at this checkpoint: `8d8c91738b5f237e715206f662db417bbb509b63`; CI run [40911083700](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40911083700) passed compile and 32 offline tests.
+- PR #178 remains draft/open/unmerged. Observed main SHA `d5672c84a0ae184c3a95d3f925925887ece71aa4` differs from the PR-reported base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`; synchronize/review before merge.
+- Research workflow full network run, Termux testing and historical profitability remain unverified.
