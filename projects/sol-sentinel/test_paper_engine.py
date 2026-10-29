@@ -106,6 +106,20 @@ class DataAndIndicatorTests(unittest.TestCase):
         )
         self.assertEqual(resolved["fee_model_name"], "INDODAX_CUSTOM")
         self.assertEqual(resolved["minimum_order_notional_idr"], 25_000.0)
+        with self.assertRaisesRegex(ValueError, "minimum-order-notional-idr must be finite and positive"):
+            engine.resolve_fee_inputs(
+                native, fee_model="indodax-custom", fee_source="dated mock fee source",
+                entry_fee_bps=10.0, exit_fee_bps=20.0,
+                spread_bps_round_trip=15.0, slippage_bps_per_side=5.0,
+                minimum_order_notional_idr=0.0,
+            )
+        with self.assertRaisesRegex(ValueError, "--entry-fee-bps must be finite and non-negative"):
+            engine.resolve_fee_inputs(
+                native, fee_model="indodax-custom", fee_source="dated mock fee source",
+                entry_fee_bps=float("nan"), exit_fee_bps=20.0,
+                spread_bps_round_trip=15.0, slippage_bps_per_side=5.0,
+                minimum_order_notional_idr=25_000.0,
+            )
         usdt = engine.resolve_fee_inputs(
             {"venue": "Binance", "symbol": "SOLUSDT", "price_currency": "USDT"},
             fee_model=None, fee_source="", entry_fee_bps=None, exit_fee_bps=None,
