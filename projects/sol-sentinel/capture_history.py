@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 import time
 import urllib.error
 import urllib.parse
@@ -54,6 +55,37 @@ def fetch_page(symbol: str, interval: str, start_ms: int, end_ms: int) -> list:
             if attempt < 2:
                 time.sleep(0.25 * (2 ** attempt))
     raise RuntimeError("Public market-data request failed after bounded retries: " + str(last_error))
+
+
+def fetch_quote_to_idr_reference() -> dict:
+    """Fetch a daily USD/IDR reference rate; this is not a live USDT/IDR trading quote."""
+    url = "https://api.frankfurter.dev/v2/rate/USD/IDR"
+    request = urllib.request.Request(
+        url,
+        headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=8) as response:
+        if response.status != 200:
+            raise RuntimeError("FX reference HTTP status " + str(response.status))
+        data = json.loads(response.read(100_000).decode("utf-8"))
+    if not isinstance(data, dict) or data.get("base") != "USD" or data.get("quote") != "IDR":
+        raise ValueError("Unexpected USD/IDR reference response")
+    rate = float(data.get("rate", 0))
+    rate_date = str(data.get("date", ""))
+    parsed_date = datetime.strptime(rate_date, "%Y-%m-%d").date()
+    age_days = (datetime.now(timezone.utc).date() - parsed_date).days
+    if not math.isfinite(rate) or not 1_000 <= rate <= 50_000:
+        raise ValueError("USD/IDR reference rate is outside safety bounds")
+    if age_days < 0 or age_days > 5:
+        raise ValueError(f"USD/IDR reference is stale ({age_days} days old)")
+    return {
+        "quote_to_idr_rate": rate,
+        "quote_to_idr_date": rate_date,
+        "quote_to_idr_source": "Frankfurter daily USD/IDR mid-market reference; USDT treated as USD proxy",
+        "quote_to_idr_source_url": "https://api.frankfurter.dev/v2/rate/USD/IDR",
+        "quote_to_idr_age_days": age_days,
+        "quote_to_idr_is_trading_quote": False,
+    }
 
 
 def capture(symbol: str, interval: str, days: int, max_pages: int) -> tuple[list, dict]:
@@ -117,6 +149,11 @@ def capture(symbol: str, interval: str, days: int, max_pages: int) -> tuple[list
         "captured_at_utc": datetime.now(timezone.utc).isoformat(),
         "read_only": True, "orders_enabled": False,
     }
+    try:
+        meta.update(fetch_quote_to_idr_reference())
+    except (OSError, ValueError, RuntimeError, urllib.error.URLError) as exc:
+        meta["quote_to_idr_rate"] = None
+        meta["quote_to_idr_error"] = f"{type(exc).__name__}: {str(exc)[:180]}"
     return candles, meta
 
 
