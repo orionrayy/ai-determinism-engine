@@ -1,0 +1,454 @@
+#!/usr/bin/env python3
+"""Venue-neutral SOL Sentinel adapter contracts and deterministic paper execution.
+
+This module deliberately contains no exchange order client, wallet signer, transfer
+sender, credential loader, or live execution implementation. All amounts are Decimal.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+from enum import Enum
+from typing import Any, Protocol, runtime_checkable
+
+
+class AdapterContractError(ValueError):
+    """A platform contract or safety precondition failed."""
+
+
+def _decimal(value: Any, field: str, *, allow_zero: bool = False) -> Decimal:
+    if isinstance(value, bool):
+        raise AdapterContractError(f"{field} must be a finite decimal")
+    try:
+        out = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        raise AdapterContractError(f"{field} must be a finite decimal") from None
+    if not out.is_finite() or (out < 0 if allow_zero else out <= 0):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise AdapterContractError(f"{field} must be finite and {qualifier}")
+    return out
+
+
+def _aware_utc(value: datetime, field: str) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise AdapterContractError(f"{field} must be timezone-aware")
+    return value.astimezone(timezone.utc)
+
+
+def _is_multiple(value: Decimal, step: Decimal) -> bool:
+    return value % step == 0
+
+
+@dataclass(frozen=True)
+class MarketSpec:
+    """Canonical market contract; venue-specific ticker symbols stay separate."""
+
+    venue: str
+    symbol: str
+    venue_symbol: str
+    base_asset: str
+    quote_asset: str
+    price_tick: Decimal
+    quantity_step: Decimal
+    min_notional_quote: Decimal
+    base_decimals: int
+    quote_decimals: int
+
+    def __post_init__(self) -> None:
+        for field in ("venue", "symbol", "venue_symbol", "base_asset", "quote_asset"):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not value.strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+            object.__setattr__(self, field, value.strip())
+        if self.base_asset.upper() == self.quote_asset.upper():
+            raise AdapterContractError("base_asset and quote_asset must differ")
+        object.__setattr__(self, "base_asset", self.base_asset.upper())
+        object.__setattr__(self, "quote_asset", self.quote_asset.upper())
+        object.__setattr__(self, "price_tick", _decimal(self.price_tick, "price_tick"))
+        object.__setattr__(self, "quantity_step", _decimal(self.quantity_step, "quantity_step"))
+        object.__setattr__(self, "min_notional_quote", _decimal(self.min_notional_quote, "min_notional_quote", allow_zero=True))
+        for field in ("base_decimals", "quote_decimals"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 18:
+                raise AdapterContractError(f"{field} must be an integer in 0..18")
+
+
+@dataclass(frozen=True)
+class MarketQuote:
+    venue: str
+    symbol: str
+    bid: Decimal
+    ask: Decimal
+    observed_at: datetime
+    source: str = "mock"
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "bid", _decimal(self.bid, "bid"))
+        object.__setattr__(self, "ask", _decimal(self.ask, "ask"))
+        object.__setattr__(self, "observed_at", _aware_utc(self.observed_at, "observed_at"))
+        if self.ask < self.bid:
+            raise AdapterContractError("crossed quote (ask < bid)")
+        for field in ("venue", "symbol", "source"):
+            if not isinstance(getattr(self, field), str) or not getattr(self, field).strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+
+    @property
+    def midpoint(self) -> Decimal:
+        return (self.bid + self.ask) / Decimal("2")
+
+    @property
+    def spread_bps(self) -> Decimal:
+        return (self.ask - self.bid) / self.midpoint * Decimal("10000")
+
+
+class Side(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+@dataclass(frozen=True)
+class OrderIntent:
+    idempotency_key: str
+    venue: str
+    symbol: str
+    side: Side
+    quantity_base: Decimal
+    limit_price_quote: Decimal
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.idempotency_key, str) or not self.idempotency_key.strip():
+            raise AdapterContractError("idempotency_key must be a non-empty string")
+        if len(self.idempotency_key) > 200:
+            raise AdapterContractError("idempotency_key is too long")
+        if not isinstance(self.side, Side):
+            try:
+                object.__setattr__(self, "side", Side(str(self.side).upper()))
+            except ValueError:
+                raise AdapterContractError("side must be BUY or SELL") from None
+        object.__setattr__(self, "quantity_base", _decimal(self.quantity_base, "quantity_base"))
+        object.__setattr__(self, "limit_price_quote", _decimal(self.limit_price_quote, "limit_price_quote"))
+        object.__setattr__(self, "created_at", _aware_utc(self.created_at, "created_at"))
+        for field in ("venue", "symbol"):
+            if not isinstance(getattr(self, field), str) or not getattr(self, field).strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+
+    @property
+    def notional_quote(self) -> Decimal:
+        return self.quantity_base * self.limit_price_quote
+
+    def fingerprint(self) -> str:
+        canonical = {
+            "venue": self.venue,
+            "symbol": self.symbol,
+            "side": self.side.value,
+            "quantity_base": str(self.quantity_base),
+            "limit_price_quote": str(self.limit_price_quote),
+            "created_at": self.created_at.isoformat(),
+        }
+        return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class OrderCheck:
+    accepted: bool
+    reasons: tuple[str, ...]
+    reference_price: Decimal | None
+    quote_age_seconds: Decimal | None
+    spread_bps: Decimal | None
+
+
+def validate_order(
+    intent: OrderIntent,
+    market: MarketSpec,
+    quote: MarketQuote,
+    *,
+    now: datetime | None = None,
+    max_quote_age_seconds: Decimal = Decimal("30"),
+    max_spread_bps: Decimal = Decimal("100"),
+    future_clock_skew_seconds: Decimal = Decimal("5"),
+) -> OrderCheck:
+    """Validate venue identity, lot/tick/minimum, and quote integrity before paper fill."""
+    current = _aware_utc(now or datetime.now(timezone.utc), "now")
+    reasons: list[str] = []
+    if intent.venue != market.venue or intent.symbol != market.symbol:
+        reasons.append("market_identity_mismatch")
+    if quote.venue != market.venue or quote.symbol != market.symbol:
+        reasons.append("quote_identity_mismatch")
+    if not _is_multiple(intent.quantity_base, market.quantity_step):
+        reasons.append("quantity_step_mismatch")
+    if not _is_multiple(intent.limit_price_quote, market.price_tick):
+        reasons.append("price_tick_mismatch")
+    if intent.notional_quote < market.min_notional_quote:
+        reasons.append("minimum_notional_not_met")
+
+    age = Decimal(str((current - quote.observed_at).total_seconds()))
+    spread = quote.spread_bps
+    if age < -_decimal(future_clock_skew_seconds, "future_clock_skew_seconds", allow_zero=True):
+        reasons.append("quote_from_future")
+    elif age > _decimal(max_quote_age_seconds, "max_quote_age_seconds", allow_zero=True):
+        reasons.append("quote_stale")
+    if spread > _decimal(max_spread_bps, "max_spread_bps", allow_zero=True):
+        reasons.append("spread_above_limit")
+
+    reference = quote.ask if intent.side is Side.BUY else quote.bid
+    return OrderCheck(not reasons, tuple(reasons), reference, age, spread)
+
+
+class ReceiptStatus(str, Enum):
+    FILLED_SIMULATED = "FILLED_SIMULATED"
+    NO_FILL = "NO_FILL"
+    REJECTED = "REJECTED"
+
+
+@dataclass(frozen=True)
+class ExecutionReceipt:
+    order_id: str
+    idempotency_key: str
+    status: ReceiptStatus
+    venue: str
+    symbol: str
+    side: Side
+    requested_quantity_base: Decimal
+    filled_quantity_base: Decimal
+    fill_price_quote: Decimal | None
+    fee_quote: Decimal
+    quote_observed_at: datetime
+    reasons: tuple[str, ...]
+    execution_enabled: bool = False
+    live_order_submitted: bool = False
+
+
+@runtime_checkable
+class MarketDataAdapter(Protocol):
+    def get_quote(self, market: MarketSpec) -> MarketQuote: ...
+
+
+@runtime_checkable
+class CapitalSourceAdapter(Protocol):
+    def source_id(self) -> str: ...
+
+
+@runtime_checkable
+class CustodyAdapter(Protocol):
+    def get_balance(self, asset: str, network: str) -> Decimal: ...
+
+
+@runtime_checkable
+class TransferPlanner(Protocol):
+    def plan(self, route: "TransferRoute", amount: Decimal) -> "TransferDecision": ...
+
+
+@runtime_checkable
+class ExecutionAdapter(Protocol):
+    def execute(self, intent: OrderIntent, market: MarketSpec, quote: MarketQuote, **kwargs: Any) -> ExecutionReceipt: ...
+
+
+@runtime_checkable
+class LedgerAdapter(Protocol):
+    def record(self, receipt: ExecutionReceipt) -> None: ...
+
+
+@dataclass(frozen=True)
+class TransferRoute:
+    source: str
+    destination: str
+    asset: str
+    source_network: str
+    destination_network: str
+    minimum_withdrawal: Decimal | None
+    withdrawal_fee: Decimal | None
+    minimum_deposit: Decimal | None
+    source_network_verified: bool = False
+    destination_network_verified: bool = False
+    cost_verified_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        for field in ("source", "destination", "asset", "source_network", "destination_network"):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not value.strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+            object.__setattr__(self, field, value.strip())
+        for field in ("minimum_withdrawal", "withdrawal_fee", "minimum_deposit"):
+            value = getattr(self, field)
+            if value is not None:
+                object.__setattr__(self, field, _decimal(value, field, allow_zero=True))
+        if self.cost_verified_at is not None:
+            object.__setattr__(self, "cost_verified_at", _aware_utc(self.cost_verified_at, "cost_verified_at"))
+
+
+@dataclass(frozen=True)
+class TransferDecision:
+    approved_for_planning: bool
+    reasons: tuple[str, ...]
+    amount_requested: Decimal
+    estimated_fee: Decimal | None
+    estimated_amount_received: Decimal | None
+    transfer_sent: bool = False
+
+
+def assess_transfer_route(route: TransferRoute, amount: Decimal) -> TransferDecision:
+    """Validate metadata only. This function can never send or sign a transfer."""
+    requested = _decimal(amount, "amount")
+    reasons: list[str] = []
+    if route.source.lower() == route.destination.lower():
+        reasons.append("source_and_destination_match")
+    if route.source_network.upper() != route.destination_network.upper():
+        reasons.append("network_mismatch")
+    if not route.source_network_verified:
+        reasons.append("source_network_not_verified")
+    if not route.destination_network_verified:
+        reasons.append("destination_network_not_verified")
+    if route.minimum_withdrawal is None:
+        reasons.append("minimum_withdrawal_unknown")
+    elif requested < route.minimum_withdrawal:
+        reasons.append("below_minimum_withdrawal")
+    if route.withdrawal_fee is None:
+        reasons.append("withdrawal_fee_unknown")
+    if route.minimum_deposit is None:
+        reasons.append("minimum_deposit_unknown")
+    received: Decimal | None = None
+    if route.withdrawal_fee is not None:
+        if route.withdrawal_fee > requested:
+            reasons.append("withdrawal_fee_exceeds_amount")
+        else:
+            received = requested - route.withdrawal_fee
+            if route.minimum_deposit is not None and received < route.minimum_deposit:
+                reasons.append("net_amount_below_minimum_deposit")
+    return TransferDecision(
+        approved_for_planning=not reasons,
+        reasons=tuple(reasons),
+        amount_requested=requested,
+        estimated_fee=route.withdrawal_fee,
+        estimated_amount_received=received,
+        transfer_sent=False,
+    )
+
+
+class ExecutionMode(str, Enum):
+    READ_ONLY = "READ_ONLY"
+    PAPER = "PAPER"
+    LIVE = "LIVE"
+
+
+@dataclass(frozen=True)
+class ExecutionPolicy:
+    mode: ExecutionMode = ExecutionMode.PAPER
+    explicit_live_approval: bool = False
+    readiness_gates_passed: bool = False
+    approval_reference: str = ""
+
+    def validate(self) -> None:
+        if self.mode is not ExecutionMode.LIVE:
+            return
+        if not self.explicit_live_approval:
+            raise AdapterContractError("live mode requires separate explicit user approval")
+        if not self.readiness_gates_passed:
+            raise AdapterContractError("live mode is blocked until every readiness gate passes")
+        if not self.approval_reference.strip():
+            raise AdapterContractError("live mode requires a traceable approval reference")
+        raise AdapterContractError("no live execution adapter is implemented in SOL Sentinel")
+
+
+class InMemoryIdempotentLedger:
+    """Test-only paper journal; duplicate identical receipts are idempotent."""
+
+    def __init__(self) -> None:
+        self._receipts: dict[str, str] = {}
+
+    def record(self, receipt: ExecutionReceipt) -> None:
+        canonical = json.dumps({
+            "order_id": receipt.order_id,
+            "idempotency_key": receipt.idempotency_key,
+            "status": receipt.status.value,
+            "venue": receipt.venue,
+            "symbol": receipt.symbol,
+            "side": receipt.side.value,
+            "requested_quantity_base": str(receipt.requested_quantity_base),
+            "filled_quantity_base": str(receipt.filled_quantity_base),
+            "fill_price_quote": str(receipt.fill_price_quote) if receipt.fill_price_quote is not None else None,
+            "fee_quote": str(receipt.fee_quote),
+            "quote_observed_at": receipt.quote_observed_at.isoformat(),
+            "reasons": list(receipt.reasons),
+        }, sort_keys=True, separators=(",", ":"))
+        fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
+        previous = self._receipts.get(receipt.order_id)
+        if previous is not None and previous != fingerprint:
+            raise AdapterContractError("ledger idempotency conflict for existing order_id")
+        self._receipts[receipt.order_id] = fingerprint
+
+    @property
+    def count(self) -> int:
+        return len(self._receipts)
+
+
+class PaperExecutionAdapter:
+    """Deterministic quote-crossing simulator. It has no network or signing code."""
+
+    def __init__(self, ledger: LedgerAdapter, *, fee_bps: Decimal = Decimal("0")) -> None:
+        self._ledger = ledger
+        self._fee_bps = _decimal(fee_bps, "fee_bps", allow_zero=True)
+        self._seen: dict[str, tuple[str, ExecutionReceipt]] = {}
+
+    def execute(
+        self,
+        intent: OrderIntent,
+        market: MarketSpec,
+        quote: MarketQuote,
+        *,
+        now: datetime | None = None,
+        max_quote_age_seconds: Decimal = Decimal("30"),
+        max_spread_bps: Decimal = Decimal("100"),
+    ) -> ExecutionReceipt:
+        fingerprint = intent.fingerprint()
+        seen = self._seen.get(intent.idempotency_key)
+        if seen is not None:
+            if seen[0] != fingerprint:
+                raise AdapterContractError("idempotency key reused for a different order intent")
+            return seen[1]
+
+        check = validate_order(
+            intent, market, quote, now=now,
+            max_quote_age_seconds=max_quote_age_seconds,
+            max_spread_bps=max_spread_bps,
+        )
+        order_id = hashlib.sha256((intent.idempotency_key + ":" + fingerprint).encode()).hexdigest()[:24]
+        status = ReceiptStatus.REJECTED
+        reasons = list(check.reasons)
+        filled = Decimal("0")
+        fill_price: Decimal | None = None
+        fee = Decimal("0")
+        if check.accepted:
+            marketable = (
+                intent.limit_price_quote >= quote.ask
+                if intent.side is Side.BUY
+                else intent.limit_price_quote <= quote.bid
+            )
+            if marketable:
+                status = ReceiptStatus.FILLED_SIMULATED
+                filled = intent.quantity_base
+                fill_price = check.reference_price
+                fee = filled * fill_price * self._fee_bps / Decimal("10000")
+            else:
+                status = ReceiptStatus.NO_FILL
+                reasons.append("limit_not_marketable_at_observed_quote")
+        receipt = ExecutionReceipt(
+            order_id=order_id,
+            idempotency_key=intent.idempotency_key,
+            status=status,
+            venue=market.venue,
+            symbol=market.symbol,
+            side=intent.side,
+            requested_quantity_base=intent.quantity_base,
+            filled_quantity_base=filled,
+            fill_price_quote=fill_price,
+            fee_quote=fee,
+            quote_observed_at=quote.observed_at,
+            reasons=tuple(reasons),
+        )
+        self._ledger.record(receipt)
+        self._seen[intent.idempotency_key] = (fingerprint, receipt)
+        return receipt
