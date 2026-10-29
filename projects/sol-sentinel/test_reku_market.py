@@ -40,6 +40,31 @@ class RekuMarketParserTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "crossed"):
             market.spread_metrics(101.0, 100.0)
 
+    def test_parse_chart_payload_sorts_deduplicates_and_parses_ohlcv(self):
+        now_ms = 1_800_000_000_000
+        payload = [
+            [now_ms - 120_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0],
+            [now_ms - 60_000, 101.0, 102.0, 100.0, 103.0, 11.0, 1122.0],
+            [now_ms - 60_000, 101.0, 102.5, 100.0, 104.0, 12.0, 1230.0],
+            [now_ms, 102.5, 103.0, 101.0, 104.0, 13.0, 1339.0],
+        ]
+        report = market.parse_chart_payload(payload, interval_minutes=1, now_ms=now_ms)
+        self.assertEqual(report["data_status"], "OK")
+        self.assertEqual(report["points_returned"], 3)
+        self.assertEqual(report["last_bar"]["timestamp_ms"], now_ms)
+        self.assertEqual(report["last_bar"]["close_idr"], 103.0)
+        self.assertEqual(report["last_bar"]["volume_idr"], 1339.0)
+
+    def test_parse_chart_payload_marks_old_data_stale(self):
+        now_ms = 1_800_000_000_000
+        payload = [[now_ms - 1_000_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
+        report = market.parse_chart_payload(payload, interval_minutes=1, now_ms=now_ms)
+        self.assertEqual(report["data_status"], "STALE")
+
+    def test_parse_chart_payload_rejects_payload_without_valid_bars(self):
+        with self.assertRaisesRegex(ValueError, "no valid OHLCV bars"):
+            market.parse_chart_payload([["bad timestamp", 100, 101, 99, 102, 10, 1010]], interval_minutes=1, now_ms=1_800_000_000_000)
+
     def test_snapshot_falls_back_to_documented_all_orderbooks_endpoint(self):
         def fake_request(path, params=None, timeout=8.0):
             if path == "/coins":
