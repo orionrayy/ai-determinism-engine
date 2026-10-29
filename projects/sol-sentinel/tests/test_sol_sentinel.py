@@ -39,7 +39,7 @@ class IndicatorTests(unittest.TestCase):
     def test_feature_count_guard(self):
         candles = [Candle(i*300, 100+i, 101+i, 99+i, 100.5+i, 10) for i in range(20)]
         self.assertFalse(features(candles)["ready"])
-        self.assertIsNone(atr(candles, 14))
+        self.assertAlmostEqual(atr(candles, 14), 2.0)
 
 
 class AnalysisTests(unittest.TestCase):
