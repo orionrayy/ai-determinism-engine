@@ -216,9 +216,13 @@ jobs:
           from pathlib import Path
           meta=json.loads(Path("research-output/INDODAX_SOLIDR_1m.csv.meta.json").read_text())
           print("Native INDODAX SOL/IDR OHLC history capture (public read-only; NOT backtested with Reku fees):")
-          for key in ("data_status","venue","pair","input_price_currency","requested_days","count","first_open_time_utc","last_close_time_utc","captured_at_utc","dataset_sha256","error"):
+          for key in ("data_status","venue","pair","input_price_currency","requested_days","count","first_open_time_utc","last_close_time_utc","captured_at_utc","dataset_sha256","error","market_quote_status","market_quote_error"):
               print(f"- {key}: {meta.get(key)}")
+          quote=meta.get("market_quote") or {}
+          for key in ("observed_at_utc","bid_idr","ask_idr","mid_idr","spread_bps","source"):
+              print(f"- market_quote.{key}: {quote.get(key)}")
           print("- fx_conversion_applied:", meta.get("fx_conversion_applied"))
+          print("- orders_enabled:", meta.get("orders_enabled"))
           PY
             else
               echo "Native INDODAX SOL/IDR history sidecar not created; inspect the collector step log."
