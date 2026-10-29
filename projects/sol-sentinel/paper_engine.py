@@ -865,6 +865,56 @@ def resolve_input_market_metadata(
     return {"venue": venue, "symbol": symbol, "price_currency": currency}
 
 
+def resolve_fee_inputs(
+    source_market: dict[str, str],
+    *,
+    fee_model: str | None,
+    fee_source: str,
+    entry_fee_bps: float | None,
+    exit_fee_bps: float | None,
+    spread_bps_round_trip: float | None,
+    slippage_bps_per_side: float | None,
+    minimum_order_notional_idr: float | None,
+) -> dict[str, Any]:
+    """Resolve venue-specific fee assumptions; never carry Reku defaults into INDODAX."""
+    if source_market["price_currency"] == "IDR":
+        if fee_model != "indodax-custom":
+            raise ValueError("native INDODAX SOL/IDR requires --fee-model indodax-custom; Reku fee defaults are not transferable")
+        missing = [
+            flag for flag, value in (
+                ("--entry-fee-bps", entry_fee_bps),
+                ("--exit-fee-bps", exit_fee_bps),
+                ("--spread-bps-round-trip", spread_bps_round_trip),
+                ("--slippage-bps-per-side", slippage_bps_per_side),
+                ("--minimum-order-notional-idr", minimum_order_notional_idr),
+            ) if value is None
+        ]
+        if missing:
+            raise ValueError("INDODAX native backtest requires explicit " + ", ".join(missing))
+        if not isinstance(fee_source, str) or not fee_source.strip():
+            raise ValueError("INDODAX native backtest requires --fee-source labeling the verified source/assumption")
+        return {
+            "entry_fee_bps": entry_fee_bps,
+            "exit_fee_bps": exit_fee_bps,
+            "spread_bps_round_trip": spread_bps_round_trip,
+            "slippage_bps_per_side": slippage_bps_per_side,
+            "minimum_order_notional_idr": minimum_order_notional_idr,
+            "fee_model_name": "INDODAX_CUSTOM",
+            "fee_model_source": fee_source.strip(),
+        }
+    if fee_model not in (None, "reku-pro-reference"):
+        raise ValueError("Binance SOLUSDT source currently supports only the labeled Reku Pro reference cost scenario")
+    return {
+        "entry_fee_bps": 10.555 if entry_fee_bps is None else entry_fee_bps,
+        "exit_fee_bps": 31.555 if exit_fee_bps is None else exit_fee_bps,
+        "spread_bps_round_trip": 10.0 if spread_bps_round_trip is None else spread_bps_round_trip,
+        "slippage_bps_per_side": 10.0 if slippage_bps_per_side is None else slippage_bps_per_side,
+        "minimum_order_notional_idr": 30_000.0 if minimum_order_notional_idr is None else minimum_order_notional_idr,
+        "fee_model_name": "REKU_PRO_REFERENCE_ASSUMPTION",
+        "fee_model_source": fee_source.strip() or "Reku published fee components; not an INDODAX fee claim",
+    }
+
+
 def resolve_quote_to_idr(
     csv_path: str | Path,
     rate_override: float | None = None,
@@ -927,8 +977,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--daily-loss-fraction", type=float, default=0.03)
     parser.add_argument("--entry-fee-bps", type=float, default=None, help="venue-specific assumed entry fee in bps; required for INDODAX")
     parser.add_argument("--exit-fee-bps", type=float, default=None, help="venue-specific assumed exit fee in bps; required for INDODAX")
-    parser.add_argument("--spread-bps-round-trip", type=float, default=10.0, help="assumed entry/exit spread cost")
-    parser.add_argument("--slippage-bps-per-side", type=float, default=10.0, help="assumption per side")
+    parser.add_argument("--spread-bps-round-trip", type=float, default=None, help="assumed round-trip spread cost; required for INDODAX")
+    parser.add_argument("--slippage-bps-per-side", type=float, default=None, help="assumed per-side slippage; required for INDODAX")
     parser.add_argument("--minimum-net-edge-bps", type=float, default=25.0)
     parser.add_argument("--minimum-relative-volume", type=float, default=1.5)
     parser.add_argument("--minimum-order-notional-idr", type=float, default=None,
@@ -947,26 +997,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         quote_to_idr_rate, quote_to_idr_source = resolve_quote_to_idr(
             data_path, args.quote_to_idr_rate, args.quote_to_idr_source, source_market
         )
-        fee_model = args.fee_model or "reku-pro-reference"
-        if source_market["price_currency"] == "IDR":
-            if fee_model != "indodax-custom":
-                raise ValueError("native INDODAX SOL/IDR requires --fee-model indodax-custom; Reku fee defaults are not transferable")
-            if args.entry_fee_bps is None or args.exit_fee_bps is None or args.minimum_order_notional_idr is None:
-                raise ValueError("INDODAX native backtest requires explicit --entry-fee-bps, --exit-fee-bps, and --minimum-order-notional-idr")
-            if not args.fee_source.strip():
-                raise ValueError("INDODAX native backtest requires --fee-source labeling the verified source/assumption")
-            entry_fee_bps, exit_fee_bps = args.entry_fee_bps, args.exit_fee_bps
-            minimum_order_notional = args.minimum_order_notional_idr
-            fee_model_name = "INDODAX_CUSTOM"
-            fee_model_source = args.fee_source.strip()
-        else:
-            if fee_model != "reku-pro-reference":
-                raise ValueError("Binance SOLUSDT source currently supports only the labeled Reku Pro reference cost scenario")
-            entry_fee_bps = 10.555 if args.entry_fee_bps is None else args.entry_fee_bps
-            exit_fee_bps = 31.555 if args.exit_fee_bps is None else args.exit_fee_bps
-            minimum_order_notional = 30_000.0 if args.minimum_order_notional_idr is None else args.minimum_order_notional_idr
-            fee_model_name = "REKU_PRO_REFERENCE_ASSUMPTION"
-            fee_model_source = args.fee_source.strip() or "Reku published fee components; not an INDODAX fee claim"
+        fee_inputs = resolve_fee_inputs(
+            source_market,
+            fee_model=args.fee_model,
+            fee_source=args.fee_source,
+            entry_fee_bps=args.entry_fee_bps,
+            exit_fee_bps=args.exit_fee_bps,
+            spread_bps_round_trip=args.spread_bps_round_trip,
+            slippage_bps_per_side=args.slippage_bps_per_side,
+            minimum_order_notional_idr=args.minimum_order_notional_idr,
+        )
         config = BacktestConfig(
             initial_capital_idr=args.initial_capital_idr,
             quote_to_idr_rate=quote_to_idr_rate,
@@ -974,15 +1014,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             input_venue=source_market["venue"],
             input_symbol=source_market["symbol"],
             input_price_currency=source_market["price_currency"],
-            fee_model_name=fee_model_name,
-            fee_model_source=fee_model_source,
+            fee_model_name=fee_inputs["fee_model_name"],
+            fee_model_source=fee_inputs["fee_model_source"],
             risk_fraction=args.risk_fraction,
             max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
-            entry_fee_bps=entry_fee_bps, exit_fee_bps=exit_fee_bps,
-            spread_bps_round_trip=args.spread_bps_round_trip,
-            slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
+            entry_fee_bps=fee_inputs["entry_fee_bps"], exit_fee_bps=fee_inputs["exit_fee_bps"],
+            spread_bps_round_trip=fee_inputs["spread_bps_round_trip"],
+            slippage_bps_per_side=fee_inputs["slippage_bps_per_side"], minimum_net_edge_bps=args.minimum_net_edge_bps,
             minimum_relative_volume=args.minimum_relative_volume,
-            minimum_order_notional_idr=minimum_order_notional,
+            minimum_order_notional_idr=fee_inputs["minimum_order_notional_idr"],
             stop_atr_multiple=args.stop_atr_multiple,
             target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
         )
