@@ -14,6 +14,7 @@ Akses publik tidak dengan sendirinya mengizinkan pengunduhan ulang atau redistri
 - `manifest.schema.json`: kontrak field dan enum.
 - `source_registry.json`: direktori penemuan sumber. Lisensi tingkat jurnal adalah petunjuk awal saja; tetap periksa lisensi setiap item.
 - `validate_corpus.py`: validator stdlib-only, deduplikasi URL/hash, distribusi, serta status target.
+- `validate_features.py`: validator keterlacakan analisis fitur ke manifest, source family, dan bukti provenance; melaporkan kekurangan analisis tanpa menyembunyikan batas generalisasi.
 - `evaluation-rubric.md`: rubrik benchmark yang harus dibekukan sebelum penilaian kandidat.
 - `genre-taxonomy.json`: kelas dokumen dan fitur yang dipelajari sebagai hipotesis, bukan aturan universal.
 
@@ -44,6 +45,7 @@ Lihat `manifest.schema.json`. Wajib menyimpan `record_id`, `source_family_id`, U
 python research/corpus/validate_corpus.py research/corpus/manifest.jsonl --json
 python research/corpus/validate_corpus.py research/corpus/manifest.jsonl --require-target 500
 python -m unittest discover -s research/corpus -p "test_*.py" -v
+python research/corpus/validate_features.py research/corpus/manifest.jsonl research/corpus/features.jsonl --json
 ```
 
 Exit code `0` berarti bentuk manifest dapat diproses; status target akan tetap `INSUFFICIENT_EVIDENCE` jika kurang dari 500. Opsi `--require-target` sengaja gagal saat target belum tercapai. Error field/JSON menyebabkan exit non-zero agar data rusak tidak diam-diam diterima.
