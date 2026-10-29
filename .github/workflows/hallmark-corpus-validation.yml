@@ -120,6 +120,34 @@ jobs:
               json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True) + chr(10), encoding="utf-8")
           print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
           PY
+      - name: Discover bounded DOAJ metadata candidates (best-effort; no article content)
+        shell: bash
+        run: |
+          set +e
+          python research/corpus/harvest_doaj_candidates.py --json --max-pages 2 --max-records 200 --timeout 20 --min-interval 1 --output candidates.jsonl > doaj-discovery-summary.json 2> doaj-discovery-error.txt
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ]; then
+            python - <<'PY'
+            import json
+            from pathlib import Path
+            detail = Path("doaj-discovery-error.txt").read_text(encoding="utf-8", errors="replace")[:240]
+            report = {
+                "status": "LIVE_DISCOVERY_UNAVAILABLE",
+                "source": "DOAJ OAI-PMH",
+                "pages_requested": 2,
+                "live_candidates_added": 0,
+                "candidate_inventory_is_corpus": False,
+                "failure_detail": detail,
+                "content_rights_warning": "No article content was downloaded. This failure does not affect the eligible corpus count.",
+                "target_500_status": "INSUFFICIENT_EVIDENCE"
+            }
+            Path("doaj-discovery-summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + chr(10), encoding="utf-8")
+            PY
+            : > candidates.jsonl
+            echo "WARNING: DOAJ live metadata discovery unavailable; the CI remains non-blocking and no candidate is counted."
+          fi
+          test -f candidates.jsonl || : > candidates.jsonl
       - name: Produce an honest baseline summary
         run: python research/corpus/validate_corpus.py research/corpus/manifest.jsonl --json > corpus-summary.json
       - name: Validate structure-analysis traceability
@@ -142,5 +170,8 @@ jobs:
             features-summary.json
             battery-workbook-structure.json
             treasury-expenditure-structure.json
+            doaj-discovery-summary.json
+            doaj-discovery-error.txt
+            candidates.jsonl
           if-no-files-found: warn
           retention-days: 14
