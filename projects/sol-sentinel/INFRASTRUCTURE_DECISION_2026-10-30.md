@@ -75,3 +75,10 @@ Risk settings in the research simulator (e.g., 0.5% risk per trade, 50% max expo
 - CI test workflow is offline unit testing only; it does not call Jupiter with real network data, does not sign transactions, and does not place orders.
 - The exact Jupiter quote was not verified from a live API call during this audit. Verify API behavior and current quote fields with a read-only test before relying on the adapter.
 - GitHub repository cannot be cloned in the current session environment due DNS resolution failure; reported CI status is from GitHub Actions run records, not local full-suite execution.
+
+
+## Reku transfer-service status cross-check — 2026-10-30
+
+Additional official availability check found that Reku announced on 2 October 2026 that external crypto send/receive was restored: https://reku.id/en/information/send-receive-crypto-sudah-dapat-dilakukan. Reku separately announced on 2 October 2026 that IDR withdrawals and deposits were reopened: https://reku.id/en/information/layanan-withdrawal-idr-telah-dibuka, and on 3 October reiterated that IDR deposit/withdrawal and crypto send/receive were active: https://reku.id/information/buy-sell-direct-deposit-usd-staking-unstaking-kini-sudah-tersedia.
+
+This means the previously documented end-to-end route is **not blocked by a published blanket suspension** in the latest service updates found. It still does not verify that the user's current account can withdraw SOL, which Solana-network minimum/fee applies, what processing delay applies, or whether the exact destination token/network will be accepted on the return path. The official fees page's parsed table does not expose a current SOL-specific minimum/withdrawal fee in this research snapshot: https://reku.id/fees/crypto. Check the actual official app preview and destination-deposit screen before a separately authorized transfer; no transfer was made here.
