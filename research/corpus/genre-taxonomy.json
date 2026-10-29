@@ -1,0 +1,204 @@
+{
+  "taxonomy_version": "1.0.0",
+  "status": "provisional_hypotheses_not_empirical_findings",
+  "genres": [
+    {
+      "id": "nursing_lp_askep",
+      "label_id": "LP/asuhan keperawatan",
+      "inspect": [
+        "identitas kasus yang telah dideidentifikasi",
+        "pengkajian",
+        "diagnosis keperawatan",
+        "luaran/intervensi/implementasi/evaluasi bila diwajibkan pedoman",
+        "struktur institusi",
+        "tabel data klinis yang diizinkan"
+      ],
+      "caution": "Format, istilah, dan paket SDKI/SLKI/SIKI bergantung pada institusi dan pedoman; jangan menyimpan data pasien teridentifikasi."
+    },
+    {
+      "id": "pkl_internship",
+      "label_id": "Laporan PKL/magang",
+      "inspect": [
+        "profil instansi",
+        "tujuan praktik",
+        "uraian tugas nyata",
+        "metode/proses kerja",
+        "hasil dan kendala",
+        "evaluasi/refleksi",
+        "lampiran/lembar pengesahan bila diwajibkan"
+      ],
+      "caution": "Jangan menciptakan pekerjaan, tanggal, capaian, atau komentar pembimbing."
+    },
+    {
+      "id": "thesis_dissertation",
+      "label_id": "Skripsi/tesis/disertasi",
+      "inspect": [
+        "pedoman institusi",
+        "abstrak",
+        "rumusan masalah",
+        "kajian pustaka",
+        "metode",
+        "hasil/pembahasan",
+        "kesimpulan",
+        "referensi",
+        "lampiran"
+      ],
+      "caution": "Kuantitas dan penamaan bab berbeda menurut disiplin dan kampus."
+    },
+    {
+      "id": "academic_paper",
+      "label_id": "Makalah/artikel ilmiah",
+      "inspect": [
+        "struktur jurnal atau tugas",
+        "klaim dan bukti",
+        "sitasi dalam teks",
+        "daftar pustaka",
+        "tabel/gambar",
+        "abstrak/keywords bila ada"
+      ],
+      "caution": "Jangan menyamakan format artikel empiris, esai argumentatif, dan makalah mata kuliah."
+    },
+    {
+      "id": "lab_practicum",
+      "label_id": "Laporan praktikum/laboratorium",
+      "inspect": [
+        "tujuan",
+        "alat/bahan",
+        "metode",
+        "data/observasi nyata",
+        "perhitungan",
+        "pembahasan",
+        "keterbatasan",
+        "kesimpulan"
+      ],
+      "caution": "Data hanya dianggap hasil jika ada sumber pengukuran atau data masukan yang nyata."
+    },
+    {
+      "id": "research_report",
+      "label_id": "Laporan penelitian",
+      "inspect": [
+        "pertanyaan dan desain",
+        "sampel/populasi",
+        "instrumen",
+        "hasil",
+        "analisis",
+        "keterbatasan",
+        "rekomendasi",
+        "lampiran/data"
+      ],
+      "caution": "Periksa kaitan antara metode, ukuran sampel, hasil, dan kesimpulan."
+    },
+    {
+      "id": "proposal",
+      "label_id": "Proposal penelitian/kegiatan",
+      "inspect": [
+        "latar belakang dan kebutuhan",
+        "tujuan",
+        "rencana/metode",
+        "jadwal",
+        "anggaran jika tersedia",
+        "risiko/evaluasi",
+        "luaran"
+      ],
+      "caution": "Bedakan rencana yang diajukan dari hasil yang telah dicapai."
+    },
+    {
+      "id": "event_report",
+      "label_id": "Laporan kegiatan organisasi",
+      "inspect": [
+        "tujuan",
+        "waktu/tempat",
+        "pelaksanaan",
+        "peserta sesuai bukti",
+        "hasil",
+        "dokumentasi",
+        "realisasi anggaran jika diizinkan",
+        "evaluasi/tindak lanjut"
+      ],
+      "caution": "Jangan mengasumsikan semua organisasi memakai struktur yang sama."
+    },
+    {
+      "id": "professional_work_report",
+      "label_id": "Laporan kerja/profesional",
+      "inspect": [
+        "tujuan dan pembaca",
+        "cakupan",
+        "aktivitas",
+        "KPI/data",
+        "temuan",
+        "risiko",
+        "rekomendasi",
+        "keputusan/tindak lanjut"
+      ],
+      "caution": "Pastikan status publikasi dan kerahasiaan perusahaan."
+    },
+    {
+      "id": "operational_admin",
+      "label_id": "Dokumen operasional/administratif",
+      "inspect": [
+        "kewenangan/penerbit",
+        "tujuan",
+        "prosedur",
+        "kontrol/referensi",
+        "format field",
+        "penomoran versi",
+        "retensi"
+      ],
+      "caution": "Dokumen internal dan rahasia tidak boleh dimasukkan tanpa izin."
+    },
+    {
+      "id": "excel_workbook",
+      "label_id": "Workbook Excel",
+      "inspect": [
+        "sheet dan perannya",
+        "header dan relasi tabel",
+        "formula/referensi sel",
+        "tipe/format angka",
+        "validasi data",
+        "subtotal/total",
+        "conditional formatting",
+        "diagram",
+        "print area/header/footer",
+        "sheet tersembunyi"
+      ],
+      "caution": "Sampel harus workbook asli yang digunakan untuk pengolahan/pelaporan, bukan template kosong atau workbook sintetis."
+    },
+    {
+      "id": "other",
+      "label_id": "Genre lainnya",
+      "inspect": [
+        "fungsi dokumen",
+        "pembaca sasaran",
+        "struktur yang ditemukan",
+        "bukti dan gaya bahasa",
+        "fitur visual"
+      ],
+      "caution": "Catat alasan memasukkan ke kelompok lain dan jangan memaksakan format generik."
+    }
+  ],
+  "feature_families": [
+    "macrostructure",
+    "section_order",
+    "heading_hierarchy",
+    "paragraph_function",
+    "sentence_and_paragraph_distribution",
+    "register_and_terminology",
+    "active_passive_voice",
+    "nominalization",
+    "argument_and_evidence",
+    "transition_coherence",
+    "repetition",
+    "specificity",
+    "citations_and_references",
+    "tables_figures_and_captions",
+    "pagination_and_layout",
+    "cross_section_consistency",
+    "spreadsheet_formulas_and_validation"
+  ],
+  "rules_policy": {
+    "required": "only rules evidenced by institutional guidelines or repeated, well-supported corpus patterns",
+    "dominant": "recurring pattern observed across multiple independent source families",
+    "valid_exception": "documented departure compatible with genre/institution/context",
+    "non_generalizable": "single-author idiosyncrasy or pattern with weak evidence"
+  }
+}
