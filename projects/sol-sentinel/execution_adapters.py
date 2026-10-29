@@ -11,6 +11,7 @@ import json
 import time
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -232,6 +233,134 @@ class ExecutionReceipt:
 
 @runtime_checkable
 class MarketDataAdapter(Protocol):
+
+    @staticmethod
+    def _parse_history_rows(
+        rows: Any,
+        *,
+        start_ms: int,
+        end_ms: int,
+        interval_minutes: int,
+        now_ms: int,
+    ) -> dict[int, MarketCandle]:
+        if not isinstance(rows, list):
+            raise VenueDataError("INDODAX OHLC history response must be an array")
+        interval_ms = interval_minutes * 60_000
+        parsed: dict[int, MarketCandle] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                raw_time = float(row.get("Time"))
+                if not raw_time.is_integer():
+                    raise ValueError("Time must be an integral Unix timestamp")
+                timestamp_ms = int(raw_time if abs(raw_time) >= 100_000_000_000 else raw_time * 1000)
+                opened = _decimal(row.get("Open"), "Open")
+                high = _decimal(row.get("High"), "High")
+                low = _decimal(row.get("Low"), "Low")
+                close = _decimal(row.get("Close"), "Close")
+                volume = _decimal(row.get("Volume"), "Volume", allow_zero=True)
+            except (AdapterContractError, TypeError, ValueError, OverflowError):
+                raise VenueDataError("INDODAX OHLC history contains malformed time or OHLCV fields") from None
+            if timestamp_ms < start_ms or timestamp_ms >= end_ms:
+                continue
+            if timestamp_ms % interval_ms:
+                raise VenueDataError("INDODAX OHLC candle timestamp is not aligned to the requested interval")
+            close_time = timestamp_ms + interval_ms - 1
+            if close_time >= now_ms:
+                continue
+            try:
+                candle = MarketCandle(
+                    open_time_ms=timestamp_ms,
+                    close_time_ms=close_time,
+                    interval_minutes=interval_minutes,
+                    open=opened, high=high, low=low, close=close, volume=volume,
+                    quote_currency="IDR",
+                )
+            except AdapterContractError as exc:
+                raise VenueDataError(f"INDODAX OHLC candle failed integrity checks: {exc}") from None
+            previous = parsed.get(timestamp_ms)
+            if previous is not None and previous != candle:
+                raise VenueDataError(f"conflicting duplicate INDODAX candle at {timestamp_ms}")
+            parsed[timestamp_ms] = candle
+        return parsed
+
+    def get_history(
+        self,
+        market: MarketSpec,
+        start_ms: int,
+        end_ms: int,
+        *,
+        interval_minutes: int = 1,
+        now_ms: int | None = None,
+    ) -> list[MarketCandle]:
+        """Fetch complete, contiguous venue-native OHLCV in a half-open [start, end) range.
+
+        Uses the official public TradingView history endpoint. Requests are split
+        into at most one-day chunks; gaps, conflicting duplicates and incomplete
+        output fail closed. No FX conversion is applied to native IDR prices.
+        """
+        if market.venue.upper() != "INDODAX":
+            raise AdapterContractError("Indodax adapter requires venue=INDODAX")
+        if market.quote_asset.upper() != "IDR":
+            raise AdapterContractError("native OHLC history currently supports IDR-quoted pairs only")
+        if isinstance(start_ms, bool) or not isinstance(start_ms, int) or start_ms <= 0:
+            raise AdapterContractError("start_ms must be a positive integer timestamp in milliseconds")
+        if isinstance(end_ms, bool) or not isinstance(end_ms, int) or end_ms <= start_ms:
+            raise AdapterContractError("end_ms must be an integer greater than start_ms")
+        if isinstance(interval_minutes, bool) or not isinstance(interval_minutes, int) or interval_minutes not in self.HISTORY_INTERVALS_MINUTES:
+            raise AdapterContractError("interval_minutes must be one of 1, 15, 30, 60, 240")
+        interval_ms = interval_minutes * 60_000
+        if start_ms % interval_ms or end_ms % interval_ms:
+            raise AdapterContractError("history range boundaries must align to the requested candle interval")
+        if end_ms - start_ms > self.HISTORY_MAX_SPAN_MS:
+            raise AdapterContractError("history range exceeds the 30-day safety limit")
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+            raise AdapterContractError("now_ms must be a non-negative integer timestamp")
+        if end_ms > now:
+            raise AdapterContractError("history end_ms cannot be in the future")
+        pair_symbol = market.symbol.replace("/", "").upper()
+        if not pair_symbol.isalnum() or len(pair_symbol) > 40:
+            raise AdapterContractError("market symbol is not a valid public history symbol")
+
+        by_open: dict[int, MarketCandle] = {}
+        cursor = start_ms
+        while cursor < end_ms:
+            chunk_end = min(end_ms, cursor + self.HISTORY_CHUNK_MS)
+            params = urllib.parse.urlencode({
+                "from": str(cursor // 1000),
+                "symbol": pair_symbol,
+                "tf": str(interval_minutes),
+                "to": str((chunk_end // 1000) - 1),
+            })
+            payload = self._get_public_json(self.HISTORY_URL + "?" + params)
+            chunk_rows = self._parse_history_rows(
+                payload,
+                start_ms=cursor,
+                end_ms=chunk_end,
+                interval_minutes=interval_minutes,
+                now_ms=now,
+            )
+            for timestamp_ms, candle in chunk_rows.items():
+                previous = by_open.get(timestamp_ms)
+                if previous is not None and previous != candle:
+                    raise VenueDataError(f"conflicting duplicate INDODAX candle across chunks at {timestamp_ms}")
+                by_open[timestamp_ms] = candle
+            cursor = chunk_end
+
+        ordered = [by_open[key] for key in sorted(by_open)]
+        expected_count = (end_ms - start_ms) // interval_ms
+        if len(ordered) != expected_count:
+            raise VenueDataError(
+                f"INDODAX OHLC history incomplete: expected {expected_count} candles, received {len(ordered)}"
+            )
+        for index, candle in enumerate(ordered):
+            expected_open = start_ms + index * interval_ms
+            if candle.open_time_ms != expected_open:
+                raise VenueDataError(f"INDODAX OHLC history has a gap at {expected_open}")
+        return ordered
+
     def get_quote(self, market: MarketSpec) -> MarketQuote: ...
 
 
@@ -402,6 +531,45 @@ class VenueDataError(RuntimeError):
     """Public venue market data could not be safely retrieved or parsed."""
 
 
+
+@dataclass(frozen=True)
+class MarketCandle:
+    """Venue-native OHLCV candle with explicit quote denomination and close time."""
+
+    open_time_ms: int
+    close_time_ms: int
+    interval_minutes: int
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+    quote_currency: str = "IDR"
+    source: str = "INDODAX public OHLC history"
+
+    def __post_init__(self) -> None:
+        for field in ("open_time_ms", "close_time_ms", "interval_minutes"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise AdapterContractError(f"{field} must be a non-negative integer")
+        if self.interval_minutes not in (1, 15, 30, 60, 240):
+            raise AdapterContractError("interval_minutes is not supported by the public history adapter")
+        expected_close = self.open_time_ms + self.interval_minutes * 60_000 - 1
+        if self.close_time_ms != expected_close:
+            raise AdapterContractError("candle close timestamp does not match its interval")
+        for field in ("open", "high", "low", "close"):
+            object.__setattr__(self, field, _decimal(getattr(self, field), field))
+        object.__setattr__(self, "volume", _decimal(self.volume, "volume", allow_zero=True))
+        if self.high < max(self.open, self.close, self.low):
+            raise AdapterContractError("candle high is below an OHLC value")
+        if self.low > min(self.open, self.close, self.high):
+            raise AdapterContractError("candle low is above an OHLC value")
+        if not isinstance(self.quote_currency, str) or not self.quote_currency.strip():
+            raise AdapterContractError("quote_currency must be non-empty")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise AdapterContractError("source must be non-empty")
+
+
 class IndodaxPublicMarketDataAdapter:
     """Read-only INDODAX public depth adapter; never accesses balances or places orders.
 
@@ -412,6 +580,10 @@ class IndodaxPublicMarketDataAdapter:
 
     BASE_URL = "https://indodax.com/api/"
     PAIRS_URL = "https://indodax.com/api/pairs"
+    HISTORY_URL = "https://indodax.com/tradingview/history_v2"
+    HISTORY_INTERVALS_MINUTES = frozenset({1, 15, 30, 60, 240})
+    HISTORY_CHUNK_MS = 86_400_000
+    HISTORY_MAX_SPAN_MS = 30 * 86_400_000
     MAX_RESPONSE_BYTES = 1_000_000
     RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
