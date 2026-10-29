@@ -243,6 +243,16 @@ class TransferPlanner(Protocol):
 
 
 @runtime_checkable
+class TransactionSigner(Protocol):
+    def sign(self, unsigned_transaction: bytes) -> bytes: ...
+
+
+@runtime_checkable
+class ChainTransactionSubmitter(Protocol):
+    def submit(self, signed_transaction: bytes) -> str: ...
+
+
+@runtime_checkable
 class ExecutionAdapter(Protocol):
     def execute(self, intent: OrderIntent, market: MarketSpec, quote: MarketQuote, **kwargs: Any) -> ExecutionReceipt: ...
 
@@ -290,9 +300,16 @@ class TransferDecision:
     transfer_sent: bool = False
 
 
-def assess_transfer_route(route: TransferRoute, amount: Decimal) -> TransferDecision:
+def assess_transfer_route(
+    route: TransferRoute,
+    amount: Decimal,
+    *,
+    now: datetime | None = None,
+    max_cost_age_seconds: Decimal = Decimal("86400"),
+) -> TransferDecision:
     """Validate metadata only. This function can never send or sign a transfer."""
     requested = _decimal(amount, "amount")
+    current = _aware_utc(now or datetime.now(timezone.utc), "now")
     reasons: list[str] = []
     if route.source.lower() == route.destination.lower():
         reasons.append("source_and_destination_match")
@@ -310,6 +327,13 @@ def assess_transfer_route(route: TransferRoute, amount: Decimal) -> TransferDeci
         reasons.append("withdrawal_fee_unknown")
     if route.minimum_deposit is None:
         reasons.append("minimum_deposit_unknown")
+    if route.cost_verified_at is None:
+        reasons.append("route_cost_verification_missing")
+    else:
+        cost_age = Decimal(str((current - route.cost_verified_at).total_seconds()))
+        max_age = _decimal(max_cost_age_seconds, "max_cost_age_seconds", allow_zero=True)
+        if cost_age < Decimal("-5") or cost_age > max_age:
+            reasons.append("route_cost_verification_stale")
     received: Decimal | None = None
     if route.withdrawal_fee is not None:
         if route.withdrawal_fee > requested:
@@ -341,6 +365,13 @@ class ExecutionPolicy:
     readiness_gates_passed: bool = False
     approval_reference: str = ""
 
+    def __post_init__(self) -> None:
+        if not isinstance(self.mode, ExecutionMode):
+            try:
+                object.__setattr__(self, "mode", ExecutionMode(str(self.mode).upper()))
+            except ValueError:
+                raise AdapterContractError("mode must be READ_ONLY, PAPER, or LIVE") from None
+
     def validate(self) -> None:
         if self.mode is not ExecutionMode.LIVE:
             return
@@ -351,6 +382,54 @@ class ExecutionPolicy:
         if not self.approval_reference.strip():
             raise AdapterContractError("live mode requires a traceable approval reference")
         raise AdapterContractError("no live execution adapter is implemented in SOL Sentinel")
+
+
+class StaticMockMarketDataAdapter:
+    """Fixture-only read adapter. It never makes network requests."""
+
+    def __init__(self, quotes: list[MarketQuote]) -> None:
+        self._quotes = {(item.venue, item.symbol): item for item in quotes}
+
+    def get_quote(self, market: MarketSpec) -> MarketQuote:
+        try:
+            return self._quotes[(market.venue, market.symbol)]
+        except KeyError:
+            raise AdapterContractError(f"no mock quote for {market.venue}:{market.symbol}") from None
+
+
+class MockCapitalSourceAdapter:
+    """Metadata-only source label; does not connect to an exchange account."""
+
+    def __init__(self, identifier: str = "reku-onramp-reference") -> None:
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise AdapterContractError("capital source identifier must be non-empty")
+        self._identifier = identifier.strip()
+
+    def source_id(self) -> str:
+        return self._identifier
+
+
+class MockCustodyAdapter:
+    """Fixture-only balance provider; balances are not account or chain observations."""
+
+    def __init__(self, balances: dict[tuple[str, str], Decimal]) -> None:
+        self._balances = {
+            (asset.upper(), network.upper()): _decimal(amount, "mock balance", allow_zero=True)
+            for (asset, network), amount in balances.items()
+        }
+
+    def get_balance(self, asset: str, network: str) -> Decimal:
+        key = (asset.upper(), network.upper())
+        if key not in self._balances:
+            raise AdapterContractError(f"mock balance not configured for {key[0]} on {key[1]}")
+        return self._balances[key]
+
+
+class PlanningOnlyTransferAdapter:
+    """Transfer planner only. No withdrawal or blockchain-send method exists."""
+
+    def plan(self, route: TransferRoute, amount: Decimal) -> TransferDecision:
+        return assess_transfer_route(route, amount)
 
 
 class InMemoryIdempotentLedger:
