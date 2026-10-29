@@ -14,11 +14,12 @@ Investigate whether a rule-based SOL strategy can produce positive net expectanc
 - [x] Defined scope, risk constraints, sources, event log, and Termux runbook.
 - [x] Added a dependency-free Python read-only scanner that reads public Binance SOL/USDT candles.
 - [x] Added offline unit tests and a CI workflow.
-- [ ] Run the scanner on the user's device and validate network/API access in their environment.
+- [ ] Verify Reku public endpoint availability and live spread/order-book snapshot through the current GitHub Actions run; then validate access on the user's Termux device.
 - [x] Verify Reku's published Pro Mode fee components and minimum order from official pages; re-check the final order preview before any trade.
 - [ ] Confirm actual SOL withdrawal availability/cost and supported authenticated order API terms before any live path.
-- [ ] Collect historical data and perform out-of-sample testing including costs.
-- [ ] Implement a paper-position ledger and report realized/unrealized simulated P&L.
+- [x] Capture 30 days of historical reference candles and run fixed chronological 60/20/20 backtest + cost sensitivity; current rules did not pass the baseline trade gate.
+- [x] Implement offline paper ledger, cost model, drawdown reporting, and predeclared sensitivity scenarios.
+- [x] Add a read-only adapter for documented Reku public SOL/IDR price, bid/ask, and order-book endpoints.
 - [ ] Evaluate a documented, policy-compliant live execution route only after the above gates pass.
 
 ## Quick start
@@ -33,6 +34,7 @@ python projects/sol-sentinel/capture_history.py --symbol SOLUSDT --interval 1m -
 python projects/sol-sentinel/paper_engine.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --report-path ~/.sol-sentinel/backtest.json
 python projects/sol-sentinel/evaluate_splits.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/evaluation.json
 python projects/sol-sentinel/cost_sensitivity.py --csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/cost_sensitivity.json
+python projects/sol-sentinel/reku_market.py --symbol SOL --binance-csv ~/.sol-sentinel/SOLUSDT_1m.csv --output ~/.sol-sentinel/reku_sol_idr_market.json
 python projects/sol-sentinel/sol_sentinel.py --fee-bps-round-trip 42.11 --spread-bps-round-trip 10 --slippage-bps-round-trip 20
 python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 ```
@@ -55,6 +57,8 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `paper_engine.py`: cost-aware offline backtest with SQLite paper ledger; never sends orders.
 - `evaluate_splits.py`: fixed-parameter chronological 60/20/20 evaluation, including an untouched out-of-sample segment.
 - `cost_sensitivity.py`: predeclared scenarios compare published Reku Pro fee components with clearly labeled lower-friction and fee-floor assumptions; no automatic selection by P&L.
+- `reku_market.py`: read-only public Reku SOL/IDR price, bid/ask, order book, spread, top-five depth and optional comparison with Binance reference prices.
+- `test_reku_market.py`: offline tests for quote parsing, spread math, and cross-venue reference calculations.
 - `test_cost_sensitivity.py`: scenario and invariant tests.
 - `test_paper_engine.py`: replay, data-integrity, and ledger tests.
 - `test_sol_sentinel.py`: offline tests.
@@ -92,3 +96,8 @@ The scanner's market feed is SOLUSDT but the paper engine's reference capital is
 - Successful 30-day pipeline: [research run 40914239047](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40914239047), 43,200 candles, baseline strategy 0 trades.
 - Fixed-parameter cost sensitivity found no Pro-mode trades even at the fee-only floor (spread/slippage set to zero). A Lightning fee-only mathematical floor produced 10 trades and approximately IDR -3,893 net over the dataset, before any actual quote spread/slippage; this is not a live execution estimate.
 - Details, run IDs, artifacts, tool/source inventory, and exact user request quotations are in [EXECUTION_LOG.md](EXECUTION_LOG.md) and [CHAT_TRANSCRIPT.md](CHAT_TRANSCRIPT.md).
+
+
+## Reku public market adapter
+
+The adapter reads the documented public Reku API only: coin catalogue, price, bid/ask and order book. It does not authenticate, place orders or infer order-execution permission. The public API reference is legacy documentation; the current GitHub Actions run is testing live endpoint availability. A report marked `PARTIAL` or `ERROR` must not be used to approve a trade. The 30-day baseline has not demonstrated a tradable edge; zero trades and the negative fee-only Lightning floor are explicit warnings, not reasons to force entries.
