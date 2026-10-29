@@ -12,7 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Sequence
 
-from paper_engine import BacktestConfig, Bar, backtest, read_bars_csv
+from paper_engine import BacktestConfig, Bar, backtest, read_bars_csv, resolve_quote_to_idr
 
 
 DEFAULT_RATIOS = (0.60, 0.20, 0.20)
@@ -58,7 +58,7 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "period_start", "period_end", "bars_1m", "initial_equity_idr",
         "final_equity_idr", "net_pnl_idr", "net_return_pct", "closed_trades",
-        "win_rate_pct", "profit_factor", "max_drawdown_pct", "total_fees_idr",
+        "win_rate_pct", "profit_factor", "max_drawdown_pct", "total_fees_idr", "total_execution_friction_idr",
         "daily_loss_lock_events",
     )
     return {key: report[key] for key in keys}
@@ -86,7 +86,10 @@ def evaluate(
         "mode": "OFFLINE_CHRONOLOGICAL_EVALUATION",
         "execution_enabled": False,
         "symbol": "SOLUSDT",
-        "venue_reference": "Binance public spot candles; not Reku SOL/IDR executable prices",
+        "venue_reference": "Binance public SOLUSDT candles converted by a daily USD/IDR reference; not Reku SOL/IDR executable prices",
+        "source_quote_currency": "USDT", "simulation_price_currency": "IDR",
+        "quote_to_idr_rate": config.quote_to_idr_rate, "quote_to_idr_source": config.quote_to_idr_source,
+        "quote_to_idr_assumption": "A daily USD/IDR reference proxies USDT/IDR; stablecoin premium/discount and Reku prices are not modeled.",
         "source_dataset_sha256": dataset_sha256,
         "split_ratios": {"development": 0.60, "validation": 0.20, "out_of_sample": 0.20},
         "segment_capital_model": "Each segment starts independently at configured initial equity; returns are not compounded across segments.",
@@ -105,6 +108,8 @@ def evaluate(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--csv", required=True)
+    parser.add_argument("--quote-to-idr-rate", type=float, default=None, help="manual FX override; otherwise use capture sidecar")
+    parser.add_argument("--quote-to-idr-source", default="", help="source label for a manual FX override")
     parser.add_argument("--minimum-segment-bars", type=int, default=600)
     parser.add_argument("--initial-capital-idr", type=float, default=300_000.0)
     parser.add_argument("--risk-fraction", type=float, default=0.005)
@@ -121,17 +126,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--maximum-hold-bars", type=int, default=30)
     parser.add_argument("--output", default="", help="optional JSON report path")
     args = parser.parse_args(argv)
-    config = BacktestConfig(
-        initial_capital_idr=args.initial_capital_idr, risk_fraction=args.risk_fraction,
-        max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
-        entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
-        spread_bps_round_trip=args.spread_bps_round_trip, slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
-        minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
-        target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
-    )
     try:
-        config.validate()
         source = Path(args.csv).expanduser()
+        quote_to_idr_rate, quote_to_idr_source = resolve_quote_to_idr(
+            source, args.quote_to_idr_rate, args.quote_to_idr_source
+        )
+        config = BacktestConfig(
+            initial_capital_idr=args.initial_capital_idr,
+            quote_to_idr_rate=quote_to_idr_rate,
+            quote_to_idr_source=quote_to_idr_source,
+            risk_fraction=args.risk_fraction,
+            max_exposure_fraction=args.max_exposure_fraction, daily_loss_fraction=args.daily_loss_fraction,
+            entry_fee_bps=args.entry_fee_bps, exit_fee_bps=args.exit_fee_bps,
+            spread_bps_round_trip=args.spread_bps_round_trip,
+            slippage_bps_per_side=args.slippage_bps_per_side, minimum_net_edge_bps=args.minimum_net_edge_bps,
+            minimum_relative_volume=args.minimum_relative_volume, stop_atr_multiple=args.stop_atr_multiple,
+            target_atr_multiple=args.target_atr_multiple, maximum_hold_bars=args.maximum_hold_bars,
+        )
+        config.validate()
         dataset_sha = hashlib.sha256(source.read_bytes()).hexdigest()
         bars = read_bars_csv(source)
         report = evaluate(bars, config, dataset_sha, args.minimum_segment_bars)
