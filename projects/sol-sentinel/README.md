@@ -15,7 +15,8 @@ Investigate whether a rule-based SOL strategy can produce positive net expectanc
 - [x] Added a dependency-free Python read-only scanner that reads public Binance SOL/USDT candles.
 - [x] Added offline unit tests and a CI workflow.
 - [ ] Run the scanner on the user's device and validate network/API access in their environment.
-- [ ] Confirm Reku live fee schedule, minimum order, withdrawal availability/cost, and official API terms before any live path.
+- [x] Verify Reku's published Pro Mode fee components and minimum order from official pages; re-check the final order preview before any trade.
+- [ ] Confirm actual SOL withdrawal availability/cost and supported authenticated order API terms before any live path.
 - [ ] Collect historical data and perform out-of-sample testing including costs.
 - [ ] Implement a paper-position ledger and report realized/unrealized simulated P&L.
 - [ ] Evaluate a documented, policy-compliant live execution route only after the above gates pass.
