@@ -19,6 +19,12 @@ Alternative: **Solana wallet + Jupiter Swap V2**. This offers multi-router swap 
 
 OJK's official September 2026 update describes Indonesia's licensed crypto-asset provider landscape; listing in a market page is not enough to certify every operational path. See https://ojk.go.id/en/berita-dan-kegiatan/siaran-pers/Pages/OJK-Board-of-Commissioners-Monthly-Meeting-September-2026.aspx . Verify the current legal provider list, exact asset/network availability, and account terms at the time any future deployment is considered.
 
+## INDODAX mode-specific minimum and live fee policy
+
+The official INDODAX help page states that the current all-in fee structure changed effective 1 October 2026; current exact fee components are displayed under the account's Profile/Trading Fees screen. The same help page states a Rp10,000 Lite minimum and Rp25,000 minimum for direct INDODAX Pro orders, with Pro-interface orders from Rp10,000 to Rp24,999 routed via Lite: https://help.indodax.com/hc/en-us/articles/4416646599705-Details-of-Transaction-Fees-on-INDODAX.
+
+`IndodaxPublicMarketDataAdapter.get_market_spec()` reads the exchange's `trade_min_base_currency` market metadata. It accepts optional `mode_minimum_notional_quote` to enforce a separately verified interface-mode floor; e.g. pass `Decimal("25000")` for a research configuration that models direct Pro, or `Decimal("10000")` for Lite. Do not infer or hard-code a user-specific fee tier. The default remains the market metadata value if no mode has been selected. The paper simulation must label the selected mode and fee source explicitly.
+
 ## Fee facts versus assumptions
 
 Reku's published page lists Pro Mode buy fee 0.1% + 0.00555% CFX, sell fee 0.1% + 0.21% PPh + 0.00555% CFX, and Lightning buy fee 0% + 0.00555% CFX, sell 0% + 0.21% PPh + 0.00555% CFX. External crypto sends incur a variable blockchain fee. The dynamic page did not expose a verifiable SOL-specific withdrawal amount/minimum in this source read. Recheck the current app's SOL withdrawal preview rather than using a hard-coded constant. https://reku.id/fees/crypto
