@@ -372,6 +372,10 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
     active_day = datetime.fromtimestamp(bars[0].open_time_ms / 1000, timezone.utc).date().isoformat()
     daily_locked = False
     lock_events = 0
+    signal_evaluations = 0
+    signal_candidates = 0
+    signal_warmup_bars = 0
+    signal_rejection_counts: dict[str, int] = {}
 
     for index, bar in enumerate(bars):
         day = datetime.fromtimestamp(bar.open_time_ms / 1000, timezone.utc).date().isoformat()
@@ -468,12 +472,20 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         curve.append({"time": iso_utc(bar.close_time_ms), "equity_idr": equity, "cash_idr": cash, "drawdown_pct": drawdown * 100.0})
 
         if index < len(bars) - 1 and position is None and not daily_locked:
-            candidate, _reason, current_atr = signal_at(
+            candidate, reason, current_atr = signal_at(
                 bars, features1, bars5, features5, bars15, features15, index, config,
                 close_times5=close_times5, close_times15=close_times15,
             )
-            if candidate and current_atr is not None and current_atr > 0:
+            signal_evaluations += 1
+            if reason == "indicator_warmup":
+                signal_warmup_bars += 1
+            elif candidate and current_atr is not None and current_atr > 0:
+                signal_candidates += 1
                 pending = (index, current_atr)
+            else:
+                for reject_reason in reason.split(","):
+                    if reject_reason:
+                        signal_rejection_counts[reject_reason] = signal_rejection_counts.get(reject_reason, 0) + 1
 
     # Force-close an open simulated position at the last observed close; this is an explicit end-of-data assumption.
     if position is not None:
@@ -539,6 +551,10 @@ def backtest(bars: Sequence[Bar], config: BacktestConfig, dataset_sha256: str = 
         "final_equity_idr": final_equity,
         "net_pnl_idr": net_pnl,
         "net_return_pct": net_pnl / config.initial_capital_idr * 100.0,
+        "signal_evaluations": signal_evaluations,
+        "signal_warmup_bars": signal_warmup_bars,
+        "signal_candidates": signal_candidates,
+        "signal_rejection_counts": dict(sorted(signal_rejection_counts.items())),
         "closed_trades": len(trades),
         "win_rate_pct": (len(wins) / len(trades) * 100.0) if trades else 0.0,
         "profit_factor": profit_factor,
