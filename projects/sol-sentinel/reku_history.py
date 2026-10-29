@@ -108,9 +108,16 @@ def request_activity_month(coin_id: Any, year: int, month: int, timeout: float =
                 raise ValueError("Unexpected Reku /activitytrans response structure")
             return payload
         except urllib.error.HTTPError as exc:
-            last_error = exc
+            try:
+                response_body = exc.read(2048).decode("utf-8", "replace").strip()
+            except OSError:
+                response_body = ""
+            response_body = " ".join(response_body.split())
+            detail = f"; response={response_body[:240]}" if response_body else ""
+            error = RuntimeError(f"Reku activity HTTP {exc.code}: {exc.reason}{detail}")
+            last_error = error
             if exc.code not in (408, 425, 429, 500, 502, 503, 504):
-                raise RuntimeError(f"Reku activity HTTP {exc.code}: {exc.reason}") from exc
+                raise error from exc
         except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError, RuntimeError) as exc:
             last_error = exc
         if attempt + 1 < attempts:
@@ -379,6 +386,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             "pair": f"{args.symbol.upper()}/IDR",
             "data_status": "ERROR",
             "error": f"{type(exc).__name__}: {str(exc)[:300]}",
+            "error_category": "endpoint_not_found" if "HTTP 404" in str(exc) else "collection_failed",
+            "next_action": (
+                "Legacy /activitytrans returned HTTP 404; keep native Reku history disabled until a currently supported official history source is verified."
+                if "HTTP 404" in str(exc)
+                else "Inspect the bounded read-only API diagnostics; do not substitute incomplete chart data as historical OHLCV."
+            ),
             "source_endpoint": "POST https://api.reku.id/v2/activitytrans",
             "source_documentation": "https://api.reku.id/",
         }

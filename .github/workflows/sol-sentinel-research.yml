@@ -6,7 +6,13 @@ on:
       - feat/sol-sentinel-paper-trader-v1
     paths:
       - ".github/workflows/sol-sentinel-research.yml"
-      - "projects/sol-sentinel/*.py"
+      - "projects/sol-sentinel/sol_sentinel.py"
+      - "projects/sol-sentinel/capture_history.py"
+      - "projects/sol-sentinel/paper_engine.py"
+      - "projects/sol-sentinel/evaluate_splits.py"
+      - "projects/sol-sentinel/cost_sensitivity.py"
+      - "projects/sol-sentinel/reku_market.py"
+      - "projects/sol-sentinel/reku_history.py"
   workflow_dispatch:
     inputs:
       days:
@@ -160,6 +166,8 @@ jobs:
           print("- orderbook_spread_bps:", (report.get("orderbook") or {}).get("spread_bps"))
           print("- chart_status:", report.get("chart_status"))
           print("- chart_interval_minutes:", (report.get("chart_probe") or {}).get("interval_minutes"))
+          print("- chart_fallback_used:", (report.get("chart_probe") or {}).get("fallback_used"))
+          print("- chart_prior_attempt_errors:", (report.get("chart_probe") or {}).get("prior_attempt_errors"))
           print("- chart_points_returned:", (report.get("chart_probe") or {}).get("points_returned"))
           print("- chart_last_time_utc:", (report.get("chart_probe") or {}).get("last_time_utc"))
           print("- chart_error:", report.get("chart_probe_error"))

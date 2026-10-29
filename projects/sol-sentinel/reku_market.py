@@ -36,10 +36,19 @@ def request_json(path: str, params: dict[str, Any] | None = None, timeout: float
         headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
         method="GET",
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        if response.status != 200:
-            raise RuntimeError(f"Reku public API HTTP {response.status} for {path}")
-        raw = response.read(2_000_000)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status != 200:
+                raise RuntimeError(f"Reku public API HTTP {response.status} for {path}")
+            raw = response.read(2_000_000)
+    except urllib.error.HTTPError as exc:
+        try:
+            response_body = exc.read(2048).decode("utf-8", "replace").strip()
+        except OSError:
+            response_body = ""
+        response_body = " ".join(response_body.split())
+        detail = f"; response={response_body[:240]}" if response_body else ""
+        raise RuntimeError(f"Reku public API HTTP {exc.code} for {path}{detail}") from exc
     try:
         return json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -189,9 +198,12 @@ def parse_chart_payload(payload: Any, interval_minutes: int, now_ms: int | None 
     ordered = [bars[key] for key in sorted(bars)]
     if not ordered:
         raise ValueError("Reku /chart returned no valid OHLCV bars")
+    if not isinstance(interval_minutes, int) or interval_minutes <= 0:
+        raise ValueError("chart interval_minutes must be a positive integer")
     last = ordered[-1]
     age_seconds = (now - int(last["timestamp_ms"])) / 1000.0
-    allowed_age_seconds = max(interval_minutes * 60 * 3, 900.0)
+    # Permit at most three chart intervals; never impose a 15-minute floor on 1m data.
+    allowed_age_seconds = interval_minutes * 60 * 3
     status = "OK" if -5.0 <= age_seconds <= allowed_age_seconds else "STALE"
     return {
         "data_status": status,
@@ -200,13 +212,14 @@ def parse_chart_payload(payload: Any, interval_minutes: int, now_ms: int | None 
         "first_time_utc": datetime.fromtimestamp(int(ordered[0]["timestamp_ms"]) / 1000.0, timezone.utc).isoformat(),
         "last_time_utc": datetime.fromtimestamp(int(last["timestamp_ms"]) / 1000.0, timezone.utc).isoformat(),
         "last_age_seconds": age_seconds,
+        "allowed_age_seconds": allowed_age_seconds,
         "last_bar": last,
         "warning": "Chart timestamps/interval semantics must be confirmed against current Reku behavior; this is a public-data probe, not proof of full historical coverage.",
     }
 
 
 def fetch_chart_probe(coin_id: Any) -> tuple[dict[str, Any] | None, str | None]:
-    """Probe 1m chart first, then documented 5m interval; report errors without inventing candles."""
+    """Probe 1m first, then 5m; preserve fallback evidence without fabricating data."""
     errors: list[str] = []
     for interval in (1, 5):
         try:
@@ -214,10 +227,16 @@ def fetch_chart_probe(coin_id: Any) -> tuple[dict[str, Any] | None, str | None]:
             parsed = parse_chart_payload(payload, interval)
             if parsed["data_status"] == "OK":
                 parsed["endpoint"] = f"/v2/chart?t=2&f={interval}&id={coin_id}"
+                parsed["fallback_used"] = interval != 1
+                parsed["prior_attempt_errors"] = list(errors)
                 return parsed, None
-            errors.append(f"f={interval}: chart data stale (age_seconds={parsed['last_age_seconds']:.1f})")
+            errors.append(
+                f"f={interval}: chart data {parsed['data_status'].lower()} "
+                f"(age_seconds={parsed['last_age_seconds']:.1f}, "
+                f"allowed_age_seconds={parsed['allowed_age_seconds']})"
+            )
         except (urllib.error.URLError, TimeoutError, OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
-            errors.append(f"f={interval}: {type(exc).__name__}: {str(exc)[:130]}")
+            errors.append(f"f={interval}: {type(exc).__name__}: {str(exc)[:180]}")
     return None, " | ".join(errors)[:400]
 
 

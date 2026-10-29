@@ -1,4 +1,6 @@
+import io
 import unittest
+import urllib.error
 from datetime import date
 
 import reku_history as history
@@ -81,6 +83,20 @@ class RekuHistoryTests(unittest.TestCase):
     def test_parse_activity_rejects_non_list_payload(self):
         with self.assertRaisesRegex(ValueError, "must be a list"):
             history.parse_activity_rows({"result": []}, 1_800_000_000_000, 1_800_000_300_000)
+
+    def test_activity_request_includes_http_error_body_for_404_diagnostics(self):
+        err = urllib.error.HTTPError(
+            "https://api.reku.id/v2/activitytrans",
+            404,
+            "Not Found",
+            {},
+            io.BytesIO(b'{"message":"legacy route removed"}'),
+        )
+        from unittest.mock import patch
+        with patch.object(history.urllib.request, "urlopen", side_effect=err) as mocked:
+            with self.assertRaisesRegex(RuntimeError, "HTTP 404.*legacy route removed"):
+                history.request_activity_month(51, 2026, 10, attempts=1)
+        mocked.assert_called_once()
 
 
 if __name__ == "__main__":

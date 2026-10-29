@@ -1,5 +1,7 @@
+import io
 import time
 import unittest
+import urllib.error
 
 import reku_market as market
 
@@ -55,11 +57,48 @@ class RekuMarketParserTests(unittest.TestCase):
         self.assertEqual(report["last_bar"]["close_idr"], 103.0)
         self.assertEqual(report["last_bar"]["volume_idr"], 1339.0)
 
-    def test_parse_chart_payload_marks_old_data_stale(self):
+    def test_parse_chart_payload_uses_interval_specific_freshness(self):
         now_ms = 1_800_000_000_000
-        payload = [[now_ms - 1_000_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
-        report = market.parse_chart_payload(payload, interval_minutes=1, now_ms=now_ms)
-        self.assertEqual(report["data_status"], "STALE")
+        payload = [[now_ms - 181_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
+        one_minute = market.parse_chart_payload(payload, interval_minutes=1, now_ms=now_ms)
+        five_minutes = market.parse_chart_payload(payload, interval_minutes=5, now_ms=now_ms)
+        self.assertEqual(one_minute["data_status"], "STALE")
+        self.assertEqual(one_minute["allowed_age_seconds"], 180)
+        self.assertEqual(five_minutes["data_status"], "OK")
+        self.assertEqual(five_minutes["allowed_age_seconds"], 900)
+
+    def test_parse_chart_payload_rejects_nonpositive_interval(self):
+        with self.assertRaisesRegex(ValueError, "positive integer"):
+            market.parse_chart_payload([], interval_minutes=0, now_ms=1_800_000_000_000)
+
+    def test_fetch_chart_probe_preserves_stale_1m_fallback_reason(self):
+        now_ms = int(time.time() * 1000)
+
+        def fake_request(path, params=None, timeout=8.0):
+            self.assertEqual(path, "/chart")
+            return [[now_ms - 200_000, 100.0, 101.0, 99.0, 102.0, 10.0, 1010.0]]
+
+        from unittest.mock import patch
+        with patch.object(market, "request_json", side_effect=fake_request):
+            report, error = market.fetch_chart_probe(51)
+        self.assertIsNone(error)
+        self.assertEqual(report["interval_minutes"], 5)
+        self.assertTrue(report["fallback_used"])
+        self.assertEqual(len(report["prior_attempt_errors"]), 1)
+        self.assertIn("f=1: chart data stale", report["prior_attempt_errors"][0])
+
+    def test_request_json_includes_http_error_body_for_diagnostics(self):
+        err = urllib.error.HTTPError(
+            "https://api.reku.id/v2/orderbook?id=51",
+            400,
+            "Bad Request",
+            {},
+            io.BytesIO(b'{"message":"query rejected by endpoint"}'),
+        )
+        from unittest.mock import patch
+        with patch.object(market.urllib.request, "urlopen", side_effect=err):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 400.*query rejected by endpoint"):
+                market.request_json("/orderbook", {"id": 51})
 
     def test_parse_chart_payload_rejects_payload_without_valid_bars(self):
         with self.assertRaisesRegex(ValueError, "no valid OHLCV bars"):
