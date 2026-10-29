@@ -1,6 +1,6 @@
 # Hallmark — korpus referensi Document Craft
 
-Baseline awal pipeline pada 2026-10-30 menggunakan manifest kosong. Manifest sekarang mencatat lima dokumen yang lolos gate eligibility, dua catatan berstatus akses parsial, dan satu lead spreadsheet yang hanya terverifikasi pada metadata. Status dan distribusi terkini dilaporkan terpisah; target 500 tidak dipenuhi oleh metadata kandidat atau dokumen yang hanya diakses sebagian.
+Baseline awal pipeline pada 2026-10-30 menggunakan manifest kosong. Manifest sekarang mencatat enam dokumen yang lolos gate eligibility, dua catatan berstatus akses parsial, dan satu lead spreadsheet yang hanya terverifikasi pada metadata. Status dan distribusi terkini dilaporkan terpisah; target 500 tidak dipenuhi oleh metadata kandidat atau dokumen yang hanya diakses sebagian.
 
 ## Prinsip penerimaan
 
@@ -64,13 +64,13 @@ Exit code `0` berarti bentuk manifest dapat diproses; status target akan tetap `
 
 ## Status korpus pada checkpoint 2026-10-30
 
-- Manifest memuat **8 catatan**: 5 item lolos gate eligibility, 2 item berstatus akses parsial, dan 1 lead workbook yang hanya terverifikasi pada metadata.
-- Sampel yang memenuhi gate eligibility: **5 dari target 500**; sisa 495; status `INSUFFICIENT_EVIDENCE`.
-- Distribusi eligible: `academic_paper` = 3, `other` (panduan profesional World Bank) = 1, `thesis_dissertation` = 1. Genre eligible lainnya = 0.
-- Lima item eligible terdiri dari tiga artikel ICCLE CC BY-SA 4.0, panduan World Bank CC BY 3.0 IGO, dan skripsi teknik lingkungan UIN Ar-Raniry CC BY 4.0. Setiap lisensi dicek pada laman item/sumber resmi masing-masing.
+- Manifest memuat **9 catatan**: 6 item lolos gate eligibility, 2 item berstatus akses parsial, dan 1 lead workbook yang hanya terverifikasi pada metadata.
+- Sampel yang memenuhi gate eligibility: **6 dari target 500**; sisa 494; status `INSUFFICIENT_EVIDENCE`.
+- Distribusi eligible: `academic_paper` = 3, `other` (panduan profesional World Bank) = 1, `thesis_dissertation` = 2. Genre eligible lainnya = 0.
+- Enam item eligible terdiri dari tiga artikel ICCLE CC BY-SA 4.0, panduan World Bank CC BY 3.0 IGO, skripsi teknik lingkungan UIN Ar-Raniry CC BY 4.0, dan tugas akhir Teknologi Informasi UIN Ar-Raniry CC BY 4.0. Setiap lisensi dicek pada laman item/sumber resmi masing-masing.
 - Dua partial items: satu laporan PKL Polije (summary + Chapter I publik berlisensi, laporan penuh dibatasi) dan satu KIAN/asuhan keperawatan (file publik awal; bab kasus dan pembahasan dibatasi). Keduanya disimpan sebagai catatan pending dan **tidak dihitung** sampai akses, privacy, dan hak penuh selesai ditinjau.
 - Satu lead workbook pemerintah daerah mencatat metadata resmi CC BY untuk XLSX, tetapi download dari dua host mengembalikan HTTP 403. Sheet, formula, format, isi, dan risiko data pekerja belum diperiksa; status tetap metadata-only dan tidak dihitung.
-- Distribusi fitur: lima analisis struktur pada item eligible dan dua catatan struktur parsial, semuanya ada di `features.jsonl`; satu spreadsheet metadata-only belum memiliki analisis isi.
+- Distribusi fitur: enam analisis struktur pada item eligible dan dua catatan struktur parsial, semuanya ada di `features.jsonl`; satu spreadsheet metadata-only belum memiliki analisis isi.
 - Registry penemuan berisi 11 direktori/katalog sumber, bukan dokumen. Harvester DOAJ dan fixture tests tersedia, tetapi live harvest dari OAI-PMH belum berhasil; kandidat feed live = 0.
 - Analisis visual terhadap sumber tidak lengkap: beberapa PDF punya inspeksi visual terpilih, sedangkan skripsi UIN Ar-Raniry dan dua catatan partial tidak mendapat rendering QA. Ini bukan validasi visual output generator.
 - Belum ada eksperimen Document Craft baseline-vs-kandidat, penilaian reviewer blind, inter-rater agreement, ataupun bukti empiris peningkatan kualitas.
