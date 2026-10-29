@@ -45,7 +45,7 @@ jobs:
 
       - name: Compile and test
         run: |
-          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py
+          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py
           python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 
       - name: Capture public history and dated FX reference (bounded retries)
@@ -54,6 +54,14 @@ jobs:
           python projects/sol-sentinel/capture_history.py \
             --symbol SOLUSDT --interval 1m --days "$CAPTURE_DAYS" \
             --output research-output/SOLUSDT_1m.csv
+
+      - name: Capture read-only Reku SOL/IDR market snapshot
+        continue-on-error: true
+        run: |
+          python projects/sol-sentinel/reku_market.py \
+            --symbol SOL \
+            --binance-csv research-output/SOLUSDT_1m.csv \
+            --output research-output/reku_sol_idr_market.json
 
       - name: Run cost-aware offline backtest
         run: |
@@ -122,6 +130,24 @@ jobs:
               print(f"- {item['scenario']}: cost_bps={item['modeled_round_trip_cost_bps']}, min_gross_bps={item['minimum_gross_move_bps_in_signal_gate']}, candidates={item['signal_candidates']}, trades={item['closed_trades']}, net_pnl_idr={item['net_pnl_idr']}, return_pct={item['net_return_pct']}, win_rate_pct={item['win_rate_pct']}, profit_factor={item['profit_factor']}")
               print(f"  fees_idr={item['total_fees_idr']}, execution_friction_idr={item['total_execution_friction_idr']}")
               print(f"  rejection_counts={item['signal_rejection_counts']}")
+          PY
+            fi
+
+            if [ -f research-output/reku_sol_idr_market.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/reku_sol_idr_market.json").read_text())
+          print("Reku public SOL/IDR market snapshot (read-only):")
+          print("- status:", report.get("data_status"))
+          print("- last_price_idr:", report.get("last_price_idr"))
+          print("- direct_spread_bps:", (report.get("direct_bidask") or {}).get("spread_bps"))
+          print("- orderbook_status:", report.get("orderbook_status"))
+          print("- orderbook_spread_bps:", (report.get("orderbook") or {}).get("spread_bps"))
+          print("- cross_venue_comparison:", report.get("cross_venue_comparison"))
+          print("- warnings:", report.get("warnings", []))
+          print("- error:", report.get("error") or report.get("cross_venue_comparison_error") or report.get("orderbook_error"))
           PY
             fi
           } >> "$GITHUB_STEP_SUMMARY"
