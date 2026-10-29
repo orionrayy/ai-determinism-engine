@@ -57,6 +57,8 @@ The fee/slippage parameters are assumptions and must be set to the actual select
 - `paper_engine.py`: cost-aware offline backtest with SQLite paper ledger; never sends orders.
 - `evaluate_splits.py`: fixed-parameter chronological 60/20/20 evaluation, including an untouched out-of-sample segment.
 - `cost_sensitivity.py`: predeclared scenarios compare published Reku Pro fee components with clearly labeled lower-friction and fee-floor assumptions; no automatic selection by P&L.
+- `reku_market.py`: read-only public Reku SOL/IDR price, bid/ask, order-book, and optional cross-venue comparison.
+- `test_reku_market.py`: tests for quote parsing, midpoint spread math, order-book fallback, and cross-venue reference calculations.
 - `reku_market.py`: read-only public Reku SOL/IDR price, bid/ask, order book, spread, top-five depth and optional comparison with Binance reference prices.
 - `test_reku_market.py`: offline tests for quote parsing, spread math, and cross-venue reference calculations.
 - `test_cost_sensitivity.py`: scenario and invariant tests.
