@@ -139,6 +139,26 @@ class AdapterContractTests(unittest.TestCase):
         self.assertFalse(hasattr(adapter, "execute"))
         self.assertFalse(hasattr(adapter, "sign"))
 
+    def test_indodax_public_requests_obey_a_minimum_request_interval(self):
+        spec = a.MarketSpec("INDODAX", "SOL/IDR", "solidr", "SOL", "IDR", "1000", "0.000001", "10000", 6, 0)
+        depth = {"buy": [["1810000", "0.2"]], "sell": [["1815000", "0.3"]]}
+        pairs = [{
+            "id": "solidr", "symbol": "SOLIDR", "base_currency": "idr",
+            "traded_currency": "sol", "traded_currency_unit": "SOL",
+            "price_precision": "1000", "quantity_increment": "0.000001",
+            "trade_min_base_currency": "10000", "trade_min_traded_currency": "0.001",
+        }]
+        def transport(url, timeout):
+            return pairs if url.endswith("/api/pairs") else depth
+        adapter = a.IndodaxPublicMarketDataAdapter(transport=transport, min_request_interval_seconds=0.35)
+        from unittest.mock import patch
+        with patch.object(a.time, "monotonic", side_effect=[100.0, 100.05, 100.35]) as clock:
+            with patch.object(a.time, "sleep") as sleep:
+                adapter.get_market_spec("SOL/IDR")
+                adapter.get_quote(spec)
+        self.assertAlmostEqual(sleep.call_args.args[0], 0.30, places=8)
+        self.assertEqual(clock.call_count, 3)
+
     def test_indodax_pair_catalogue_loads_tick_step_and_both_order_minimums(self):
         pair_row = {
             "id": "solidr", "symbol": "SOLIDR",
