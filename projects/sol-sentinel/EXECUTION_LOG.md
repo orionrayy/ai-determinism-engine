@@ -351,3 +351,8 @@ After the code-only ledger fix, the candle-time/OHLCV guard, and three hand-calc
 Final verification: branch head \`5f18753d4f5f059195b9b2e815627652e6564ca8\` passed 79 tests in [workflow #280](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40931067383); duplicate #279 also passed. Research #27 succeeded on code commit \`833e57a13022c3efe6ff5115df2b2e0697072817\`, dataset hash \`6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14\`, artifact #12922686248, with zero trades in all splits.
 
 Reconciliation is **not cleared**: compare current \`main\` \`d5672c84...\` against PR #178 head reports diverged history, merge base \`eaa864a...\`, 167 commits ahead and two behind, 27 file changes. GitHub's \`mergeable=true\` is not a merge authorization. PR #178 stays draft/open. The latest canonical memory and detailed audit are available through draft PR #180. No force-push, merge, or main branch modification occurred.
+
+
+## Final compare refresh — 2026-10-30
+
+The last fresh GitHub compare, performed after all current documentation commits were pushed, reports current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` versus feature head \`3d2054da51ebb34f98380c50257e61735e650475\`: \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=168\`, \`behind_by=2\`, 27 files in PR #178. This supersedes the earlier point-in-time count of 167 commits ahead recorded in previous notes. \`mergeable=true\` is only API metadata and does not authorize merge; keep PR #178 draft and obtain review of the full history delta before integration. No rebase, force-push, merge, or change to main was performed.
