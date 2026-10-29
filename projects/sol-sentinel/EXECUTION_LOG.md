@@ -296,3 +296,37 @@ This entry is documentation-only. It changes no scanner or trading logic. Since 
 - [PR #178](https://github.com/orionrayy/ai-determinism-engine/pull/178) is still draft/open and unmerged.
 - The PR records base SHA `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`, while the observed current `main` SHA is `d5672c84a0ae184c3a95d3f925925887ece71aa4`. Reconcile this difference before any merge.
 - Remaining blockers: verify a current documented source for native Reku history; validate the scanner/backtest on the user's Termux device; improve strategy research because the tested rules still generate no trade; and keep live execution blocked until provider authorization, measured costs, risk controls, reconciliation, kill switch, out-of-sample evidence, and explicit approval are satisfied.
+
+## 16. Spread, minimum-order and backtest telemetry patch — 2026-10-30 WIB
+
+### Baseline and execution identity
+- Commit immediately before patch: `29488b5ecc55fe080980a38bd900753c7d70a135`.
+- Patch commit: `7d74015ecb99c0f1768baddd40b1643399c5bea2`, branch `feat/sol-sentinel-paper-trader-v1`.
+- Automated code test workflow: [40928032367](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032367), conclusion `success`; PR-triggered duplicate [40928041385](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385), conclusion `success`. Both logs report compilation completed and `Ran 70 tests`, `OK`, zero test failures.
+- Research workflow [40928032346](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346) was running when this log entry was initially authored. Record its final result only after checking the completed run and artifact.
+
+### Spread incident: cause and invariant
+- Historical report `198.0198 bps` for bid 99 / ask 101 corresponds to `(ask - bid) / ask * 10,000`. It does not use the price midpoint.
+- The project invariant is conventional midpoint spread: `mid = (bid + ask)/2`; `spread_bps = (ask - bid)/mid * 10,000`. With bid 99 and ask 101, spread 2 / midpoint 100 gives **200 bps**. The currently inspected pre-patch implementation already used the correct midpoint denominator; therefore the historical discrepancy is attributed to an older denominator/fixture mismatch, not an active defect in the current formula. The patch hardens the input contract and adds regression coverage instead of changing the expected 200 bps.
+- The test now rejects missing/nonnumeric, boolean, zero/negative, non-finite and crossed quotes; accepts numeric strings and a zero-spread quote; and exercises extreme finite magnitudes. A prior captured sample 1,835,000 / 1,840,000 calculates 27.210884 bps using midpoint 1,837,500. This is not a current market quote.
+
+### Code changes
+- `reku_market.py`: safely converts public quote values, disallows booleans, handles conversion errors explicitly, and computes midpoint using a half-sum to reduce overflow risk.
+- `test_reku_market.py`: added five focused regression tests for bps denominator, invalid price classes, zero spread / numeric string compatibility, and extreme floats.
+- `paper_engine.py`: added a configurable minimum simulated order notional, a fail-closed notional predicate, explicit signal rejection-combination telemetry, entry attempts/fills/size rejections, daily-loss-lock blocked-bar counts, gross P&L, average win/loss, expectancy, average hold, and `null` win-rate/expectancy when no trades exist.
+- `evaluate_splits.py` and `cost_sensitivity.py`: propagate diagnostic fields so JSON research artefacts and each split retain counts and metrics.
+- `test_paper_engine.py` and `test_cost_sensitivity.py`: regression coverage for minimum-notional assumptions and the semantic treatment of zero trades.
+- Simulated minimum notional defaults to Reku Pro Rp30,000. The predeclared Lightning fee-floor scenario uses Rp5,000. These are modeled venue floors from the sources below, not proof of order precision/minimum rules for another venue.
+
+### Official source records checked on 2026-10-30
+- Reku fee table: https://reku.id/fees/crypto — Pro buy components 0.1% + 0.00555% CFX; Pro sell components 0.1% + 0.21% PPh + 0.00555% CFX.
+- Reku minimum order: https://reku.id/help/batas-minimal-rupiah-dalam-order-jual-beli — page states Rp30,000 for Pro and Rp5,000 for Lightning (page dated 2025-11-19).
+- Binance Spot REST API: https://developers.binance.com/en/docs/products/spot/rest-api — timestamps are milliseconds by default and market-data-only endpoints are documented separately.
+- Binance symbol filters: https://github.com/binance/binance-spot-api-docs/blob/master/filters.md — filters include price tick size, lot step and minimum notional; this is venue-specific and must not be transferred to Reku.
+- Reku legacy public API docs: https://api.reku.id/ — treated as legacy documentation; runtime behavior and native history availability must be reverified.
+- These are source records, not authenticated order-path approval. Binance candles remain reference history, not executable Reku price history.
+
+### Proven telemetry interpretation and limits
+- Previous 30-day historical run [40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237) captured 43,200 Binance SOLUSDT 1m candles (2026-09-29 to 2026-10-29) and had zero trades in the baseline and each 60/20/20 segment. Its baseline report logged 25,919 signal evaluations and 391 warm-up bars; rejection counts included no 1m breakout (23,913), missing 1m relative-volume confirmation (20,740), unconfirmed 5m momentum (16,998), and unconfirmed 15m trend (15,313). Counts are multi-label rejection events and can exceed the number of evaluations; they are not mutually exclusive.
+- These data support that the stacked filters frequently rejected bars, but do not establish that any single filter alone caused zero trades. The current research run must be read to establish whether post-patch counters remain consistent.
+- No live order, cancellation, transfer, withdrawal, wallet operation or credential use occurred. No Termux device or Android process was accessed. PR #178 remains draft/unmerged.

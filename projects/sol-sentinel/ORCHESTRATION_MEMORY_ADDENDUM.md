@@ -103,3 +103,12 @@ SOL Sentinel's public-only research pipeline now has verified current Reku marke
 - Reku order book now uses the verified public query `symbol=SOL_IDR`; the snapshot probe returned 40 levels per side and 27.210884 bps spread. Public chart uses 5m first because f=1 returned HTTP 500.
 - The legacy Reku `/activitytrans` route returned HTTP 404. Collector fails fast and marks it unavailable; do not use incomplete chart data as a substitute for 30 days of native history.
 - No strategy edge has been demonstrated: baseline and chronological segments still yield zero trades. Live mode remains disabled. PR #178 is draft/unmerged and requires base-SHA reconciliation.
+
+## 2026-10-30 implementation checkpoint — spread and diagnostics
+
+- Verified patch head: `7d74015ecb99c0f1768baddd40b1643399c5bea2`, based on previous branch head `29488b5ecc55fe080980a38bd900753c7d70a135`.
+- CI runs [40928032367](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032367) and PR run [40928041385](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385) passed compile + 70 offline tests.
+- Spread formula remains midpoint convention. Historical `198.0198` vs `200` bps discrepancy for bid 99/ask 101 comes from ask-price denominator versus midpoint, respectively. Current code already used midpoint; the patch adds robust type/numeric validation and regression tests rather than changing the expected value.
+- New diagnostics report multi-label rejection reasons, exact rejection combinations, order attempts/fills, minimum-order rejections, gross/average win/loss and net expectancy. Zero-trade win rate and expectancy are null to represent undefined statistics.
+- Simulated minimum order is explicitly configured: Reku Pro Rp30,000 and theoretical Lightning floor Rp5,000, from Reku's public help page. The current research run [40928032346](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346) was in progress when recorded; append its final artifact/metrics only after inspection.
+- No live trade, cancellation, money transfer, withdrawal, or credential use. Termux remains untested. PR #178 remains draft and unmerged; do not merge until current main/PR state is reconciled.

@@ -113,3 +113,10 @@ The adapter reads the documented public Reku API only: coin catalogue, price, bi
 - The documented legacy `/activitytrans` request returns HTTP 404. Native Reku history is explicitly marked unavailable; historical backtest uses Binance public reference candles.
 - The baseline and chronological segments still yield zero trades. No live trading code is enabled. PR #178 remains draft/unmerged and needs base-SHA reconciliation.
 - Detailed evidence and continuation steps: [EXECUTION_LOG.md](EXECUTION_LOG.md).
+
+## Implementation checkpoint — 2026-10-30 WIB
+
+- Latest code commit: `7d74015ecb99c0f1768baddd40b1643399c5bea2`. Spread parsing now rejects invalid quote types/numbers safely and has regression tests for midpoint bps, crossed/zero/negative, missing, non-finite, numeric strings and extreme magnitudes.
+- The backtest reports filter rejection combinations, signal rejection counts, order attempts/fills, minimum-order rejections and trade expectancy/win rate with undefined metrics represented as `null` when there are no trades. Simulated entry checks include configured venue minimum notional (Reku Pro Rp30,000; Lightning Rp5,000 reference).
+- CI [40928032367](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032367) and PR CI [40928041385](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385) both passed compilation and **70 offline unit tests**. Research workflow [40928032346](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346) was still running when this checkpoint was first recorded.
+- PR #178 remains draft/open/unmerged. No live order functionality was used; no Termux device validation was performed. Research status remains nonvalidated until current research artifact and independent metrics are inspected.

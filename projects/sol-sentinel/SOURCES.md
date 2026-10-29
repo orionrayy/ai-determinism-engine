@@ -115,3 +115,11 @@ The first GitHub Actions capture against `api.binance.com` returned HTTP 451 in 
 - The same snapshot compared Reku close to converted Binance SOLUSDT reference at roughly -0.1983% difference, using USD/IDR as a proxy for USDT/IDR. Venue/timestamp mismatch means this is indicative, not arbitrage.
 - The documented `/v2/orderbook?id=51` endpoint returned HTTP 400 for the SOL coin ID on that run, so that record was marked `PARTIAL`; no depth data were inferred. The code now falls back to the also-documented `/v2/orderbookall?id=51`. The latest pipeline run is testing whether that fallback succeeds.
 - This snapshot does not prove a currently-supported authenticated order API exists. Market-data access is read-only; no order endpoint is called.
+
+## Current official venue references — checked 2026-10-30
+
+- Reku crypto fee table: https://reku.id/fees/crypto — visible values include Pro buy 0.1% + 0.00555% CFX; Pro sell 0.1% + 0.21% PPh + 0.00555% CFX; Lightning buy 0% + 0.00555% CFX; Lightning sell 0% + 0.21% PPh + 0.00555% CFX. Recheck as fee/tax policies can change.
+- Reku minimum buy/sell amount: https://reku.id/help/batas-minimal-rupiah-dalam-order-jual-beli — states Rp5,000 for Lightning and Rp30,000 for Pro; page dated 2025-11-19.
+- Binance Spot REST API: https://developers.binance.com/en/docs/products/spot/rest-api — documents timestamps in milliseconds by default and separate public market-data endpoints.
+- Binance Spot trading filters: https://github.com/binance/binance-spot-api-docs/blob/master/filters.md — symbol filters include tick size, lot size/step and notional minimum. These describe Binance only and do not establish Reku order precision or rules.
+- Reku legacy public API docs: https://api.reku.id/ — runtime endpoint behavior must be rechecked. The old public `/activitytrans` route returned HTTP 404 in captured research; native historical Reku data remains unavailable/unverified.

@@ -134,3 +134,12 @@ A Reku SOL Pro screen showed: buy side selected; order type Limit Order; limit p
 - Live read-only Reku probe confirmed current query format `symbol=SOL_IDR`; order book now returns 40 bid and 40 ask levels. The test snapshot had bid IDR 1,835,000, ask IDR 1,840,000 and spread 27.210884 bps. Chart works at 5m with 84 points; the unsupported 1m probe was removed.
 - The legacy Reku `/activitytrans` endpoint returns HTTP 404. The native history collector now stops after the first 404 and writes explicit `endpoint_not_found` metadata. Native Reku OHLCV history remains blocked; backtesting still relies on Binance reference candles.
 - Draft PR #178 remains unmerged. Its base SHA differs from current `main`; reconcile before merge. No real orders or wallet effects occurred.
+
+## 2026-10-30 — Spread hardening and backtest observability
+
+- Patch commit `7d74015ecb99c0f1768baddd40b1643399c5bea2`; baseline commit `29488b5ecc55fe080980a38bd900753c7d70a135`.
+- CI runs [40928032367](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032367) and [40928041385](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385) both passed compile and 70 unit tests.
+- Hardened Reku spread input validation and added regression coverage. Investigation confirms `198.0198 bps` reflects denominator=ask for bid 99/ask 101, while midpoint convention yields 200 bps. Current source already used midpoint before the patch, so the bug was historical rather than active in this baseline.
+- Backtest/split/sensitivity JSON now retain rejection combinations, entry attempts/fills, size rejections, gross/average win/loss and net expectancy. Zero-trade win rate and expectancy are null to represent undefined statistics.
+- Explicit simulated minimum order is Pro Rp30,000, Lightning floor Rp5,000, based on Reku's public minimum-order page. The research run for this commit is [40928032346](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346); it was still in progress at initial checkpoint, so append final metrics after inspection.
+- No real orders or account operations. Termux/Android validation not performed; live mode remains prohibited.
