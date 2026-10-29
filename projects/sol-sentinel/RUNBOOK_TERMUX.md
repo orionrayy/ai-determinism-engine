@@ -138,6 +138,52 @@ Official Swap V2 order docs: https://developers.jup.ag/docs/swap/order-and-execu
 The probe prints raw input/output units and any available estimated price impact/fee fields. Convert using verified token mint decimals; do not compare raw lamports and USDC units directly. A complete cost model also requires priority fee, possible account rent, transfer-to/from-exchange costs, and eventual IDR off-ramp costs. **The probe never executes a trade.** This code path is strictly read-only and not a paper-fill or production executor.
 
 
+## Native INDODAX SOL/IDR history (public read-only)
+
+The native source uses the INDODAX pair ID and TradingView history endpoint. It does not convert SOL/IDR to USDT or apply an FX rate.
+
+Capture the latest completed 1-minute bars (up to 30 days):
+
+```sh
+python -m py_compile projects/sol-sentinel/execution_adapters.py projects/sol-sentinel/capture_indodax_history.py
+python projects/sol-sentinel/capture_indodax_history.py --symbol SOL/IDR --days 30 --output ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv --metadata-output ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv.meta.json
+```
+
+Review the sidecar and CSV hash before any analysis. The collector fails closed if the source omits expected bars, timestamps do not align, OHLCV is invalid, or a duplicate candle conflicts. A successful mocked unit test proves parsing/validation logic only; an API workflow artifact is needed to confirm endpoint behavior from a live public network.
+
+To run a native-IDR offline backtest, first verify the exact fee components shown in the current INDODAX Profile → Trading Fees page and the selected trading mode's order minimum. Set explicit fee/spread/slippage and minimum-order inputs; never reuse the Reku fee defaults for INDODAX. Example syntax (replace each placeholder with a measured/documented input before running):
+
+```sh
+python projects/sol-sentinel/paper_engine.py \
+  --csv ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv \
+  --fee-model indodax-custom \
+  --entry-fee-bps VERIFIED_ENTRY_BPS \
+  --exit-fee-bps VERIFIED_EXIT_BPS \
+  --spread-bps-round-trip MEASURED_ROUND_TRIP_SPREAD_BPS \
+  --slippage-bps-per-side DOCUMENTED_SLIPPAGE_BPS \
+  --minimum-order-notional-idr VERIFIED_MODE_MINIMUM_IDR \
+  --fee-source "INDODAX Profile/Trading Fees checked YYYY-MM-DD; spread/slippage source identified" \
+  --report-path ~/.sol-sentinel/indodax_backtest.json \
+  --db-path ~/.sol-sentinel/indodax_paper_ledger.sqlite3
+```
+
+The flags are intentionally mandatory for this source. If the exact INDODAX fee schedule or selected mode minimum is not verified, do not run it with invented values. For chronological evaluation, use the same explicit source metadata and cost inputs:
+
+```sh
+python projects/sol-sentinel/evaluate_splits.py \
+  --csv ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv \
+  --fee-model indodax-custom \
+  --entry-fee-bps VERIFIED_ENTRY_BPS \
+  --exit-fee-bps VERIFIED_EXIT_BPS \
+  --spread-bps-round-trip MEASURED_ROUND_TRIP_SPREAD_BPS \
+  --slippage-bps-per-side DOCUMENTED_SLIPPAGE_BPS \
+  --minimum-order-notional-idr VERIFIED_MODE_MINIMUM_IDR \
+  --fee-source "INDODAX fee display + dated quote measurement" \
+  --output ~/.sol-sentinel/indodax_evaluation.json
+```
+
+The existing `cost_sensitivity.py` scenarios are explicitly Reku fee-reference scenarios on Binance SOLUSDT/USDT data. They reject native INDODAX IDR history rather than relabeling it or applying the wrong venue's fee schedule. Native IDR backtests skip FX conversion; reports record source venue, pair, currency and selected fee model.
+
 ## Venue-neutral adapter contracts (mock/paper only)
 
 For the current development branch, the platform boundary and evidence requirements are documented in `PLATFORM_ADAPTER_DECISION_2026-10-30.md`. Contract code is `execution_adapters.py`; offline regression cases are `test_execution_adapters.py`.
