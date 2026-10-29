@@ -13,6 +13,10 @@ on:
       - "projects/sol-sentinel/cost_sensitivity.py"
       - "projects/sol-sentinel/reku_market.py"
       - "projects/sol-sentinel/reku_history.py"
+      - "projects/sol-sentinel/capture_indodax_history.py"
+      - "projects/sol-sentinel/test_capture_indodax_history.py"
+      - "projects/sol-sentinel/test_paper_engine.py"
+      - "projects/sol-sentinel/test_evaluate_splits.py"
       - "projects/sol-sentinel/execution_adapters.py"
       - "projects/sol-sentinel/test_execution_adapters.py"
       - "projects/sol-sentinel/test_sol_sentinel.py"
@@ -84,6 +88,14 @@ jobs:
             --symbol SOL --days 30 \
             --output research-output/REKU_SOLIDR_1m.csv \
             --metadata-output research-output/REKU_SOLIDR_1m.csv.meta.json
+
+      - name: Capture native INDODAX SOL/IDR OHLC history (public read-only)
+        continue-on-error: true
+        run: |
+          python projects/sol-sentinel/capture_indodax_history.py \
+            --symbol SOL/IDR --days 30 \
+            --output research-output/INDODAX_SOLIDR_1m.csv \
+            --metadata-output research-output/INDODAX_SOLIDR_1m.csv.meta.json
 
       - name: Run cost-aware offline backtest
         run: |
@@ -196,6 +208,20 @@ jobs:
           PY
             else
               echo "Native Reku SOL/IDR history sidecar not created; inspect the collector step log."
+            fi
+            if [ -f research-output/INDODAX_SOLIDR_1m.csv.meta.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path("research-output/INDODAX_SOLIDR_1m.csv.meta.json").read_text())
+          print("Native INDODAX SOL/IDR OHLC history capture (public read-only; NOT backtested with Reku fees):")
+          for key in ("data_status","venue","pair","input_price_currency","requested_days","count","first_open_time_utc","last_close_time_utc","captured_at_utc","dataset_sha256","error"):
+              print(f"- {key}: {meta.get(key)}")
+          print("- fx_conversion_applied:", meta.get("fx_conversion_applied"))
+          PY
+            else
+              echo "Native INDODAX SOL/IDR history sidecar not created; inspect the collector step log."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
