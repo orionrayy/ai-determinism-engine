@@ -90,3 +90,10 @@ Additional files now present:
 Latest verified CI run: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40906164183 — success for commit `41f60c53ff7801d3b3729c27f5bd338854538386`. The compile and offline unit-test steps both passed.
 
 The backtest has not yet been run against a downloaded historical CSV on the user's device. No actual profitability, exchange connectivity, Reku execution support, or goal attainment has been established. Next actions: run capture and tests in Termux, run the basic backtest and chronological evaluator with verified fee parameters, inspect the trade count and per-segment results, and keep all private data local.
+
+
+## Cost-model / research-workflow checkpoint — 2026-10-29
+
+The scanner and paper engine now model venue fee, quoted spread, and slippage as distinct parameters. The paper engine applies adverse spread and slippage adjustments to modeled fills, retains exchange fees separately, and reports execution-friction cost. Negative spread values are rejected. A free-first, manual/scheduled research workflow now captures public Binance candle history, runs the offline backtest and fixed-parameter 60/20/20 evaluation, and uploads artifacts for seven days. It does not send orders.
+
+The workflow has been committed but not manually dispatched during this session; API reachability and actual report artifacts still need validation. Never interpret the simulation as current account equity or as proof of profitability.
