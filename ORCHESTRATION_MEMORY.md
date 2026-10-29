@@ -1440,3 +1440,13 @@ This was measured after finalizing the feature branch journal at \`7e1b62df19a95
 - The explicit infrastructure decision remains Reku as an on-ramp candidate, isolated self-custody wallet, Jupiter V2 quote-only probe, and no automated signing/submission. Exact current SOL withdrawal fee/limits and an end-to-end IDR off-ramp cost remain unverified.
 - Readiness remains `RESEARCH_ONLY` / `INSUFFICIENT_EVIDENCE`. No real orders, transfers, deposits, withdrawals, private keys, or production credentials were used.
 
+
+
+### Additional official Reku transfer-availability finding (2026-10-30)
+<!-- SOL_SENTINEL_SESSION_2026-10-30_REKU_TRANSFER_STATUS -->
+
+- Official Reku update dated 2 October 2026 says Send/Receive Crypto was restored: https://reku.id/en/information/send-receive-crypto-sudah-dapat-dilakukan.
+- Official Reku notice on 2 October 2026 says IDR withdrawals/deposits were reopened: https://reku.id/en/information/layanan-withdrawal-idr-telah-dibuka. Reku reiterated on 3 October that these services were active: https://reku.id/information/buy-sell-direct-deposit-usd-staking-unstaking-kini-sudah-tersedia.
+- Thus the published service notices found do not show a blanket suspension preventing the intended Reku -> self-custody wallet route. This does **not** verify the user's current account, SOL-specific chain/network support, current withdrawal minimum/fee, processing time, or return-path deposit acceptance. The fee page does not expose a current SOL-specific value in the parsed view: https://reku.id/fees/crypto. User must confirm on the official app screens before any separately authorized transfer.
+- No SOL was bought, no wallet was connected, and no transfer/deposit/withdrawal was made in this session.
+- Infrastructure decision memo appendendum saved in `projects/sol-sentinel/INFRASTRUCTURE_DECISION_2026-10-30.md` at commit `d1803c3dd658b1eb957927d34cd6b9c0743c404d`.
