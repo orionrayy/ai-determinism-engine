@@ -616,3 +616,11 @@ Audit time: 2026-10-30T06:36:51Z. This section is an incremental update on revie
 - Live: \`DISABLED\`.
 
 Next steps: review/merge PR #185 only after independent review; inspect workflow enabled state and associated actor; wait for and capture a true \`schedule\` event on \`main\` without manual substitution; then verify the artifact includes \`status.json\` and the state branch advances from that scheduled run. Keep live trading disabled.
+
+## v1.5 follow-up — durable artifact ordering and current schedule diagnostics
+
+- A second production workflow defect was found after the initial audit: in \`.github/workflows/sol-sentinel-forward-paper.yml\`, the \`Upload forward-paper evidence\` step preceded \`Capture durable operational status\`. The uploaded archive would therefore omit \`status.json\`, even though the subsequent Step Summary could read it.
+- Separate PR [#186](https://github.com/orionrayy/ai-determinism-engine/pull/186) reorders the steps so durable status is generated before the artifact snapshot. It adds \`test_workflow_contract.py\`, asserting the order and expected \`forward-output/\` upload with 30-day retention.
+- Exact PR test run #41015701518, event \`pull_request\`, SHA \`49ae6fd78faf72185c0bfb331d65de5b5f6b1e5a\`: 221 tests passed, 0 failed; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL. Activation was skipped. PR #186 is open and not merged.
+- Main's scheduler still has no proven SOL Sentinel \`schedule\` run. Actions query for \`event=schedule\`, \`branch=main\` showed only AI Orchestrator. Official GitHub documentation: schedules run from latest default branch commit and default UTC, with 5-minute minimum; high load can delay/drop events; disabled workflows do not respond to triggers. The connected repository tooling did not expose enabled/disabled workflow state or schedule actor, leaving those as unverified configuration facts.
+- Next review sequence: PR #185 for safe test-state isolation and multi-process residual recovery; PR #186 for artifact ordering; only then verify a genuine scheduled main run, with result.json + status.json and a matching paper-state commit.
