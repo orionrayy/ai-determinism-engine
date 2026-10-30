@@ -1185,8 +1185,12 @@ class ForwardPaperOrchestrator:
                     "reasons": json.loads(signal_row["reason_json"]),
                 }
             microstructure_summary = self.depth_store.summary()
+            source_commit_sha = os.environ.get(
+                "SOL_SENTINEL_SOURCE_SHA", os.environ.get("GITHUB_SHA", "local-unpinned")
+            )
             result = {
                 "schema_version": "sol-sentinel-forward-cycle-v1",
+                "source_commit_sha": source_commit_sha,
                 "system_status": "FORWARD_PAPER_ACTIVE",
                 "cycle_id": cycle_id,
                 "started_at": iso_utc(started),
@@ -1230,7 +1234,7 @@ class ForwardPaperOrchestrator:
             self.state.finish_cycle(cycle_id, "COMPLETED", result)
             if reconciliation["consistent"]:
                 self.state.activation(
-                    commit_sha=os.environ.get("GITHUB_SHA", "local-unpinned"),
+                    commit_sha=source_commit_sha,
                     first_cycle_id=cycle_id,
                     portfolio={key: str(value) for key, value in portfolio.items()},
                 )
