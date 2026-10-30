@@ -13,6 +13,14 @@ class ForwardPaperWorkflowContractTests(unittest.TestCase):
             / "sol-sentinel-forward-paper.yml"
         ).read_text(encoding="utf-8")
 
+    def test_concurrency_preserves_pending_scheduled_invocations(self):
+        concurrency = self.workflow.index("concurrency:")
+        jobs = self.workflow.index("jobs:")
+        block = self.workflow[concurrency:jobs]
+        self.assertIn("group: sol-sentinel-forward-paper-state", block)
+        self.assertIn("cancel-in-progress: false", block)
+        self.assertIn("queue: max", block)
+
     def test_durable_status_is_generated_before_artifact_upload(self):
         capture = self.workflow.index("- name: Capture durable operational status")
         upload = self.workflow.index("- name: Upload forward-paper evidence")
