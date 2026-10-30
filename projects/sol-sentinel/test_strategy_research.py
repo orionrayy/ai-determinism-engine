@@ -9,6 +9,7 @@ from strategy_research import (
     audit_dataset,
     block_bootstrap_ci,
     run_research,
+    round_quantity_down,
     signal_at,
     prepare_features,
     wilson_interval,
@@ -17,7 +18,8 @@ from strategy_research import (
 
 def fixture_bars(count=3000):
     rows = []
-    base = 1_700_000_000_000
+    base_raw = 1_700_000_000_000
+    base = base_raw - (base_raw % (15 * 60_000))
     for i in range(count):
         close = 1_700_000.0 + i * 0.2 + (i % 9) * 0.03
         opened = base + i * ONE_MINUTE_MS
@@ -57,7 +59,11 @@ class StrategyResearchTests(unittest.TestCase):
                 "source_endpoint": "https://indodax.com/tradingview/history_v2",
                 "count": len(bars),
                 "captured_at_utc": "2026-10-30T00:00:00+00:00",
-                "market_filters": {},
+                "market_filters": {
+                    "price_tick": "1",
+                    "quantity_step": "0.00000001",
+                    "minimum_base_quantity": "0.00000001",
+                },
                 "market_quote": {},
                 "market_quote_status": "ERROR",
             }), encoding="utf-8")
@@ -103,6 +109,10 @@ class StrategyResearchTests(unittest.TestCase):
             bars[index].close_time_ms,
         )
 
+    def test_quantity_rounding_never_exceeds_computed_risk_size(self):
+        self.assertAlmostEqual(round_quantity_down(0.0123456789, "0.0001"), 0.0123)
+        self.assertEqual(round_quantity_down(0.00009, "0.0001"), 0.0)
+
     def test_bootstrap_and_wilson_report_small_samples_honestly(self):
         self.assertEqual(block_bootstrap_ci([1.0, -1.0])["status"], "INSUFFICIENT_SAMPLE")
         self.assertIsNone(wilson_interval(0, 0))
@@ -118,6 +128,11 @@ class StrategyResearchTests(unittest.TestCase):
                 "sha256": "fixture",
                 "records": len(bars),
                 "same_run_quote": {"spread_bps": 15.0},
+                "sidecar_market_filters": {
+                    "price_tick": "1",
+                    "quantity_step": "0.00000001",
+                    "minimum_base_quantity": "0.00000001",
+                },
             },
         )
         self.assertFalse(report["execution_enabled"])
