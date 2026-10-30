@@ -14,6 +14,7 @@ import json
 import math
 import random
 import statistics
+from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from bisect import bisect_right
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
@@ -100,6 +101,17 @@ def audit_dataset(csv_path: str | Path, metadata_path: str | Path) -> tuple[list
     positive = sorted(x for x in volumes if x > 0)
     p99 = positive[min(len(positive) - 1, math.ceil(0.99 * len(positive)) - 1)] if positive else None
     outliers = sum(1 for x in volumes if p99 is not None and x > p99 * 20.0)
+    filters = meta.get("market_filters")
+    if not isinstance(filters, dict):
+        raise ValueError("native pair filters are required in the metadata sidecar")
+    for field in ("price_tick", "quantity_step", "minimum_base_quantity"):
+        try:
+            value = Decimal(str(filters[field]))
+        except (KeyError, InvalidOperation, TypeError):
+            raise ValueError(f"missing or invalid native market filter: {field}")
+        if not value.is_finite() or value <= 0:
+            raise ValueError(f"native market filter {field} must be finite and positive")
+
     quality = {
         "venue": "INDODAX",
         "pair": "SOL/IDR",
@@ -317,11 +329,23 @@ def simulate_segment(
     risk_fraction: float = 0.005,
     max_exposure_fraction: float = 0.50,
     daily_loss_fraction: float = 0.03,
+    quantity_step: str = "0.00000001",
+    minimum_base_quantity: str = "0.00000001",
+    maximum_drawdown_fraction: float = 0.10,
 ) -> dict[str, Any]:
     if not (0 <= start < end <= len(bars)):
         raise ValueError("invalid segment boundaries")
     if not 0 < risk_fraction < 1:
         raise ValueError("risk_fraction must be in (0, 1)")
+    if not 0 < maximum_drawdown_fraction < 1:
+        raise ValueError("maximum_drawdown_fraction must be in (0, 1)")
+    try:
+        qty_step_dec = Decimal(str(quantity_step))
+        min_qty_dec = Decimal(str(minimum_base_quantity))
+    except InvalidOperation as exc:
+        raise ValueError("invalid quantity precision from native market metadata") from exc
+    if not qty_step_dec.is_finite() or qty_step_dec <= 0 or not min_qty_dec.is_finite() or min_qty_dec <= 0:
+        raise ValueError("quantity step and minimum base quantity must be positive")
     spec = SPECS[name]
     adverse = spread_bps_round_trip / 2.0 + slippage_bps_per_side
     friction_rate = (entry_fee_bps + exit_fee_bps + spread_bps_round_trip + 2 * slippage_bps_per_side) / 10_000.0
@@ -333,7 +357,11 @@ def simulate_segment(
     regime_counts: Counter[str] = Counter()
     entry_attempts = 0
     size_rejections = 0
+    signal_evaluations = 0
+    accepted_signals = 0
+    rejection_by_utc_hour: dict[str, Counter[str]] = defaultdict(Counter)
     daily_locked = False
+    portfolio_locked = False
     daily_start = initial_capital
     current_day = datetime.fromtimestamp(bars[start].open_time_ms / 1000, timezone.utc).date()
     peak = initial_capital
@@ -347,10 +375,10 @@ def simulate_segment(
         exit_fill = reference * (1.0 - adverse / 10_000.0)
         exit_fee = pos["quantity"] * exit_fill * exit_fee_bps / 10_000.0
         cash += pos["quantity"] * exit_fill - exit_fee
-        gross = (exit_fill - pos["entry_fill"]) * pos["quantity"]
+        gross = (reference - pos["entry_reference"]) * pos["quantity"]
         spread_cost = pos["quantity"] * (pos["entry_reference"] + reference) * spread_bps_round_trip / 2.0 / 10_000.0
         slippage_cost = pos["quantity"] * (pos["entry_reference"] + reference) * slippage_bps_per_side / 10_000.0
-        net = gross - pos["entry_fee"] - exit_fee
+        net = gross - pos["entry_fee"] - exit_fee - spread_cost - slippage_cost
         turnover += pos["quantity"] * reference
         trades.append({
             "entry_time": _utc(pos["entry_time"]),
@@ -390,9 +418,12 @@ def simulate_segment(
             qty_risk = risk_cash / risk_per_unit if risk_per_unit > 0 else 0.0
             qty_exposure = cash * max_exposure_fraction / fill
             qty_cash = cash / (fill * (1.0 + entry_fee_bps / 10_000.0))
-            quantity = min(qty_risk, qty_exposure, qty_cash)
+            raw_quantity = min(qty_risk, qty_exposure, qty_cash)
+            quantity_steps = (Decimal(str(raw_quantity)) / qty_step_dec).to_integral_value(rounding=ROUND_DOWN)
+            quantity = float(quantity_steps * qty_step_dec)
             notional = quantity * fill
-            if math.isfinite(notional) and notional >= min_notional_idr:
+            if (math.isfinite(notional) and quantity >= float(min_qty_dec)
+                    and notional >= min_notional_idr):
                 entry_fee = notional * entry_fee_bps / 10_000.0
                 cash -= notional + entry_fee
                 if pending["target_mode"] == "mean" and pending.get("target_price") and pending["target_price"] > fill:
@@ -416,6 +447,7 @@ def simulate_segment(
                     "selected_substrategy": pending["selected_substrategy"],
                 }
                 regime_counts[pending["regime"]] += 1
+                turnover += notional
             else:
                 size_rejections += 1
                 rejects["minimum_order_notional_or_sizing"] += 1
@@ -443,20 +475,30 @@ def simulate_segment(
         dd = dd_idr / peak if peak > 0 else 0.0
         max_drawdown = max(max_drawdown, dd)
         max_drawdown_idr = max(max_drawdown_idr, dd_idr)
+        if dd >= maximum_drawdown_fraction:
+            portfolio_locked = True
         equity_curve.append(equity)
 
-        if i < end - 1 and position is None and pending is None and not daily_locked:
+        if i < end - 1 and position is None and pending is None and not daily_locked and not portfolio_locked:
             signal = signal_at(name, features, i)
+            signal_evaluations += 1
             if signal["accepted"]:
+                accepted_signals += 1
                 pending = signal
             else:
+                hour = datetime.fromtimestamp(bar.close_time_ms / 1000, timezone.utc).strftime("%H")
                 for reason in signal["reasons"]:
                     rejects[reason] += 1
+                    rejection_by_utc_hour[hour][reason] += 1
 
     if position is not None:
         close_position(position, bars[end - 1].close, bars[end - 1], "segment_end_forced_close")
         position = None
         equity_curve[-1] = cash
+        final_dd_idr = max(0.0, peak - cash)
+        max_drawdown_idr = max(max_drawdown_idr, final_dd_idr)
+        if peak > 0:
+            max_drawdown = max(max_drawdown, final_dd_idr / peak)
 
     pnl = [float(x["net_pnl_idr"]) for x in trades]
     wins = [x for x in pnl if x > 0]
@@ -504,9 +546,16 @@ def simulate_segment(
         "average_holding_minutes": statistics.fmean(x["bars_held"] for x in trades) if trades else None,
         "exposure_minutes": sum(x["bars_held"] for x in trades),
         "turnover_idr": turnover,
+        "signal_evaluations": signal_evaluations,
+        "accepted_signals": accepted_signals,
         "entry_order_attempts": entry_attempts,
         "size_rejections": size_rejections,
         "signal_rejections": dict(sorted(rejects.items())),
+        "signal_rejections_by_utc_hour": {
+            hour: dict(sorted(counts.items())) for hour, counts in sorted(rejection_by_utc_hour.items())
+        },
+        "daily_loss_locked": daily_locked,
+        "portfolio_drawdown_locked": portfolio_locked,
         "trades_by_regime": {},
         "closed_trade_details": trades,
         "final_equity_idr": cash,
@@ -714,6 +763,10 @@ def run_research(
     }
     days_oos = (n - n_dev - n_val) / 1440.0
     features = prepare_features(bars)
+    market_filters = dataset.get("sidecar_market_filters") or {}
+    quantity_step = str(market_filters["quantity_step"])
+    minimum_base_quantity = str(market_filters["minimum_base_quantity"])
+    price_tick = str(market_filters["price_tick"])
     quote = dataset.get("same_run_quote") or {}
     try:
         snapshot_spread = float(quote.get("spread_bps"))
@@ -764,6 +817,8 @@ def run_research(
                     spread_bps_round_trip=cost["spread"],
                     slippage_bps_per_side=cost["slippage"],
                     min_notional_idr=min_notional_idr,
+                    quantity_step=quantity_step,
+                    minimum_base_quantity=minimum_base_quantity,
                 )
             candidates[scenario_name][name] = segments
 
@@ -822,6 +877,11 @@ def run_research(
             "exit_fee_bps": exit_fee_bps,
             "fee_sum_bps": entry_fee_bps + exit_fee_bps,
             "minimum_order_notional_idr": min_notional_idr,
+            "price_tick_idr": price_tick,
+            "quantity_step_sol": quantity_step,
+            "minimum_base_quantity_sol": minimum_base_quantity,
+            "quantity_is_rounded_down_to_exchange_step": True,
+            "market_order_price_tick_rounding": "not separately applied; fill is price-impact modeled from OHLC reference, not a limit order",
             "risk_fraction": 0.005,
             "max_exposure_fraction": 0.50,
             "daily_loss_fraction": 0.03,
