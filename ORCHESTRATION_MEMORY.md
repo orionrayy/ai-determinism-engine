@@ -2079,3 +2079,12 @@ Bid observations are highly skewed relative to median; do not size orders from t
 2. Investigate a same-cadence schedule registration refresh as a separate reviewable change only after explicit approval. Do not change cadence, disable/re-enable the workflow, or start manual cycles to simulate cron proof.
 3. After any approved registration change, require a genuine `event=schedule`, branch `main`, workflow identity match, successful run, both `result.json` and `status.json`, cycle ID, matching state-branch checkpoint and reconciled ledger before promoting to `SCHEDULED_OPERATION_VERIFIED`.
 4. Capture an actual on-device Termux Doctor JSON report. Keep strategy, microstructure and Android statuses separate from scheduler status.
+
+
+## v1.7 final PR-head CI verification — 2026-10-30T15:42:11+07:00
+
+- PR #187's latest documentation/configuration tree at head `afec3e0f0deba9ad21b91897d7043908cfacc020` has four files and seven commits ahead of `main`, zero behind. The PR remains open, mergeable and unmerged.
+- Exact-head SOL Sentinel Tests run #41027953386 succeeded: 225 unit tests passed, zero failed; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL with network skipped; `active-state-read-only-audit` was skipped because this PR does not change the active state or runtime.
+- Exact-head Orchestrator Tests run #41027953355 succeeded after the scoped Actionlint compatibility exception. The job reports 463 orchestrator tests passed, then 86 shared tests passed, and the evaluation harness passed.
+- The canonical memory and supporting operations/research documents were verified remotely on the PR branch. Main remains `6e2231c84399687c43b644056b0d5aaec57f64f8`; paper-state branch remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`.
+- The enabled workflow still has zero Sentinel runs. Schedule history remains 153 unrelated AI Orchestrator runs and zero Sentinel schedule events. Preserve `FIRST_CRON_PENDING`; no schedule registration change, activation toggle, dispatch or paper cycle has been performed.
