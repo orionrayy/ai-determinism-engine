@@ -8,3 +8,6 @@ paths:
   .github/workflows/orchestrator-agent-federation.yml:
     ignore:
       - 'unexpected key "queue" for "concurrency" section.*'
+  .github/workflows/sol-sentinel-forward-paper.yml:
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section.*'

@@ -28,9 +28,9 @@ The cycle is bounded to one observation. A scheduler invokes one cycle at a time
 
 ## Activation and scheduling
 
-The implementation branch is `feat/sol-sentinel-v1.3-integrated`. After its test workflow passes, the push-triggered `forward-paper-activation` job attempts one bounded live-data paper cycle. The initial durable database is stored on the dedicated `sol-sentinel-paper-state` branch.
+The implementation was integrated through PR #181. The general `SOL Sentinel Tests` workflow is a regression-only workflow: after PR #185 it no longer contains a `forward-paper-activation` job and must not run or write a paper cycle on push/PR events. CI tests use isolated fixtures. The durable paper database remains on the dedicated `sol-sentinel-paper-state` branch. The dedicated `.github/workflows/sol-sentinel-forward-paper.yml` workflow is the recurring state-mutating runner; it is guarded to `refs/heads/main`.
 
-The separate `.github/workflows/sol-sentinel-forward-paper.yml` workflow is configured for one cycle every five minutes (`2-57/5 * * * *`, UTC) and a manual `run`, `status`, `halt`, or `resume` operation. The forward-paper job is guarded to execute state-changing operations only when the ref is `main`; a dispatch on a feature branch cannot write the shared paper-state branch. After the SQLite WAL checkpoint/integrity check, the worker runs a read-only `--status --json` query against the same database and uploads `status.json` with `result.json`. The workflow Step Summary reports event/run/ref/commit, latest cycle and completion time, last depth observation, signal reasons, circuit-breaker/daily-loss/drawdown state, cash/SOL, realized P&L, fees, position, open-order/residual quantities, ledger counts/reconciliation, recovery and last error. Failed operations, halted/manual-review states or inconsistent reconciliation are explicitly flagged in the Step Summary. The clean integration PR #181 was merged into `main` on 2026-10-30 (merge commit `58ec3df095c60ccc6868bf0cbccb3c18384419eb`), so the workflow is now present on the default branch and eligible for GitHub's recurring schedule. The latest manual/PR activation cycle is verified; a distinct post-merge scheduled invocation is not yet confirmed. The initial push-triggered activation is independent of that recurring schedule.
+The dedicated `.github/workflows/sol-sentinel-forward-paper.yml` workflow declares one bounded cycle every five minutes (`2-57/5 * * * *`, UTC) and a manual `run`, `status`, `halt`, or `resume` operation. The forward-paper job is guarded to execute only when the ref is `main`; a dispatch against another ref cannot write the shared paper-state branch. After the SQLite WAL checkpoint/integrity check, the worker runs a read-only `--status --json` query against the same database and uploads `status.json` with `result.json`. The artifact is uploaded only after status capture. The workflow Step Summary reports event/run/ref/commit, latest cycle and completion time, last depth observation, signal reasons, circuit-breaker/daily-loss/drawdown state, cash/SOL, realized P&L, fees, position, open-order/residual quantities, ledger counts/reconciliation, recovery and last error. Failed operations, halted/manual-review states or inconsistent reconciliation are explicitly flagged in the Step Summary. The recurring schedule's presence in YAML does not establish that GitHub has enabled it or that it has executed: require a completed run with workflow name `SOL Sentinel Forward Paper`, event `schedule`, branch `main`, matching commit, result/status artifacts and a consistent state checkpoint before marking `SCHEDULED_OPERATION_VERIFIED`. Manual dispatch, push and PR tests are not cron evidence.
 
 Workflow concurrency is serialized under `sol-sentinel-forward-paper-state`, because both operations use the same SQLite checkpoint. Each invocation restores the last SQLite file, runs exactly one bounded cycle, verifies SQLite integrity, and commits the checkpoint back to the state branch. A failed network cycle still persists any collector-attempt diagnostics when a database exists. A successful activation record is written only after the cycle and portfolio reconciliation complete.
 
@@ -108,7 +108,7 @@ The current program is forward-paper only. A green software test, successful act
 
 - PR [#182](https://github.com/orionrayy/ai-determinism-engine/pull/182) merged to `main` as `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`.
 - The recurring cron is now `2-57/5 * * * *` UTC (12 runs/hour, at minutes 02, 07, ..., 57) to avoid the start-of-hour contention window. GitHub documents that scheduled events can be delayed or dropped at high-load times and only execute from the default branch. No distinct `SOL Sentinel Forward Paper` event with `event=schedule` was found after merge when checked at 2026-10-30T05:48:56Z; keep `FIRST_CRON_PENDING` until the actual event and artifact are observed.
-- The paper job now has a main-ref guard and a run Step Summary. The shared SQLite branch cannot be changed by a manual dispatch against a non-main ref. The unit-test job uses read-only contents permission; only the activation job receives write permission in the tests workflow.
+- The paper job now has a main-ref guard and a run Step Summary. The shared SQLite branch cannot be changed by a manual dispatch against a non-main ref. The `SOL Sentinel Tests` workflow has `contents: read` and no state-mutating activation job; recurring state changes belong only to the dedicated forward-paper workflow on `main`.
 - SOL Sentinel Tests now run on pushes to `main`, and PR path filters include the forward-paper workflow. Post-merge run [#41010295827](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010295827) on the exact main commit passed compile, **216 tests**, and Termux Doctor (Ubuntu: 6 PASS / 1 WARN / 0 FAIL); activation was skipped as designed.
 - The PR test on branch `fix/sol-sentinel-schedule-ci-hardening`, run [#41010214471](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010214471), also passed 216 tests; activation was skipped. This was a test event, not a paper cycle or schedule proof.
 - Durable storage remains SQLite file `state/forward-paper.sqlite3` checkpointed to the dedicated Git branch `sol-sentinel-paper-state`, not a runner-local durable disk, object store, managed database or CI cache. The branch head at review was `c3f259242d450d64b4baeb01ae083c178fd4d8b0`; its linear history includes at least 12 checkpoint commits attributed to separate run IDs from 41005882837 through 41006890361. This proves repeated persisted checkpoints, while non-flat order/fill/residual reconstruction remains unexercised because the recorded account is flat.
@@ -120,3 +120,44 @@ The current program is forward-paper only. A green software test, successful act
 ### v1.4 monitoring addition — 2026-10-30
 
 PR [#183](https://github.com/orionrayy/ai-determinism-engine/pull/183) merged as `0bcfe96c47c6d566051a48d1b031e993d96062d0`. Each scheduled or manual-main invocation now reads the durable database using `--status --json` after the integrity check and includes `status.json` in the run artifact. The operator summary now includes last cycle, observation freshness, strategy reasons, risk/circuit-breaker state, daily loss, drawdown, portfolio P&L/fees, position, open orders/residuals, ledger counts/reconciliation, recovery and last error. This status query is read-only and does not create a new market observation or cycle.
+
+
+## v1.7 operational checkpoint — 2026-10-30 15:38 WIB
+
+### Scheduler inspection result
+
+The dedicated Actions workflow is **enabled** at this inspection time. An authenticated, read-only inspection of the workflow overflow menu showed the action `Disable workflow`, not `Enable workflow`; the page had no disabled/suspended banner and reported zero runs. Repository Actions settings allow all actions and reusable workflows, default GITHUB_TOKEN permissions are read-only for contents/packages, and no schedule-specific repository restriction or warning was visible. The file on the default branch declares `2-57/5 * * * *` UTC and has the main-ref guard. These facts rule out a manually disabled workflow and a wrong default branch, but do not explain why the scheduler has emitted no Sentinel event.
+
+The cron expression was last changed in PR #182 (merge commit `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`), authored by `orionrayy`. This account is the repository owner/admin and is still active; other scheduled repository runs show actor `orionrayy`. No Sentinel run exists to expose its own actor metadata. Keep the exact cause of missing schedule dispatch unresolved rather than attributing it to a disabled workflow or suspended actor.
+
+Actions history filtered by `event=schedule` and `branch=main` returned 153 runs across two pages, all from `AI Orchestrator`; none used this workflow path. The workflow page itself reports 0 runs. Status remains `FIRST_CRON_PENDING`. No manual dispatch, disable/enable toggle, rerun, or paper cycle was invoked.
+
+### CI compatibility fix
+
+PR #187 originally failed the Orchestrator Tests Actionlint step because its pinned actionlint v1.7.12 does not recognize GitHub's documented `concurrency.queue` property. The workflow's `queue: max` and `cancel-in-progress: false` are retained. A narrow ignore rule was added to `.github/actionlint.yaml`, scoped only to the Sentinel forward-paper workflow and this exact unknown-key diagnostic. The existing Sentinel contract tests continue to assert that the queue settings remain present. On PR head `f1de2a142a8530489677fe47d9cbb8e8c6810734`, Sentinel Tests #41027680475 and Orchestrator Tests #41027680469 both completed successfully. PR #187 is still open/unmerged; no automatic merge is authorized.
+
+### State and execution boundary
+
+State branch HEAD remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. Its database Git blob remains `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09` (1,323,008 bytes), identical to the last read-only SQL-audited database. The last raw SHA-256 and SQLite findings are recorded in canonical memory and the research audit; the database binary was not re-opened for a new SQL query in this checkpoint. Do not describe the prior audit as a new audit.
+
+The last SQL audit reported integrity `ok`, zero FK violations, 17 forward cycles, 17 book observations, 5,100 levels, 17 attempts, no fills/orders/residuals, and a reconciled flat portfolio of Rp300,000 cash and 0 SOL. Synthetic non-flat recovery remains verified only in the isolated three-process temporary-DB test. Operational non-flat recovery remains unproven.
+
+### Termux and research
+
+The on-device diagnostic command is:
+
+```sh
+python projects/sol-sentinel/termux_doctor.py --json
+```
+
+It uses the standard library, performs a bounded unauthenticated GET to the public INDODAX pair catalogue, and exercises SQLite only on a temporary test database. For a no-network/offline check with tests:
+
+```sh
+python projects/sol-sentinel/termux_doctor.py --skip-network --run-tests --json
+```
+
+CI's prior Ubuntu result is 6 PASS / 1 WARN / 0 FAIL; physical Android/Termux remains `NOT_TESTED`. Research remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; 17 depth observations are too short and lack exchange timestamps, prints and queue depletion for slippage calibration. The 10 bps per-side assumption remains unvalidated. Live trading remains `DISABLED`.
+
+### Next step
+
+The current evidence does not justify a workflow enablement toggle. A same-cadence schedule-registration refresh may be prepared as a separate reviewable change, but it must not be applied until explicitly approved. A genuine scheduled run on `main`, both result/status artifacts and a matching durable state checkpoint are still required for `SCHEDULED_OPERATION_VERIFIED`.

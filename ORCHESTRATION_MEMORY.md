@@ -1988,3 +1988,103 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - PR #186 head \`86c50783e1e6f850c74aa9f24bc75615773d4f12\`: Sentinel run #41016440890 passed 224 tests, 0 failures, including five workflow contract tests. PRs remain open, unmerged.
 - Main HEAD remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; state HEAD remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`.
 - At 2026-10-30T07:13:28Z (14:13 WIB), schedule history query \`event=schedule&branch=main\` still showed no run matching the Sentinel workflow; public workflow page showed 0 runs. \`FIRST_CRON_PENDING\` remains.
+
+## v1.6 verified integration and scheduler checkpoint — 2026-10-30T08:21:42Z (15:21:42 WIB)
+
+### Repository and integration
+
+- Current main HEAD: 6e2231c84399687c43b644056b0d5aaec57f64f8.
+- PR #181 merged as 58ec3df095c60ccc6868bf0cbccb3c18384419eb; PR #182 as 8c8e0c0362161ec6644ba44fa538d55dcb9fe18c; PR #183 as 0bcfe96c47c6d566051a48d1b031e993d96062d0; PR #184 as 161a3909438b95de8485af001613481588f94594; PR #185 as b7f9b190ec61502c23fe1e1721db6ab329795636; PR #186 as 6e2231c84399687c43b644056b0d5aaec57f64f8.
+- PR #185 and #186 are both closed/merged. PR #178 and #180 are closed, not merged; do not revive them.
+- Post-merge SOL Sentinel Tests run [#41020901299](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41020901299) is a push run on main at the exact current SHA, conclusion success. The unit job reports 225 tests passed, 0 failed. This is CI regression evidence, not a scheduled paper execution.
+
+### PR reliability changes on main
+
+- PR #185 removes the old push/PR forward-paper-activation state-mutating job from the general tests workflow. CI is now regression-only and must not restore, run or commit the active paper database. It also adds an isolated three-process SQLite recovery test using a temporary database.
+- PR #186 adds status.json before artifact upload, gates paper-state persistence on successful SQLite WAL checkpoint/integrity validation, emits a safe structured status on integrity failure, and configures bounded queue: max in the single-writer concurrency group.
+- Main regression log confirms the three-process BUY/SELL partial-fill/residual recovery test passes. Operator tests pass for persistent daily-loss breaker, HALT persistence, pending BUY residual cancellation, RESUME after ledger reconciliation, and rejection of unattributed inventory.
+
+### First actual cron status
+
+- Workflow: .github/workflows/sol-sentinel-forward-paper.yml; cron: 2-57/5 * * * * UTC.
+- A fresh query of Actions runs filtered by event=schedule&branch=main returned 153 runs across pages 1 and 2. All 153 were AI Orchestrator at .github/workflows/orchestrator.yml; zero matched SOL Sentinel Forward Paper or the Sentinel workflow path. Latest returned scheduled run was #41019077386 at 2026-10-30T07:16:28Z. Workflow file's latest commit is current main SHA at 07:34:20Z, so multiple five-minute slots after that commit elapsed without a Sentinel schedule run.
+- FIRST_CRON_PENDING remains. Workflow enabled/disabled state and exact schedule actor are NOT VERIFIED through the read-only GitHub API connection. Do not guess, do not count push/PR/manual runs, and do not dispatch a mutating cycle to simulate cron proof. Repository Actions overall is active because AI Orchestrator scheduled runs exist; that fact does not prove this workflow is enabled.
+
+### Active paper state — read-only evidence
+
+- State branch HEAD remains c3f259242d450d64b4baeb01ae083c178fd4d8b0; database blob SHA a9bbe1ae63aa1aa496fe000f23d30d4259de1c09; file size 1,323,008 bytes.
+- Exact raw database SHA-256 from the successful read-only audit: 149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c.
+- Audit run [#41018963015](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41018963015), job active-state-read-only-audit, passed on PR #185 with contents: read, checkout persist-credentials: false, SQLite URI mode=ro, and PRAGMA query_only=ON. integrity_check=ok, foreign-key violations 0, WAL journal, ledger schema 1.
+- Counts: 17 forward cycles, 10 signals, 1 daily risk row, 2 control rows, 1 account, 17 depth observations, 5,100 depth levels, 17 attempts; 0 execution orders, fills, events, execution cycles, position rows or residuals.
+- Paper account remains flat: Rp300,000 cash, 0 SOL, 0 fees, 0 realized P&L, zero open orders and fills. Cash/SOL reconcile with the empty fill journal. This is flat-state persistence only; it does not demonstrate non-flat operational recovery.
+
+### Synthetic recovery and operator controls
+
+- The integrated test runs A/B/C in three distinct Python processes sharing only a temporary SQLite DB. A creates a partial BUY (2/5) and partial SELL (1/2), two residuals and 1 SOL inventory; B restores and fills the remaining quantities; C restores again and verifies both orders filled, 4 fill rows, 0 residuals, SOL inventory 3, positive fees, consistent replay, duplicate replay suppression and SQLite/FK integrity.
+- Classification: NON_FLAT_SYNTHETIC_RECOVERY_VERIFIED; NON_FLAT_OPERATIONAL_RECOVERY_VERIFIED remains unproven because the live paper account has no fills or non-flat position.
+- HALT/RESUME and daily-loss circuit-breaker persistence tests pass in the 225-test main suite. These are isolated integration tests, not operator actions against the active account.
+
+### Termux and research
+
+- Ubuntu CI Termux Doctor: 6 PASS / 1 WARN / 0 FAIL; network branch is skipped in the --skip-network CI smoke. Physical Android/Termux remains NOT_TESTED.
+- The persisted 17-book dataset remains a 13m42s collector-time sample with 0 exchange timestamps, 0 trade-print linkage and 0 queue depletion linkage. Spread mean 9.634764 bps, median 11.105374 bps, P90 16.066237 bps, P95 16.071871 bps. Visible quote depth within ±25 bps: bid mean Rp179.924m / median Rp57.934m; ask mean Rp44.833m / median Rp49.740m. These are descriptive sample statistics only.
+- An additional single public INDODAX depth read during this audit returned 150 bid and 150 ask levels, spread 15.694144 bps, and visible quote notional within ±25 bps of midpoint of about Rp270.716m bid / Rp93.035m ask. It was not written to the paper DB, contains no exchange-side timestamp, and is not a fill/slippage observation.
+- Current strategy research classification remains NO_TRADE / INSUFFICIENT_EVIDENCE. Prior recorded rejection reasons include 15m_trend_not_confirmed and 1m_momentum_exhaustion_or_missing; no new signal evaluation was produced by this read-only audit. Preserve frozen baseline parameters and do not force trades.
+- LIVE_TRADING=DISABLED. No order endpoint, signer, credential, wallet or financial transfer path was invoked.
+
+### Immediate remediation
+
+1. Inspect the workflow page's exact enablement state and schedule actor using an authenticated browser session; the read-only API cannot expose either in the current connector path.
+2. If disabled, enable only this workflow. If enabled, investigate its actor/schedule registration using the actual visible configuration and GitHub's documented recovery path; do not alter the cron interval without evidence.
+3. Wait for and verify a genuine schedule run on main, with result.json, status.json, cycle ID, matching state checkpoint and hash; then update this checkpoint.
+4. Execute the on-device Termux Doctor command in RUNBOOK_TERMUX.md; keep Android status unverified until device output is captured.
+
+
+## v1.7 authenticated scheduler and CI checkpoint — 2026-10-30T15:38:36+07:00
+
+### Repository and PR reconciliation
+
+- Current default branch remains `main`, HEAD `6e2231c84399687c43b644056b0d5aaec57f64f8`; repository metadata confirms default_branch=main and repository is not disabled.
+- PRs #181–#186 remain merged: #181 `58ec3df095c60ccc6868bf0cbccb3c18384419eb`; #182 `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`; #183 `0bcfe96c47c6d566051a48d1b031e993d96062d0`; #184 `161a3909438b95de8485af001613481588f94594`; #185 `b7f9b190ec61502c23fe1e1721db6ab329795636`; #186 `6e2231c84399687c43b644056b0d5aaec57f64f8`. PR #178 and #180 remain closed/unmerged.
+- PR #187 remains open and unmerged, mergeable, base main at `6e2231c84399687c43b644056b0d5aaec57f64f8`. Its v1.7 branch update now contains four files: the three continuity documents plus a narrowly scoped Actionlint configuration exception. Current branch head at the time of this append is `f1de2a142a8530489677fe47d9cbb8e8c6810734`.
+- Exact-head checks on `f1de2a142a8530489677fe47d9cbb8e8c6810734`: SOL Sentinel Tests run #41027680475 succeeded; Orchestrator Tests run #41027680469 succeeded. Earlier Orchestrator Tests #41026206804 failed only at Actionlint because pinned actionlint v1.7.12 did not recognize GitHub's `concurrency.queue` key in the Sentinel workflow.
+- The root cause of that CI failure was a linter compatibility mismatch, not invalid GitHub workflow syntax. GitHub's documented `queue: max` behavior is retained. `.github/actionlint.yaml` now scopes the exact known diagnostic suppression only to `.github/workflows/sol-sentinel-forward-paper.yml`; the pre-existing path-scoped suppressions for the two orchestrator workflows remain. The Sentinel workflow contract tests continue to assert `queue: max` and `cancel-in-progress: false`. This is a lint-only change, not a runtime/scheduler change.
+
+### Authenticated workflow inspection
+
+- Read-only inspection used the authenticated GitHub browser profile. On the dedicated workflow page the overflow menu showed `Disable workflow` (not `Enable workflow`), with an active `Run workflow` control, and no disabled/suspended banner. This establishes the workflow is enabled at inspection time. The workflow page reported zero workflow runs.
+- Repository Actions settings showed “Allow all actions and reusable workflows”; the full-SHA pin requirement was unchecked; first-time-contributor approval was selected; default GITHUB_TOKEN permissions were read-only for contents/packages; artifact/log retention was 90 days. No schedule-specific repository restriction or notice was visible. The workflow itself explicitly requests `contents: write` in YAML for the dedicated state-commit job; the repository default read-only token permission is not by itself evidence of a blocker.
+- Default branch `main` and the workflow file on that branch are verified. The cron is `2-57/5 * * * *` UTC. The dedicated runner is main-ref guarded, bounded to one cycle, uses the shared state concurrency group and performs a SQLite integrity gate before state persistence.
+- The commit which changed the cron expression to its current staggered form was PR #182 merge commit `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`, whose author login is `orionrayy`. This identifies the user associated with the most recent cron syntax change. The account is the repository owner/admin and remains active: other repository scheduled events carry actor and triggering_actor `orionrayy`, including AI Orchestrator run #41019077386. No Sentinel schedule run exists from which to read a Sentinel-specific actor field; do not represent the actor metadata as directly observed on a Sentinel run.
+- Two pages of `event=schedule&branch=main` history contain 153 events total; all 153 belong to `AI Orchestrator` at `.github/workflows/orchestrator.yml`. None belongs to `SOL Sentinel Forward Paper` or its workflow path. Latest returned unrelated run #41019077386 was created at `2026-10-30T07:16:28Z`, actor `orionrayy`, conclusion success. The workflow's own page still reports zero runs.
+- Scheduler classification remains `FIRST_CRON_PENDING`. Enablement is verified as enabled; default-branch placement, cron syntax and repository Actions policy have no visible blocker; the associated cron editor/actor is identified and appears active. The exact reason GitHub has not emitted a Sentinel schedule event remains unresolved. Do not label this a confirmed GitHub platform defect, disabled workflow, or actor suspension. No workflow enable/disable action, manual dispatch, rerun, or paper cycle was performed.
+
+### Persistent state and operational safety
+
+- State branch remains `sol-sentinel-paper-state` at `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. A fresh Git tree read still identifies `state/forward-paper.sqlite3` as blob `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, size 1,323,008 bytes. This is byte-identical at the Git object level to the last SQL-audited DB.
+- Last raw SHA-256 remains `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`. The prior read-only audit #41018963015 reported SQLite `integrity_check=ok`, 0 FK violations, WAL mode, schema 1, 17 cycles, 17 depth observations / 5,100 levels, 17 attempts, zero execution orders/fills/residuals and a flat reconciled portfolio (Rp300,000 cash; 0 SOL; no fees or realized P&L). Binary contents were not re-opened for a new SQL pass in this checkpoint; the unchanged Git blob SHA and size establish the inspected file is the same artifact as the prior audit. Do not describe this as a newly executed SQL query.
+- `NON_FLAT_SYNTHETIC_RECOVERY_VERIFIED` remains true from the merged three-process temporary-DB test. `NON_FLAT_OPERATIONAL_RECOVERY_VERIFIED` remains unproven; the active ledger is flat.
+- No active state branch or database write was performed.
+
+### Termux and research boundary
+
+- Current `termux_doctor.py` is stdlib-only, has read-only bounded public INDODAX pair metadata GET, checks Termux/Python/runtime/memory/disk/module compilation and exercises SQLite close/reopen/idempotent replay on a temporary DB. Optional flags include `--json`, `--skip-network`, `--run-tests`, `--data`, `--expected-sha256`, and bounded `--timeout`.
+- Prior Ubuntu CI Termux Doctor result remains 6 PASS / 1 WARN / 0 FAIL with the public network probe skipped in that smoke. Physical Android/Termux remains `NOT_TESTED`; do not infer device success.
+- The 17 persisted depth observations remain a short 13m42s sample with no exchange timestamps, trade prints, queue-depletion linkage or realized fills. The earlier spread and ±25 bps depth statistics remain descriptive only; 10 bps per-side slippage remains uncalibrated.
+- Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`. Existing rejection telemetry and the historical zero-trade OOS result do not establish positive expectancy. No strategy settings or OOS boundaries were changed. `LIVE_TRADING=DISABLED`.
+
+### Outstanding root cause and next controlled action
+
+1. Preserve the current enabled setting; no toggle is justified by the evidence.
+2. Investigate a same-cadence schedule registration refresh as a separate reviewable change only after explicit approval. Do not change cadence, disable/re-enable the workflow, or start manual cycles to simulate cron proof.
+3. After any approved registration change, require a genuine `event=schedule`, branch `main`, workflow identity match, successful run, both `result.json` and `status.json`, cycle ID, matching state-branch checkpoint and reconciled ledger before promoting to `SCHEDULED_OPERATION_VERIFIED`.
+4. Capture an actual on-device Termux Doctor JSON report. Keep strategy, microstructure and Android statuses separate from scheduler status.
+
+
+## v1.7 final PR-head CI verification — 2026-10-30T15:42:11+07:00
+
+- PR #187's latest documentation/configuration tree at head `afec3e0f0deba9ad21b91897d7043908cfacc020` has four files and seven commits ahead of `main`, zero behind. The PR remains open, mergeable and unmerged.
+- Exact-head SOL Sentinel Tests run #41027953386 succeeded: 225 unit tests passed, zero failed; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL with network skipped; `active-state-read-only-audit` was skipped because this PR does not change the active state or runtime.
+- Exact-head Orchestrator Tests run #41027953355 succeeded after the scoped Actionlint compatibility exception. The job reports 463 orchestrator tests passed, then 86 shared tests passed, and the evaluation harness passed.
+- The canonical memory and supporting operations/research documents were verified remotely on the PR branch. Main remains `6e2231c84399687c43b644056b0d5aaec57f64f8`; paper-state branch remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`.
+- The enabled workflow still has zero Sentinel runs. Schedule history remains 153 unrelated AI Orchestrator runs and zero Sentinel schedule events. Preserve `FIRST_CRON_PENDING`; no schedule registration change, activation toggle, dispatch or paper cycle has been performed.
