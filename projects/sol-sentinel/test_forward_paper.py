@@ -95,6 +95,17 @@ class FakeDepthClient:
         return parse_depth(payload, observed_at=utc_now())
 
 
+class OfficialIndodaxProFeeScheduleTests(unittest.TestCase):
+    def test_default_forward_paper_fees_match_effective_october_2026_idr_all_in_schedule(self):
+        config = ForwardPaperConfig()
+        self.assertEqual(config.fee_buy_bps, Decimal("20.555"))
+        self.assertEqual(config.fee_sell_bps, Decimal("41.555"))
+        self.assertEqual(config.fee_buy_bps + config.fee_sell_bps, Decimal("62.110"))
+
+    def test_pro_minimum_is_separate_from_public_pair_api_minimum(self):
+        self.assertEqual(ForwardPaperConfig().mode_minimum_notional_idr, Decimal("25000"))
+
+
 class ForwardPaperIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
