@@ -509,6 +509,10 @@ class RiskSupervisor:
             reasons.append("maximum_drawdown_reached")
         if exposure > self.config.max_exposure_fraction:
             reasons.append("portfolio_exposure_above_limit")
+        if spread > self.config.max_spread_bps:
+            reasons.append("spread_above_limit")
+        if age < 0 or age > self.config.max_depth_age_seconds:
+            reasons.append("depth_snapshot_stale")
         control = self.state.control()
         operating = control.get("operating_state", "ACTIVE")
         if operating == "MANUAL_REVIEW_REQUIRED":
@@ -777,18 +781,22 @@ class ForwardPaperOrchestrator:
                 raise ForwardPaperError(f"exchange order-book timestamp outside freshness window: {exchange_age}")
         if snapshot.venue != "INDODAX" or snapshot.symbol != "SOL/IDR":
             raise ForwardPaperError("depth snapshot venue/pair identity mismatch")
-        if snapshot.spread_bps > self.config.max_spread_bps:
-            raise ForwardPaperError(f"quoted spread {snapshot.spread_bps} bps exceeds paper entry safety limit")
+        # A wide but valid book is still useful research evidence. The risk gate
+        # blocks/cancels entry orders; collection and monitoring continue.
         return snapshot
 
     def _fetch_history(self, market: MarketSpec, now: datetime) -> list[MarketCandle]:
         now_ms = int(now.timestamp() * 1000)
         end_ms = (now_ms // ONE_MINUTE_MS) * ONE_MINUTE_MS
-        start_ms = end_ms - self.config.history_minutes * ONE_MINUTE_MS
+        # Anchor the first bar to a UTC 15m boundary. The latest completed
+        # candle remains current; the fetched history may exceed the minimum
+        # lookback by up to 14 bars to preserve exact multi-timeframe alignment.
+        start_ms = ((end_ms - self.config.history_minutes * ONE_MINUTE_MS) // 900_000) * 900_000
+        expected_count = (end_ms - start_ms) // ONE_MINUTE_MS
         candles = self.market_data.get_history(market, start_ms, end_ms, interval_minutes=1, now_ms=now_ms)
-        if len(candles) != self.config.history_minutes:
+        if len(candles) != expected_count:
             raise ForwardPaperError(
-                f"native history count mismatch: expected {self.config.history_minutes}, got {len(candles)}"
+                f"native history count mismatch: expected {expected_count}, got {len(candles)}"
             )
         latest = candles[-1]
         age = Decimal(str((now_ms - latest.close_time_ms) / 1000))
@@ -850,6 +858,12 @@ class ForwardPaperOrchestrator:
         qty = portfolio["sol_quantity"]
         position = self.state.position()
         if qty <= 0:
+            if position and position["status"] == "PENDING":
+                pending_order = self.ledger.find_order_by_client_order_id(position["entry_order_id"])
+                if pending_order and pending_order["state"].value in (
+                    "OPEN_SIMULATED", "PARTIALLY_FILLED_SIMULATED", "RECOVERY_REQUIRED"
+                ):
+                    return position
             if position and position["status"] != "CLOSED":
                 self.state.close_position()
             return self.state.position()
@@ -992,16 +1006,25 @@ class ForwardPaperOrchestrator:
         actions: list[str] = []
         try:
             actions.extend(self._resolve_pending_intents())
+            # Evaluate the breaker before processing residual BUYs. Protective
+            # SELL residuals remain eligible so a halt cannot trap inventory.
+            risk_before_execution = self.risk.evaluate(
+                self.ledger.portfolio(), snapshot, self._active_open_orders(),
+                now=self.now().astimezone(UTC),
+            )
+            if (
+                risk_before_execution.state in ("HALTED", "MANUAL_REVIEW_REQUIRED")
+                or "spread_above_limit" in risk_before_execution.reasons
+            ):
+                actions.extend(
+                    "cancelled_entry:" + order_id
+                    for order_id in self.risk.cancel_entry_residuals(self.ledger, at=self.now().astimezone(UTC))
+                )
             order_results = self._process_open_orders(snapshot)
             portfolio = self.ledger.portfolio()
             risk_decision = self.risk.evaluate(
                 portfolio, snapshot, self._active_open_orders(), now=self.now().astimezone(UTC)
             )
-            if risk_decision.state in ("HALTED", "MANUAL_REVIEW_REQUIRED"):
-                actions.extend(
-                    "cancelled_entry:" + order_id
-                    for order_id in self.risk.cancel_entry_residuals(self.ledger, at=self.now().astimezone(UTC))
-                )
             position = self._sync_position(latest.close_time_ms)
             exit_intent = self._manage_exit(
                 market=market, snapshot=snapshot, candle_close_ms=latest.close_time_ms,
@@ -1078,8 +1101,23 @@ class ForwardPaperOrchestrator:
             risk_after = self.risk.evaluate(
                 portfolio, snapshot, self._active_open_orders(), now=self.now().astimezone(UTC)
             )
+            signal_key = digest({
+                "strategy": STRATEGY_VERSION, "config": self.config.config_hash,
+                "candle_close_ms": latest.close_time_ms,
+            })[:40]
+            signal_row = self.state.get_signal(signal_key)
+            signal_report = None
+            if signal_row is not None:
+                signal_report = {
+                    "signal_id": signal_key,
+                    "decision": signal_row["decision"],
+                    "side": signal_row["side"],
+                    "reasons": json.loads(signal_row["reason_json"]),
+                }
+            microstructure_summary = self.depth_store.summary()
             result = {
                 "schema_version": "sol-sentinel-forward-cycle-v1",
+                "system_status": "FORWARD_PAPER_ACTIVE",
                 "cycle_id": cycle_id,
                 "started_at": iso_utc(started),
                 "completed_at": iso_utc(self.now().astimezone(UTC)),
@@ -1097,13 +1135,8 @@ class ForwardPaperOrchestrator:
                 "depth_request_latency_ms": latency,
                 "execution_snapshot_id": snapshot.snapshot_id,
                 "spread_bps": str(snapshot.spread_bps),
-                "signal": json.loads(self.state.get_signal(digest({
-                    "strategy": STRATEGY_VERSION, "config": self.config.config_hash,
-                    "candle_close_ms": latest.close_time_ms,
-                })[:40])["reason_json"]) if self.state.get_signal(digest({
-                    "strategy": STRATEGY_VERSION, "config": self.config.config_hash,
-                    "candle_close_ms": latest.close_time_ms,
-                })[:40]) else [],
+                "signal": signal_report,
+                "microstructure_summary": microstructure_summary,
                 "actions": actions,
                 "orders_processed": order_results,
                 "new_order_execution": new_execution,
