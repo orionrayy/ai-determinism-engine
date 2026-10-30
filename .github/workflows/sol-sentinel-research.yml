@@ -24,6 +24,8 @@ on:
       - "projects/sol-sentinel/test_capture_history.py"
       - "projects/sol-sentinel/jupiter_quote_probe.py"
       - "projects/sol-sentinel/test_jupiter_quote_probe.py"
+      - "projects/sol-sentinel/strategy_research.py"
+      - "projects/sol-sentinel/test_strategy_research.py"
   workflow_dispatch:
     inputs:
       days:
@@ -63,7 +65,7 @@ jobs:
 
       - name: Compile and test
         run: |
-          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py projects/sol-sentinel/reku_history.py projects/sol-sentinel/jupiter_quote_probe.py projects/sol-sentinel/execution_adapters.py
+          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py projects/sol-sentinel/reku_history.py projects/sol-sentinel/jupiter_quote_probe.py projects/sol-sentinel/execution_adapters.py projects/sol-sentinel/strategy_research.py projects/sol-sentinel/test_strategy_research.py
           python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 
       - name: Capture public history and dated FX reference (bounded retries)
@@ -331,6 +333,31 @@ jobs:
               echo "Native INDODAX SOL/IDR history sidecar not created; inspect the collector step log."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Evaluate native strategy families and capital-target feasibility
+        run: |
+          python projects/sol-sentinel/strategy_research.py \
+            --csv research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv \
+            --metadata research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv.meta.json \
+            --output research-output/native-indodax-current-run/strategy_research.json
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/native-indodax-current-run/strategy_research.json").read_text())
+          print()
+          print("### Native INDODAX strategy-family evaluation")
+          print("- Dataset SHA-256:", report["dataset"]["sha256"])
+          print("- Chronological splits:", report["chronological_splits"]["counts"])
+          print("- Locked baseline implementation SHA-256:", report["locked_baseline_v1"]["implementation_sha256"])
+          for scenario, metrics in report["locked_baseline_v1"]["scenarios"].items():
+              print(f"- Baseline {scenario}: trades={metrics['trades']}, signals={metrics['signal_evaluations']}, candidates={metrics['signal_candidates']}, rejections={metrics['signal_rejection_counts']}")
+          for name, outcome in report["candidate_selection"].items():
+              print(f"- {name}: {outcome['status']}; reasons={outcome['rejection_reasons']}")
+          print("- Promoted candidate:", report["promoted_candidate"])
+          print("- 24h target analysis:", report["target_feasibility"]["monte_carlo"]["status"])
+          print("- Live execution:", report["execution_enabled"])
+          print("- Active paper state accessed:", report["paper_state_accessed"])
+          PY
 
       - name: Upload research artifacts
         if: always()
