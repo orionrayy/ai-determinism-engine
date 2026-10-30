@@ -970,7 +970,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "bars": quality["records"],
             "splits": report["chronological_splits"]["counts"],
             "locked_baseline_trades": {
-                key: value["trades"] for key, value in report["locked_baseline_v1"].items()
+                key: value["trades"] for key, value in report["locked_baseline_v1"]["scenarios"].items()
             },
             "candidate_status": report["candidate_selection"],
             "promoted_candidate": report["promoted_candidate"],
