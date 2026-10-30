@@ -2269,3 +2269,21 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Target 4: paired shadow UI/source exists; two-physical-device shadow test remains NOT RUN.
 - Target 6: 21-scenario gameplay runbook exists; no remote gameplay acceptance. Local P2 baseline, simulation barrier/guest-thread proof and stable read-only gameplay state probes remain outstanding.
 - All release interlocks remain closed: `gameplay_input_injection_enabled=false`, `simulation_barrier_verified=false`, `multiplayer_playable=false`, `external_acceptance_gates_complete=false`, `trusted_private_lan_only=true`, `wan_or_public_wifi_enabled=false`. Keep PR draft; no merge or playable claim.
+
+
+### Shaolin Monks LAN Co-op — automatic Android/native log integration checkpoint 2026-10-31
+
+- Implementation repo: `orionrayy/project-memory-and-database`; PR #6 remains OPEN / DRAFT / UNMERGED. Exact latest branch head: `d7f0281ee27bbfdfa64dfc935e44c2ce817f7d35`; branch `feat/shaolin-coop-shadow-input-experiment`.
+- Added `scripts/patch_coop_diagnostic_logging.py` (Git blob `5accb0d8a7101c01967021947f5e02fd8be3efc9`) to patch the generated native LAN diagnostic UI and pinned Android `ShaolinMonksActivity.java`.
+- Automatic files in `/storage/emulated/0/ShaolinMonks/` when shared/all-files storage permission is granted:
+  - `co-op-session.jsonl`: LAN page open, host/join attempt/outcome, session state snapshots, peer endpoint, one-second connected heartbeat, session stop, synthetic shadow P1/P2 submit/pair/result and worker errors.
+  - `co-op-android.jsonl`: process start, activity resume/pause/destroy, focus changes, storage access checks, app/device/API/ABI metadata and network available/lost/capability events. Site-local/link-local/loopback addresses only; no Wi-Fi SSID/password, public IP or session token.
+  - Each stream rotates at 8 MiB, active plus four numbered archives (.1–.4). The two writers use separate files to avoid concurrent append races.
+- LAN page now displays the two log paths. Documentation: `acceptance/COOP-DIAGNOSTIC-LOGGING.md`; acceptance README updated. Unit test file `tests/test_patch_coop_diagnostic_logging.py` covers writer/lifecycle instrumentation, idempotence and fail-closed anchor handling. SHADOW-01 matrix now traces these test functions.
+- Workflow applies the logging patch twice, checks its pinned Git blob, runs regression tests, then verifies native `libmain.so` contains session logging markers and every DEX contains Android lifecycle/network logging markers. APK manifest lists logging output paths/rotation/scope.
+- CI troubleshooting:
+  - Run #41110956870 on head `630cb899004a2dadfa813c202c637e01f1276eaa` completed failure with zero jobs; workflow name fell back to the file path, and inspection found stale duplicated PowerShell/Dex verification text appended at the end of the YAML. This was a workflow syntax problem, not an APK/compiler result.
+  - Reconstructed the entire workflow tail with exactly one APK verification step, one APK artifact upload and one failure-log upload. The latest valid workflow #41111231442 targets current head `d7f0281...`, event `pull_request`, status QUEUED at checkpoint. No jobs/artifacts yet. Do not send any older artifact as the latest logging-enabled APK.
+- In-app user test checklist once the correct APK is produced: open Options → LAN CO-OP; host on phone A; join from phone B by local IPv4 on a trusted private Wi-Fi/hotspot; check RUNNING and peer state; both tap RUN PAIRED INPUT EXCHANGE within four seconds; repeat three fresh sessions; STOP/RESET; optionally observe disconnect/reconnect. Shadow uses only one synthetic tick and never injects into the game.
+- Current logging does not fabricate raw UDP RTT/loss/retransmission data because the in-app worker does not expose those counters. Termux raw UDP probe remains the independent link calibration source.
+- Target3–6 device gates remain incomplete: active save/profile allowlist unverified, two-phone shadow acceptance not yet run, physical 60/30Hz calibration not run, actual 21-scenario gameplay not run. All release interlocks remain closed: gameplay injection false, simulation barrier false, multiplayer playable false, external gates false, trusted-private-LAN true, WAN/public-Wi-Fi false.
