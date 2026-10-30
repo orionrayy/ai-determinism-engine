@@ -1,0 +1,342 @@
+name: SOL Sentinel Research
+
+on:
+  push:
+    branches:
+      - feat/sol-sentinel-paper-trader-v1
+    paths:
+      - ".github/workflows/sol-sentinel-research.yml"
+      - "projects/sol-sentinel/sol_sentinel.py"
+      - "projects/sol-sentinel/capture_history.py"
+      - "projects/sol-sentinel/paper_engine.py"
+      - "projects/sol-sentinel/evaluate_splits.py"
+      - "projects/sol-sentinel/cost_sensitivity.py"
+      - "projects/sol-sentinel/reku_market.py"
+      - "projects/sol-sentinel/reku_history.py"
+      - "projects/sol-sentinel/capture_indodax_history.py"
+      - "projects/sol-sentinel/test_capture_indodax_history.py"
+      - "projects/sol-sentinel/test_paper_engine.py"
+      - "projects/sol-sentinel/test_evaluate_splits.py"
+      - "projects/sol-sentinel/execution_adapters.py"
+      - "projects/sol-sentinel/test_execution_adapters.py"
+      - "projects/sol-sentinel/test_sol_sentinel.py"
+      - "projects/sol-sentinel/test_reku_history.py"
+      - "projects/sol-sentinel/test_capture_history.py"
+      - "projects/sol-sentinel/jupiter_quote_probe.py"
+      - "projects/sol-sentinel/test_jupiter_quote_probe.py"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Number of recent days for public SOLUSDT 1m research data (3 days is a smoke test; 7+ is preferred for evaluation)
+        required: true
+        type: choice
+        options:
+          - "3"
+          - "7"
+          - "14"
+          - "30"
+        default: "30"
+  schedule:
+    - cron: "15 14 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sol-sentinel-research-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  capture-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CAPTURE_DAYS: ${{ inputs.days || '30' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile and test
+        run: |
+          python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py projects/sol-sentinel/reku_history.py projects/sol-sentinel/jupiter_quote_probe.py projects/sol-sentinel/execution_adapters.py
+          python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
+
+      - name: Capture public history and dated FX reference (bounded retries)
+        run: |
+          mkdir -p research-output
+          python projects/sol-sentinel/capture_history.py \
+            --symbol SOLUSDT --interval 1m --days "$CAPTURE_DAYS" \
+            --output research-output/SOLUSDT_1m.csv
+
+      - name: Probe Reku quote, order-book fallback, and native chart history
+        continue-on-error: true
+        run: |
+          python projects/sol-sentinel/reku_market.py \
+            --symbol SOL \
+            --binance-csv research-output/SOLUSDT_1m.csv \
+            --output research-output/reku_sol_idr_market.json
+
+      - name: Capture native Reku SOL/IDR activity history
+        continue-on-error: true
+        run: |
+          python projects/sol-sentinel/reku_history.py \
+            --symbol SOL --days 30 \
+            --output research-output/REKU_SOLIDR_1m.csv \
+            --metadata-output research-output/REKU_SOLIDR_1m.csv.meta.json
+
+      - name: Capture native INDODAX SOL/IDR OHLC history (public read-only)
+        continue-on-error: true
+        run: |
+          python projects/sol-sentinel/capture_indodax_history.py \
+            --symbol SOL/IDR --days 30 \
+            --output research-output/INDODAX_SOLIDR_1m.csv \
+            --metadata-output research-output/INDODAX_SOLIDR_1m.csv.meta.json
+
+      - name: Validate and evaluate current-run native INDODAX SOL/IDR
+        run: |
+          set -euo pipefail
+          SOURCE="research-output/INDODAX_SOLIDR_1m.csv"
+          META="research-output/INDODAX_SOLIDR_1m.csv.meta.json"
+          OUT="research-output/native-indodax-current-run"
+          mkdir -p "$OUT"
+          cp "$SOURCE" "$META" "$OUT/"
+          python - <<'PY'
+          import csv, hashlib, json, math
+          from pathlib import Path
+          csv_path=Path("research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv")
+          meta_path=Path("research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv.meta.json")
+          meta=json.loads(meta_path.read_text())
+          digest=hashlib.sha256(csv_path.read_bytes()).hexdigest()
+          assert meta.get("dataset_sha256") == digest, "CSV/sidecar SHA-256 mismatch"
+          assert meta.get("data_status") == "OK", "dataset sidecar is not OK"
+          assert (meta.get("venue"),meta.get("pair"),meta.get("input_price_currency")) == ("INDODAX","SOL/IDR","IDR"), "venue/pair/currency mismatch"
+          assert meta.get("fx_conversion_applied") is False, "unexpected FX conversion"
+          rows=[]
+          with csv_path.open(newline="",encoding="utf-8") as f:
+              reader=csv.DictReader(f)
+              assert reader.fieldnames == ["open_time_ms","close_time_ms","open","high","low","close","volume"]
+              for row in reader:
+                  t=int(row["open_time_ms"]); close_t=int(row["close_time_ms"])
+                  o,h,l,c,v=(float(row[k]) for k in ("open","high","low","close","volume"))
+                  assert close_t == t+59999, f"candle close boundary invalid at {t}"
+                  assert all(math.isfinite(x) for x in (o,h,l,c,v)) and min(o,h,l,c)>0 and v>=0
+                  assert l <= min(o,c) <= max(o,c) <= h, f"OHLC invariant invalid at {t}"
+                  rows.append(t)
+          assert rows and len(rows)==meta.get("count"), "CSV/sidecar row-count mismatch"
+          assert all(b-a==60000 for a,b in zip(rows,rows[1:])), "timestamp gap or duplicate"
+          print(json.dumps({"dataset_sha256":digest,"count":len(rows),"first_open_ms":rows[0],"last_open_ms":rows[-1],"fx_conversion_applied":False,"validation":"PASS"},indent=2))
+          PY
+
+          # Use the quote snapshot captured in THIS run only as a clearly labelled sensitivity.
+          # If depth is unavailable, fall back to the previously observed 25.6669 bps point;
+          # neither value is a historical spread distribution.
+          SPREAD_BPS="$(python - <<'PY'
+          import json, math
+          from pathlib import Path
+          meta=json.loads(Path("research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv.meta.json").read_text())
+          quote=meta.get("market_quote") or {}
+          value=quote.get("spread_bps") if meta.get("market_quote_status") == "OK" else None
+          try:
+              value=float(value)
+              if not math.isfinite(value) or value <= 0: raise ValueError
+          except (TypeError, ValueError, OverflowError):
+              value=25.6669
+          print(f"{value:.12f}")
+          PY
+          )"
+          STRESS_SPREAD_BPS="$(python - "$SPREAD_BPS" <<'PY'
+          import sys
+          print(f"{max(25.6669, float(sys.argv[1]) * 1.5):.12f}")
+          PY
+          )"
+
+          run_scenario() {
+            local label="$1" entry_fee="$2" exit_fee="$3" spread="$4" slippage="$5"
+            local source="INDODAX official Pro all-in fee table checked 2026-10-30; scenario assumes Pro mode; exact account fee display not verified"
+            python projects/sol-sentinel/paper_engine.py \
+              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \
+              --fee-model indodax-custom --fee-source "$source" \
+              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \
+              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \
+              --minimum-order-notional-idr 25000 --report-path "$OUT/$label.backtest.json" --db-path ""
+            python projects/sol-sentinel/evaluate_splits.py \
+              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \
+              --fee-model indodax-custom --fee-source "$source" \
+              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \
+              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \
+              --minimum-order-notional-idr 25000 --output "$OUT/$label.evaluation.json"
+          }
+          # Official INDODAX Pro all-in rates: maker buy 10.555 bps, taker buy 20.555 bps,
+          # maker sell 31.555 bps, taker sell 41.555 bps. All scenarios assume Pro only.
+          # A maker quote is not proof of a maker fill; no queue/no-fill model exists yet.
+          run_scenario pro_taker_current_snapshot 20.555 41.555 "$SPREAD_BPS" 5
+          run_scenario pro_taker_stress 20.555 41.555 "$STRESS_SPREAD_BPS" 10
+          run_scenario pro_maker_current_snapshot 10.555 31.555 "$SPREAD_BPS" 5
+
+          python - "$SPREAD_BPS" "$STRESS_SPREAD_BPS" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
+          from pathlib import Path
+          root=Path("research-output/native-indodax-current-run")
+          meta=json.loads((root/"INDODAX_SOLIDR_1m.csv.meta.json").read_text())
+          print("## Current-run native INDODAX SOL/IDR backtest")
+          print("- Dataset SHA-256:", meta.get("dataset_sha256"))
+          print("- Native bars:", meta.get("count"), "FX conversion:", meta.get("fx_conversion_applied"))
+          print("- Fee model: INDODAX Pro only; official all-in rates; minimum notional Rp25,000")
+          print("- Current-run spread snapshot (bps):", sys.argv[1], "(one observation, not a historical distribution)")
+          print("- Stress spread sensitivity (bps):", sys.argv[2], "(assumption derived from snapshot/floor)")
+          print("- Slippage: 5 bps/side baseline; 10 bps/side stress; not empirically calibrated")
+          for label in ("pro_taker_current_snapshot","pro_taker_stress","pro_maker_current_snapshot"):
+              full=json.loads((root/f"{label}.backtest.json").read_text())
+              split=json.loads((root/f"{label}.evaluation.json").read_text())
+              print(f"### {label}")
+              for k in ("signal_evaluations","signal_candidates","entry_order_attempts","simulated_entry_fills","positions_opened","positions_closed","closed_trades","net_pnl_idr","net_return_pct","total_fees_idr","total_execution_friction_idr","profit_factor","expectancy_net_per_trade_idr"):
+                  print(f"- {k}: {full.get(k)}")
+              for name,stats in split.get("segments",{}).items():
+                  print(f"- {name}: candidates={stats.get('signal_candidates')}, trades={stats.get('closed_trades')}, net_pnl_idr={stats.get('net_pnl_idr')}, rejection_counts={stats.get('signal_rejection_counts')}")
+          PY
+
+      - name: Run cost-aware offline backtest
+        run: |
+          python projects/sol-sentinel/paper_engine.py \
+            --csv research-output/SOLUSDT_1m.csv \
+            --report-path research-output/backtest.json \
+            --db-path ""
+
+      - name: Evaluate fixed strategy on chronological splits
+        run: |
+          python projects/sol-sentinel/evaluate_splits.py \
+            --csv research-output/SOLUSDT_1m.csv \
+            --output research-output/evaluation.json
+
+      - name: Compare predeclared execution-cost scenarios
+        run: |
+          python projects/sol-sentinel/cost_sensitivity.py \
+            --csv research-output/SOLUSDT_1m.csv \
+            --reku-market-json research-output/reku_sol_idr_market.json \
+            --output research-output/cost_sensitivity.json
+
+      - name: Publish research summary
+        if: always()
+        run: |
+          {
+            echo "## SOL Sentinel research"
+            echo
+            echo "- Run mode: historical capture + offline evaluation only"
+            echo "- Live order placement: disabled"
+            echo "- Requested window: ${CAPTURE_DAYS} day(s)"
+            echo
+            if [ -f research-output/backtest.json ]; then
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          data=json.loads(Path("research-output/backtest.json").read_text())
+          for key in ("period_start","period_end","bars_1m","initial_equity_idr","final_equity_idr","net_pnl_idr","net_return_pct","signal_evaluations","signal_candidates","signal_rejection_counts","closed_trades","win_rate_pct","profit_factor","max_drawdown_pct","total_fees_idr","total_execution_friction_idr"):
+              print(f"- {key}: {data.get(key)}")
+          print("- mode:", data.get("mode"))
+          print("- execution_enabled:", data.get("execution_enabled"))
+          if not data.get("closed_trades"):
+              print("- interpretation: NO TRADES — no profitability evidence; review signal rejections and costs.")
+          PY
+            else
+              echo "Backtest report not available; inspect the failed step."
+            fi
+            if [ -f research-output/evaluation.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/evaluation.json").read_text())
+          print("Chronological evaluation (fixed parameters; independent equity per segment):")
+          for name, metrics in report.get("segments", {}).items():
+              print(f"- {name}: bars={metrics.get('bars_1m')}, signals={metrics.get('signal_evaluations')}, candidates={metrics.get('signal_candidates')}, trades={metrics.get('closed_trades')}, net_pnl_idr={metrics.get('net_pnl_idr')}, max_drawdown_pct={metrics.get('max_drawdown_pct')}")
+              print(f"  rejection_counts={metrics.get('signal_rejection_counts')}")
+          PY
+            fi
+            if [ -f research-output/cost_sensitivity.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/cost_sensitivity.json").read_text())
+          print("Cost sensitivity (predeclared; not auto-optimized):")
+          print("- Reku spread reference:", report.get("reku_spread_reference"))
+          print("- Reku spread reference unavailable:", report.get("reku_spread_reference_error"))
+          for item in report.get("scenarios", []):
+              print(f"- {item['scenario']}: cost_bps={item['modeled_round_trip_cost_bps']}, min_gross_bps={item['minimum_gross_move_bps_in_signal_gate']}, candidates={item['signal_candidates']}, trades={item['closed_trades']}, net_pnl_idr={item['net_pnl_idr']}, return_pct={item['net_return_pct']}, win_rate_pct={item['win_rate_pct']}, profit_factor={item['profit_factor']}")
+              print(f"  fees_idr={item['total_fees_idr']}, execution_friction_idr={item['total_execution_friction_idr']}")
+              print(f"  rejection_counts={item['signal_rejection_counts']}")
+          PY
+            fi
+
+            if [ -f research-output/reku_sol_idr_market.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          report=json.loads(Path("research-output/reku_sol_idr_market.json").read_text())
+          print("Reku public SOL/IDR market snapshot (read-only):")
+          print("- status:", report.get("data_status"))
+          print("- last_price_idr:", report.get("last_price_idr"))
+          print("- direct_spread_bps:", (report.get("direct_bidask") or {}).get("spread_bps"))
+          print("- orderbook_status:", report.get("orderbook_status"))
+          print("- orderbook_endpoint_used:", report.get("orderbook_endpoint_used"))
+          print("- orderbook_spread_bps:", (report.get("orderbook") or {}).get("spread_bps"))
+          print("- chart_status:", report.get("chart_status"))
+          print("- chart_interval_minutes:", (report.get("chart_probe") or {}).get("interval_minutes"))
+          print("- chart_fallback_used:", (report.get("chart_probe") or {}).get("fallback_used"))
+          print("- chart_prior_attempt_errors:", (report.get("chart_probe") or {}).get("prior_attempt_errors"))
+          print("- chart_points_returned:", (report.get("chart_probe") or {}).get("points_returned"))
+          print("- chart_last_time_utc:", (report.get("chart_probe") or {}).get("last_time_utc"))
+          print("- chart_error:", report.get("chart_probe_error"))
+          print("- cross_venue_comparison:", report.get("cross_venue_comparison"))
+          print("- warnings:", report.get("warnings", []))
+          print("- error:", report.get("error") or report.get("cross_venue_comparison_error") or report.get("orderbook_error"))
+          PY
+            fi
+
+            if [ -f research-output/REKU_SOLIDR_1m.csv.meta.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path("research-output/REKU_SOLIDR_1m.csv.meta.json").read_text())
+          print("Native Reku SOL/IDR transaction history capture (read-only):")
+          for key in ("data_status","requested_days","valid_trade_rows","generated_1m_bars","coverage_fraction","first_trade_utc","last_trade_utc","last_trade_age_seconds","synthetic_no_trade_minutes","api_errors","warnings","csv_sha256"):
+              print(f"- {key}: {meta.get(key)}")
+          PY
+            else
+              echo "Native Reku SOL/IDR history sidecar not created; inspect the collector step log."
+            fi
+            if [ -f research-output/INDODAX_SOLIDR_1m.csv.meta.json ]; then
+              echo
+              python - <<'PY'
+          import json
+          from pathlib import Path
+          meta=json.loads(Path("research-output/INDODAX_SOLIDR_1m.csv.meta.json").read_text())
+          print("Native INDODAX SOL/IDR OHLC history capture (public read-only; NOT backtested with Reku fees):")
+          for key in ("data_status","venue","pair","input_price_currency","requested_days","count","first_open_time_utc","last_close_time_utc","captured_at_utc","dataset_sha256","error","market_quote_status","market_quote_error"):
+              print(f"- {key}: {meta.get(key)}")
+          quote=meta.get("market_quote") or {}
+          for key in ("observed_at_utc","bid_idr","ask_idr","mid_idr","spread_bps","source"):
+              print(f"- market_quote.{key}: {quote.get(key)}")
+          print("- fx_conversion_applied:", meta.get("fx_conversion_applied"))
+          print("- orders_enabled:", meta.get("orders_enabled"))
+          PY
+            else
+              echo "Native INDODAX SOL/IDR history sidecar not created; inspect the collector step log."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload research artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sol-sentinel-research-${{ github.run_id }}
+          path: research-output/
+          if-no-files-found: warn
+          retention-days: 7

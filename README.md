@@ -241,3 +241,10 @@ Bounds are 256 KiB source input, 512 requirements, 64 execution units, 8 require
 The control plane now supports bounded long-horizon workloads through deterministic context packing, blueprint execution waves, and durable workload lineage. High-fan-in dependency context is globally capped at 48 KiB. Blueprint compilation emits dependency-safe waves capped at 24 units so workloads larger than one runtime DAG can be sliced into resumable boundaries. Blueprint metadata and unit/wave progress can be recorded without coupling the runtime to a specific project.
 
 These primitives are side-effect-free and do not replace the supervisor. Existing risk, human approval, connector idempotency/reconciliation, checkpoint/evidence, federation, free-only routing, and retry/replan policies remain authoritative.
+
+
+## SOL Sentinel — SOL Scalping Research
+
+Free-first, read-only SOL market scanner and paper-trading research. Phase 0 has no live order capability. Context, runbook, source inventory, risk policy, and session handoff are in [projects/sol-sentinel](projects/sol-sentinel/README.md). See [the conversation context](projects/sol-sentinel/CONVERSATION_CONTEXT.md) and [the project session log](projects/sol-sentinel/SESSION_LOG.md).
+
+Current development branch: `feat/sol-sentinel-paper-trader-v1`. Its CI workflow checks Python compilation and offline unit tests. The IDR 3,500,000 target is an aspiration, not a forecast or guarantee.

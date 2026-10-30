@@ -1,0 +1,118 @@
+name: SOL Sentinel Tests
+
+on:
+  push:
+    branches:
+      - feat/sol-sentinel-paper-trader-v1
+      - feat/sol-sentinel-v1.3-integrated
+    paths:
+      - "projects/sol-sentinel/**"
+      - ".github/workflows/sol-sentinel-tests.yml"
+      - ".github/workflows/sol-sentinel-forward-paper.yml"
+  pull_request:
+    paths:
+      - "projects/sol-sentinel/**"
+      - ".github/workflows/sol-sentinel-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sol-sentinel-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: python -m py_compile projects/sol-sentinel/sol_sentinel.py projects/sol-sentinel/capture_history.py projects/sol-sentinel/paper_engine.py projects/sol-sentinel/evaluate_splits.py projects/sol-sentinel/cost_sensitivity.py projects/sol-sentinel/reku_market.py projects/sol-sentinel/reku_history.py projects/sol-sentinel/test_reku_history.py projects/sol-sentinel/test_sol_sentinel.py projects/sol-sentinel/test_paper_engine.py projects/sol-sentinel/test_evaluate_splits.py projects/sol-sentinel/test_capture_history.py projects/sol-sentinel/test_cost_sensitivity.py projects/sol-sentinel/test_reku_market.py projects/sol-sentinel/jupiter_quote_probe.py projects/sol-sentinel/test_jupiter_quote_probe.py projects/sol-sentinel/execution_adapters.py projects/sol-sentinel/test_execution_adapters.py projects/sol-sentinel/capture_indodax_history.py projects/sol-sentinel/test_capture_indodax_history.py projects/sol-sentinel/termux_doctor.py projects/sol-sentinel/test_termux_doctor.py projects/sol-sentinel/indodax_microstructure.py projects/sol-sentinel/test_indodax_microstructure.py projects/sol-sentinel/depth_execution.py projects/sol-sentinel/test_depth_execution.py projects/sol-sentinel/forward_paper.py projects/sol-sentinel/test_forward_paper.py
+      - name: Offline unit tests
+        run: python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
+      - name: Termux doctor local smoke (no network)
+        run: python projects/sol-sentinel/termux_doctor.py --skip-network --json
+
+  forward-paper-activation:
+    needs: unit-tests
+    concurrency:
+      group: sol-sentinel-forward-paper-state
+      cancel-in-progress: false
+    if: (github.event_name == 'push' && (github.ref == 'refs/heads/feat/sol-sentinel-paper-trader-v1' || github.ref == 'refs/heads/feat/sol-sentinel-v1.3-integrated')) || (github.event_name == 'pull_request' && (github.event.pull_request.head.ref == 'feat/sol-sentinel-paper-trader-v1' || github.event.pull_request.head.ref == 'feat/sol-sentinel-v1.3-integrated') && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout implementation
+        uses: actions/checkout@v4
+        with:
+          ref: feat/sol-sentinel-paper-trader-v1
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Restore persistent paper state
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: sol-sentinel-paper-state
+          path: .paper-state
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run first bounded forward-paper cycle
+        id: forward-paper
+        env:
+          SOL_SENTINEL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p .paper-state/state forward-output
+          set +e
+          python projects/sol-sentinel/forward_paper.py \
+            --db-path .paper-state/state/forward-paper.sqlite3 \
+            --cycles 1 --interval-seconds 0 --json \
+            > forward-output/result.json 2> forward-output/stderr.txt
+          rc=$?
+          set -e
+          echo "$rc" > forward-output/exit-code.txt
+          python - .paper-state/state/forward-paper.sqlite3 <<'PY'
+          import sqlite3, sys
+          path=sys.argv[1]
+          db=sqlite3.connect(path, timeout=15)
+          try:
+              db.execute("PRAGMA busy_timeout=15000")
+              result=db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+              if result and result[0] != 0:
+                  raise SystemExit("SQLite WAL checkpoint remained busy")
+              integrity=db.execute("PRAGMA integrity_check").fetchone()[0]
+              if integrity != "ok":
+                  raise SystemExit(f"SQLite integrity check failed: {integrity}")
+          finally:
+              db.close()
+          PY
+          exit "$rc"
+      - name: Persist SQLite paper state
+        if: always()
+        run: |
+          if [ ! -f .paper-state/state/forward-paper.sqlite3 ]; then
+            echo "No SQLite paper-state database was created."
+            exit 1
+          fi
+          git -C .paper-state config user.name "github-actions[bot]"
+          git -C .paper-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C .paper-state add state/forward-paper.sqlite3
+          if ! git -C .paper-state diff --cached --quiet; then
+            git -C .paper-state commit -m "checkpoint: forward-paper cycle ${{ github.run_id }} attempt ${{ github.run_attempt }}"
+            git -C .paper-state push origin HEAD:refs/heads/sol-sentinel-paper-state
+          fi
+      - name: Upload activation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sol-sentinel-forward-paper-${{ github.run_id }}
+          path: forward-output/
+          if-no-files-found: warn
+          retention-days: 30
