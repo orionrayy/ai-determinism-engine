@@ -21,6 +21,7 @@ from forward_paper import (
     ForwardState,
     RiskSupervisor,
     utc_now,
+    _request_to_intent,
 )
 from indodax_microstructure import parse_depth
 
@@ -192,6 +193,81 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
         reopened = ForwardState(self.db_path, self.config)
         self.assertEqual(reopened.control()["operating_state"], "HALTED")
         self.assertEqual(reopened.control()["halt_reason"], "daily_loss_limit_reached+maximum_drawdown_reached")
+
+    def test_pending_order_intent_recovers_after_create_before_attach_crash(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        now = utc_now()
+        request = OrderRequest(
+            client_order_id="recover-intent",
+            venue="INDODAX",
+            symbol="SOL/IDR",
+            side=Side.BUY,
+            quantity=Decimal("0.02"),
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC,
+            created_at=now,
+            expires_at=now + timedelta(minutes=10),
+            quantity_step=Decimal("0.00000001"),
+            price_tick=Decimal("1"),
+            fee_bps=Decimal("20.555"),
+        )
+        payload = _request_to_intent(
+            request, purpose="ENTRY", candle_close_ms=1_800_000_000_000,
+            atr_idr=Decimal("10000"), reason="test_recovery",
+        )
+        runner.state.record_signal(
+            "recover-intent", 1_800_000_000_000, "BUY", "ORDER_INTENT", ("test_recovery",), payload
+        )
+
+        actions = runner._resolve_pending_intents()
+        saved = runner.state.get_signal("recover-intent")
+        order = runner.ledger.find_order_by_client_order_id("recover-intent")
+        position = runner.state.position()
+
+        self.assertTrue(any("recovered_order_intent" in action for action in actions))
+        self.assertIsNotNone(order)
+        self.assertEqual(saved["order_id"], order["order_id"])
+        self.assertEqual(position["entry_order_id"], order["order_id"])
+        self.assertEqual(position["status"], "PENDING")
+
+    def test_expired_unsubmitted_intent_is_closed_and_not_replayed_forever(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        created = utc_now() - timedelta(minutes=30)
+        request = OrderRequest(
+            client_order_id="expired-intent",
+            venue="INDODAX",
+            symbol="SOL/IDR",
+            side=Side.BUY,
+            quantity=Decimal("0.02"),
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC,
+            created_at=created,
+            expires_at=created + timedelta(minutes=5),
+            quantity_step=Decimal("0.00000001"),
+            price_tick=Decimal("1"),
+            fee_bps=Decimal("20.555"),
+        )
+        payload = _request_to_intent(
+            request, purpose="ENTRY", candle_close_ms=1_800_000_000_000,
+            atr_idr=Decimal("10000"), reason="expired_test",
+        )
+        runner.state.record_signal(
+            "expired-intent", 1_800_000_000_000, "BUY", "ORDER_INTENT", ("expired_test",), payload
+        )
+
+        actions = runner._resolve_pending_intents()
+        saved = runner.state.get_signal("expired-intent")
+
+        self.assertTrue(any("expired_unsubmitted_intent" in action for action in actions))
+        self.assertEqual(saved["decision"], "INTENT_EXPIRED")
+        self.assertEqual(runner.state.pending_intents(), [])
+        self.assertIsNone(runner.ledger.find_order_by_client_order_id("expired-intent"))
 
     def test_config_has_no_calendar_wait_gate(self):
         self.assertEqual(self.config.history_minutes, 600)
