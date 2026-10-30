@@ -1935,3 +1935,56 @@ Audit checkpoint: 2026-10-30T06:36:51Z. This addendum was prepared on review bra
 - The active forward engine config now uses 10 bps assumed slippage per side. Using the 17-observation sample spread mean gives a modeled total of 62.11 + 9.634764 = 71.744764 bps before slippage, or approximately 91.744764 bps after adding 20 bps of assumed round-trip slippage. At the sample P95 spread, that becomes approximately 98.181871 bps. These are estimates, not measured fills or realized slippage.
 - The 10 bps-per-side setting remains an assumption; the 17 static snapshots cannot infer actual execution impact or maker queue probability. No strategy parameters or fees were changed and no trades were forced.
 - Official sources checked 2026-10-30: INDODAX Help Center "Details of Transaction Fees on INDODAX" and its official fee-table image; INDODAX announcement "Penurunan Biaya CFX", 2026-09-29, effective 2026-10-01.
+
+## SOL_SENTINEL_V1_5_READONLY_ACTIVE_STATE_AUDIT_2026_10_30
+
+Verified from exact PR #185 workflow run #41017557539 at 2026-10-30T07:02:16Z (14:02 WIB), branch \`fix/sol-sentinel-ci-isolated-recovery-20261030\`, head \`438923fb356945357b58fadbb600a2044aa804e9\`. Both unit-tests and active-state-read-only-audit jobs passed. This is a read-only CI inspection of \`sol-sentinel-paper-state\`, not a paper cycle.
+
+### Exact SQLite file and integrity
+
+- File: \`.paper-state/state/forward-paper.sqlite3\`
+- Size: 1,323,008 bytes.
+- Raw SHA-256: \`149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c\`.
+- \`PRAGMA integrity_check\`: \`ok\`.
+- \`PRAGMA foreign_key_check\`: 0 violations.
+- SQLite ledger schema version 1; journal mode WAL; PRAGMA user_version 0.
+- Connection was opened using SQLite URI \`mode=ro\`, \`PRAGMA query_only=ON\`; state checkout had \`persist-credentials: false\`, workflow permission \`contents: read\`. No state write, checkpoint, mutation, or commit was performed.
+- Table counts: observations 17, levels 5,100, attempts 17, fp_cycles 17, fp_signals 10, fp_daily_risk 1, fp_control 2, fp_position 0, fp_metadata 4, paper_accounts 1, orders 0, fills 0, events 0, execution_cycles 0, snapshots 0, snapshot_levels 0, snapshot_consumption 0, liquidity_pools 0, liquidity_pool_levels 0, snapshot_liquidity_pools 0; metadata 1.
+- Account: initial cash Rp300,000; current cash Rp300,000; initial/current SOL 0; avg entry cost 0; realized P&L 0; fees 0; open orders 0; fills 0. Cash and SOL both reconcile exactly to fill rows. Execution event journal is empty (0 events), no active position.
+- This is strong integrity/provenance evidence for the actual latest flat paper state, not non-flat operational recovery.
+
+### Depth collector provenance
+
+- Endpoint: \`https://indodax.com/api/depth/solidr\`.
+- Collector: \`indodax-depth-collector-v1\`.
+- 17 observations, 17 unique observation IDs and 17 unique book hashes; 0 duplicate book hashes.
+- Observation window: 2026-10-30T04:56:41.272158Z–05:10:23.793208Z (13m42s). UTC hours: 04 = 6 snapshots; 05 = 11 snapshots.
+- 5,100 level rows: 150 bid + 150 ask levels per observation.
+- 17 collection attempts: OK=17, errors=0, mean duration 612.176 ms.
+- Exchange timestamp presence: 0/17. Snapshot timing is collector-local; no exchange-side timestamp was supplied in these records. Do not present the observation timestamps as exchange event timestamps.
+
+### Reproducible spread statistics
+
+Computed directly from the stored 17 \`observations.spread_bps\` values:
+- Mean 9.6347641883 bps.
+- Median 11.1053738673 bps.
+- P90 nearest-rank 16.0662374831 bps.
+- P95 nearest-rank 16.0718713822 bps.
+- Population standard deviation 3.7951068970 bps.
+
+### Visible depth within ±25 bps of snapshot midpoint
+
+Computed from immutable \`levels\` rows, summing price × quantity per side where bid >= midpoint × 0.9975 and ask <= midpoint × 1.0025. This is visible quote notional, not guaranteed executable liquidity.
+
+Bid quote depth IDR (n=17): mean Rp179,924,344; median Rp57,933,686; P90 Rp338,854,083; P95 Rp617,159,540; population SD Rp164,507,937.
+
+Ask quote depth IDR (n=17): mean Rp44,832,637; median Rp49,739,722; P90 Rp55,129,463; P95 Rp56,951,425; population SD Rp15,786,136.
+
+Bid observations are highly skewed relative to median; do not size orders from the mean or extrapolate beyond this small 13m42s window. Static depth does not encode trade prints, queue position, replenishment/depletion, or realized fills. Queue probability and realized execution slippage remain unmeasured; the 10 bps per-side slippage is still an assumption.
+
+### Latest validation and status
+
+- PR #185 head \`438923fb356945357b58fadbb600a2044aa804e9\`: Sentinel run #41017557539 passed 220 tests, 0 failures; read-only active-state audit passed; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL; Orchestrator run #41017557515 passed.
+- PR #186 head \`86c50783e1e6f850c74aa9f24bc75615773d4f12\`: Sentinel run #41016440890 passed 224 tests, 0 failures, including five workflow contract tests. PRs remain open, unmerged.
+- Main HEAD remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; state HEAD remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`.
+- At 2026-10-30T07:13:28Z (14:13 WIB), schedule history query \`event=schedule&branch=main\` still showed no run matching the Sentinel workflow; public workflow page showed 0 runs. \`FIRST_CRON_PENDING\` remains.
