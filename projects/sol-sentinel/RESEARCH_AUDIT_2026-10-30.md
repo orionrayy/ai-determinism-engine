@@ -500,3 +500,18 @@ Output: `FORWARD_PAPER_ACTIVE`, `NO_TRADE`, risk `NORMAL`, entry permission true
 A second workflow cycle on the same candle correctly suppressed the repeated strategy signal (`signal_slot_already_processed`). No duplicate order, real exchange order, wallet operation, transfer, or credential access occurred. The persistent SQLite checkpoint is stored on `sol-sentinel-paper-state`.
 
 The five-minute scheduled workflow file exists on the implementation branch but is not active on the repository schedule until merged to the default branch. PR #178 is still draft and diverged from main; do not merge it directly. A clean main-based integration PR is being prepared. Keep strategy research as `INSUFFICIENT_EVIDENCE` and live execution disabled.
+
+ 
+## Clean main integration and post-merge paper checkpoint — 2026-10-30
+
+Clean main-based PR [#181](https://github.com/orionrayy/ai-determinism-engine/pull/181) merged via squash as `58ec3df095c60ccc6868bf0cbccb3c18384419eb`. It carried the integrated forward-paper runner, serialized scheduled workflow, test coverage, operating guide, audit, infrastructure decision and canonical memory. The old PR #178 was not merged because its history diverged; #181 was 1 commit ahead / 0 behind of main with 48 changed files.
+
+Exact PR tests passed: [Orchestrator Tests #41006890245](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890245) and [SOL Sentinel Tests #41006890361](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890361). Sentinel suite: 216 passed, 0 failed. Termux Doctor on Ubuntu: 6 PASS / 1 WARN / 0 FAIL, with the warning correctly noting no physical Android handset execution.
+
+The same run activated forward-paper and stored artifact [#12955034631](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890361/artifacts/12955034631). Cycle `7e08efadca684497f5341b3bdb760ad18cb62857`, source SHA `5bf6c2cc9598d49c4ecec4458373538b3afa18f5`, 610 native 1m candles, depth observation `62ffba97d99af94e33ad7b8d7d154dbce11a22d583c4cdf24859a5597b605c8f`, execution snapshot `e7f3dd4c7860e65be38cec14a32171c57741714a997b349ce8d51a97b145fb38`. Signal: NO_TRADE; reasons: 15m trend not confirmed, 1m momentum exhaustion/missing. Risk NORMAL; entries permitted; equity IDR 300,000; cash IDR 300,000; SOL 0; orders/fills/fees/P&L 0; ledger reconciliation consistent.
+
+Collector summary: 17 actual public depth observations, 0 request failures, mean spread 9.634764 bps, median 11.105374 bps, P95 16.071871 bps. Small live sample only; not a calibrated spread/slippage/queue distribution.
+
+State DB branch latest checkpoint at this review: `sol-sentinel-paper-state` commit `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. Five-minute scheduled workflow now resides on `main`, so GitHub's default-branch scheduling condition is met; a separate post-merge scheduled run is not yet confirmed.
+
+Readiness remains: ENGINEERING_VALIDATED / FORWARD_PAPER_ACTIVE; RESEARCH_EVIDENCE_INSUFFICIENT; LIVE_AUTHORIZATION_READY=false. No live order or asset movement was attempted.
