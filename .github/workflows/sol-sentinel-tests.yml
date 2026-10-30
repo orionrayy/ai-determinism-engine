@@ -44,7 +44,7 @@ jobs:
     concurrency:
       group: sol-sentinel-forward-paper-state
       cancel-in-progress: false
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/sol-sentinel-paper-trader-v1'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/feat/sol-sentinel-paper-trader-v1') || (github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'feat/sol-sentinel-paper-trader-v1' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
