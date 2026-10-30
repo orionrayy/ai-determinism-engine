@@ -156,3 +156,8 @@ The adapter reads the documented public Reku API only: coin catalogue, price, bi
 ## INDODAX depth collection
 
 Added `indodax_microstructure.py` for finite, unauthenticated public SOL/IDR depth sampling and SQLite archiving. It validates sorted multi-level books and calculates observed spread/depth distributions from captured snapshots only. See `RUNBOOK_TERMUX.md`. The collector has offline fixture tests; a live endpoint capture and actual Android Termux validation remain outstanding.
+
+
+## Depth-aware paper execution (engineering component)
+
+The new `depth_execution.py` module implements deterministic multi-level book walking, Decimal VWAP, per-snapshot shared liquidity, residual order lifecycle (GTC/IOC, cancel and expiry), and a persistent SQLite event/fill/portfolio journal with reconciliation and failure-injection tests. It is intentionally separate from the legacy top-of-book adapter. See `RUNBOOK_TERMUX.md` for the offline test command and constraints. It does not connect itself to a forward market-data loop and does not submit or sign orders.

@@ -251,3 +251,26 @@ python projects/sol-sentinel/indodax_microstructure.py --summary-only --database
 The default archive is `~/.sol-sentinel/indodax_depth.sqlite3`. Keep it local; it contains public market observations and can grow over time. The collector is read-only and unauthenticated. It cannot access balances, place/cancel orders, sign, deposit, withdraw, or submit chain transactions. A CI fixture test proves parser/storage behavior only; run the first real collection on the target device/network and preserve its emitted summary before claiming empirical spread/depth distributions.
 
 The current research dataset remains the previously recorded 43,200 native INDODAX 1m candles. No new order-book snapshots were captured as part of this code change.
+
+
+## Depth-aware paper execution engine — local simulation only
+
+The separate `depth_execution.py` module extends collected order-book evidence into a deterministic, SQLite-backed paper simulator. It does not change the older `MarketQuote` or `PaperExecutionAdapter` contracts and has no live execution interface.
+
+The simulator:
+- Walks the observed ask levels for buys and bid levels for sells in price order, recording per-level fills and Decimal VWAP.
+- Enforces limit-price boundaries, quote freshness, symbol/venue identity, tick and quantity precision, available IDR cash including fees, and available simulated SOL inventory.
+- Shares each snapshot's liquidity across all simulated orders. Observed depth is journaled once and each level tracks reserved/consumed/remaining quantity; the same snapshot cannot be reused to manufacture additional fills.
+- Persists order state, fills, events, snapshot levels, liquidity consumption and the paper portfolio in one SQLite transaction per order/snapshot cycle. GTC residuals can continue only on a later eligible snapshot; IOC residuals are cancelled after the current attempt.
+- Preserves past fills on cancellation/expiry, deduplicates order creation and order/snapshot cycles, supports reopen/recovery and reconciliation, and exposes failure-injection hooks used by the tests.
+
+Run only the offline regression suite:
+
+```sh
+python -m py_compile projects/sol-sentinel/depth_execution.py projects/sol-sentinel/test_depth_execution.py
+python -m unittest discover -s projects/sol-sentinel -p 'test_depth_execution.py' -v
+```
+
+The existing collector can be connected in memory with `DepthSnapshot.from_indodax(parsed_snapshot)`, where `parsed_snapshot` is returned by the microstructure parser. The execution engine does not yet read the collector's SQLite archive automatically and does not itself run an unattended market-data loop. Explicitly configure client order ID, order side/type, fee bps, tick/lot rules, maximum quote age, initial simulated IDR cash, and timestamps. The sample ledger starts with IDR 300,000 cash and zero SOL as a simulation seed; it is not a statement about a real account balance. Nonzero initial SOL is refused until an auditable inventory cost basis is supported.
+
+Model limitations: no maker queue or post-only fill probability, no exchange matching-engine emulation, no real order-book capture in the implementation CI, and no integrated strategy/risk/daily-loss forward-paper cycle yet. Treat the depth model as an approximation. Fixture tests are not empirical fill calibration or profitability evidence.

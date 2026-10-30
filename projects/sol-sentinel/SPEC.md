@@ -146,3 +146,16 @@ A read-only snapshot in Actions run `40916894414` observed last price Rp1,845,00
 ## Market microstructure observations
 
 The SOL/IDR order-book collector is `indodax_microstructure.py`. It is separate from OHLC history capture and stores each public depth observation and every captured bid/ask level in SQLite. Quoted spread is `(best_ask - best_bid) / midpoint × 10,000`; depth bands are measured against midpoint and reported as SOL quantity and IDR notional. Do not interpret candle data as historical order-book depth. Distribution metrics are valid only after repeated collector observations exist. See `RUNBOOK_TERMUX.md` for finite sampling and summary commands.
+
+
+## 11. Multi-level paper execution and persistent event ledger
+
+`depth_execution.py` is an isolated paper-only execution subsystem. `DepthSnapshot` is an immutable, content-addressed view of an observed order book. `OrderRequest` carries a stable client order ID, venue/symbol, side, Decimal quantity, market/limit type, TIF, explicit fee bps, precision, timestamp and freshness limit.
+
+For marketable simulation, the engine walks the opposing side (asks for buy, bids for sell) in price order. Limit orders stop at the first level outside the limit. Each level fill contains snapshot ID, level index, price, quantity, gross IDR and fee IDR. VWAP is calculated from cumulative gross value divided by cumulative filled quantity. Insufficient depth remains a tracked residual; no extrapolation beyond observed levels is allowed.
+
+Snapshot liquidity is shared across simulated orders through per-level reserved and consumed quantities. One order/snapshot cycle is unique, and a snapshot is never treated as unlimited depth. This is a deterministic static-book approximation; it does not model exchange queue priority, hidden liquidity, book cancellations, latency races or maker fills.
+
+SQLite tables persist orders, immutable snapshots/levels, per-level consumption, fill rows, append-only events, cycle results and one paper portfolio. A single `BEGIN IMMEDIATE` transaction contains matching, fills, consumption, event insertion, order update and portfolio update. Reopen recovery replays immutable fills and verifies persisted order/consumption/portfolio invariants; inconsistencies fail closed. GTC residuals continue only on a later eligible snapshot; IOC remainder cancels after its attempt. Cancellation and expiry preserve previous fills.
+
+The subsystem currently enforces cash/fee and SOL inventory constraints, but it is not the complete strategy RiskManager: daily-loss lock, volatility/risk-per-trade, cooldown, global kill switch and multi-cycle strategy integration remain separate acceptance gates. No live adapter, signer, wallet or transfer interface exists.

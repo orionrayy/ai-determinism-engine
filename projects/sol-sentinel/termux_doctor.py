@@ -37,6 +37,7 @@ CORE_MODULES = (
     "capture_indodax_history.py",
     "jupiter_quote_probe.py",
     "indodax_microstructure.py",
+    "depth_execution.py",
 )
 
 
