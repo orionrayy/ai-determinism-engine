@@ -552,3 +552,67 @@ Readiness remains: ENGINEERING_VALIDATED / FORWARD_PAPER_ACTIVE; RESEARCH_EVIDEN
 
 - The only current Termux Doctor evidence is Ubuntu-hosted: 6 PASS / 1 WARN / 0 FAIL. Actual Android/Termux device validation is not available in this checkpoint. The one-command local report procedure is in `FORWARD_PAPER_OPERATIONS.md`.
 - No actual INDODAX order, wallet signer, secret, private key, transfer, deposit, withdrawal or live execution path was used. Live trading remains disabled.
+
+## v1.5 new-room continuity and operational provenance audit — 2026-10-30
+
+Audit time: 2026-10-30T06:36:51Z. This section is an incremental update on review PR #185 and is not part of \`main\` until that PR is merged.
+
+### Repository and CI baseline
+
+- Current \`main\` HEAD: \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; parent \`161a3909438b95de8485af001613481588f94594\`. The final commit only appends 13 lines to \`ORCHESTRATION_MEMORY.md\`; no code changes followed the exact Sentinel suite run.
+- PR #181/#182/#183/#184 are merged (merge SHAs already recorded above). PR #178 and #180 are closed, unmerged; older passages in this audit that describe them as still open are superseded by current remote metadata.
+- Main exact post-merge Sentinel suite: Actions #41011238183 at SHA \`161a3909438b95de8485af001613481588f94594\`, 219 passed, 0 failed. Termux Doctor on Ubuntu: 6 PASS / 1 WARN / 0 FAIL. Orchestrator run #41011317438 passed on exact current main SHA \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`, but is a separate workflow.
+- PR #185 has a reviewable source/test change and is not merged. Its exact test run #41015083173, event \`pull_request\`, branch \`fix/sol-sentinel-ci-isolated-recovery-20261030\`, SHA \`2093fcbc7286f5b988947e3dbd8db92a029111ff\`, passed 220 tests, 0 failures, Termux Doctor 6 PASS / 1 WARN / 0 FAIL.
+
+### Actual schedule evidence
+
+- Workflow \`.github/workflows/sol-sentinel-forward-paper.yml\` is on \`main\` and defines \`2-57/5 * * * *\`. The expression is valid five-minute POSIX cron and deliberately avoids minute zero. Job is guarded to \`refs/heads/main\`, serialized through \`sol-sentinel-forward-paper-state\`, and uses \`cancel-in-progress: false\`.
+- Actions history query \`event=schedule&branch=main\` returned total_count 152 across both pages. Every returned event belonged to \`AI Orchestrator\`; none was the SOL Sentinel workflow. Push, PR, workflow-dispatch and feature-branch activation runs were excluded.
+- Acceptance remains \`FIRST_CRON_PENDING\`. The workflow being present on default branch is necessary but not sufficient evidence. GitHub's current docs state schedules run against the latest commit on the default branch, default to UTC and have a five-minute minimum. Docs also warn of high-load delays/dropped schedules; a schedule can stop if the actor associated with it is suspended/deleted. Available repository connector actions did not expose the workflow's enabled state or actor binding; inspect Actions settings before changing YAML. No manual run was started to simulate cron.
+
+### Persistent-state provenance
+
+- State branch \`sol-sentinel-paper-state\` HEAD remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`, parent \`49966ce0530458854e640da4d491dda106f5e53b\`.
+- Full branch history contains 17 sequential DB checkpoint commits from 04:56:41Z to 05:10:23Z. They map to run IDs: 41005623914, 41005726897, 41005771703, 41005811889, 41005832769, 41005882837, 41005908768, 41005904577, 41006187202, 41006193535, 41006220391, 41006225151, 41006524572, 41006535344, 41006530350, 41006854612 and 41006890361. Each is \`SOL Sentinel Tests\` on a feature branch with event \`push\` or \`pull_request\`, not \`schedule\` on \`main\`.
+- Latest DB size is 1,323,008 bytes. Latest Git blob object SHA is \`a9bbe1ae63aa1aa496fe000f23d30d4259de1c09\`; this is not a computed raw-file SHA-256. The workflow's WAL checkpoint and \`PRAGMA integrity_check\` step succeeded for the latest activation run; artifact-level recovery and reconciliation were consistent.
+- This proves sequential persistence/restoration among separate hosted runners for a flat paper account. It does not prove scheduled execution or non-flat order/fill recovery. The 17 checkpoint writers were triggered by test/PR events, which is a test-workflow side effect.
+
+### Last actual forward-paper artifact
+
+- Run #41006890361, artifact #12955034631, source SHA \`5bf6c2cc9598d49c4ecec4458373538b3afa18f5\`, cycle \`7e08efadca684497f5341b3bdb760ad18cb62857\`, 610 completed native INDODAX SOL/IDR 1m candles. Artifact exit code 0 and stderr empty.
+- Result: \`FORWARD_PAPER_ACTIVE\`; signal \`NO_TRADE\` with \`15m_trend_not_confirmed\` and \`1m_momentum_exhaustion_or_missing\`; risk NORMAL and new-entry permission true. Portfolio: Rp300,000 cash, 0 SOL, no open position, 0 orders, 0 fills, 0 residuals, fees Rp0, realized P&L Rp0. Recovery and reconciliation consistent; live order path disabled.
+- That artifact is from the pre-#183 activation job and contains \`result.json\`, \`exit-code.txt\`, \`stderr.txt\`, not the later \`status.json\`. Durable status generation remains unproven until the dedicated workflow has a real run.
+
+### Public depth observations and calibration
+
+- The artifact's microstructure summary confirms 17 actual public INDODAX SOL/IDR depth observations and 17 successful attempts / 0 errors, first at 04:56:41Z and last at 05:10:23Z.
+- Quoted spread: mean 9.634764 bps, median 11.105374 bps, nearest-rank P95 16.071871 bps, population standard deviation 3.795107 bps. Visible bid quote notional mean/median/P95: approximately Rp179.9m/Rp57.9m/Rp617.2m; ask: Rp44.8m/Rp49.7m/Rp57.0m. High skew and a 13m42s observation window prohibit broad intraday or order-size claims.
+- These are direct snapshot observations, not post-trade execution slippage. The 10 bps-per-side stress slippage value remains a model assumption; the depth walk is a displayed-book impact estimate; maker queue position/fill probability remains unvalidated without user queue position and trade/replenishment flow.
+
+### Non-flat recovery — synthetic evidence on PR #185
+
+- Existing main tests already cover depth partial fills and residual continuation, cancel/expiry semantics, transaction atomicity/failure hooks, order/snapshot idempotency, and ledger reopen/recovery; forward-paper tests cover pending BUY intent recovery, daily-loss breaker persistence, HALT, BUY residual cancellation and RESUME using temporary DBs.
+- Added \`test_cross_process_recovery.py\` on PR #185. It runs three separate interpreter processes over one temporary SQLite file:
+  - A: creates BUY request 5 and fills 2; creates SELL request 2 and fills 1. Both retain residuals; account SOL inventory is 1.
+  - B: independently opens/reconciles the DB and resumes both residuals from a changed snapshot; BUY cumulative fill becomes 5 and SELL becomes 2.
+  - C: independently reopens the DB and verifies final SOL 3, four fill rows, two completed orders, no open orders, fees, consistent reconciliation, \`PRAGMA integrity_check=ok\`, no foreign-key violations, and duplicate replay is idempotent.
+- PR CI #41015083173 passed the new test as part of 220 tests, 0 failures. This closes the synthetic multi-process ledger gap on the PR branch. It is not merged into main and is not proof that actual production has generated a non-flat portfolio.
+
+### CI side-effect isolation fix proposed
+
+- Main \`.github/workflows/sol-sentinel-tests.yml\` previously had a \`forward-paper-activation\` job for feature-branch push/PR events. The job checked out hard-coded \`feat/sol-sentinel-paper-trader-v1\`, restored the shared state branch, ran a cycle and committed that DB to \`sol-sentinel-paper-state\`. The state-branch provenance above confirms the job produced the 17 checkpoint commits.
+- PR #185 removes that job from the regression workflow. The dedicated main-guarded scheduled workflow remains responsible for recurring state writes. PR #185's successful check confirms its revised workflow only ran unit tests and Termux smoke; it did not write the state branch. This change is pending review, not live in main.
+- Do not use shared paper state for exploratory test or PR execution. Keep every synthetic scenario in a temporary database.
+
+### Current classifications and unresolved items
+
+- Repository: \`MAIN_VERIFIED\`.
+- Engineering: main suite validated on 219-test SHA; PR #185 isolated cross-process recovery passed 220-test suite, pending integration.
+- Scheduled operation: \`FIRST_CRON_PENDING\`.
+- Persistent state: \`FLAT_STATE_PERSISTENCE_VERIFIED\`; 17-run sequence is cross-run but originated from PR/push test activation, not cron.
+- Non-flat recovery: synthetic deterministic three-process test passed on PR #185; operational non-flat state has not occurred.
+- Termux: Ubuntu CI validated; physical Android remains \`NOT_TESTED\`.
+- Strategy: \`NO_TRADE / INSUFFICIENT_EVIDENCE\`.
+- Live: \`DISABLED\`.
+
+Next steps: review/merge PR #185 only after independent review; inspect workflow enabled state and associated actor; wait for and capture a true \`schedule\` event on \`main\` without manual substitution; then verify the artifact includes \`status.json\` and the state branch advances from that scheduled run. Keep live trading disabled.
