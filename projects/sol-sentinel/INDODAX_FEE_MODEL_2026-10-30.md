@@ -17,7 +17,7 @@ The all-in table includes the CFX component (0.00555% per side on the IDR market
 
 Official source: https://help.indodax.com/hc/id/articles/4416646599705-Rincian-Biaya-Transaksi-di-INDODAX
 
-The INDODAX fee-change announcement describes the CFX component: https://blog.indodax.com/
+The later, date-specific INDODAX announcement is authoritative for the 1 October 2026 cutover: https://blog.indodax.com/penurunan-biaya-cfx-1-okt-2026/ . Published 29 September 2026, it states that the IDR-market CFX fee is 0.00555% per side from 1 October 2026 (replacing 0.0111%). The static screenshot embedded in the general help page is timestamped 28 September 2026 and still shows the pre-cutover 0.0111% IDR CFX value; do not use that image as the post-1-October fee schedule. The all-in fee values above use the post-cutover CFX component, published service-fee components, and the sell-side 0.21% tax. The account's own Profile → Settings → Trading Fees display remains the final account-specific check.
 
 ## Minimum order and pair filters
 
