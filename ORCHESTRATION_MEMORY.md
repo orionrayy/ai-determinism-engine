@@ -1678,3 +1678,58 @@ Verified remote state at this checkpoint:
 
 ### Safety and portability
 No live order, account query, transfer, wallet signature, deposit, withdrawal or chain submission occurred. No private key, seed phrase or secret API credential was requested or stored. The CI runner was Linux/Ubuntu with Python 3.11.17; Android/Termux hardware remains untested.
+
+
+## SOL SENTINEL v1.2 EXECUTION ENGINE CHECKPOINT — 2026-10-30
+
+### Verified remote repository state
+- Repository: `orionrayy/ai-determinism-engine`.
+- `main`: `d5672c84a0ae184c3a95d3f925925887ece71aa4`; unchanged by this work.
+- Feature branch: `feat/sol-sentinel-paper-trader-v1`.
+- Latest feature commit: `6e9424e9b8ad322e94f898d9de86324680ca0ae1`.
+- PR #178 remains open/draft/unmerged; compare to main: `diverged`, 270 commits ahead / 2 behind, 41 changed paths. No merge, rebase or force-push was performed.
+- Docs branch: `docs/sol-sentinel-continuity-20261030`, current head at the start of this checkpoint `94a5f1b319befd48b5bf56473175c6fc3aedb335`; this append is committed separately below.
+- PR #180 remains open/draft/unmerged; compare to main at last verification: 43 commits ahead / 0 behind, 3 changed files. Its contents are not yet in `main`.
+
+### Implementation delivered on the feature branch
+- `projects/sol-sentinel/depth_execution.py`: a new isolated, Python-standard-library, Decimal and SQLite paper-only depth execution engine. The legacy `MarketQuote` and `PaperExecutionAdapter` were not modified.
+- `projects/sol-sentinel/test_depth_execution.py`: regression and fault-injection tests.
+- Updated `termux_doctor.py`, `RUNBOOK_TERMUX.md`, `SPEC.md`, `README.md`, `EXECUTION_LOG.md`, and the SOL Sentinel CI compile list.
+
+### Execution semantics and invariants
+- Immutable timestamped snapshots preserve observed bid/ask levels and have content-derived snapshot identity.
+- Buy orders walk ask levels; sell orders walk bid levels. Every fill records level index, price, quantity, gross IDR and fee IDR. VWAP is computed from cumulative gross and cumulative filled quantity using Decimal.
+- Limit orders stop before a price level that violates their limit. Cash and fees constrain buys; reconstructed SOL inventory constrains sells. Non-zero starting SOL inventory is refused until a reliable acquisition cost basis is available.
+- GTC orders retain residual quantity for later eligible snapshots; IOC remainder is cancelled after its attempt. Cancellation and expiration preserve all earlier fills.
+- Snapshot liquidity is shared across simulated orders. Further hardening added independent bid/ask liquidity pools keyed by venue, symbol, side, and the complete ordered price/quantity sequence. Different observation timestamps with an identical side-book do not reset consumed liquidity. A bid-side change does not reset an unchanged ask-side pool; a changed side-book fingerprint creates a new observed pool. This is a conservative approximation because trade-flow/queue data are unavailable.
+- SQLite persists orders, snapshots/levels, per-snapshot consumption, side-book pools and per-level pool consumption, fills, events, cycle results and the paper account. Each order/snapshot matching cycle uses `BEGIN IMMEDIATE` and commits or rolls back liquidity consumption, fills, events, order state and portfolio together.
+- Fill/event/snapshot records are append-only. Order creation and order/snapshot cycles are idempotent. An after-commit lost-response retry returns the committed cycle; pre-commit failure injection proves rollback.
+- Recovery backfills shared side-book pool mappings from existing snapshot/fill records and reconciles both per-snapshot and aggregate pool consumption. If aggregate historical consumption exceeds observed depth, migration fails closed rather than hiding the discrepancy.
+- Portfolio replay derives cash, SOL quantity, average entry cost, realized P&L and fees from immutable fills. Reconciliation fails closed on tampering or mismatch; it does not silently force balances.
+
+### Evidence
+- Local validation on final source: `py_compile` passed; `python -W error::ResourceWarning -m unittest -v` reported **38 tests, OK**.
+- GitHub Actions run [#41002769671](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41002769671) succeeded on exact feature commit `6e9424e9b8ad322e94f898d9de86324680ca0ae1`. Runner log: `Ran 206 tests in 4.966s`, `OK`, no failures. Compile step includes depth engine and tests.
+- The same CI job ran Termux doctor smoke: 6 PASS, 1 WARN, 0 FAIL. Warn is expected because host is Ubuntu Linux rather than Android/Termux; public network probe was skipped. This is not handset validation.
+- Earlier feature commit `c1e008dbbcc27dc922c3dd2162ade232fc7178dd` passed 202 tests in runs #41002332334 and #41002337823; it is superseded by #41002769671.
+
+### Boundaries and outstanding work
+- No order-book live samples were collected here. Historical native INDODAX OHLC remains the previously verified 43,200 1m candles, SHA-256 `d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c`. Candle history is not order-book depth history.
+- The depth engine is not an exchange matching-engine emulator: maker queue, post-only behavior, queue priority, adverse selection, hidden liquidity, cancellations, trade flow and latency races are not modeled. Side-book fingerprint changes are an observed-state approximation, not proof of refill.
+- The engine currently receives parsed snapshots in memory via `DepthSnapshot.from_indodax`; it does not automatically stream the collector SQLite archive or schedule an unattended observation loop.
+- This is not yet a complete forward-paper orchestrator. Strategy invocation, strategy rejection telemetry, daily-loss/cooldown/circuit-breaker risk controls, multi-cycle monitoring and fully integrated paper-run recovery remain outstanding.
+- Jupiter V2 remains quote-only and is not part of this execution-engine change.
+- Android Termux remains untested on the user's handset.
+- Latest strategy evidence remains unchanged: no OOS trade / no demonstrated positive net expectancy. The one earlier development maker trade was not reproducible on the subsequent rolling dataset.
+- Overall status remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`; passing engineering tests does not establish trading edge or operational readiness.
+
+### Next dependencies
+1. Capture actual repeated public INDODAX depth samples and inspect the collector's SQLite report; maintain the read-only boundary.
+2. Review the side-book pool policy against observed snapshot sequences and add trade-flow evidence only if a documented public source is available.
+3. Integrate the persistent engine with the existing strategy and risk gate in a separate checkpoint; prevent residual orders from bypassing risk limits.
+4. Add full forward-paper cycle idempotency, operator halt, daily loss/cooldown and restart monitoring tests.
+5. Complete Jupiter quote schema validation and actual Termux handset validation.
+6. Review PR #178 divergence file-by-file before any branch integration. No automatic merge/rebase.
+
+### Safety
+No live order, authenticated account action, signing, wallet, deposit, withdrawal, transfer, SOL movement or on-chain submission occurred. No secret API key, private key or seed phrase was requested or stored.

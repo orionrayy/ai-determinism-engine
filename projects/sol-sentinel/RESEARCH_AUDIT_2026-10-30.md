@@ -472,3 +472,16 @@ Strategy state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. There is no OOS tr
 - Execution limitations unchanged: top-of-book-only partial fill in the previous simulator; no multi-level depth walk/residual order management yet. Forward-paper orchestration is incomplete.
 - Android Termux is still not device-validated. The CI doctor's 1 WARN explicitly records non-Termux Linux runner and must not be described as handset evidence.
 - Readiness remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
+
+
+## Verified v1.2 paper execution checkpoint — 2026-10-30
+
+- Latest feature commit: `6e9424e9b8ad322e94f898d9de86324680ca0ae1` on `feat/sol-sentinel-paper-trader-v1`; PR #178 stays draft/open/unmerged.
+- Added `depth_execution.py` and `test_depth_execution.py`: multi-level bid/ask book walking, per-level Decimal fills and cumulative VWAP, limit boundaries, cash/fee and inventory constraints, GTC/IOC residual lifecycle, cancellation/expiration, append-only SQLite fills/events, order/snapshot idempotency, transaction atomicity, recovery and fill-based portfolio reconciliation.
+- Liquidity pool rule: each bid/ask side has a content fingerprint (venue, symbol, side and ordered price/quantity levels). Same side-book across later timestamps shares the same consumed pool; changes to bid do not reset identical ask liquidity. This avoids repeatedly counting unchanged displayed depth as fresh. Changed side-book creates a new pool, which remains an approximation absent trade-flow.
+- SQLite has separate snapshot audit and shared per-side pool records. Startup backfills old snapshot-consumption records into these pools and refuses over-consumed historical aggregation.
+- Local engine regression: 38 passed with `ResourceWarning` treated as error.
+- Exact-head CI [#41002769671](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41002769671): 206 tests passed, 0 failed, on the latest commit. Compile and Termux doctor smoke passed; doctor reported 6 PASS / 1 WARN because GitHub's host was Ubuntu and skipped its public network probe. No Android handset validation is claimed.
+- Updated docs and Termux doctor compile coverage. No source-level changes were made to the previous market-data adapter or old top-of-book paper adapter.
+- This is still a standalone paper execution engine, not an end-to-end forward-paper system: no unattended market-data loop, strategy/risk integration, maker queue model, daily-loss circuit breaker or auto-ingestion from collector SQLite yet.
+- No live orders, account operations, signers, transfers, deposits, withdrawals or chain transactions. Research remains zero OOS trades / no positive edge evidence; overall readiness `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
