@@ -206,26 +206,26 @@ The standard-library-only diagnostic runner checks the Python/SQLite runtime, Te
 
 From the repository root:
 
-\`\`\`sh
+```sh
 python projects/sol-sentinel/termux_doctor.py
 python projects/sol-sentinel/termux_doctor.py --json
-\`\`\`
+```
 
 To validate the native historical dataset after it has been downloaded to the device:
 
-\`\`\`sh
-python projects/sol-sentinel/termux_doctor.py \\
-  --data ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv \\
+```sh
+python projects/sol-sentinel/termux_doctor.py \
+  --data ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv \
   --expected-sha256 c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30
-\`\`\`
+```
 
 The doctor streams the CSV rather than loading the full 43,200-row file into memory. It verifies the hash, sidecar identity/status when present, no FX conversion, contiguous 1-minute timestamps, close-time boundaries, finite OHLCV, and OHLC ordering. The expected hash above applies only to artifact #12931446637; a newer dataset must use its own verified SHA-256.
 
 To execute the offline suite on the phone:
 
-\`\`\`sh
+```sh
 python projects/sol-sentinel/termux_doctor.py --skip-network --run-tests --json
-\`\`\`
+```
 
 Interpretation:
 - FAIL is a failed diagnostic invariant and exits with code 1.
