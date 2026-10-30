@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'projects/hustler-capital-engine/**'
+      - 'ORCHESTRATION_MEMORY.md'
       - '.github/workflows/hustler-magic-tests.yml'
   push:
     branches: [main]
