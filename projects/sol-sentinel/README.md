@@ -161,3 +161,6 @@ Added `indodax_microstructure.py` for finite, unauthenticated public SOL/IDR dep
 ## Depth-aware paper execution (engineering component)
 
 The new `depth_execution.py` module implements deterministic multi-level book walking, Decimal VWAP, per-snapshot shared liquidity, residual order lifecycle (GTC/IOC, cancel and expiry), and a persistent SQLite event/fill/portfolio journal with reconciliation and failure-injection tests. It is intentionally separate from the legacy top-of-book adapter. See `RUNBOOK_TERMUX.md` for the offline test command and constraints. It does not connect itself to a forward market-data loop and does not submit or sign orders.
+
+
+The paper execution engine also pools consumption by exact side-book fingerprint across timestamped captures. Repeated identical visible depth is therefore not counted as fresh liquidity at each polling interval. Bid and ask pools are independent; a change to one side does not reset consumption on the other. This conservative policy remains an approximation pending trade-flow evidence.

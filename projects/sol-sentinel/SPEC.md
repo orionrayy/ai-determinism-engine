@@ -159,3 +159,10 @@ Snapshot liquidity is shared across simulated orders through per-level reserved 
 SQLite tables persist orders, immutable snapshots/levels, per-level consumption, fill rows, append-only events, cycle results and one paper portfolio. A single `BEGIN IMMEDIATE` transaction contains matching, fills, consumption, event insertion, order update and portfolio update. Reopen recovery replays immutable fills and verifies persisted order/consumption/portfolio invariants; inconsistencies fail closed. GTC residuals continue only on a later eligible snapshot; IOC remainder cancels after its attempt. Cancellation and expiry preserve previous fills.
 
 The subsystem currently enforces cash/fee and SOL inventory constraints, but it is not the complete strategy RiskManager: daily-loss lock, volatility/risk-per-trade, cooldown, global kill switch and multi-cycle strategy integration remain separate acceptance gates. No live adapter, signer, wallet or transfer interface exists.
+
+
+### Shared side-book liquidity pools
+
+For repeat captures with different observation timestamps, the engine uses separate immutable snapshot IDs for audit while sharing consumed quantities across snapshots whose individual bid or ask side has the same exact ordered price/quantity fingerprint. This prevents an unchanged displayed ask (or bid) from becoming fresh simulated liquidity merely because another timestamp was recorded. Each side is pooled independently. Changed depth forms a new observed pool; without trade-flow, replenishment inference remains a limitation.
+
+The SQLite open path backfills pool mappings from earlier snapshot/fill journals. It aggregates consumption from legacy snapshots with the same side-book fingerprint and refuses migration if combined consumption exceeds the recorded side depth.

@@ -274,3 +274,10 @@ python -m unittest discover -s projects/sol-sentinel -p 'test_depth_execution.py
 The existing collector can be connected in memory with `DepthSnapshot.from_indodax(parsed_snapshot)`, where `parsed_snapshot` is returned by the microstructure parser. The execution engine does not yet read the collector's SQLite archive automatically and does not itself run an unattended market-data loop. Explicitly configure client order ID, order side/type, fee bps, tick/lot rules, maximum quote age, initial simulated IDR cash, and timestamps. The sample ledger starts with IDR 300,000 cash and zero SOL as a simulation seed; it is not a statement about a real account balance. Nonzero initial SOL is refused until an auditable inventory cost basis is supported.
 
 Model limitations: no maker queue or post-only fill probability, no exchange matching-engine emulation, no real order-book capture in the implementation CI, and no integrated strategy/risk/daily-loss forward-paper cycle yet. Treat the depth model as an approximation. Fixture tests are not empirical fill calibration or profitability evidence.
+
+
+### Conservative shared-liquidity rule
+
+Depth consumption is pooled by the exact observed side-book fingerprint `venue + symbol + side + ordered price/quantity levels`, independently for bid and ask. A later timestamp with an unchanged ask side does not make that ask liquidity new; a bid-side change does not reset ask-side consumption. A changed side-book fingerprint creates a new observed pool. This is deliberately conservative because trade-flow data are not yet available to distinguish replenished size from an unchanged displayed queue. It is not an exchange matching-engine rule.
+
+The ledger backfills pool-consumption mappings when it opens a database created by the first depth-engine schema, aggregating prior consumption across identical side books. If the aggregate exceeds observed depth, migration fails closed and requires manual audit.

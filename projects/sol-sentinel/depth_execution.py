@@ -173,6 +173,19 @@ class DepthSnapshot:
             raise ExecutionError("supplied snapshot_id does not match immutable snapshot content")
         object.__setattr__(self, "snapshot_id", digest)
 
+    def liquidity_pool_id(self, side: str) -> str:
+        """Identify an unchanged side book independently of observation timestamp and the opposite side."""
+        normalized = str(side).strip().lower()
+        if normalized not in ("bid", "ask"):
+            raise ExecutionError("liquidity side must be bid or ask")
+        levels = self.bids if normalized == "bid" else self.asks
+        return canonical_hash({
+            "venue": self.venue,
+            "symbol": self.symbol,
+            "side": normalized,
+            "levels": [[str(x.price), str(x.quantity)] for x in levels],
+        })
+
     @classmethod
     def from_indodax(cls, parsed_snapshot: Any) -> "DepthSnapshot":
         """Convert indodax_microstructure.Snapshot without importing its module."""
@@ -334,6 +347,16 @@ class SQLitePaperExecutionLedger:
               snapshot_id TEXT NOT NULL REFERENCES snapshots(snapshot_id), side TEXT NOT NULL,
               level_index INTEGER NOT NULL, reserved_qty TEXT NOT NULL, consumed_qty TEXT NOT NULL,
               PRIMARY KEY(snapshot_id,side,level_index));
+            CREATE TABLE IF NOT EXISTS liquidity_pools(
+              pool_id TEXT PRIMARY KEY, venue TEXT NOT NULL, symbol TEXT NOT NULL, side TEXT NOT NULL,
+              book_hash TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS liquidity_pool_levels(
+              pool_id TEXT NOT NULL REFERENCES liquidity_pools(pool_id), level_index INTEGER NOT NULL,
+              price TEXT NOT NULL, quantity TEXT NOT NULL, reserved_qty TEXT NOT NULL, consumed_qty TEXT NOT NULL,
+              PRIMARY KEY(pool_id,level_index));
+            CREATE TABLE IF NOT EXISTS snapshot_liquidity_pools(
+              snapshot_id TEXT NOT NULL REFERENCES snapshots(snapshot_id), side TEXT NOT NULL,
+              pool_id TEXT NOT NULL REFERENCES liquidity_pools(pool_id), PRIMARY KEY(snapshot_id,side));
             CREATE TABLE IF NOT EXISTS fills(
               seq INTEGER PRIMARY KEY AUTOINCREMENT, fill_id TEXT NOT NULL UNIQUE,
               order_id TEXT NOT NULL REFERENCES orders(order_id), snapshot_id TEXT NOT NULL REFERENCES snapshots(snapshot_id),
@@ -378,6 +401,65 @@ class SQLitePaperExecutionLedger:
                 db.execute("COMMIT")
             except Exception:
                 db.execute("ROLLBACK"); raise
+            self._backfill_liquidity_pools(db)
+
+    def _register_side_pool(self, db: sqlite3.Connection, snapshot_id: str, venue: str, symbol: str,
+                            side: str, levels: Sequence[BookLevel], *, migrated_consumed: Decimal = Decimal("0")) -> str:
+        pool_id = canonical_hash({"venue":venue,"symbol":symbol,"side":side,
+                                  "levels":[[str(x.price),str(x.quantity)] for x in levels]})
+        book_hash = canonical_hash([[str(x.price),str(x.quantity)] for x in levels])
+        pool = db.execute("SELECT venue,symbol,side,book_hash FROM liquidity_pools WHERE pool_id=?",(pool_id,)).fetchone()
+        if pool is None:
+            db.execute("INSERT INTO liquidity_pools VALUES(?,?,?,?,?)",(pool_id,venue,symbol,side,book_hash))
+            db.executemany("INSERT INTO liquidity_pool_levels VALUES(?,?,?,?,?,?)",[
+                (pool_id,i,str(level.price),str(level.quantity),"0","0") for i,level in enumerate(levels)])
+        elif (pool["venue"],pool["symbol"],pool["side"],pool["book_hash"]) != (venue,symbol,side,book_hash):
+            raise LedgerIntegrityError("liquidity pool identity conflicts with captured levels")
+        else:
+            persisted=db.execute("SELECT price,quantity FROM liquidity_pool_levels WHERE pool_id=? ORDER BY level_index",(pool_id,)).fetchall()
+            expected=[(str(x.price),str(x.quantity)) for x in levels]
+            if [(x["price"],x["quantity"]) for x in persisted] != expected:
+                raise LedgerIntegrityError("liquidity pool levels differ from immutable side-book identity")
+        mapping=db.execute("SELECT pool_id FROM snapshot_liquidity_pools WHERE snapshot_id=? AND side=?",(snapshot_id,side)).fetchone()
+        if mapping is None:
+            db.execute("INSERT INTO snapshot_liquidity_pools VALUES(?,?,?)",(snapshot_id,side,pool_id))
+            if migrated_consumed:
+                for i,level in enumerate(levels):
+                    old=db.execute("SELECT consumed_qty FROM snapshot_consumption WHERE snapshot_id=? AND side=? AND level_index=?",
+                                   (snapshot_id,side,i)).fetchone()
+                    old_qty=D(old["consumed_qty"],"legacy snapshot consumption",allow_zero=True) if old else Decimal(0)
+                    if old_qty:
+                        row=db.execute("SELECT quantity,consumed_qty,reserved_qty FROM liquidity_pool_levels WHERE pool_id=? AND level_index=?",
+                                       (pool_id,i)).fetchone()
+                        combined=D(row["consumed_qty"],"pool consumed",allow_zero=True)+old_qty
+                        if combined+D(row["reserved_qty"],"pool reserved",allow_zero=True)>D(row["quantity"],"pool original"):
+                            raise LedgerIntegrityError("legacy snapshot fills over-consume identical side-book liquidity; manual audit required")
+                        db.execute("UPDATE liquidity_pool_levels SET consumed_qty=? WHERE pool_id=? AND level_index=?",
+                                   (str(combined),pool_id,i))
+        elif mapping["pool_id"] != pool_id:
+            raise LedgerIntegrityError("snapshot side maps to a different immutable liquidity pool")
+        return pool_id
+
+    def _backfill_liquidity_pools(self, db: sqlite3.Connection) -> None:
+        """Attach previously persisted snapshots to shared side-book pools exactly once."""
+        db.execute("BEGIN IMMEDIATE")
+        try:
+            rows=db.execute("SELECT snapshot_id,venue,symbol FROM snapshots ORDER BY observed_at,snapshot_id").fetchall()
+            for row in rows:
+                for side in ("bid","ask"):
+                    exists=db.execute("SELECT 1 FROM snapshot_liquidity_pools WHERE snapshot_id=? AND side=?",
+                                      (row["snapshot_id"],side)).fetchone()
+                    if exists:
+                        continue
+                    level_rows=db.execute("SELECT price,quantity FROM snapshot_levels WHERE snapshot_id=? AND side=? ORDER BY level_index",
+                                          (row["snapshot_id"],side)).fetchall()
+                    levels=tuple(BookLevel(D(x["price"],"stored pool price"),D(x["quantity"],"stored pool qty")) for x in level_rows)
+                    if not levels:
+                        raise LedgerIntegrityError("legacy snapshot lacks depth levels during liquidity-pool migration")
+                    self._register_side_pool(db,row["snapshot_id"],row["venue"],row["symbol"],side,levels,migrated_consumed=Decimal("1"))
+            db.execute("COMMIT")
+        except Exception:
+            db.execute("ROLLBACK"); raise
 
     @staticmethod
     def _event(db: sqlite3.Connection, order_id: str, event_type: str, occurred_at: str,
@@ -420,20 +502,24 @@ class SQLitePaperExecutionLedger:
 
     def _persist_snapshot(self, db: sqlite3.Connection, snapshot: DepthSnapshot) -> None:
         observed = iso(snapshot.observed_at)
-        existing = db.execute("SELECT venue,symbol,observed_at,exchange_timestamp_ms FROM snapshots WHERE snapshot_id=?",(snapshot.snapshot_id,)).fetchone()
-        if existing:
-            if (existing["venue"],existing["symbol"],existing["observed_at"],existing["exchange_timestamp_ms"]) != (snapshot.venue,snapshot.symbol,observed,snapshot.exchange_timestamp_ms):
-                raise LedgerIntegrityError("snapshot identity conflicts with persisted snapshot")
-            return
         book_hash = canonical_hash({"bids":[[str(x.price),str(x.quantity)] for x in snapshot.bids],
                                     "asks":[[str(x.price),str(x.quantity)] for x in snapshot.asks]})
-        db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?)",(snapshot.snapshot_id,snapshot.venue,snapshot.symbol,observed,snapshot.exchange_timestamp_ms,book_hash))
-        db.executemany("INSERT INTO snapshot_levels VALUES(?,?,?,?,?)",[
-            (snapshot.snapshot_id,side,i,str(level.price),str(level.quantity))
-            for side,levels in (("bid",snapshot.bids),("ask",snapshot.asks)) for i,level in enumerate(levels)])
-        db.executemany("INSERT INTO snapshot_consumption VALUES(?,?,?,?,?)",[
-            (snapshot.snapshot_id,side,i,"0","0")
-            for side,levels in (("bid",snapshot.bids),("ask",snapshot.asks)) for i,_ in enumerate(levels)])
+        existing = db.execute("SELECT venue,symbol,observed_at,exchange_timestamp_ms,book_hash FROM snapshots WHERE snapshot_id=?",
+                              (snapshot.snapshot_id,)).fetchone()
+        if existing:
+            if (existing["venue"],existing["symbol"],existing["observed_at"],existing["exchange_timestamp_ms"],existing["book_hash"]) != (
+                snapshot.venue,snapshot.symbol,observed,snapshot.exchange_timestamp_ms,book_hash):
+                raise LedgerIntegrityError("snapshot identity conflicts with persisted snapshot")
+        else:
+            db.execute("INSERT INTO snapshots VALUES(?,?,?,?,?,?)",(snapshot.snapshot_id,snapshot.venue,snapshot.symbol,observed,snapshot.exchange_timestamp_ms,book_hash))
+            db.executemany("INSERT INTO snapshot_levels VALUES(?,?,?,?,?)",[
+                (snapshot.snapshot_id,side,i,str(level.price),str(level.quantity))
+                for side,levels in (("bid",snapshot.bids),("ask",snapshot.asks)) for i,level in enumerate(levels)])
+            db.executemany("INSERT INTO snapshot_consumption VALUES(?,?,?,?,?)",[
+                (snapshot.snapshot_id,side,i,"0","0")
+                for side,levels in (("bid",snapshot.bids),("ask",snapshot.asks)) for i,_ in enumerate(levels)])
+        self._register_side_pool(db,snapshot.snapshot_id,snapshot.venue,snapshot.symbol,"bid",snapshot.bids)
+        self._register_side_pool(db,snapshot.snapshot_id,snapshot.venue,snapshot.symbol,"ask",snapshot.asks)
 
     def _account(self, db: sqlite3.Connection) -> sqlite3.Row:
         row = db.execute("SELECT * FROM paper_accounts WHERE account_id=?",(ACCOUNT_ID,)).fetchone()
@@ -517,6 +603,7 @@ class SQLitePaperExecutionLedger:
                     result=self._result_from_order(order,snapshot.snapshot_id,(),("snapshot_precision_mismatch",))
                     self._store_cycle(db,result); db.execute("COMMIT"); return result
                 book_side = "ask" if side is Side.BUY else "bid"
+                pool_id = snapshot.liquidity_pool_id(book_side)
                 levels = snapshot.asks if side is Side.BUY else snapshot.bids
                 remaining = D(order["remaining_qty"],"remaining_qty",allow_zero=True)
                 previous_filled = D(order["filled_qty"],"filled_qty",allow_zero=True)
@@ -533,12 +620,11 @@ class SQLitePaperExecutionLedger:
                     if remaining <= 0: break
                     if limit is not None and ((side is Side.BUY and level.price > limit) or (side is Side.SELL and level.price < limit)):
                         reasons.append("limit_price_boundary_reached"); break
-                    consumed_row = db.execute("SELECT consumed_qty FROM snapshot_consumption WHERE snapshot_id=? AND side=? AND level_index=?",
-                                               (snapshot.snapshot_id,book_side,index)).fetchone()
-                    consumed = D(consumed_row["consumed_qty"],"snapshot consumed quantity",allow_zero=True)
-                    reserved_row=db.execute("SELECT reserved_qty FROM snapshot_consumption WHERE snapshot_id=? AND side=? AND level_index=?",
-                                            (snapshot.snapshot_id,book_side,index)).fetchone()
-                    reserved=D(reserved_row["reserved_qty"],"snapshot reserved quantity",allow_zero=True)
+                    consumed_row = db.execute("SELECT consumed_qty,reserved_qty FROM liquidity_pool_levels WHERE pool_id=? AND level_index=?",
+                                               (pool_id,index)).fetchone()
+                    if consumed_row is None: raise LedgerIntegrityError("snapshot level is missing from its shared liquidity pool")
+                    consumed = D(consumed_row["consumed_qty"],"shared liquidity consumed",allow_zero=True)
+                    reserved=D(consumed_row["reserved_qty"],"shared liquidity reserved",allow_zero=True)
                     available = level.quantity-consumed-reserved
                     if available <= 0: continue
                     qty = min(remaining,available)
@@ -567,7 +653,11 @@ class SQLitePaperExecutionLedger:
                     account_cash = account_cash-gross-fee if side is Side.BUY else account_cash+gross-fee
                     account_sol = account_sol+qty if side is Side.BUY else account_sol-qty
                     db.execute("UPDATE snapshot_consumption SET consumed_qty=? WHERE snapshot_id=? AND side=? AND level_index=?",
-                               (str(consumed+qty),snapshot.snapshot_id,book_side,index))
+                               (str(D(db.execute("SELECT consumed_qty FROM snapshot_consumption WHERE snapshot_id=? AND side=? AND level_index=?",
+                                                  (snapshot.snapshot_id,book_side,index)).fetchone()[0],"snapshot consumed",allow_zero=True)+qty),
+                                snapshot.snapshot_id,book_side,index))
+                    db.execute("UPDATE liquidity_pool_levels SET consumed_qty=? WHERE pool_id=? AND level_index=?",
+                               (str(consumed+qty),pool_id,index))
                     db.execute("INSERT INTO fills(fill_id,order_id,snapshot_id,level_index,side,price,quantity,gross_idr,fee_idr,filled_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
                                (fill_id,order_id,snapshot.snapshot_id,index,side.value,str(level.price),str(qty),str(gross),str(fee),iso(snapshot.observed_at)))
                     if failure_hook: failure_hook("after_fill_insert")
@@ -746,6 +836,22 @@ class SQLitePaperExecutionLedger:
                 reserved=D(c["reserved_qty"],"reserved snapshot liquidity",allow_zero=True)
                 if consumed + reserved > original: issues.append(f"snapshot liquidity over-allocated {c['snapshot_id']}:{c['side']}:{c['level_index']}")
                 if fills_used != consumed: issues.append(f"snapshot consumption differs from fill journal {c['snapshot_id']}:{c['side']}:{c['level_index']}")
+            pools=db.execute("SELECT pool_id,venue,symbol,side FROM liquidity_pools ORDER BY pool_id").fetchall()
+            for pool in pools:
+                pool_levels=db.execute("SELECT level_index,price,quantity,reserved_qty,consumed_qty FROM liquidity_pool_levels WHERE pool_id=? ORDER BY level_index",
+                                       (pool["pool_id"],)).fetchall()
+                for level in pool_levels:
+                    original=D(level["quantity"],"pool original quantity")
+                    consumed=D(level["consumed_qty"],"pool consumed",allow_zero=True)
+                    reserved=D(level["reserved_qty"],"pool reserved",allow_zero=True)
+                    if consumed+reserved>original:
+                        issues.append(f"shared depth pool over-allocated {pool['pool_id']}:{level['level_index']}")
+                    fill_side="BUY" if pool["side"]=="ask" else "SELL"
+                    rows=db.execute("SELECT f.quantity FROM fills f JOIN snapshot_liquidity_pools m ON m.snapshot_id=f.snapshot_id AND m.side=? WHERE m.pool_id=? AND f.level_index=? AND f.side=?",
+                                    (pool["side"],pool["pool_id"],level["level_index"],fill_side)).fetchall()
+                    used=sum((D(x["quantity"],"pool fill quantity") for x in rows),Decimal("0"))
+                    if used!=consumed:
+                        issues.append(f"shared depth pool fill rows differ from consumed qty {pool['pool_id']}:{level['level_index']}")
             for order in orders:
                 st=OrderState(order["state"])
                 requested=D(order["requested_qty"],"requested")
@@ -773,8 +879,23 @@ class SQLitePaperExecutionLedger:
 
     def snapshot_liquidity(self, snapshot_id: str) -> list[dict[str, str]]:
         with closing(self._connect()) as db:
-            rows=db.execute("SELECT l.side,l.level_index,l.price,l.quantity,c.reserved_qty,c.consumed_qty FROM snapshot_levels l JOIN snapshot_consumption c USING(snapshot_id,side,level_index) WHERE l.snapshot_id=? ORDER BY l.side,l.level_index",(snapshot_id,)).fetchall()
-            return [{**dict(x),"remaining_qty":str(D(x["quantity"],"original quantity")-D(x["reserved_qty"],"reserved",allow_zero=True)-D(x["consumed_qty"],"consumed",allow_zero=True))} for x in rows]
+            rows=db.execute("""SELECT l.side,l.level_index,l.price,l.quantity,
+                c.consumed_qty snapshot_consumed_qty,p.reserved_qty,p.consumed_qty shared_consumed_qty,
+                p.quantity shared_original_qty
+                FROM snapshot_levels l
+                JOIN snapshot_consumption c USING(snapshot_id,side,level_index)
+                JOIN snapshot_liquidity_pools m ON m.snapshot_id=l.snapshot_id AND m.side=l.side
+                JOIN liquidity_pool_levels p ON p.pool_id=m.pool_id AND p.level_index=l.level_index
+                WHERE l.snapshot_id=? ORDER BY l.side,l.level_index""",(snapshot_id,)).fetchall()
+            result=[]
+            for row in rows:
+                item=dict(row)
+                item["consumed_qty"]=row["shared_consumed_qty"]
+                item["remaining_qty"]=str(D(row["shared_original_qty"],"pool original")-
+                    D(row["reserved_qty"],"pool reserved",allow_zero=True)-D(row["shared_consumed_qty"],"pool consumed",allow_zero=True))
+                result.append(item)
+            return result
+
 
 
 # Operator-facing alias.

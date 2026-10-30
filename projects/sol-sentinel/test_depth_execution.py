@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -158,6 +159,68 @@ class DepthExecutionTests(unittest.TestCase):
         self.assertEqual(Decimal(askrow["consumed_qty"]), Decimal("3"))
         self.assertEqual(Decimal(askrow["reserved_qty"]), Decimal("0"))
         self.assertEqual(Decimal(askrow["remaining_qty"]), Decimal("0"))
+
+    def test_identical_side_book_at_new_timestamp_does_not_refresh_consumed_depth(self):
+        first_book = snap(1, asks=[(101, 2)])
+        first_order = self.ledger.create_order(request("pool-first", qty="2", fee="0"))
+        first_result = self.ledger.process_snapshot(first_order, first_book, as_of=T0+timedelta(seconds=2))
+        self.assertEqual(first_result.cumulative_filled_quantity, Decimal("2"))
+
+        # A new observation time gives a new snapshot ID, but the ask-side book is unchanged.
+        second_book = snap(2, asks=[(101, 2)])
+        self.assertNotEqual(first_book.snapshot_id, second_book.snapshot_id)
+        self.assertEqual(first_book.liquidity_pool_id("ask"), second_book.liquidity_pool_id("ask"))
+        second_order = self.ledger.create_order(request("pool-second", qty="2", created=T0+timedelta(seconds=1), fee="0"))
+        second_result = self.ledger.process_snapshot(second_order, second_book, as_of=T0+timedelta(seconds=4))
+        self.assertEqual(second_result.cumulative_filled_quantity, Decimal("0"))
+        self.assertEqual(second_result.remaining_quantity, Decimal("2"))
+        shared = self.ledger.snapshot_liquidity(second_book.snapshot_id)
+        ask = next(x for x in shared if x["side"] == "ask" and x["level_index"] == 0)
+        self.assertEqual(Decimal(ask["snapshot_consumed_qty"]), Decimal("0"))
+        self.assertEqual(Decimal(ask["shared_consumed_qty"]), Decimal("2"))
+        self.assertEqual(Decimal(ask["remaining_qty"]), Decimal("0"))
+        self.assertTrue(self.ledger.reconcile()["consistent"])
+
+    def test_restart_backfills_shared_liquidity_consumption_from_prior_snapshot_journal(self):
+        book = snap(1, asks=[(101, 2)])
+        oid = self.ledger.create_order(request("pool-migration-first", qty="2", fee="0"))
+        self.ledger.process_snapshot(oid, book, as_of=T0+timedelta(seconds=2))
+        # Simulate a database written before shared side-book pool tables existed.
+        with closing(sqlite3.connect(self.db_path)) as db:
+            db.execute("DROP TABLE snapshot_liquidity_pools")
+            db.execute("DROP TABLE liquidity_pool_levels")
+            db.execute("DROP TABLE liquidity_pools")
+            db.commit()
+        reopened = SQLitePaperExecutionLedger(self.db_path, initial_cash_idr=Decimal("10000"))
+        next_book = snap(2, asks=[(101, 2)])
+        next_oid = reopened.create_order(request("pool-migration-second", qty="1", created=T0+timedelta(seconds=1), fee="0"))
+        result = reopened.process_snapshot(next_oid, next_book, as_of=T0+timedelta(seconds=4))
+        self.assertEqual(result.cumulative_filled_quantity, Decimal("0"))
+        self.assertEqual(Decimal(reopened.snapshot_liquidity(next_book.snapshot_id)[0]["shared_consumed_qty"]), Decimal("2"))
+        self.assertTrue(reopened.recover()["consistent"])
+
+    def test_bid_side_change_does_not_refresh_unchanged_ask_side(self):
+        first_book = snap(1, bids=[(100, 2)], asks=[(101, 2)])
+        first_order = self.ledger.create_order(request("pool-side-first", qty="2", fee="0"))
+        self.ledger.process_snapshot(first_order, first_book, as_of=T0+timedelta(seconds=2))
+        second_book = snap(2, bids=[(99, 5)], asks=[(101, 2)])
+        self.assertNotEqual(first_book.liquidity_pool_id("bid"), second_book.liquidity_pool_id("bid"))
+        self.assertEqual(first_book.liquidity_pool_id("ask"), second_book.liquidity_pool_id("ask"))
+        second_order = self.ledger.create_order(request("pool-side-second", qty="1", created=T0+timedelta(seconds=1), fee="0"))
+        result = self.ledger.process_snapshot(second_order, second_book, as_of=T0+timedelta(seconds=4))
+        self.assertEqual(result.cumulative_filled_quantity, Decimal("0"))
+        self.assertTrue(self.ledger.reconcile()["consistent"])
+
+    def test_changed_side_book_creates_new_observed_liquidity_pool(self):
+        first_book = snap(1, asks=[(101, 2)])
+        first_order = self.ledger.create_order(request("pool-change-first", qty="2", fee="0"))
+        self.ledger.process_snapshot(first_order, first_book, as_of=T0+timedelta(seconds=2))
+        changed_book = snap(2, asks=[(101, 3)])
+        self.assertNotEqual(first_book.liquidity_pool_id("ask"), changed_book.liquidity_pool_id("ask"))
+        second_order = self.ledger.create_order(request("pool-change-second", qty="2", created=T0+timedelta(seconds=1), fee="0"))
+        result = self.ledger.process_snapshot(second_order, changed_book, as_of=T0+timedelta(seconds=4))
+        self.assertEqual(result.cumulative_filled_quantity, Decimal("2"))
+        self.assertTrue(self.ledger.reconcile()["consistent"])
 
     def test_repeated_order_snapshot_cycle_after_commit_is_idempotent(self):
         oid = self.ledger.create_order(request(qty="2"))
