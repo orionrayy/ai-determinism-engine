@@ -166,3 +166,10 @@ An earlier successful depth probe [#40950150440](https://github.com/orionrayy/ai
 INDODAX is the initial centralized venue adapter candidate for source-aware paper experiments, not a production-approved venue. Native IDR history can now be captured and the public top-of-book endpoint has been smoke-tested. Before backtesting the native series, verify the current fee tier in the account UI, explicitly select the Lite/Pro minimum, and supply documented entry/exit fee plus measured spread and slippage. Keep Reku costs restricted to the Binance SOLUSDT reference scenario. The latest complete strategy result still has zero candidates/trades in every 60/20/20 segment and therefore does not establish positive expectancy.
 
 The optional Reku native activity-history step continues to return HTTP 404 in the successful research run, with the collector marked non-fatal; the Reku public market snapshot itself reports OK. No real order, transfer, signing, private key, or credential was used. The live gate remains closed.
+
+
+## Latest quote and data snapshot — 2026-10-30 WIB
+
+Research run [#40950218320](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320) captured 30 days / 43,200 native INDODAX SOL/IDR candles with SHA-256 `c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30`. The same read-only run recorded bid Rp1,777,113, ask Rp1,779,923 and spread 15.7996714 bps at 2026-10-29 20:37:47 UTC. The prior point observation was ~25.6669 bps. These snapshots show observed spread variation, but are not a time series; do not use a single point as a fixed backtest slippage/spread model.
+
+Native INDODAX prices were not backtested with unverified mode fee inputs. Obtain current fee components from the account's Profile/Trading Fees screen; explicitly select Lite/Pro minimum and provide dated fee and spread/slippage assumptions. The 30-day Binance SOLUSDT reference backtest still shows zero candidates/trades in all 60/20/20 segments. The optional Reku activity-history endpoint remains 404 while its public quote snapshot is available. Keep live execution blocked.
