@@ -120,3 +120,44 @@ The current program is forward-paper only. A green software test, successful act
 ### v1.4 monitoring addition — 2026-10-30
 
 PR [#183](https://github.com/orionrayy/ai-determinism-engine/pull/183) merged as `0bcfe96c47c6d566051a48d1b031e993d96062d0`. Each scheduled or manual-main invocation now reads the durable database using `--status --json` after the integrity check and includes `status.json` in the run artifact. The operator summary now includes last cycle, observation freshness, strategy reasons, risk/circuit-breaker state, daily loss, drawdown, portfolio P&L/fees, position, open orders/residuals, ledger counts/reconciliation, recovery and last error. This status query is read-only and does not create a new market observation or cycle.
+
+
+## v1.7 operational checkpoint — 2026-10-30 15:38 WIB
+
+### Scheduler inspection result
+
+The dedicated Actions workflow is **enabled** at this inspection time. An authenticated, read-only inspection of the workflow overflow menu showed the action `Disable workflow`, not `Enable workflow`; the page had no disabled/suspended banner and reported zero runs. Repository Actions settings allow all actions and reusable workflows, default GITHUB_TOKEN permissions are read-only for contents/packages, and no schedule-specific repository restriction or warning was visible. The file on the default branch declares `2-57/5 * * * *` UTC and has the main-ref guard. These facts rule out a manually disabled workflow and a wrong default branch, but do not explain why the scheduler has emitted no Sentinel event.
+
+The cron expression was last changed in PR #182 (merge commit `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`), authored by `orionrayy`. This account is the repository owner/admin and is still active; other scheduled repository runs show actor `orionrayy`. No Sentinel run exists to expose its own actor metadata. Keep the exact cause of missing schedule dispatch unresolved rather than attributing it to a disabled workflow or suspended actor.
+
+Actions history filtered by `event=schedule` and `branch=main` returned 153 runs across two pages, all from `AI Orchestrator`; none used this workflow path. The workflow page itself reports 0 runs. Status remains `FIRST_CRON_PENDING`. No manual dispatch, disable/enable toggle, rerun, or paper cycle was invoked.
+
+### CI compatibility fix
+
+PR #187 originally failed the Orchestrator Tests Actionlint step because its pinned actionlint v1.7.12 does not recognize GitHub's documented `concurrency.queue` property. The workflow's `queue: max` and `cancel-in-progress: false` are retained. A narrow ignore rule was added to `.github/actionlint.yaml`, scoped only to the Sentinel forward-paper workflow and this exact unknown-key diagnostic. The existing Sentinel contract tests continue to assert that the queue settings remain present. On PR head `f1de2a142a8530489677fe47d9cbb8e8c6810734`, Sentinel Tests #41027680475 and Orchestrator Tests #41027680469 both completed successfully. PR #187 is still open/unmerged; no automatic merge is authorized.
+
+### State and execution boundary
+
+State branch HEAD remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. Its database Git blob remains `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09` (1,323,008 bytes), identical to the last read-only SQL-audited database. The last raw SHA-256 and SQLite findings are recorded in canonical memory and the research audit; the database binary was not re-opened for a new SQL query in this checkpoint. Do not describe the prior audit as a new audit.
+
+The last SQL audit reported integrity `ok`, zero FK violations, 17 forward cycles, 17 book observations, 5,100 levels, 17 attempts, no fills/orders/residuals, and a reconciled flat portfolio of Rp300,000 cash and 0 SOL. Synthetic non-flat recovery remains verified only in the isolated three-process temporary-DB test. Operational non-flat recovery remains unproven.
+
+### Termux and research
+
+The on-device diagnostic command is:
+
+```sh
+python projects/sol-sentinel/termux_doctor.py --json
+```
+
+It uses the standard library, performs a bounded unauthenticated GET to the public INDODAX pair catalogue, and exercises SQLite only on a temporary test database. For a no-network/offline check with tests:
+
+```sh
+python projects/sol-sentinel/termux_doctor.py --skip-network --run-tests --json
+```
+
+CI's prior Ubuntu result is 6 PASS / 1 WARN / 0 FAIL; physical Android/Termux remains `NOT_TESTED`. Research remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; 17 depth observations are too short and lack exchange timestamps, prints and queue depletion for slippage calibration. The 10 bps per-side assumption remains unvalidated. Live trading remains `DISABLED`.
+
+### Next step
+
+The current evidence does not justify a workflow enablement toggle. A same-cadence schedule-registration refresh may be prepared as a separate reviewable change, but it must not be applied until explicitly approved. A genuine scheduled run on `main`, both result/status artifacts and a matching durable state checkpoint are still required for `SCHEDULED_OPERATION_VERIFIED`.
