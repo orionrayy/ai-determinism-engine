@@ -41,6 +41,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: sol-sentinel-research-${{ github.ref }}
@@ -96,6 +97,95 @@ jobs:
             --symbol SOL/IDR --days 30 \
             --output research-output/INDODAX_SOLIDR_1m.csv \
             --metadata-output research-output/INDODAX_SOLIDR_1m.csv.meta.json
+
+      - name: Re-run frozen native INDODAX dataset from research artifact #40950218320
+        uses: actions/download-artifact@v4
+        with:
+          name: sol-sentinel-research-40950218320
+          run-id: 40950218320
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          path: research-input/native-indodax-run-40950218320
+
+      - name: Validate and evaluate native INDODAX SOL/IDR with official Pro fee scenarios
+        run: |
+          set -euo pipefail
+          SOURCE="research-input/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv"
+          META="research-input/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv.meta.json"
+          OUT="research-output/native-indodax-run-40950218320"
+          mkdir -p "$OUT"
+          cp "$SOURCE" "$META" "$OUT/"
+          python - <<'PY'
+          import csv, hashlib, json, math
+          from pathlib import Path
+          csv_path=Path("research-output/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv")
+          meta_path=Path("research-output/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv.meta.json")
+          expected="c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30"
+          digest=hashlib.sha256(csv_path.read_bytes()).hexdigest()
+          meta=json.loads(meta_path.read_text())
+          assert digest == expected, f"dataset hash mismatch: {digest}"
+          assert meta.get("dataset_sha256") == expected, "sidecar hash mismatch"
+          assert meta.get("data_status") == "OK", "dataset sidecar is not OK"
+          assert (meta.get("venue"),meta.get("pair"),meta.get("input_price_currency")) == ("INDODAX","SOL/IDR","IDR"), "venue/pair/currency mismatch"
+          assert meta.get("fx_conversion_applied") is False, "unexpected FX conversion"
+          rows=[]
+          with csv_path.open(newline="",encoding="utf-8") as f:
+              reader=csv.DictReader(f)
+              assert reader.fieldnames == ["open_time_ms","close_time_ms","open","high","low","close","volume"]
+              for row in reader:
+                  t=int(row["open_time_ms"]); close_t=int(row["close_time_ms"])
+                  o,h,l,c,v=(float(row[k]) for k in ("open","high","low","close","volume"))
+                  assert close_t == t+59999, f"candle close boundary invalid at {t}"
+                  assert all(math.isfinite(x) for x in (o,h,l,c,v)) and min(o,h,l,c)>0 and v>=0
+                  assert l <= min(o,c) <= max(o,c) <= h, f"OHLC invariant invalid at {t}"
+                  rows.append(t)
+          assert len(rows)==43200, f"expected 43200 candles, got {len(rows)}"
+          assert all(b-a==60000 for a,b in zip(rows,rows[1:])), "timestamp gap or duplicate"
+          print(json.dumps({"dataset_sha256":digest,"count":len(rows),"first_open_ms":rows[0],"last_open_ms":rows[-1],"fx_conversion_applied":False,"validation":"PASS"},indent=2))
+          PY
+
+          run_scenario() {
+            local label="$1" entry_fee="$2" exit_fee="$3" spread="$4" slippage="$5"
+            local source="INDODAX official Pro all-in fee table checked 2026-10-30; scenario assumes Pro mode; exact account fee display not verified"
+            python projects/sol-sentinel/paper_engine.py \\
+              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \\
+              --fee-model indodax-custom --fee-source "$source" \\
+              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \\
+              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \\
+              --minimum-order-notional-idr 25000 --report-path "$OUT/$label.backtest.json" --db-path ""
+            python projects/sol-sentinel/evaluate_splits.py \\
+              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \\
+              --fee-model indodax-custom --fee-source "$source" \\
+              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \\
+              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \\
+              --minimum-order-notional-idr 25000 --output "$OUT/$label.evaluation.json"
+          }
+          # Official INDODAX Pro all-in rates: maker buy 10.555 bps, taker buy 20.555 bps,
+          # maker sell 31.555 bps, taker sell 41.555 bps. All fee scenarios below are Pro-only.
+          # The spread inputs are two historical point snapshots, not a spread time series.
+          # Slippage values are explicit assumptions; they are not empirically calibrated.
+          run_scenario pro_taker_observed_spread 20.555 41.555 15.799671411815905 5
+          run_scenario pro_taker_stress 20.555 41.555 25.6669 10
+          run_scenario pro_maker_observed_spread 10.555 31.555 15.799671411815905 5
+
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          root=Path("research-output/native-indodax-run-40950218320")
+          print("## Native INDODAX SOL/IDR frozen-dataset backtest")
+          print("- Source artifact: workflow #40950218320 / artifact #12931446637")
+          print("- Dataset SHA-256: c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30")
+          print("- Fee model: INDODAX Pro only; official all-in fees; minimum notional Rp25,000")
+          print("- Spread: observed snapshot references only; slippage: declared assumptions, not measured")
+          for label in ("pro_taker_observed_spread","pro_taker_stress","pro_maker_observed_spread"):
+              full=json.loads((root/f"{label}.backtest.json").read_text())
+              split=json.loads((root/f"{label}.evaluation.json").read_text())
+              print(f"### {label}")
+              for k in ("signal_evaluations","signal_candidates","entry_order_attempts","simulated_entry_fills","positions_opened","positions_closed","closed_trades","net_pnl_idr","net_return_pct","total_fees_idr","total_execution_friction_idr","profit_factor","expectancy_net_per_trade_idr"):
+                  print(f"- {k}: {full.get(k)}")
+              for name,stats in split.get("segments",{}).items():
+                  print(f"- {name}: candidates={stats.get('signal_candidates')}, trades={stats.get('closed_trades')}, net_pnl_idr={stats.get('net_pnl_idr')}, rejection_counts={stats.get('signal_rejection_counts')}")
+          PY
 
       - name: Run cost-aware offline backtest
         run: |
