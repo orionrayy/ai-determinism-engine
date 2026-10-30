@@ -1831,3 +1831,160 @@ Checkpoint time: 2026-10-30. Current source main before this memory entry: `e5d1
 - Main HEAD at this checkpoint: `161a3909438b95de8485af001613481588f94594`. Canonical memory update itself is on the next documentation commit.
 - Latest actual schedule audit at 2026-10-30T05:57:06Z still showed no `SOL Sentinel Forward Paper` run with event `schedule`. This is not satisfied by unrelated AI Orchestrator scheduled events or Sentinel push/PR tests. Status remains `FIRST_CRON_PENDING`.
 - The next true scheduler acceptance requires a run whose name is `SOL Sentinel Forward Paper`, event is `schedule`, branch `main`, whose run artifact includes both `result.json` and durable `status.json`, and whose state-branch commit advances after a completed cycle. No manual dispatch or duplicate cycle was launched.
+
+## SOL_SENTINEL_V1_5_NEW_ROOM_CONTINUITY_2026_10_30
+
+Audit checkpoint: 2026-10-30T06:36:51Z. This addendum was prepared on review branch \`fix/sol-sentinel-ci-isolated-recovery-20261030\`; it is not yet on \`main\` until PR #185 is reviewed and merged.
+
+### Repository truth
+- Verified default branch \`main\` HEAD: \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`. Its parent is \`161a3909438b95de8485af001613481588f94594\`; the only change between these commits is a 13-line canonical-memory addition. No code delta separates the latest main HEAD from the exact Sentinel-tested parent.
+- PR #181 merged as \`58ec3df095c60ccc6868bf0cbccb3c18384419eb\`; #182 as \`8c8e0c0362161ec6644ba44fa538d55dcb9fe18c\`; #183 as \`0bcfe96c47c6d566051a48d1b031e993d96062d0\`; #184 as \`161a3909438b95de8485af001613481588f94594\`. PRs #178 and #180 are closed and not merged. Do not revive them.
+- Exact post-merge Sentinel CI run #41011238183 passed 219 tests (0 failures) at SHA \`161a3909438b95de8485af001613481588f94594\`; Termux Doctor on Ubuntu reported 6 PASS / 1 WARN / 0 FAIL. Main commit \`ba2a8d3...\` is documentation-only after that tested code commit. Orchestrator CI #41011317438 passed on the exact latest main SHA; it is not a replacement for the Sentinel suite.
+- Current main forward-paper workflow blob: \`3d0cf0eb1d32e66f2a82bc0f1e95b81df919c616\`. Current main test workflow blob before PR #185: \`590f866de0ff7cdbcee62f51140cb92e9b9ba00c\`.
+
+### Scheduler proof — still pending
+- \`.github/workflows/sol-sentinel-forward-paper.yml\` is on default branch \`main\`; its schedule is \`2-57/5 * * * *\` UTC (minutes 02, 07, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57). It has a main-ref guard, eight-minute timeout, one shared concurrency group with \`cancel-in-progress: false\`, a state restore, bounded one-cycle invocation, WAL checkpoint/integrity check, state persistence, artifact upload and Step Summary/status output.
+- Requeried repository Actions with \`event=schedule\` and \`branch=main\`: API total 152 schedule events across pages 1 and 2; all returned runs were the separate \`AI Orchestrator\` workflow. No result matched \`SOL Sentinel Forward Paper\` or its workflow path. No \`workflow_dispatch\`, push, or PR event is counted as cron proof.
+- Current status remains \`FIRST_CRON_PENDING\`. The workflow file/default-branch/cron syntax conditions are satisfied, but the workflow's enabled/disabled setting could not be read through the available GitHub connector actions. Do not infer that it is enabled or disabled. Do not trigger another paper cycle just to test the scheduler.
+- GitHub's current Actions documentation states schedules run on the latest default-branch commit, default to UTC, and have a five-minute minimum; it also notes high-load delays/dropped events and that a scheduled workflow may stop when its associated actor is suspended/deleted. Recheck workflow enablement and its associated actor through repository Actions settings before changing cron syntax.
+
+### State branch provenance and flat portfolio
+- State branch HEAD remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`, parent \`49966ce0530458854e640da4d491dda106f5e53b\`. The SQLite file \`state/forward-paper.sqlite3\` is 1,323,008 bytes; Git blob SHA is \`a9bbe1ae63aa1aa496fe000f23d30d4259de1c09\` (Git object SHA, not a raw-file SHA-256).
+- The state branch has 17 linear SQLite checkpoint commits, from 2026-10-30T04:56:41Z through 05:10:23Z. Every corresponding run ID (\`41005623914\`, \`41005726897\`, \`41005771703\`, \`41005811889\`, \`41005832769\`, \`41005882837\`, \`41005908768\`, \`41005904577\`, \`41006187202\`, \`41006193535\`, \`41006220391\`, \`41006225151\`, \`41006524572\`, \`41006535344\`, \`41006530350\`, \`41006854612\`, \`41006890361\`) maps to \`SOL Sentinel Tests\` with event \`push\` or \`pull_request\` on a feature branch. None is a \`schedule\` run on \`main\`.
+- This history is evidence that independent hosted runner invocations restored the prior state branch and committed subsequent SQLite checkpoints. It is not proof of scheduled operation. It is also not non-flat recovery: the latest inspected artifact is flat.
+- Latest actual activation artifact: run #41006890361, artifact #12955034631; source SHA \`5bf6c2cc9598d49c4ecec4458373538b3afa18f5\`; cycle \`7e08efadca684497f5341b3bdb760ad18cb62857\`; 610 completed native INDODAX SOL/IDR 1m candles. Result JSON exit code 0, stderr empty; \`FORWARD_PAPER_ACTIVE\`, \`NO_TRADE\`, risk NORMAL, entries allowed; Rp300,000 cash, 0 SOL, no position/orders/fills/residuals, fees/P&L zero; recovery and reconciliation consistent; no live order route. This artifact predates the durable \`status.json\` monitoring update and therefore does not validate the later status artifact.
+- The latest cycle reasons remain \`15m_trend_not_confirmed\` and \`1m_momentum_exhaustion_or_missing\`. The artifact reports 17 real public INDODAX depth observations, 17 successful attempts, 0 errors, first 2026-10-30T04:56:41Z and last 05:10:23Z. Spread mean 9.634764 bps, median 11.105374 bps, nearest-rank P95 16.071871 bps. These describe a short sample only. Slippage remains assumed; realized exchange slippage and maker queue probability remain unvalidated.
+
+### Non-flat recovery regression — PR #185, not yet merged
+- Open review PR: #185, \`fix/sol-sentinel-ci-isolated-recovery-20261030\`, head \`2093fcbc7286f5b988947e3dbd8db92a029111ff\`, base \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`.
+- Removed the state-mutating \`forward-paper-activation\` job from the general \`SOL Sentinel Tests\` workflow. The old job checked out a hard-coded feature branch, loaded the shared state branch and ran/wrote a one-cycle paper execution on push/PR. It caused the 17 checkpoint commits above. Regression CI should use temporary state only; recurring forward-paper state writes belong to the dedicated main-branch scheduled workflow.
+- Added \`projects/sol-sentinel/test_cross_process_recovery.py\`: three genuinely separate Python processes share only a temporary SQLite file. Process A creates a partially filled BUY (2/5) and SELL (1/2), leaving two residuals and SOL inventory 1. Process B independently restores/reconciles then fills the remaining BUY 3 and SELL 1 against a changed snapshot. Process C independently restores again, verifies SOL inventory 3, four fill rows, zero open orders/residuals, fees, \`PRAGMA integrity_check=ok\`, no foreign-key violations, and idempotent replay of the same snapshot without duplicate fills.
+- PR #185 CI run #41015083173 (event \`pull_request\`, branch \`fix/sol-sentinel-ci-isolated-recovery-20261030\`, exact SHA \`2093fcbc7286f5b988947e3dbd8db92a029111ff\`) succeeded: 220 tests passed, 0 failed; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL. The test job had no activation job and did not advance the state branch. This proves the isolated synthetic non-flat scenario on the PR branch; it is not yet integrated into main and is not evidence of an actual non-flat operational fill.
+- PR #185 remains open and must not be auto-merged.
+
+### Controls, Termux, research and boundaries
+- Main's 219-test suite includes temporary-DB tests for daily-loss breaker persistence across state reopen; HALT persistence/blocking new entries; HALT cancellation of pending BUY residual while preserving ledger; and RESUME without portfolio reset after reconciliation. No test was performed against the active paper DB.
+- Ubuntu Termux Doctor evidence is 6 PASS / 1 WARN / 0 FAIL. The warning correctly states this is not the user's Android host. Physical Android/Termux remains \`NOT_TESTED\`.
+- The current NO_TRADE rejection counters are overlapping observations: 40,506 1m breakout, 35,873 relative-volume, 28,306 5m momentum, 25,981 15m trend, 23,415 5m RSI, 3,135 1m momentum exhaustion/missing, 143 cost-edge. Current native IDR scenarios recorded zero trades in development, validation and OOS. Do not calculate expectancy, win rate or profit factor from zero trades. Research remains \`NO_TRADE / INSUFFICIENT_EVIDENCE\`.
+- Slippage 10 bps per side remains an assumption; book-walk is a displayed-depth model, not measured execution. Maker queue remains \`UNVALIDATED\`. No live trading, exchange order, wallet signing or transfer is authorized.
+- State branch should not be reset. The five-minute schedule implies up to 288 state commits/day if every invocation changes the DB; monitor Git history growth and Actions artifact/resource use before any retention redesign. Do not rewrite state-branch history or alter cron cadence without measured need.
+- Current classifications: repository \`MAIN_VERIFIED\`; engineering main test baseline \`ENGINEERING_VALIDATED\` with PR #185 pending; scheduled operation \`FIRST_CRON_PENDING\`; state persistence \`FLAT_STATE_PERSISTENCE_VERIFIED\`; synthetic non-flat recovery passed on PR #185 but not merged; Android \`NOT_TESTED\`; strategy \`NO_TRADE / INSUFFICIENT_EVIDENCE\`; live \`DISABLED\`.
+
+### Next continuation
+1. Review PR #185 and merge only after its 220-test run and diff remain valid; do not merge automatically.
+2. Verify the workflow enabled state and associated actor in GitHub Actions settings; investigate why no Sentinel schedule appears despite the valid default-branch workflow. Do not use a manual cycle as cron proof.
+3. Capture one genuine \`schedule\` run on \`main\`; verify artifact, \`status.json\`, summary, cycle, state restore, and resulting state-branch commit.
+4. Keep Android validation pending until the user runs the documented diagnostic on the handset. Continue accumulating depth/trade data before changing slippage/queue assumptions.
+
+## SOL_SENTINEL_V1_5_FOLLOWUP_DURABLE_ARTIFACT_ORDER_2026_10_30
+
+- Additional audit of main workflow \`.github/workflows/sol-sentinel-forward-paper.yml\` found a production evidence packaging defect: \`Upload forward-paper evidence\` ran before \`Capture durable operational status\`. Thus the workflow could produce \`status.json\` for the Step Summary but upload an artifact ZIP that omitted it.
+- Opened separate review PR [#186](https://github.com/orionrayy/ai-determinism-engine/pull/186), branch \`fix/sol-sentinel-status-artifact-order-20261030\`, head \`49ae6fd78faf72185c0bfb331d65de5b5f6b1e5a\`. The job order is now: fail unsuccessful operation, capture durable status, upload \`forward-output/\`, publish summary.
+- Added \`projects/sol-sentinel/test_workflow_contract.py\` to assert status generation precedes artifact upload and that the upload action includes \`forward-output/\` with 30-day retention.
+- Exact PR CI [#41015701518](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41015701518), event \`pull_request\`, SHA \`49ae6fd78faf72185c0bfb331d65de5b5f6b1e5a\`, succeeded: 221 tests passed, 0 failed; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL. The forward-paper activation job was skipped. PR #186 remains open, not merged.
+- Main still remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; state branch still \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`. No new paper cycle or state mutation was triggered.
+- Current GitHub documentation confirms scheduled workflows run on the latest default-branch commit, use UTC by default, have a five-minute minimum interval, and may be delayed during high load. A manually disabled workflow does not respond to triggers. Workflow state is controllable through Actions UI, REST API, or GitHub CLI, but the connected GitHub actions used for this audit did not expose the workflow state, so it remains unknown. Inspect repository Actions → SOL Sentinel Forward Paper and verify it is enabled, then inspect the workflow's schedule actor. Sources: GitHub Docs, [workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax), [troubleshooting workflows](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows), [manage workflow runs](https://docs.github.com/en/actions/how-tos/manage-workflow-runs), and [events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+- Neither PR #185 nor #186 is merged. Canonical continuity changes in #185 are still review-branch checkpoints pending integration. Do not claim they are on main.
+- Updated next actions: review #185 for shared-state test isolation + deterministic non-flat recovery; review #186 for operational artifact ordering; inspect/enable scheduled workflow via GitHub UI if disabled; then wait for a genuine scheduled run and verify event/ref/SHA/artifact/state advancement.
+
+## SOL_SENTINEL_V1_5_FOLLOWUP_STATE_INTEGRITY_GUARD_2026_10_30
+
+- Further review of main forward-paper workflow found a second state-safety defect: both \`Checkpoint and verify SQLite state\` and \`Persist paper state\` used \`if: always()\`. Thus a failed WAL checkpoint or \`PRAGMA integrity_check\` did not prevent the later state-branch commit attempt.
+- PR #186 was extended to gate \`Persist paper state\` on \`steps.state_integrity.outcome == 'success'\`. When validation does not pass, the status capture step avoids querying the bad database and writes a structured \`STATE_INTEGRITY_FAILED\` status with \`ledger.consistent=false\`; the Step Summary marks state integrity, persistence, and status capture outcomes and raises ACTION REQUIRED if any are not successful.
+- The evidence artifact upload remains after status capture, so the artifact includes \`status.json\`. The summary is published last.
+- Four workflow-contract tests now assert: status before upload; upload path/retention; persistence is integrity-gated; failed integrity produces safe status and an actionable summary.
+- Final exact CI run for PR #186: [#41016258548](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41016258548), event \`pull_request\`, SHA \`988aea096b90d3e0e7a07960fbd547eb982e40ee\`, succeeded with **223 tests passed, 0 failed**, Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL. The forward-paper activation job was skipped.
+- An earlier run #41016205926 on the intermediate test commit failed one static assertion because the test encoded a literal workflow expression with a stray backslash. The assertion was corrected; all four contract tests pass on the final SHA. No operational paper job ran.
+- PR #186 latest head: \`988aea096b90d3e0e7a07960fbd547eb982e40ee\`; open, mergeable, not merged. Main remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; active paper-state branch remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`.
+- Keep both PRs open for review; never merge automatically. PR #185 covers CI isolation and non-flat recovery; PR #186 covers safe state persistence and artifact/monitoring correctness.
+
+## SOL_SENTINEL_V1_5_FINAL_WORKFLOW_PR186_VALIDATION_2026_10_30
+
+- PR #186 additionally sets \`concurrency.queue: max\` while retaining \`cancel-in-progress: false\` and the same single-writer group. Current GitHub Actions docs specify the default concurrency behavior allows one pending run and replaces the existing pending run when a new run queues; \`queue: max\` permits up to 100 pending runs, after which additional queued runs are canceled. This protects scheduled cycles from the default one-pending replacement behavior during brief backlog. It is bounded, not infinite. Sources: GitHub Docs workflow syntax and concurrency.
+- Added a fifth static workflow contract test to guard \`queue: max\`, the shared single-writer concurrency group, and \`cancel-in-progress: false\`.
+- Final exact PR #186 CI: run [#41016440890](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41016440890), event \`pull_request\`, branch \`fix/sol-sentinel-status-artifact-order-20261030\`, SHA \`86c50783e1e6f850c74aa9f24bc75615773d4f12\`, conclusion success. **224 tests passed, 0 failed**; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL; activation job skipped.
+- This supersedes the earlier intermediate 221- and 223-test PR #186 check records. The earlier test-string assertion failure was corrected before the final SHA.
+- PR #186 head is now \`86c50783e1e6f850c74aa9f24bc75615773d4f12\`, open and mergeable, not merged. The five workflow contract guards are: durable status before artifact upload, correct artifact path/retention, state persist only after successful SQLite integrity validation, safe status fallback and actionable summary on failure, and bounded pending concurrency queue.
+- Latest verified main remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; latest state remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`. No scheduled run was found as of 2026-10-30T06:50:40Z; do not promote the first-cron gate.
+
+## SOL_SENTINEL_V1_5_READ_ONLY_ACTIVE_STATE_FORENSICS_2026_10_30
+
+- Added a one-time read-only CI audit job to PR #185, guarded strictly to pull_request number 185. It checks out \`sol-sentinel-paper-state\` using \`actions/checkout\` with \`persist-credentials: false\`, opens the database using SQLite URI \`mode=ro\` plus \`PRAGMA query_only=ON\`, runs integrity/FK checks and row-level provenance/reconciliation, and does not commit or write the state branch.
+- Exact successful audit/test run: [#41017189745](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41017189745), event \`pull_request\`, head SHA \`83d0f22d0d2b6013352e4d0c4fd052ad02b082a3\`. Both \`active-state-read-only-audit\` and \`unit-tests\` succeeded. Sentinel suite: **220 passed, 0 failed**; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL. The non-flat three-process recovery test passed. Matching Orchestrator run [#41017189742](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41017189742) also passed on the same SHA.
+- Raw SQLite file metadata: \`state/forward-paper.sqlite3\`, 1,323,008 bytes, raw-file SHA-256 \`149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c\`. This is now an actual SHA-256 of file bytes, not a Git blob ID.
+- Database checks: \`PRAGMA integrity_check=ok\`; foreign-key violations 0; journal mode \`wal\`; ledger schema version \`1\`; \`PRAGMA user_version=0\`; 0 foreign key errors. SQLite was opened in \`mode=ro\`, \`query_only=1\`, no writes made.
+- Relevant row counts: 17 \`fp_cycles\`, 10 \`fp_signals\`, 1 \`fp_daily_risk\`, 2 \`fp_control\`, 1 \`paper_accounts\`; 17 \`observations\`, 5,100 \`levels\`, 17 \`attempts\`; 0 \`orders\`, 0 \`fills\`, 0 \`events\`, 0 \`execution_cycles\`, 0 \`snapshots\`, 0 \`fp_position\`.
+- Portfolio: Rp300,000 cash; 0 SOL; average entry 0; realized P&L 0; fees 0; open orders 0, fills 0. Cash and SOL balances reconcile to the fill journal (both equations true; no fill records exist). Thus this is definitively flat-state persistence, not non-flat operational recovery.
+- Market-depth provenance: 17 observations and 17 unique observation IDs, 17 unique book hashes, 0 duplicate book hashes; collector version \`indodax-depth-collector-v1\`, endpoint \`https://indodax.com/api/depth/solidr\`. First \`2026-10-30T04:56:41.272158Z\`; last \`2026-10-30T05:10:23.793208Z\`. Each snapshot has 150 bid and 150 ask levels (5,100 rows total). Attempts: 17 OK, 0 ERROR; mean request duration 612.18 ms. No record had an exchange timestamp (\`exchange_ts_ms=null\` for all 17). UTC hour distribution: 6 observations during 04:00–04:59 and 11 during 05:00–05:59.
+- Recomputed spread distribution directly from stored rows: mean 9.6347641883 bps; median 11.1053738673; nearest-rank P90 16.0662374831; P95 16.0718713822; population standard deviation 3.7951068970.
+- Visible quote notional depth within ±25 bps of each snapshot midpoint, computed directly from the 150x150 level rows:
+  - Bid: mean Rp179,924,343.79; median Rp57,933,685.96; P90 Rp338,854,082.90; P95 Rp617,159,539.84; population standard deviation Rp164,507,936.70.
+  - Ask: mean Rp44,832,636.84; median Rp49,739,722.33; P90 Rp55,129,463.32; P95 Rp56,951,424.57; population standard deviation Rp15,786,136.49.
+- The highly skewed 17-snapshot sample spans only about 13m42s; it has no exchange-side timestamps, trade prints, queue position or queue-depletion linkage. Visible book notional is not a guaranteed executable fill. The 10 bps-per-side slippage setting remains an assumption, not measured realized slippage.
+- Current PR #185 head at this audit was \`83d0f22d0d2b6013352e4d0c4fd052ad02b082a3\`; PR open/not merged. This audit is a temporary CI read-only job and does not alter the paper-state branch.
+- The previous attempted version of the second depth-band script had a trivial Python syntax error (assignment inside dict literal); it failed before any database writes. It was corrected; the final audit on #41017189745 passed. Do not treat the failed intermediate run as the final evidence.
+
+## SOL_SENTINEL_V1_5_OFFICIAL_INDODAX_FEE_MODEL_RECONCILIATION_2026_10_30
+
+- Verified official INDODAX Pro IDR all-in fee table effective 2026-10-01. The official table lists:
+  - Taker BUY 0.20555% = 20.555 bps; Taker SELL 0.41555% = 41.555 bps; total round-trip all-in fees 62.11 bps.
+  - Maker BUY 0.10555% = 10.555 bps; Maker SELL 0.31555% = 31.555 bps; total maker round-trip all-in fees 42.11 bps.
+- Official INDODAX notice dated 2026-09-29 says IDR-market CFX was reduced to 0.00555% on both buy and sell, effective 2026-10-01. The official fee image breaks out service fee, sell-side tax and CFX to those exact all-in totals. Official page instructs members to check their own all-in/tax details in Profile > Settings > Trading Fees; account-level values should be confirmed there before any future real-money use.
+- Main \`ForwardPaperConfig\` has \`fee_buy_bps=20.555\` and \`fee_sell_bps=41.555\`, matching the official **Pro taker IDR all-in** schedule. The active executor uses market orders, so this is the correct side-specific fee class for the simulated path. No fee code correction is indicated by this comparison.
+- Reconcile terminology: the historical 87.162363 bps "Pro taker current snapshot total modeled friction" is **not fee-only**. It is 62.11 bps taker all-in fees + 15.0523626084 bps single quoted spread + 10 bps assumed round-trip slippage (5 bps per side). Historical maker 67.162363 bps similarly equals 42.11 bps maker fees + 15.0523626084 spread + 10 bps assumed round-trip slippage. The prompt's shorthand "Pro taker current" can otherwise be misread as pure fees.
+- The active forward engine config now uses 10 bps assumed slippage per side. Using the 17-observation sample spread mean gives a modeled total of 62.11 + 9.634764 = 71.744764 bps before slippage, or approximately 91.744764 bps after adding 20 bps of assumed round-trip slippage. At the sample P95 spread, that becomes approximately 98.181871 bps. These are estimates, not measured fills or realized slippage.
+- The 10 bps-per-side setting remains an assumption; the 17 static snapshots cannot infer actual execution impact or maker queue probability. No strategy parameters or fees were changed and no trades were forced.
+- Official sources checked 2026-10-30: INDODAX Help Center "Details of Transaction Fees on INDODAX" and its official fee-table image; INDODAX announcement "Penurunan Biaya CFX", 2026-09-29, effective 2026-10-01.
+
+## SOL_SENTINEL_V1_5_READONLY_ACTIVE_STATE_AUDIT_2026_10_30
+
+Verified from exact PR #185 workflow run #41017557539 at 2026-10-30T07:02:16Z (14:02 WIB), branch \`fix/sol-sentinel-ci-isolated-recovery-20261030\`, head \`438923fb356945357b58fadbb600a2044aa804e9\`. Both unit-tests and active-state-read-only-audit jobs passed. This is a read-only CI inspection of \`sol-sentinel-paper-state\`, not a paper cycle.
+
+### Exact SQLite file and integrity
+
+- File: \`.paper-state/state/forward-paper.sqlite3\`
+- Size: 1,323,008 bytes.
+- Raw SHA-256: \`149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c\`.
+- \`PRAGMA integrity_check\`: \`ok\`.
+- \`PRAGMA foreign_key_check\`: 0 violations.
+- SQLite ledger schema version 1; journal mode WAL; PRAGMA user_version 0.
+- Connection was opened using SQLite URI \`mode=ro\`, \`PRAGMA query_only=ON\`; state checkout had \`persist-credentials: false\`, workflow permission \`contents: read\`. No state write, checkpoint, mutation, or commit was performed.
+- Table counts: observations 17, levels 5,100, attempts 17, fp_cycles 17, fp_signals 10, fp_daily_risk 1, fp_control 2, fp_position 0, fp_metadata 4, paper_accounts 1, orders 0, fills 0, events 0, execution_cycles 0, snapshots 0, snapshot_levels 0, snapshot_consumption 0, liquidity_pools 0, liquidity_pool_levels 0, snapshot_liquidity_pools 0; metadata 1.
+- Account: initial cash Rp300,000; current cash Rp300,000; initial/current SOL 0; avg entry cost 0; realized P&L 0; fees 0; open orders 0; fills 0. Cash and SOL both reconcile exactly to fill rows. Execution event journal is empty (0 events), no active position.
+- This is strong integrity/provenance evidence for the actual latest flat paper state, not non-flat operational recovery.
+
+### Depth collector provenance
+
+- Endpoint: \`https://indodax.com/api/depth/solidr\`.
+- Collector: \`indodax-depth-collector-v1\`.
+- 17 observations, 17 unique observation IDs and 17 unique book hashes; 0 duplicate book hashes.
+- Observation window: 2026-10-30T04:56:41.272158Z–05:10:23.793208Z (13m42s). UTC hours: 04 = 6 snapshots; 05 = 11 snapshots.
+- 5,100 level rows: 150 bid + 150 ask levels per observation.
+- 17 collection attempts: OK=17, errors=0, mean duration 612.176 ms.
+- Exchange timestamp presence: 0/17. Snapshot timing is collector-local; no exchange-side timestamp was supplied in these records. Do not present the observation timestamps as exchange event timestamps.
+
+### Reproducible spread statistics
+
+Computed directly from the stored 17 \`observations.spread_bps\` values:
+- Mean 9.6347641883 bps.
+- Median 11.1053738673 bps.
+- P90 nearest-rank 16.0662374831 bps.
+- P95 nearest-rank 16.0718713822 bps.
+- Population standard deviation 3.7951068970 bps.
+
+### Visible depth within ±25 bps of snapshot midpoint
+
+Computed from immutable \`levels\` rows, summing price × quantity per side where bid >= midpoint × 0.9975 and ask <= midpoint × 1.0025. This is visible quote notional, not guaranteed executable liquidity.
+
+Bid quote depth IDR (n=17): mean Rp179,924,344; median Rp57,933,686; P90 Rp338,854,083; P95 Rp617,159,540; population SD Rp164,507,937.
+
+Ask quote depth IDR (n=17): mean Rp44,832,637; median Rp49,739,722; P90 Rp55,129,463; P95 Rp56,951,425; population SD Rp15,786,136.
+
+Bid observations are highly skewed relative to median; do not size orders from the mean or extrapolate beyond this small 13m42s window. Static depth does not encode trade prints, queue position, replenishment/depletion, or realized fills. Queue probability and realized execution slippage remain unmeasured; the 10 bps per-side slippage is still an assumption.
+
+### Latest validation and status
+
+- PR #185 head \`438923fb356945357b58fadbb600a2044aa804e9\`: Sentinel run #41017557539 passed 220 tests, 0 failures; read-only active-state audit passed; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL; Orchestrator run #41017557515 passed.
+- PR #186 head \`86c50783e1e6f850c74aa9f24bc75615773d4f12\`: Sentinel run #41016440890 passed 224 tests, 0 failures, including five workflow contract tests. PRs remain open, unmerged.
+- Main HEAD remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; state HEAD remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`.
+- At 2026-10-30T07:13:28Z (14:13 WIB), schedule history query \`event=schedule&branch=main\` still showed no run matching the Sentinel workflow; public workflow page showed 0 runs. \`FIRST_CRON_PENDING\` remains.
