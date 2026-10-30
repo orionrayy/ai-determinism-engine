@@ -43,11 +43,11 @@ class ForwardPaperWorkflowContractTests(unittest.TestCase):
         summary = self.workflow.index("- name: Publish operational summary")
         capture_block = self.workflow[capture:upload]
         summary_block = self.workflow[summary:]
-        self.assertIn("STATE_INTEGRITY: \${{ steps.state_integrity.outcome }}", capture_block)
+        self.assertIn("STATE_INTEGRITY: ${{ steps.state_integrity.outcome }}", capture_block)
         self.assertIn('if [ "$STATE_INTEGRITY" = "success" ]', capture_block)
         self.assertIn('"consistent": False', capture_block)
-        self.assertIn("STATE_PERSISTENCE: \${{ steps.persist_state.outcome }}", summary_block)
-        self.assertIn("STATUS_CAPTURE: \${{ steps.capture_status.outcome }}", summary_block)
+        self.assertIn("STATE_PERSISTENCE: ${{ steps.persist_state.outcome }}", summary_block)
+        self.assertIn("STATUS_CAPTURE: ${{ steps.capture_status.outcome }}", summary_block)
         self.assertIn('os.environ.get("STATE_INTEGRITY") != "success"', summary_block)
         self.assertIn('os.environ.get("STATE_PERSISTENCE") != "success"', summary_block)
 
