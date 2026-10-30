@@ -632,3 +632,12 @@ Next steps: review/merge PR #185 only after independent review; inspect workflow
 - The evidence artifact is uploaded after status creation, so the artifact snapshot contains \`status.json\`.
 - Four workflow-contract regression tests were added. Final exact PR CI run #41016258548 on SHA \`988aea096b90d3e0e7a07960fbd547eb982e40ee\`: **223 passed, 0 failed**; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL; activation skipped. The preceding intermediate run #41016205926 had one failing assertion due a test-string escaping mistake, fixed in the final SHA.
 - PR #186 remains open and unmerged. No state branch or main SHA changed. These are proposed changes only until reviewed and merged.
+
+## Final PR #186 workflow reliability validation — 2026-10-30
+
+- PR #186 adds \`queue: max\` to the existing single-writer concurrency group and retains \`cancel-in-progress: false\`. Current GitHub Actions semantics default to a single pending run, replacing an older pending run when another queues. \`queue: max\` allows up to 100 pending runs, with further arrivals canceled after the queue is full. This reduces missed invocation risk under transient backlog without allowing parallel paper-state writers. It does not guarantee infinite backlog preservation or perfect dispatch-order FIFO.
+- Five workflow contract tests now validate: status capture before artifact upload; the uploaded \`forward-output/\` path and 30-day retention; state persistence gated on successful SQLite checkpoint/integrity; safe failure status plus actionable Step Summary; and non-dropping bounded concurrency queue configuration.
+- Final PR #186 test run #41016440890 on SHA \`86c50783e1e6f850c74aa9f24bc75615773d4f12\` succeeded with **224 tests passed, 0 failed**. Termux Doctor on Ubuntu: 6 PASS / 1 WARN / 0 FAIL. The \`forward-paper-activation\` job was skipped.
+- This latest result supersedes earlier PR #186 intermediate test totals of 221 and 223; an intermediate assertion escape issue had failed one run and was corrected before the final run. No paper cycle was launched.
+- PR #186 latest head remains open, mergeable, and unmerged. Main remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; state branch remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`.
+- No SOL Sentinel \`schedule\` run appeared in Actions history as of 2026-10-30T06:50:40Z. Workflow-specific enabled state and cron actor are still not observable from the connected GitHub Actions run methods or the signed-out public Actions page.
