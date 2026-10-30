@@ -13,8 +13,8 @@
 | STRAT-01 | Multi-timeframe | 4h/1h/15m alignment; 5m break, volume and RSI | Implemented; not calibrated |
 | COST-01 | User fee tier | Actual user-specific taker fee known | BLOCKED; no account connection |
 | COST-02 | Slippage | Timestamped book walk / fill observations | BLOCKED; not calibrated |
-| SIZE-01 | 1 USDT notional | Actual quantity rounded to current filters, never auto-increased | Implemented; live filters unverified |
-| RISK-01 | 23x/25x/30x | Margin and stop-distance stress report | Implemented as analysis only |
+| SIZE-01 | 1 USDT entry budget | Margin and notional modes are distinct; leverage-specific quantity/notional checked against filters | Implemented; live filters unverified |
+| RISK-01 | 23x/25x/30x | Stop-distance stress plus public tier/account setting separation | Implemented as analysis only; account setting not authenticated |
 | LEDGER-01 | Idempotency | Identical replay no-op; conflicting payload rejected | Implemented + regression tests |
 | OPS-01 | Android acceptance | Public collector runs on user's actual Termux device | NOT RUN |
 | PAPER-01 | Forward paper | >=30 calendar days and >=100 valid closed simulated trades | NOT STARTED |
