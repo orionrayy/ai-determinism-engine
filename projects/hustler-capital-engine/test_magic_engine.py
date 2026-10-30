@@ -88,6 +88,17 @@ class MagicEngineTests(unittest.TestCase):
         self.assertEqual(report["metrics"]["funding_interval_hours"],4.0)
         self.assertEqual(report["metrics"]["candidate_direction"],"LONG")
         self.assertEqual(report["status"],"NO_TRADE")
+        self.assertEqual(report["policy"]["entry_sizing_mode"],"MARGIN")
+        scenarios=report["metrics"]["position_sizing"]["scenarios"]
+        self.assertEqual([row["order_notional_usdt"] for row in scenarios],[23.0,25.0,30.0])
+        self.assertEqual([row["initial_margin_usdt"] for row in scenarios],[1.0,1.0,1.0])
+        self.assertTrue(all(row["size_check"]["valid"] for row in scenarios))
+        self.assertEqual(report["metrics"]["risk_check"]["leverage_availability"],"ACCOUNT_AND_CURRENT_CONTRACT_TIER_NOT_AUTHENTICATED")
+        notional_report=analyze_snapshot(snapshot,{"entry_sizing_mode":"NOTIONAL","entry_notional_usdt":1.0})
+        notional_rows=notional_report["metrics"]["position_sizing"]["scenarios"]
+        self.assertEqual([row["order_notional_usdt"] for row in notional_rows],[1.0,1.0,1.0])
+        self.assertTrue(all(not row["size_check"]["valid"] for row in notional_rows))
+        self.assertIn("ALL_LEVERAGE_SIZING_SCENARIOS_FAIL_EXCHANGE_FILTERS",notional_report["decision_reasons"])
         self.assertIn("RESEARCH_ONLY_NO_ORDER_ROUTE",report["decision_reasons"])
         self.assertIn("ACCOUNT_TAKER_FEE_UNVERIFIED",report["decision_reasons"])
 
