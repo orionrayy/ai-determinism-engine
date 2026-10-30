@@ -1818,3 +1818,16 @@ Checkpoint time: 2026-10-30. Current source main before this memory entry: `e5d1
 - Latest state-branch head remained `c3f259242d450d64b4baeb01ae083c178fd4d8b0`; no new paper checkpoint is expected from PR/test CI because activation is intentionally skipped.
 - Scheduler remains `FIRST_CRON_PENDING`: the latest Actions schedule query through 2026-10-30T05:54:12Z returned only the unrelated AI Orchestrator scheduled history, with no post-merge run for workflow `SOL Sentinel Forward Paper`. No manual dispatch or duplicate forward-paper cycle was invoked. Continue to check only for actual `event=schedule` with the SOL Sentinel workflow name and main SHA.
 - Current classifications: `ENGINEERING_VALIDATED` (main source/test workflows pass); `FORWARD_PAPER_ACTIVE` (last operational artifact is still the verified flat paper account); `FIRST_CRON_PENDING`; durable checkpoint persistence across successive flat-state runs observed; non-flat residual production recovery not yet exercised live; `NO_TRADE / INSUFFICIENT_EVIDENCE`; physical Android/Termux `NOT_TESTED`; live `DISABLED`.
+
+
+## SOL_SENTINEL_V1_4_OPERATOR_CONTROL_REGRESSION_2026_10_30
+
+- PR [#184](https://github.com/orionrayy/ai-determinism-engine/pull/184) merged via squash into `main` as `161a3909438b95de8485af001613481588f94594`.
+- Added three temporary-SQLite regression tests for operator controls:
+  1. HALT persists after reopening the database and makes RiskSupervisor deny new entries.
+  2. HALT cancels an existing simulated BUY residual and preserves cash/ledger consistency.
+  3. RESUME reactivates only after ledger recovery/reconciliation and preserves all portfolio values.
+- Exact PR test run #41011193758: **219 tests passed, 0 failed**; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL; activation skipped. Post-merge exact-main run [#41011238183](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41011238183) also succeeded with **219 tests**, 0 failures, Termux Doctor 6 PASS / 1 WARN / 0 FAIL, and activation skipped. Tests used temporary DB/fake market/depth only; the active paper-state branch was not accessed.
+- Main HEAD at this checkpoint: `161a3909438b95de8485af001613481588f94594`. Canonical memory update itself is on the next documentation commit.
+- Latest actual schedule audit at 2026-10-30T05:57:06Z still showed no `SOL Sentinel Forward Paper` run with event `schedule`. This is not satisfied by unrelated AI Orchestrator scheduled events or Sentinel push/PR tests. Status remains `FIRST_CRON_PENDING`.
+- The next true scheduler acceptance requires a run whose name is `SOL Sentinel Forward Paper`, event is `schedule`, branch `main`, whose run artifact includes both `result.json` and durable `status.json`, and whose state-branch commit advances after a completed cycle. No manual dispatch or duplicate cycle was launched.
