@@ -341,6 +341,17 @@ class ForwardState:
             ).fetchall()
             return [dict(row) for row in rows]
 
+    def expire_unsubmitted_intent(self, signal_id: str, reason: str) -> None:
+        now = iso_utc(utc_now())
+        with closing(self._connect()) as db, db:
+            cur = db.execute(
+                "UPDATE fp_signals SET decision='INTENT_EXPIRED',reason_json=?,updated_at=? "
+                "WHERE signal_id=? AND decision='ORDER_INTENT' AND order_id IS NULL",
+                (canonical_json([reason]), now, signal_id),
+            )
+            if cur.rowcount != 1:
+                raise ForwardPaperError("unsubmitted intent changed while being expired")
+
     def attach_order(self, signal_id: str, order_id: str) -> None:
         with closing(self._connect()) as db, db:
             db.execute(
@@ -835,6 +846,9 @@ class ForwardPaperOrchestrator:
             if existing is None:
                 expires = datetime.fromisoformat(payload["expires_at"]) if payload.get("expires_at") else None
                 if expires is not None and now >= expires:
+                    self.state.expire_unsubmitted_intent(
+                        row["signal_id"], "intent_expired_before_execution_order_creation"
+                    )
                     actions.append(f"expired_unsubmitted_intent:{row['signal_id']}")
                     continue
                 order_id = self.ledger.create_order(_intent_to_request(payload))
@@ -842,7 +856,6 @@ class ForwardPaperOrchestrator:
             else:
                 order_id = existing["order_id"]
                 actions.append(f"reconciled_existing_order:{row['signal_id']}")
-            self.state.attach_order(row["signal_id"], order_id)
             if payload["purpose"] == "ENTRY" and payload.get("atr_idr"):
                 atr_value = Decimal(payload["atr_idr"])
                 self.state.save_position(
@@ -850,6 +863,7 @@ class ForwardPaperOrchestrator:
                     candle_close_ms=int(payload["candle_close_ms"]), atr_idr=atr_value,
                     entry_price=None, stop_price=None, target_price=None, status="PENDING",
                 )
+            self.state.attach_order(row["signal_id"], order_id)
         return actions
 
     def _process_open_orders(self, snapshot: DepthSnapshot) -> list[dict[str, Any]]:
@@ -928,12 +942,15 @@ class ForwardPaperOrchestrator:
         )
         existing = self.ledger.find_order_by_client_order_id(signal_id)
         order_id = existing["order_id"] if existing else self.ledger.create_order(request)
-        self.state.attach_order(signal_id, order_id)
         if purpose == "ENTRY" and atr_idr is not None:
+            # Persist position metadata before attaching the order to the signal.
+            # A crash in this window leaves a recoverable unsubmitted-intent row;
+            # recovery discovers the already-created order by client_order_id.
             self.state.save_position(
                 signal_id=signal_id, order_id=order_id, candle_close_ms=candle_close_ms,
                 atr_idr=atr_idr, entry_price=None, stop_price=None, target_price=None, status="PENDING",
             )
+        self.state.attach_order(signal_id, order_id)
         return {"signal_id": signal_id, "client_order_id": signal_id, "order_id": order_id, "intent": intent}
 
     def _execute_new_order(self, order_id: str) -> dict[str, Any]:
