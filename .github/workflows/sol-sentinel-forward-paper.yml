@@ -27,6 +27,7 @@ permissions:
 concurrency:
   group: sol-sentinel-forward-paper-state
   cancel-in-progress: false
+  queue: max
 
 jobs:
   forward-paper:
