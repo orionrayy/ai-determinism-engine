@@ -514,12 +514,15 @@ class RiskSupervisor:
         exposure = (portfolio["sol_quantity"] * bid / equity) if equity > 0 else Decimal("1")
         control = self.state.control()
         reasons: list[str] = []
+        halt_reasons: list[str] = []
         if daily_loss >= self.config.daily_loss_limit_fraction:
-            self.state.set_control("HALTED", "daily_loss_limit_reached")
+            halt_reasons.append("daily_loss_limit_reached")
             reasons.append("daily_loss_limit_reached")
         if drawdown >= self.config.max_drawdown_fraction:
-            self.state.set_control("HALTED", "maximum_drawdown_reached")
+            halt_reasons.append("maximum_drawdown_reached")
             reasons.append("maximum_drawdown_reached")
+        if halt_reasons:
+            self.state.set_control("HALTED", "+".join(halt_reasons))
         if exposure > self.config.max_exposure_fraction:
             reasons.append("portfolio_exposure_above_limit")
         control = self.state.control()
