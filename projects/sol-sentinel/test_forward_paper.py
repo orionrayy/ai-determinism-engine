@@ -194,6 +194,77 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
         self.assertEqual(reopened.control()["operating_state"], "HALTED")
         self.assertEqual(reopened.control()["halt_reason"], "daily_loss_limit_reached+maximum_drawdown_reached")
 
+    def test_operator_halt_persists_and_blocks_new_entries_after_reopen(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        result = runner.operator_halt("synthetic operator-control test")
+        self.assertEqual(result["operating_state"], "HALTED")
+
+        reopened = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        self.assertEqual(reopened.state.control()["operating_state"], "HALTED")
+        self.assertEqual(
+            reopened.state.control()["halt_reason"], "synthetic operator-control test"
+        )
+        snapshot = DepthSnapshot.from_indodax(FakeDepthClient().snapshot())
+        decision = RiskSupervisor(reopened.state, self.config).evaluate(
+            reopened.ledger.portfolio(), snapshot, (), now=utc_now()
+        )
+        self.assertEqual(decision.state, "HALTED")
+        self.assertFalse(decision.allow_new_entries)
+        self.assertEqual(reopened.ledger.portfolio()["cash_idr"], Decimal("300000"))
+
+    def test_operator_halt_cancels_pending_buy_residual_and_preserves_ledger(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        now = utc_now()
+        request = OrderRequest(
+            client_order_id="halt-buy-residual",
+            venue="INDODAX",
+            symbol="SOL/IDR",
+            side=Side.BUY,
+            quantity=Decimal("0.02"),
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC,
+            created_at=now,
+            expires_at=now + timedelta(minutes=10),
+            quantity_step=Decimal("0.00000001"),
+            price_tick=Decimal("1"),
+            fee_bps=Decimal("20.555"),
+        )
+        order_id = runner.ledger.create_order(request)
+
+        result = runner.operator_halt("cancel pending entry test")
+
+        self.assertEqual(result["operating_state"], "HALTED")
+        self.assertEqual(result["cancelled_buy_orders"], [order_id])
+        self.assertEqual(runner.ledger.list_open_orders(), [])
+        reconciliation = runner.ledger.reconcile()
+        self.assertTrue(reconciliation["consistent"])
+        self.assertEqual(runner.ledger.portfolio()["cash_idr"], Decimal("300000"))
+
+    def test_operator_resume_restores_active_state_without_resetting_portfolio(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        runner.operator_halt("synthetic maintenance pause")
+        before = runner.ledger.portfolio()
+
+        result = runner.operator_resume("synthetic reconciliation review passed")
+
+        self.assertEqual(result["operating_state"], "ACTIVE")
+        self.assertTrue(result["reconciliation"]["consistent"])
+        self.assertEqual(result["open_order_count"], 0)
+        self.assertEqual(runner.state.control()["operating_state"], "ACTIVE")
+        self.assertEqual(runner.ledger.portfolio(), before)
+
     def test_pending_order_intent_recovers_after_create_before_attach_crash(self):
         runner = ForwardPaperOrchestrator(
             self.db_path, config=self.config, market_data=FakeMarketData(),
