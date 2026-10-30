@@ -161,3 +161,40 @@ CI's prior Ubuntu result is 6 PASS / 1 WARN / 0 FAIL; physical Android/Termux re
 ### Next step
 
 The current evidence does not justify a workflow enablement toggle. A same-cadence schedule-registration refresh may be prepared as a separate reviewable change, but it must not be applied until explicitly approved. A genuine scheduled run on `main`, both result/status artifacts and a matching durable state checkpoint are still required for `SCHEDULED_OPERATION_VERIFIED`.
+
+
+## v1.8 scheduler registration refresh — 2026-10-30 16:04 WIB
+
+### Workflow identity and activation
+
+GitHub REST identifies the workflow as ID `401397705`, name `SOL Sentinel Forward Paper`, path `.github/workflows/sol-sentinel-forward-paper.yml`, and state `active`. The authenticated Actions page also offers `Disable workflow` (not `Enable workflow`), displays no disabled/suspended banner, and reports zero workflow runs. The repository default branch is `main`, and the workflow exists on that branch.
+
+### Schedule registration refresh
+
+PR [#188](https://github.com/orionrayy/ai-determinism-engine/pull/188) was merged to `main` as `1ec2a6a11dbe8bcf84d910fc3017c9d0173ad01a`. It changed only the cron spelling from:
+
+```cron
+2-57/5 * * * *
+```
+
+to:
+
+```cron
+2,7,12,17,22,27,32,37,42,47,52,57 * * * *
+```
+
+Both expressions select the same twelve UTC minutes per hour: 02, 07, 12, 17, 22, 27, 32, 37, 42, 47, 52 and 57. A contract test pins this exact cadence. No state logic, concurrency, job permissions, main-ref condition, executor, artifact handling or strategy configuration changed.
+
+GitHub's troubleshooting documentation says a scheduled workflow can stop while still enabled if its associated actor account is suspended/deleted, and that a commit changing cron syntax can reactivate a deactivated schedule and establish a new actor. The account associated with the prior cron change is `orionrayy`, an active repository owner/admin; therefore actor suspension is not confirmed. The schedule refresh is a supported, conservative re-registration attempt, not proof of the previous root cause.
+
+### Current scheduler result
+
+An exact GitHub REST query against workflow ID `401397705`, with `event=schedule` and `branch=main`, returned `total_count=0` and no pagination link at the checkpoint time. No event, run ID, artifact, cycle ID or state checkpoint can be reported. Keep `FIRST_CRON_PENDING` and `WORKFLOW_ENABLED_FIRST_RUN_PENDING` separate. Do not count AI Orchestrator schedule events or PR/push tests.
+
+Do not invoke manual `run` to simulate cron. A future first scheduled run must be verified using the exact workflow ID and event, branch, head SHA, timestamps, run conclusion, `result.json`, `status.json`, cycle ID, state branch advancement, database integrity and ledger reconciliation.
+
+### State and risk boundary
+
+State branch remains `sol-sentinel-paper-state` at `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. The database Git blob remains `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, size 1,323,008 bytes; its previously audited raw SHA-256 is `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`. The binary was not reopened for a new SQL pass in this checkpoint. Last SQL audit still reports flat cash Rp300,000, 0 SOL, zero fills/orders/residuals, integrity `ok`, and 0 foreign-key violations. Do not represent this as a new integrity query.
+
+Synthetic three-process recovery remains verified only on an isolated temporary database. Active operational non-flat recovery is not yet observed. Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; physical Android/Termux remains `NOT_TESTED`; live trading remains `DISABLED`.

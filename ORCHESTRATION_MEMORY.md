@@ -2088,3 +2088,50 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Exact-head Orchestrator Tests run #41027953355 succeeded after the scoped Actionlint compatibility exception. The job reports 463 orchestrator tests passed, then 86 shared tests passed, and the evaluation harness passed.
 - The canonical memory and supporting operations/research documents were verified remotely on the PR branch. Main remains `6e2231c84399687c43b644056b0d5aaec57f64f8`; paper-state branch remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`.
 - The enabled workflow still has zero Sentinel runs. Schedule history remains 153 unrelated AI Orchestrator runs and zero Sentinel schedule events. Preserve `FIRST_CRON_PENDING`; no schedule registration change, activation toggle, dispatch or paper cycle has been performed.
+
+
+## v1.8 cron registration refresh checkpoint — 2026-10-30T16:04:46+07:00
+
+### Repository and PR integration
+
+- Default branch is `main`; latest verified HEAD after the PR #188 squash merge is `1ec2a6a11dbe8bcf84d910fc3017c9d0173ad01a`.
+- PR #187 is closed/merged, squash merge commit `1326dccff5c286eabfbe810b8060702b10469f48`. It integrates the v1.7 authenticated scheduler findings, operations and research continuity, and a path-scoped Actionlint compatibility exception.
+- PR #188 is closed/merged, squash merge commit `1ec2a6a11dbe8bcf84d910fc3017c9d0173ad01a`. It changes only the cron expression representation and adds one workflow-contract assertion. Exact-head CI run #41030654487 (`pull_request`, head `c9209e92a36c14f5fb1471b07e441c6e8c61435a`) passed 226 tests, 0 failed; active-state audit was skipped by design for the schedule-only PR.
+- PRs #181–#186 remain merged. No duplicate integration was performed.
+- PR #188 changes cron from `2-57/5 * * * *` to `2,7,12,17,22,27,32,37,42,47,52,57 * * * *`. These are semantically equivalent 12 five-minute slots per hour. No job condition, executor, permissions, concurrency, state, artifact or risk logic was changed.
+
+### Exact workflow API and authenticated inspection
+
+- GitHub REST workflow object: ID `401397705`, name `SOL Sentinel Forward Paper`, path `.github/workflows/sol-sentinel-forward-paper.yml`, `state=active`. Workflow creation timestamp returned as `2026-10-30T05:11:10Z`; the workflow API `updated_at` field also returned this timestamp.
+- Authenticated GitHub Actions workflow page continued to show `Disable workflow` in its overflow menu, no disabled/suspended banner, and `0 workflow runs`. The API state and UI agree that the workflow is enabled.
+- Repository default branch is `main`; workflow is in `main`. Repository Actions settings showed all actions allowed, default GITHUB_TOKEN contents/packages read-only, and no schedule-specific repository restriction visible. Branches settings showed no existing branch-protection rules/rulesets on main.
+- Schedule-actor evidence: the prior cron expression was last changed by commit/PR authored by `orionrayy`; PR #188 is also authored/merged by `orionrayy`. The account is repository owner/admin and remains active, with unrelated AI Orchestrator schedule events listing actor `orionrayy`. No Sentinel event exists for direct run-level actor metadata. Actor suspension is not supported by available evidence.
+- Exact workflow-ID API query for `workflow_id=401397705`, `event=schedule`, `branch=main` returned `total_count=0` and no pagination link before the next scheduled slot after PR #188 was merged. Do not count unrelated repository-wide AI Orchestrator schedule events as Sentinel execution.
+- Workflow remains `WORKFLOW_ENABLED_FIRST_RUN_PENDING`; project acceptance remains `FIRST_CRON_PENDING`. The equivalent cron refresh is a controlled re-registration attempt, not a proven root-cause fix. The actual platform cause remains unresolved until a schedule event appears or GitHub returns a specific error.
+
+### Scheduler safety and runtime boundary
+
+- Current main workflow cron: `2,7,12,17,22,27,32,37,42,47,52,57 * * * *` UTC, twelve invocations per hour. Main-ref guard, one bounded cycle, `sol-sentinel-forward-paper-state` concurrency group, `cancel-in-progress: false`, `queue: max`, timeout, SQLite integrity gate, persistence, `result.json`/ `status.json` and artifact order remain unchanged.
+- GitHub documentation: schedules run from latest default-branch commit, use UTC by default and require at least five-minute spacing; a workflow can stop if its associated actor is suspended/deleted; committing a cron syntax change can reactivate a deactivated scheduled workflow and transfer actor association. Here the workflow API currently says `active` and the actor appears active, so these facts explain the supported refresh procedure but do not prove a disabled workflow/actor as the original cause.
+- No workflow enable/disable toggle, `workflow_dispatch`, manual paper cycle, rerun, order, wallet, signer, deposit, withdrawal, transfer, or live action was executed. `LIVE_TRADING=DISABLED`.
+
+### Active paper-state identity and audit limitation
+
+- State branch remains `sol-sentinel-paper-state` at `c3f259242d450d64b4baeb01ae083c178fd4d8b0`.
+- Database Git blob remains `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, 1,323,008 bytes. It is byte-identical by Git object identity to the database examined by the last read-only SQL audit.
+- Last known raw SHA-256 remains `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`; last recorded SQL audit #41018963015 reported SQLite integrity `ok`, 0 FK violations, WAL, schema 1, 17 forward cycles, 17 depth observations / 5,100 levels, 17 attempts, no orders/fills/residuals, cash Rp300,000, 0 SOL, fees/P&L Rp0. This session verified the unchanged Git blob and size but could not download the binary for a fresh SQL query; do not claim a new SQL pass.
+- Flat-state persistence remains the only active-state persistence evidence. Synthetic non-flat recovery remains `NON_FLAT_SYNTHETIC_RECOVERY_VERIFIED`; operational non-flat recovery remains `NOT_YET_OBSERVED`.
+
+### Research and device status
+
+- Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; no new forward cycle or signal evaluation was produced. Prior OOS segments have zero trades; no performance ratios are estimable.
+- Persisted depth dataset remains 17 observations over 13m42s, 5,100 levels, no exchange-side timestamps, no print linkage and no queue-depletion linkage. Spread mean 9.634764 bps, median 11.105374 bps, P90 16.066237 bps, P95 16.071871 bps. 10 bps per-side slippage remains an unvalidated assumption.
+- Physical Android/Termux remains `NOT_TESTED`. Ubuntu Termux Doctor from Sentinel CI reports 6 PASS / 1 WARN / 0 FAIL with network skipped; the v1.8 schedule PR run had 226 tests passed, zero failed.
+- No profitability claim, trade-forcing parameter change, OOS retuning, or live execution was performed.
+
+### Acceptance state and next step
+
+- Repository/PR integration: PR #187 and #188 merged and verified on `main`.
+- Workflow activation: `active`, workflow ID `401397705`.
+- First scheduled run: still `FIRST_CRON_PENDING`; no actual `schedule` event, run ID, result/status artifact, cycle ID or schedule-generated state checkpoint has been observed.
+- Next verification: inspect exact workflow-ID scheduled history after the next eligible UTC slot, then inspect run metadata/jobs/artifact and state-branch advancement. If still zero, capture GitHub-side evidence and escalate through supported GitHub diagnostics; do not dispatch a manual paper cycle as a substitute.

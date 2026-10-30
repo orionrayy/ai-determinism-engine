@@ -790,3 +790,41 @@ The last full read-only SQL evidence is run #41018963015: SQLite integrity `ok`,
 2. Before changing the schedule registration, obtain explicit approval and use a reviewable, same-cadence change. Do not toggle the enabled workflow based on unsupported assumptions.
 3. After the first actual schedule run, reconcile its `result.json`, `status.json`, cycle ID, run commit, state branch commit, DB hash, SQLite integrity and ledger/portfolio before promoting scheduler or persistence status.
 4. Capture the user's on-device Termux Doctor JSON before changing Android status from `NOT_TESTED`.
+
+
+## v1.8 scheduler/state checkpoint — 2026-10-30 16:04 WIB
+
+### Repository and workflow
+
+- Main HEAD after PR #187 and #188: `1ec2a6a11dbe8bcf84d910fc3017c9d0173ad01a`.
+- PR #187 merged as `1326dccff5c286eabfbe810b8060702b10469f48`; PR #188 merged as `1ec2a6a11dbe8bcf84d910fc3017c9d0173ad01a`.
+- Workflow ID `401397705`, name `SOL Sentinel Forward Paper`, exact path `.github/workflows/sol-sentinel-forward-paper.yml`, API state `active`. Authenticated UI likewise exposes `Disable workflow` and shows no disabled/suspended notice.
+- Cron now reads `2,7,12,17,22,27,32,37,42,47,52,57 * * * *` UTC. This is semantically identical to the previous `2-57/5 * * * *` cadence. PR #188 also adds a contract test for the explicit minute list. The queue, serialized concurrency group, main-ref guard, executor and state handling are unchanged.
+
+### Root-cause status
+
+Exact workflow-ID history query (`401397705`, `event=schedule`, `branch=main`) returned zero runs and no pagination link before the first eligible scheduled slot after the PR #188 merge. The workflow is enabled and present on default branch; repository Actions settings show no visible schedule-specific restrictions. The previous cron modifier/PR author is `orionrayy`, an active owner/admin and actor on unrelated scheduled repository runs. No Sentinel run exists to expose run-level actor fields.
+
+The evidence excludes a manually disabled workflow and wrong default branch. Actor suspension is not supported. The equivalent cron refresh is a documented recovery attempt for a deactivated scheduled workflow; however the workflow API already reports `active`, so this does not establish the original cause. Keep the root cause `UNRESOLVED` and the acceptance `FIRST_CRON_PENDING` until a genuine schedule event is observed. Do not characterize this as an identified GitHub platform outage.
+
+### CI and documentation
+
+- PR #187 final exact-head checks passed on head `29ee1582209e998b77cf3f5c95b4678f9a0ff301`: SOL Sentinel Tests #41028265393 (225 passed, 0 failed) and Orchestrator Tests #41028265394 (Actionlint passed; 463 orchestrator tests plus 86 shared tests passed; evaluation harness passed).
+- PR #188 exact-head check #41030654487 on `c9209e92a36c14f5fb1471b07e441c6e8c61435a` passed 226 tests, 0 failed. The active-state audit job was skipped by design; the PR did not inspect or write paper state.
+- Both PRs are merged. No PR altered active SQLite state.
+
+### State provenance and audit freshness
+
+The persistent branch remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. A fresh Git reference/tree verification identifies the same SQLite blob `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, size 1,323,008 bytes. Its last recorded raw SHA-256 remains `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`.
+
+The latest SQL read-only audit available in repository evidence is still run #41018963015: `integrity_check=ok`, 0 FK violations, WAL, schema 1, 17 forward cycles, 17 depth observations / 5,100 levels, 17 attempts, no orders/fills/events/positions/residuals, and reconciled flat portfolio Rp300,000 cash / 0 SOL / zero fees / zero realized P&L. A fresh SQL execution was not possible in this checkpoint because the GitHub connector cannot materialize this binary SQLite blob and the runtime had no network resolution for the raw download. The unchanged Git blob/size prove the database content matches the prior audited object, not that a new SQL query has run.
+
+### Quantitative and device research
+
+The persisted 17-observation order-book sample is still a short 13m42s collector-time window without exchange timestamps, trade-print linkage or queue-depletion evidence. Historical spread stats remain mean 9.634764 bps, median 11.105374 bps, P90 16.066237 bps, P95 16.071871 bps; ±25 bps visible depth remains descriptive and skewed. The additional unsaved snapshot remains outside the persisted dataset. Slippage 10 bps per side remains unvalidated.
+
+Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; no new signal evaluation, backtest, or OOS tuning occurred. CI Termux Doctor is Ubuntu-only (latest 6 PASS / 1 WARN / 0 FAIL with network skipped); physical Android/Termux remains `NOT_TESTED`. Live trading remains `DISABLED`.
+
+### Next acceptance gate
+
+The next required evidence is a true workflow-ID `401397705` event `schedule` on `main`, with run metadata, successful or explainable job result, `result.json`, `status.json`, cycle ID, resulting state branch commit and validated database/ledger. A second distinct scheduled run is required before claiming repeated schedule execution or two-run flat-state continuity. No manual dispatch substitutes for either gate.
