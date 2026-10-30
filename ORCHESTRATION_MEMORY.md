@@ -2232,3 +2232,19 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Known code-test review correction: the worst-tail-latency fixture now raises p95, p99 and max together so it respects percentile ordering.
 - Physical Android acceptance is still NOT DONE: save identity requires on-device trace/snapshot review; shadow exchange requires two devices; network calibration needs 3 x 305-second runs at 60Hz and 30Hz; remote gameplay needs local P2 baseline, proven simulation barrier, guest-thread mapping and real state probes.
 - All release interlocks remain closed: `gameplay_input_injection_enabled=false`, `simulation_barrier_verified=false`, `multiplayer_playable=false`, `external_acceptance_gates_complete=false`, `trusted_private_lan_only=true`, `wan_or_public_wifi_enabled=false`. Do not merge or claim playable based on source-level tests, a shadow PASS, or raw UDP PASS.
+
+
+### Shaolin Monks LAN Co-op — active-sampling timing correction checkpoint 2026-10-31
+
+- Implementation repo `orionrayy/project-memory-and-database`; draft PR #6 remains open and unmerged. Exact current branch head: `7ee17c15e7029e24e97bb843f3e5acd4ebeebb4a`.
+- Target 5 timing correction:
+  - Both host and client now distinguish `duration_seconds` (active measurement/send interval) from `completion_duration_seconds` (active interval plus response-drain completion).
+  - Client stamps `send_end` when the sampling deadline is first reached; later PONG drain cannot inflate active sample duration.
+  - Host stamps `measurement_end` at active deadline; idle grace used to close out final packets does not inflate measured active duration.
+  - Aggregator requires active duration >=300s on both sides, `duration_pass=true`, and completion duration finite and >= active duration.
+  - Added loopback assertions showing drain-inclusive completion exceeds the active interval, and aggregation test proves an active 299s run with 305s completion still fails.
+- Target 5 session/counter hardening remains in place: non-secret shared 32-hex SHA-256 session fingerprint; host/client pair must match; all 3 repetitions must be unique; raw counters must agree with loss and skipped-send percentage; finite ordered RTT p50/p95/p99/max are recomputed against 30/60Hz frame budgets; host/client FPS, host count/order, and 5-minute sample floors are enforced.
+- Acceptance matrix NETWORK-01 traces the added tests and records both 60Hz 18,000 and 30Hz 9,000 sample floors. Runbooks recommend 305s and explain active vs completion duration and fingerprint limitations.
+- Latest workflow associated with current head is #41103768982, queued at checkpoint, no completed checks/artifacts confirmed. Do not use earlier workflow runs or old artifacts as validation of this head.
+- Target 3 active save/profile allowlist remains unverified on device; target 4 two-phone paired shadow remains not run; target 5 no physical hotspot calibration yet; target 6 actual gameplay remains blocked by missing local-P2 baseline, verified simulation boundary, guest-thread mapping and canonical state probes.
+- All safety interlocks remain false/closed: gameplay injection off, simulation barrier unverified, multiplayer not playable, external acceptance incomplete, WAN/public Wi-Fi off, trusted private LAN only. No PR merge or playable claim.
