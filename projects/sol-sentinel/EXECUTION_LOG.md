@@ -449,3 +449,20 @@ The last fresh GitHub compare, performed after all current documentation commits
 - Feature calculations inspected for this path use prior windows: relative-volume baseline uses the preceding 20 bars; breakout prior-high uses preceding 20 highs. Signals are decided at the 1m bar close and candidate entries are deferred to the next 1m candle open, not filled on the signal candle close.
 - Intrabar exits use a documented conservative stop-first assumption if stop and target are both touched in one OHLC candle. End-of-data open positions are force-closed at the last close as an explicit simulation convention.
 - No look-ahead defect was found in these inspected paths. Limitations remain: indicator warmup is rebuilt inside each isolated segment (discarding initial warmup bars rather than using prior-segment bars), OHLC cannot reveal exact intrabar path, fill/slippage/queue assumptions are not calibrated, and the review is code-path inspection rather than a formal proof.
+
+## INDODAX multi-level depth collector — engineering checkpoint (2026-10-30)
+
+- Added `projects/sol-sentinel/indodax_microstructure.py` and `test_indodax_microstructure.py`. The module is Python standard-library only and uses the unauthenticated public `GET https://indodax.com/api/depth/solidr` endpoint.
+- It parses up to 500 ordered price/quantity levels per side; rejects empty, malformed, non-finite, non-positive, duplicate/unsorted and crossed books; accepts a locked zero-spread book; computes midpoint quoted spread in bps; and preserves an exchange timestamp only if the payload supplies an integer millisecond timestamp.
+- SQLite stores observations and every captured depth level separately, with a timestamped content-derived observation key, plus request-attempt status/error and latency. Identical same-time book observations are idempotent; a changed book or later timestamp remains a new observation. WAL and transaction boundaries are enabled.
+- Summary computes mean, median, nearest-rank P95 and population standard deviation for quoted spread and bid/ask IDR depth inside the configured midpoint band. SQL performs distribution and depth aggregation; the complete archive is not loaded into RAM for summaries.
+- Sampling defaults to 30 snapshots at 10 seconds, requires >=1 second between requests, caps one run at 10,000 samples and 500 levels/side, caps HTTP response at 1 MB, and stops after three consecutive failures. Only public GET requests are used.
+- Local validation on the authored collector: `py_compile` succeeded; all 22 new parser/client/SQLite/collection tests passed, with `ResourceWarning` treated as an error. These are fixture/offline tests. No live endpoint data was captured, so empirical spread/depth distribution fields remain empty until a real collection is run.
+- Updated Termux doctor module compilation list and CI compile step. GitHub CI will be the authoritative full-suite validation for the new branch head. Android-device execution is still untested.
+- Safety boundary unchanged: no order, account, wallet, signer, deposit, withdrawal, transfer or on-chain submission capability was added.
+
+## Current acceptance impact
+
+- Microstructure collector implementation and offline regression tests: implemented and locally validated.
+- Empirical spread/depth distribution: pending actual public snapshots.
+- Multi-level paper execution, residual lifecycle, persistent forward-paper portfolio/risk monitor, Jupiter full response validation and actual Termux-device validation: remain outstanding.

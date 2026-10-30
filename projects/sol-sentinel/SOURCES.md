@@ -132,3 +132,12 @@ The first GitHub Actions capture against `api.binance.com` returned HTTP 451 in 
 - INDODAX public pair metadata endpoint: https://indodax.com/api/pairs . Captured fields include price tick, quantity step, API notional floor and minimum base quantity. They are pair metadata and can change; they do not replace the authenticated app's selected-mode minimum.
 - INDODAX network/withdrawal help: https://help.indodax.com/hc/id/ . Current network availability, withdrawal minimum and fee are shown inside the wallet flow after selecting the asset/network; this repository did not access the account UI and does not certify a SOL withdrawal route.
 - Detailed dated configuration, cost decomposition, point-snapshot caveats and open uncertainties are in INDODAX_FEE_MODEL_2026-10-30.md.
+
+
+## INDODAX public order-book depth — collector reference
+
+- Official public REST API documentation: https://github.com/btcid/indodax-official-api-docs/blob/master/Public-RestAPI.md
+- Public depth endpoint: `GET https://indodax.com/api/depth/{pair_id}`; SOL/IDR uses the public pair id `solidr`.
+- Documented response contains `buy` and `sell` arrays of `[price, amount]` levels. The collector validates both sides, level ordering and crossed-book conditions before persisting any snapshot.
+- Public documentation lists a limit of 180 requests/minute. Collector sampling is deliberately slower (minimum 1 request/second, default 1/10 seconds) and finite.
+- Endpoint schema is source-inspected and covered with deterministic offline fixtures. A live response was not captured during this implementation session; actual endpoint/network availability must be confirmed by running the collector.

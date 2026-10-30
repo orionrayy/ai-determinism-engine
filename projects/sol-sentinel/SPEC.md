@@ -141,3 +141,8 @@ The read-only module `reku_market.py` requests Reku coin metadata, prices, direc
 ## 10. First public Reku quote observation (not a live guarantee)
 
 A read-only snapshot in Actions run `40916894414` observed last price Rp1,845,000, bid Rp1,840,000, ask Rp1,845,000 and spread around 27.137 bps. The orderbook endpoint returned HTTP 400 for the SOL coin ID and was therefore recorded as unavailable; no depth was inferred. The adapter now falls back to the documented `/v2/orderbookall` endpoint. This is a single snapshot with no guaranteed freshness after capture; use only a new `OK` snapshot for any quote-related research. It still does not establish a supported authenticated order API.
+
+
+## Market microstructure observations
+
+The SOL/IDR order-book collector is `indodax_microstructure.py`. It is separate from OHLC history capture and stores each public depth observation and every captured bid/ask level in SQLite. Quoted spread is `(best_ask - best_bid) / midpoint × 10,000`; depth bands are measured against midpoint and reported as SOL quantity and IDR notional. Do not interpret candle data as historical order-book depth. Distribution metrics are valid only after repeated collector observations exist. See `RUNBOOK_TERMUX.md` for finite sampling and summary commands.

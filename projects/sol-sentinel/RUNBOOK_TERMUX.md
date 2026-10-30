@@ -233,3 +233,21 @@ Interpretation:
 - SKIP means a check was deliberately omitted.
 - A successful CI run or a run on a desktop/GitHub runner is not proof of compatibility on the user's Android handset. Preserve the JSON output with timestamp and device/Python versions when the user runs it locally.
 - The doctor does not execute the backtest automatically because native INDODAX evaluation requires a selected mode and explicit fee/spread/slippage assumptions. Use the audited Pro-only configuration in INDODAX_FEE_MODEL_2026-10-30.md; do not substitute Reku defaults.
+
+
+## INDODAX depth microstructure collector — read-only
+
+The feature branch includes `indodax_microstructure.py`, a standard-library collector for the documented public `GET /api/depth/solidr` endpoint. It parses multi-level bid/ask arrays, rejects invalid/unsorted/duplicate/crossed books, and records observation time, optional exchange timestamp, top-of-book prices and quantities, midpoint, quoted spread, all captured levels, collector version, and a book SHA-256 in a local SQLite archive.
+
+Default collection is finite: 30 snapshots at 10-second intervals. The collector enforces at least one second between requests (60/minute at most), bounded response size, request timeout/retries, maximum levels/samples, and a consecutive-error stop. It records successful/error attempts and request duration. Summary queries report mean, median, nearest-rank P95 and population standard deviation for spread, plus bid/ask IDR notional depth within a midpoint band. The statistics describe only observations saved by the collector; no historical book depth is reconstructed from candles or old point quotes.
+
+From the repository root:
+
+```sh
+python projects/sol-sentinel/indodax_microstructure.py --samples 30 --interval-seconds 10
+python projects/sol-sentinel/indodax_microstructure.py --summary-only --database ~/.sol-sentinel/indodax_depth.sqlite3
+```
+
+The default archive is `~/.sol-sentinel/indodax_depth.sqlite3`. Keep it local; it contains public market observations and can grow over time. The collector is read-only and unauthenticated. It cannot access balances, place/cancel orders, sign, deposit, withdraw, or submit chain transactions. A CI fixture test proves parser/storage behavior only; run the first real collection on the target device/network and preserve its emitted summary before claiming empirical spread/depth distributions.
+
+The current research dataset remains the previously recorded 43,200 native INDODAX 1m candles. No new order-book snapshots were captured as part of this code change.

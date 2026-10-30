@@ -152,3 +152,7 @@ The adapter reads the documented public Reku API only: coin catalogue, price, bi
 - Dataset SHA-256: d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c; 43,200 contiguous native INDODAX SOL/IDR one-minute candles; no FX conversion.
 - All fixed Pro scenarios (taker-current, taker-stress and maker-current sensitivity) yielded zero candidates, fills and trades in development, validation and OOS. This newer rolling window did not reproduce the single maker-only development trade from #40994319663.
 - Current state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. See EXECUTION_LOG.md and the official-fee audit for the full split metrics and limitations.
+
+## INDODAX depth collection
+
+Added `indodax_microstructure.py` for finite, unauthenticated public SOL/IDR depth sampling and SQLite archiving. It validates sorted multi-level books and calculates observed spread/depth distributions from captured snapshots only. See `RUNBOOK_TERMUX.md`. The collector has offline fixture tests; a live endpoint capture and actual Android Termux validation remain outstanding.
