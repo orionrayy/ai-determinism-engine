@@ -117,14 +117,6 @@ jobs:
             git -C .paper-state commit -m "checkpoint: forward-paper ${{ inputs.operation || 'run' }} ${{ github.run_id }} attempt ${{ github.run_attempt }}"
             git -C .paper-state push origin HEAD:refs/heads/sol-sentinel-paper-state
           fi
-      - name: Upload forward-paper evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: sol-sentinel-forward-paper-${{ github.run_id }}
-          path: forward-output/
-          if-no-files-found: warn
-          retention-days: 30
       - name: Fail when operation was unsuccessful
         if: steps.operation.outputs.exit_code != '0'
         run: exit 1
@@ -138,6 +130,14 @@ jobs:
           else
             echo '{}' > forward-output/status.json
           fi
+      - name: Upload forward-paper evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sol-sentinel-forward-paper-${{ github.run_id }}
+          path: forward-output/
+          if-no-files-found: warn
+          retention-days: 30
       - name: Publish operational summary
         if: always()
         env:
