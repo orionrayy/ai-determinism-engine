@@ -7,6 +7,7 @@ on:
     paths:
       - "projects/sol-sentinel/**"
       - ".github/workflows/sol-sentinel-tests.yml"
+      - ".github/workflows/sol-sentinel-forward-paper.yml"
   pull_request:
     paths:
       - "projects/sol-sentinel/**"
@@ -40,6 +41,9 @@ jobs:
 
   forward-paper-activation:
     needs: unit-tests
+    concurrency:
+      group: sol-sentinel-forward-paper-state
+      cancel-in-progress: false
     if: github.event_name == 'push' && github.ref == 'refs/heads/feat/sol-sentinel-paper-trader-v1'
     runs-on: ubuntu-latest
     timeout-minutes: 8
