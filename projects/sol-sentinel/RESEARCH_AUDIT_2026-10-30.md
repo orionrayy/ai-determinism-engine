@@ -406,3 +406,14 @@ Earlier checkpoints said that live smoke testing was still required for INDODAX 
 5. Keep live execution blocked until all gates and separate explicit approval exist.
 
 PR #178 remains draft/open/unmerged and diverged from main (last checked 239 ahead / 2 behind; merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`). PR #180 remains draft/open/unmerged. No real order, transfer, wallet signature, private key, or account credential was used.
+
+
+## Latest verification snapshot — 2026-10-30 WIB
+
+Implementation head `479f2adc5bc4d401ca107ce1c044610e0a45c0d2` passes [CI #40951133963](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40951133963): 137 offline unit tests. No live exchange execution is covered by this suite.
+
+Research run [#40950218320](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320), artifact [#12931446637](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950218320/artifacts/12931446637), completed successfully on code checkpoint `89a8d7181954a1524379d3b03fa77e703eb9331d`. It captured 43,200 native INDODAX SOL/IDR 1m candles across 30 completed days, SHA-256 `c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30`, with `data_status=OK` and `fx_conversion_applied=false`. Public depth at 2026-10-29 20:37:47 UTC was bid Rp1,777,113 / ask Rp1,779,923 / midpoint Rp1,778,518 / spread 15.7996714 bps. The preceding point snapshot was about 25.6669 bps. Two point observations are insufficient for a spread-time-series model.
+
+The completed strategy evaluation in this run still used the Binance SOLUSDT reference dataset SHA-256 `bcc67c412280453fc5c499f9e0179ab8a118b331766470f0b59a8a18f62305e7`. Baseline and fixed 60/20/20 segments produced zero candidates/trades, therefore no estimable expectancy, win rate or profit factor. The fee-only Reku Lightning floor produced 10 hypothetical trades at roughly -Rp3,893.22 net under zero spread/slippage assumptions; this is not an executable route estimate. Native INDODAX history was captured but was not backtested with verified INDODAX mode fees/spread/slippage.
+
+PR #178 remains draft/open/unmerged. Current compare to `main` is diverged, 246 ahead / 2 behind, 34 changed files, merge base `eaa864a554c2c995ce73bd9f6b4d07206ecc56c5`. PR #180 remains draft/open/unmerged; the canonical memory/audit handoff is not merged into `main`. Reku's legacy native activity history endpoint still returns 404; Reku public quote snapshot is separate and reports OK. Termux and wallet/account operations remain untested/not performed. Status: `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
