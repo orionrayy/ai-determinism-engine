@@ -502,10 +502,21 @@ class ForwardState:
             activation = db.execute(
                 "SELECT value FROM fp_metadata WHERE key='activation_record'"
             ).fetchone()
+        with closing(self._connect()) as db:
+            last_cycle = db.execute(
+                "SELECT cycle_id,started_at,completed_at,status,candle_close_ms,source_snapshot_id,collector_observation_id,error "
+                "FROM fp_cycles ORDER BY started_at DESC,cycle_id DESC LIMIT 1"
+            ).fetchone()
+            latest_daily_risk = db.execute(
+                "SELECT trading_date,opening_equity_idr,peak_equity_idr,risk_state,daily_loss_fraction,drawdown_fraction,updated_at "
+                "FROM fp_daily_risk ORDER BY trading_date DESC LIMIT 1"
+            ).fetchone()
         return {
             "cycles": dict(cycles),
             "signals": dict(signals),
             "activation": json.loads(activation["value"]) if activation else None,
+            "last_cycle": dict(last_cycle) if last_cycle else None,
+            "latest_daily_risk": dict(latest_daily_risk) if latest_daily_risk else None,
             "control": self.control(),
         }
 
@@ -1245,11 +1256,69 @@ class ForwardPaperOrchestrator:
     def operator_resume(self, reason: str) -> dict[str, Any]:
         if not reason.strip():
             raise ForwardPaperError("manual resume requires an explicit operator reason")
-        if not self.ledger.recover()["consistent"]:
+        reconciliation = self.ledger.recover()
+        if not reconciliation["consistent"]:
             raise ForwardPaperError("cannot resume: ledger reconciliation is inconsistent")
+        open_orders = self.ledger.list_open_orders()
+        if any(order["state"].value == "RECOVERY_REQUIRED" for order in open_orders):
+            raise ForwardPaperError("cannot resume: one or more orders require recovery/manual review")
+        portfolio = self.ledger.portfolio()
+        position = self.state.position()
+        if portfolio["sol_quantity"] > 0:
+            if position is None or position["status"] == "CLOSED":
+                raise ForwardPaperError("cannot resume: SOL inventory has no active strategy-position attribution")
+            try:
+                self.ledger.get_order(position["entry_order_id"])
+            except ExecutionError:
+                raise ForwardPaperError("cannot resume: active strategy position references a missing order") from None
+        if any(order["side"] == ExecutionSide.SELL.value for order in open_orders) and portfolio["sol_quantity"] <= 0:
+            raise ForwardPaperError("cannot resume: active simulated SELL residual exists without SOL inventory")
         self.state.set_control("ACTIVE", "operator_resume: " + reason)
         self.state.checkpoint()
-        return {"operating_state": "ACTIVE", "reason": reason, "mode": "PAPER"}
+        return {"operating_state": "ACTIVE", "reason": reason, "mode": "PAPER",
+                "reconciliation": reconciliation, "open_order_count": len(open_orders)}
+
+    def operational_status(self) -> dict[str, Any]:
+        reconciliation = self.ledger.reconcile()
+        portfolio = self.ledger.portfolio()
+        control = self.state.control()
+        state_summary = self.state.summary()
+        activation = state_summary.get("activation")
+        operating = control.get("operating_state", "ACTIVE")
+        if not reconciliation["consistent"]:
+            system_status = "MANUAL_REVIEW_REQUIRED"
+        elif operating == "MANUAL_REVIEW_REQUIRED":
+            system_status = "MANUAL_REVIEW_REQUIRED"
+        elif operating == "HALTED":
+            system_status = "HALTED"
+        elif activation is not None:
+            system_status = "FORWARD_PAPER_ACTIVE"
+        else:
+            system_status = "ENGINEERING_VALIDATED_NOT_ACTIVATED"
+        return {
+            "schema_version": "sol-sentinel-forward-status-v1",
+            "system_status": system_status,
+            "mode": "PAPER",
+            "live_orders_enabled": False,
+            "control": control,
+            "portfolio": {key: str(value) for key, value in portfolio.items()},
+            "position": self.state.position(),
+            "open_orders": [
+                {
+                    "order_id": order["order_id"],
+                    "client_order_id": order["client_order_id"],
+                    "side": order["side"],
+                    "state": order["state"].value,
+                    "requested_qty": order["requested_qty"],
+                    "filled_qty": order["filled_qty"],
+                    "remaining_qty": order["remaining_qty"],
+                }
+                for order in self.ledger.list_open_orders()
+            ],
+            "ledger": reconciliation,
+            "forward_state": state_summary,
+            "microstructure": self.depth_store.summary(),
+        }
 
 
 def signal_id_to_order(ledger: SQLitePaperExecutionLedger, client_order_id: str) -> str:
@@ -1282,9 +1351,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--interval-seconds", type=int, default=0)
     parser.add_argument("--history-minutes", type=int, default=600)
     parser.add_argument("--initial-cash-idr", default="300000")
-    parser.add_argument("--halt", action="store_true", help="persistently halt new paper entries")
+    operations = parser.add_mutually_exclusive_group()
+    operations.add_argument("--halt", action="store_true", help="persistently halt new paper entries")
+    operations.add_argument("--resume", action="store_true", help="explicitly resume paper mode after reconciliation")
+    operations.add_argument("--status", action="store_true", help="show durable paper state without network access")
     parser.add_argument("--halt-reason", default="operator_requested_halt")
-    parser.add_argument("--resume", action="store_true", help="explicitly resume paper mode after reconciliation")
     parser.add_argument("--resume-reason", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -1298,6 +1369,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             output: Any = orchestrator.operator_halt(args.halt_reason)
         elif args.resume:
             output = orchestrator.operator_resume(args.resume_reason)
+        elif args.status:
+            output = orchestrator.operational_status()
         else:
             output = run_cycles(
                 orchestrator, cycles=args.cycles, interval_seconds=args.interval_seconds
