@@ -485,3 +485,18 @@ Strategy state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. There is no OOS tr
 - Updated docs and Termux doctor compile coverage. No source-level changes were made to the previous market-data adapter or old top-of-book paper adapter.
 - This is still a standalone paper execution engine, not an end-to-end forward-paper system: no unattended market-data loop, strategy/risk integration, maker queue model, daily-loss circuit breaker or auto-ingestion from collector SQLite yet.
 - No live orders, account operations, signers, transfers, deposits, withdrawals or chain transactions. Research remains zero OOS trades / no positive edge evidence; overall readiness `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
+
+ 
+## Integrated forward-paper v1.3 activation evidence — 2026-10-30
+
+Implementation and activation evidence is recorded in canonical continuity marker `SOL_SENTINEL_V1_3_FORWARD_PAPER_ACTIVE_2026_10_30`.
+
+Exact-head code/test SHA: `e827a1c2008c5cb0c1` (`e827a1c2008c5cb0c1` is the recorded prefix; full SHA `e827a1c2008c5cb0cabf04d79a53188646460c84`). Tests [#41006225151](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006225151): 216 passed, 0 failed. Termux Doctor: 6 PASS / 1 WARN / 0 FAIL on Ubuntu CI; no Android handset test is claimed.
+
+The integrated forward-paper activation job succeeded on the same run. Artifact [#12955632037](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006225151/artifacts/12955632037), cycle `92f2cb5c750ddf6d648407cb75368fd14aedf9ad`, 603 native INDODAX SOL/IDR 1m candles, public depth observation `e5fbfc98f14a2ed57ac75a7888a4d4982dbe26d3d41b4fa543f92bb61ba79570`, execution snapshot `f72481320b8b56c512ffbdc238e7e51de90944339915072e6faf44241f35d18a`.
+
+Output: `FORWARD_PAPER_ACTIVE`, `NO_TRADE`, risk `NORMAL`, entry permission true, IDR 300,000 cash, zero SOL, zero orders/fills/fees, and consistent ledger/portfolio reconciliation. Collector summary: 12 actual public depth observations, zero request errors, mean spread 8.9996 bps, median 9.1719 bps and P95 12.3240 bps. The sample is small and newly collected, so it is telemetry, not calibrated market microstructure evidence.
+
+A second workflow cycle on the same candle correctly suppressed the repeated strategy signal (`signal_slot_already_processed`). No duplicate order, real exchange order, wallet operation, transfer, or credential access occurred. The persistent SQLite checkpoint is stored on `sol-sentinel-paper-state`.
+
+The five-minute scheduled workflow file exists on the implementation branch but is not active on the repository schedule until merged to the default branch. PR #178 is still draft and diverged from main; do not merge it directly. A clean main-based integration PR is being prepared. Keep strategy research as `INSUFFICIENT_EVIDENCE` and live execution disabled.
