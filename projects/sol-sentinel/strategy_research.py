@@ -67,6 +67,20 @@ def _utc(ts_ms: int) -> str:
     return datetime.fromtimestamp(ts_ms / 1000, timezone.utc).isoformat()
 
 
+def round_quantity_down(quantity: float, quantity_step: str) -> float:
+    """Round a simulated base-asset quantity down to the venue lot step."""
+    if not math.isfinite(quantity) or quantity <= 0:
+        return 0.0
+    try:
+        step = Decimal(str(quantity_step))
+        if not step.is_finite() or step <= 0:
+            raise ValueError("quantity_step must be positive")
+        units = (Decimal(str(quantity)) / step).to_integral_value(rounding=ROUND_DOWN)
+        return float(units * step)
+    except InvalidOperation as exc:
+        raise ValueError("quantity_step is invalid") from exc
+
+
 def audit_dataset(csv_path: str | Path, metadata_path: str | Path) -> tuple[list[Bar], dict[str, Any]]:
     path = Path(csv_path)
     meta_path = Path(metadata_path)
@@ -419,8 +433,7 @@ def simulate_segment(
             qty_exposure = cash * max_exposure_fraction / fill
             qty_cash = cash / (fill * (1.0 + entry_fee_bps / 10_000.0))
             raw_quantity = min(qty_risk, qty_exposure, qty_cash)
-            quantity_steps = (Decimal(str(raw_quantity)) / qty_step_dec).to_integral_value(rounding=ROUND_DOWN)
-            quantity = float(quantity_steps * qty_step_dec)
+            quantity = round_quantity_down(raw_quantity, quantity_step)
             notional = quantity * fill
             if (math.isfinite(notional) and quantity >= float(min_qty_dec)
                     and notional >= min_notional_idr):
@@ -898,7 +911,11 @@ def run_research(
                 } for key, val in scenarios.items()
             },
         },
-        "locked_baseline_v1": baseline,
+        "locked_baseline_v1": {
+            "implementation_sha256": hashlib.sha256(Path(__file__).with_name("paper_engine.py").read_bytes()).hexdigest(),
+            "strategy_id": "baseline_v1_locked",
+            "scenarios": baseline,
+        },
         "candidate_results": candidates,
         "candidate_selection": statuses,
         "promoted_candidate": qualified[0] if qualified else None,
