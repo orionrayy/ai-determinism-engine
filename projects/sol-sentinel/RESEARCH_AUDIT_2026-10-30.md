@@ -454,3 +454,9 @@ Strategy state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. There is no OOS tr
 - The prior same-run window #40994319663 generated one maker-only development trade at +Rp466.818 net, without validation/OOS trades. This newest rolling window did not reproduce that trade; do not use it as an edge/profitability claim.
 - 146-test suite passed in #40994692715. Explicit offline Termux-doctor smoke succeeded in #40994852707. Device-level Android validation remains unperformed.
 - Latest status remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE; no live orders, signer, purchase, transfer, deposit or withdrawal occurred.
+## Chronological leakage review — 2026-10-30
+
+- Inspected evaluate_splits.py and paper_engine.py after the latest native replay. The evaluator keeps the 60/20/20 slices chronological and disjoint, checks intra-segment one-minute continuity, evaluates each segment independently and performs no automatic parameter tuning.
+- The strategy constructs 5m/15m aggregates only from complete contiguous 1m buckets. It maps higher-timeframe features using close_time <= the decision candle close; an incomplete later 5m/15m bar is not used. Current-bar relative volume uses the preceding 20 volumes, breakout threshold uses preceding 20 highs, and a signal at bar close is only entered at the next 1m bar open.
+- OHLC exit handling explicitly assumes stop-first if stop and target are both touched in one candle; open positions at end-of-data are force-closed at the last close. No look-ahead defect was identified in the inspected signal/split path.
+- Residual limits: indicators/warmup are rebuilt separately inside each split, discarding the initial warmup observations; OHLC bars do not disclose exact intrabar path; spread/slippage and maker/queue assumptions are not calibrated. This is a code-path review, not a formal proof.
