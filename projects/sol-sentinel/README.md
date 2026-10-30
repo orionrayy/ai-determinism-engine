@@ -138,3 +138,10 @@ The adapter reads the documented public Reku API only: coin catalogue, price, bi
 - Latest exact feature-head CI [#40950649418](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40950649418) passed 137 offline tests. A successful CI run does not establish profitability.
 - Current 30-day strategy research remains zero candidates/trades across fixed 60/20/20 splits. Native INDODAX data is collected but still must not be backtested using Reku fees; selected fee mode and current all-in fee components must be verified and explicitly supplied.
 - Reku remains acquisition/on-ramp candidate only, INDODAX is a candidate execution venue, and Jupiter remains quote-only. No live executor, signer, transfer sender or order route exists. Strategy readiness remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
+
+
+## Local diagnostics and venue-cost audit
+
+- termux_doctor.py and test_termux_doctor.py: dependency-free Termux/runtime, SQLite recovery/idempotency, public INDODAX metadata, and streaming dataset diagnostics. This script is safe and read-only; GitHub CI does not validate a user's handset.
+- INDODAX_FEE_MODEL_2026-10-30.md: dated official Pro all-in fee model, minimum-order constraints, explicit backtest cost decomposition, and unresolved Lite/withdrawal/spread evidence.
+- Native INDODAX evaluation: [research run #40993527618](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40993527618), artifact #12949927917. Current-run workflow [#40994319663](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40994319663) is being validated separately.
