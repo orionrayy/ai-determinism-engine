@@ -269,6 +269,45 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
         self.assertEqual(runner.state.pending_intents(), [])
         self.assertIsNone(runner.ledger.find_order_by_client_order_id("expired-intent"))
 
+    def test_operator_status_reports_unactivated_paper_account_without_network(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        status = runner.operational_status()
+        self.assertEqual(status["system_status"], "ENGINEERING_VALIDATED_NOT_ACTIVATED")
+        self.assertFalse(status["live_orders_enabled"])
+        self.assertEqual(status["portfolio"]["cash_idr"], "300000")
+        self.assertEqual(status["open_orders"], [])
+        self.assertTrue(status["ledger"]["consistent"])
+
+    def test_manual_resume_rejects_unattributed_simulated_inventory(self):
+        runner = ForwardPaperOrchestrator(
+            self.db_path, config=self.config, market_data=FakeMarketData(),
+            depth_client=FakeDepthClient(),
+        )
+        now = utc_now()
+        request = OrderRequest(
+            client_order_id="unattributed-buy",
+            venue="INDODAX",
+            symbol="SOL/IDR",
+            side=Side.BUY,
+            quantity=Decimal("0.02"),
+            order_type=OrderType.MARKET,
+            time_in_force=TimeInForce.GTC,
+            created_at=now - timedelta(seconds=2),
+            expires_at=now + timedelta(minutes=5),
+            quantity_step=Decimal("0.00000001"),
+            price_tick=Decimal("1"),
+            fee_bps=Decimal("20.555"),
+        )
+        order_id = runner.ledger.create_order(request)
+        snapshot = DepthSnapshot.from_indodax(FakeDepthClient().snapshot())
+        runner.ledger.process_snapshot(order_id, snapshot, as_of=utc_now())
+        self.assertGreater(runner.ledger.portfolio()["sol_quantity"], 0)
+        with self.assertRaisesRegex(Exception, "no active strategy-position attribution"):
+            runner.operator_resume("manual review completed")
+
     def test_config_has_no_calendar_wait_gate(self):
         self.assertEqual(self.config.history_minutes, 600)
         self.assertNotIn("30_day_wait", self.config.as_json())
