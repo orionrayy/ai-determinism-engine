@@ -65,6 +65,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Run first bounded forward-paper cycle
         id: forward-paper
+        env:
+          SOL_SENTINEL_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           mkdir -p .paper-state/state forward-output
           set +e
