@@ -1,0 +1,44 @@
+name: Hustler MAGIC Research Tests
+on:
+  pull_request:
+    paths:
+      - 'projects/hustler-capital-engine/**'
+      - '.github/workflows/hustler-magic-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'projects/hustler-capital-engine/**'
+      - '.github/workflows/hustler-magic-tests.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hustler-magic-tests-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Compile
+        run: python -m py_compile projects/hustler-capital-engine/magic_engine.py projects/hustler-capital-engine/test_magic_engine.py
+      - name: Offline unit tests
+        working-directory: projects/hustler-capital-engine
+        run: python -m unittest -v
+      - name: No live-order route invariant
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('projects/hustler-capital-engine/magic_engine.py').read_text()
+          forbidden = ('/fapi/v1/order', '/fapi/v1/batchOrders', '/fapi/v1/leverage', '/fapi/v1/marginType', '/fapi/v1/positionSide/dual')
+          found = [route for route in forbidden if route in source]
+          if found:
+              raise SystemExit('live/private write route found: ' + ','.join(found))
+          if 'live_trading_enabled' not in source or 'LIVE_TRADING_DISABLED' not in source:
+              raise SystemExit('live trading must remain disabled')
+          print('PASS: no known Futures order/account-configuration write routes')
+          PY
