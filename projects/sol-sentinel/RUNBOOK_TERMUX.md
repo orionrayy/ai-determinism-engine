@@ -198,3 +198,38 @@ python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
 The included market-data, capital-source and custody adapters are fixtures only. `PlanningOnlyTransferAdapter` validates network names, verified network flags, known minimums/fees and fee-evidence age; it cannot send a transfer. `PaperExecutionAdapter` uses a mock bid/ask and Decimal quantities. `ExecutionPolicy(LIVE)` deliberately fails because no live adapter exists.
 
 Do not supply a wallet seed/private key or API secret to these tests. Do not use a withdrawal-enabled API key for a trading worker. Exact Solana withdrawal fee/minimum, destination deposit minimum, market tick/lot/minimum, and current venue-specific quote/fee schedule must be verified from current official sources before the paper model is configured for a chosen platform. No live order, transfer, signature or signer integration is currently present.
+
+
+## Lightweight Termux diagnostics — read-only
+
+The standard-library-only diagnostic runner checks the Python/SQLite runtime, Termux detection, available memory and disk, core module compilation, SQLite close/reopen and idempotent replay, and the public INDODAX SOL/IDR pair catalogue. Its only network action is an unauthenticated, bounded HTTP GET to the public /api/pairs metadata endpoint. It never calls an order, wallet, signing, transfer, deposit, or withdrawal endpoint.
+
+From the repository root:
+
+\`\`\`sh
+python projects/sol-sentinel/termux_doctor.py
+python projects/sol-sentinel/termux_doctor.py --json
+\`\`\`
+
+To validate the native historical dataset after it has been downloaded to the device:
+
+\`\`\`sh
+python projects/sol-sentinel/termux_doctor.py \\
+  --data ~/.sol-sentinel/INDODAX_SOLIDR_1m.csv \\
+  --expected-sha256 c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30
+\`\`\`
+
+The doctor streams the CSV rather than loading the full 43,200-row file into memory. It verifies the hash, sidecar identity/status when present, no FX conversion, contiguous 1-minute timestamps, close-time boundaries, finite OHLCV, and OHLC ordering. The expected hash above applies only to artifact #12931446637; a newer dataset must use its own verified SHA-256.
+
+To execute the offline suite on the phone:
+
+\`\`\`sh
+python projects/sol-sentinel/termux_doctor.py --skip-network --run-tests --json
+\`\`\`
+
+Interpretation:
+- FAIL is a failed diagnostic invariant and exits with code 1.
+- WARN is an environment limitation (for example, non-Termux host, unavailable /proc memory fields, or a transient public endpoint problem); inspect the detail.
+- SKIP means a check was deliberately omitted.
+- A successful CI run or a run on a desktop/GitHub runner is not proof of compatibility on the user's Android handset. Preserve the JSON output with timestamp and device/Python versions when the user runs it locally.
+- The doctor does not execute the backtest automatically because native INDODAX evaluation requires a selected mode and explicit fee/spread/slippage assumptions. Use the audited Pro-only configuration in INDODAX_FEE_MODEL_2026-10-30.md; do not substitute Reku defaults.
