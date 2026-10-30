@@ -19,8 +19,12 @@ def market():
     )
 
 
-def quote(*, bid="1800000", ask="1801000", observed_at=NOW):
-    return a.MarketQuote("MockX", "SOL/IDR", Decimal(bid), Decimal(ask), observed_at, "fixture")
+def quote(*, bid="1800000", ask="1801000", observed_at=NOW, bid_quantity=None, ask_quantity=None):
+    return a.MarketQuote(
+        "MockX", "SOL/IDR", Decimal(bid), Decimal(ask), observed_at, "fixture",
+        bid_quantity_base=Decimal(bid_quantity) if bid_quantity is not None else None,
+        ask_quantity_base=Decimal(ask_quantity) if ask_quantity is not None else None,
+    )
 
 
 def intent(key="test-1", side=a.Side.BUY, qty="0.01", price="1801000"):
@@ -84,6 +88,32 @@ class AdapterContractTests(unittest.TestCase):
         receipt = adapter.execute(intent(side=a.Side.SELL, price="1800000"), market(), quote(), now=NOW)
         self.assertEqual(receipt.status, a.ReceiptStatus.FILLED_SIMULATED)
         self.assertEqual(receipt.fill_price_quote, Decimal("1800000"))
+
+    def test_partial_fill_uses_available_best_ask_quantity_and_fees(self):
+        ledger = a.InMemoryIdempotentLedger()
+        adapter = a.PaperExecutionAdapter(ledger, fee_bps=Decimal("10"))
+        receipt = adapter.execute(intent(qty="0.01"), market(), quote(ask_quantity="0.004"), now=NOW)
+        self.assertEqual(receipt.status, a.ReceiptStatus.PARTIALLY_FILLED_SIMULATED)
+        self.assertEqual(receipt.requested_quantity_base, Decimal("0.01"))
+        self.assertEqual(receipt.filled_quantity_base, Decimal("0.004"))
+        self.assertEqual(receipt.fill_price_quote, Decimal("1801000"))
+        self.assertEqual(receipt.fee_quote, Decimal("7.204"))
+        self.assertIn("partial_fill_limited_to_best_level_quantity", receipt.reasons)
+        self.assertFalse(receipt.live_order_submitted)
+        self.assertEqual(ledger.count, 1)
+
+    def test_zero_best_level_quantity_is_no_fill(self):
+        receipt = a.PaperExecutionAdapter(a.InMemoryIdempotentLedger()).execute(
+            intent(qty="0.01"), market(), quote(ask_quantity="0"), now=NOW
+        )
+        self.assertEqual(receipt.status, a.ReceiptStatus.NO_FILL)
+        self.assertEqual(receipt.filled_quantity_base, Decimal("0"))
+        self.assertIsNone(receipt.fill_price_quote)
+        self.assertIn("no_quantity_at_best_price", receipt.reasons)
+
+    def test_market_quote_rejects_negative_depth_quantity(self):
+        with self.assertRaisesRegex(a.AdapterContractError, "ask_quantity_base"):
+            quote(ask_quantity="-0.01")
 
     def test_non_marketable_limit_is_no_fill_not_a_fake_trade(self):
         adapter = a.PaperExecutionAdapter(a.InMemoryIdempotentLedger())
@@ -196,6 +226,8 @@ class AdapterContractTests(unittest.TestCase):
         self.assertEqual(observed.bid, Decimal("1810000"))
         self.assertEqual(observed.ask, Decimal("1815000"))
         self.assertEqual(observed.source, "INDODAX public /api/depth (request-start timestamp; conservative age)")
+        self.assertEqual(observed.bid_quantity_base, Decimal("0.2"))
+        self.assertEqual(observed.ask_quantity_base, Decimal("0.3"))
         self.assertEqual(requests, [("https://indodax.com/api/depth/solidr", 2.0)])
         self.assertFalse(hasattr(adapter, "execute"))
         self.assertFalse(hasattr(adapter, "sign"))
