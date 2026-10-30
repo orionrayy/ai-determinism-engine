@@ -12,6 +12,7 @@ on:
         default: run
         options:
           - run
+          - status
           - halt
           - resume
       reason:
@@ -55,6 +56,11 @@ jobs:
           mkdir -p .paper-state/state forward-output
           set +e
           case "$OPERATION" in
+            status)
+              python projects/sol-sentinel/forward_paper.py \
+                --db-path .paper-state/state/forward-paper.sqlite3 \
+                --status --json
+              ;;
             halt)
               python projects/sol-sentinel/forward_paper.py \
                 --db-path .paper-state/state/forward-paper.sqlite3 \
