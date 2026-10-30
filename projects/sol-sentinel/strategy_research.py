@@ -735,7 +735,7 @@ def _config(entry_fee: float, exit_fee: float, spread: float, slippage: float, m
         input_venue="INDODAX",
         input_symbol="SOL/IDR",
         input_price_currency="IDR",
-        fee_model_name="INDODAX_PRO_ALL_IN_TAKER_ASSUMPTION",
+        fee_model_name="INDODAX_CUSTOM",
         fee_model_source="Official INDODAX all-in Pro table effective 2026-10-01; personal account route not verified",
         risk_fraction=0.005,
         max_exposure_fraction=0.50,
