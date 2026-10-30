@@ -1638,3 +1638,43 @@ This later completed run supersedes the prior one-trade maker-development sensit
 - Intrabar stop/target collisions use conservative stop-first handling; end-of-data open positions are force-closed at the last close as a simulation convention. No look-ahead defect was identified in the inspected paths; this is a code review, not a formal proof.
 - Each split resets its own indicator warmup, dropping the segment's initial warmup period instead of carrying prior segment context. OHLC cannot establish exact intrabar path; spread/slippage, maker queue and fills remain uncalibrated. See project EXECUTION_LOG.md and RESEARCH_AUDIT_2026-10-30.md.
 - Feature branch subsequently advanced to code/log commit a0cb4aa901678a8f3aac9d26a2cc6be828e36a81 and its current compare must be refreshed before integration. No merge/rebase occurred.
+
+## SOL SENTINEL IMPLEMENTATION CHECKPOINT — INDODAX DEPTH COLLECTOR (2026-10-30)
+
+Verified remote state at this checkpoint:
+- Repository: `orionrayy/ai-determinism-engine`.
+- `main`: `d5672c84a0ae184c3a95d3f925925887ece71aa4` (unchanged).
+- Feature branch `feat/sol-sentinel-paper-trader-v1`: `708fef5d043113e68a9d0b2d43e21e1586167a92`.
+- PR #178: open, draft, unmerged; 268 commits ahead / 2 behind `main`, diverged, 39 changed files. No merge/rebase performed.
+- Feature CI run #40999102295 and duplicate push/PR run #40999106258 both succeeded on exact commit `708fef5d043113e68a9d0b2d43e21e1586167a92`. Logs show 168 tests passed, 0 failures. Termux doctor smoke reported 6 PASS, 1 WARN (runner is Ubuntu rather than Termux), 0 failures; public network probe was skipped.
+- Implementation commit: https://github.com/orionrayy/ai-determinism-engine/commit/708fef5d043113e68a9d0b2d43e21e1586167a92
+- CI evidence: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40999102295 and https://github.com/orionrayy/ai-determinism-engine/actions/runs/40999106258
+
+### Added INDODAX microstructure collector
+- Added `projects/sol-sentinel/indodax_microstructure.py` and `test_indodax_microstructure.py`.
+- Uses only Python standard library and unauthenticated public GET `https://indodax.com/api/depth/solidr`; no balance, trading, wallet, signing, deposit, withdrawal, transfer or transaction interface.
+- Parses up to 500 ordered bid/ask price/quantity levels. Rejects missing/empty sides, malformed values, non-finite/non-positive prices or quantities, duplicate/unsorted levels and crossed books. A locked book is retained as a valid zero-spread observation.
+- Calculates quoted spread `(ask-bid)/midpoint × 10,000`, preserves exchange timestamp only if present as an integer millisecond field, and writes top-of-book plus all observed levels into a local SQLite journal. Observations are content/timestamp keyed and idempotent for an identical duplicate.
+- Request attempts, success/error and latency are journaled. Summary computes mean, median, nearest-rank P95 and population standard deviation for spread and IDR depth inside a midpoint band; aggregation uses SQL rather than loading the entire archive into memory.
+- Collector defaults to 30 samples separated by 10 seconds, enforces a minimum 1-second interval (60 requests/minute), caps response body at 1 MB, bounds retries and level count, and stops on consecutive failures. CLI also supports offline `--summary-only`.
+- New module's 22 deterministic fixture tests passed locally; full GitHub suite passed 168/168. The fixture tests validate schema, calculations, failure handling, SQLite durability/idempotency and finite sampling.
+- **No actual live order-book sample was collected in this coding session.** Therefore spread/depth distribution statistics from the collector are still unavailable (zero recorded observations until first real collection). Do not infer historical depth from candle CSVs or previous isolated quote snapshots.
+- Updated Termux doctor compile-module list, CI compile list, `RUNBOOK_TERMUX.md`, `SPEC.md`, `README.md`, `SOURCES.md` and project `EXECUTION_LOG.md`.
+
+### Prior evidence still in force
+- Latest native 1m SOL/IDR dataset evidence remains workflow #40994685989, artifact #12951295388, SHA-256 `d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c`, 43,200 contiguous bars from 2026-09-30T03:01:00Z through 2026-10-30T03:00:59.999Z, no FX conversion.
+- That replay has zero candidates, attempts, fills, positions and closed trades across dev/validation/OOS under all reported Pro cost sensitivities. The previous single development maker trade was not reproduced. No positive expectancy evidence exists.
+- Cost observations and assumptions remain sparse/uncalibrated; Pro fee rates used in the previous report are not account-specific confirmation. No new spread/depth empirical distribution was produced here.
+- Strategy status remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`. The collector's CI green does not change financial or operational readiness.
+
+### Open work and exact next dependencies
+1. Collect a real finite depth sample from the Android Termux device or another explicitly documented host; preserve DB summary, environment, exact collector version and timestamp. Review rate limits and response schema before longer sampling.
+2. Build the multi-level paper simulator as a separate checkpoint: deterministic depth walk, weighted execution price, partial-fill/residual state, cancel/expire, fill journal and SQLite replay. Preserve the existing top-level adapter contract until the new simulator has dedicated regression coverage.
+3. Add per-filter signal telemetry and bounded ablation/sensitivity runs without tuning on OOS.
+4. Integrate the forward-paper loop only after the execution journal, portfolio accounting and risk state can recover idempotently.
+5. Complete Jupiter V2 quote validation and actual handset portability checks.
+6. Reconcile PR #178's 268/2 divergence with file-by-file and ancestry review. Do not merge/rebase blindly.
+7. Keep PR #180 draft/open and canonical memory on its branch until review/merge approval.
+
+### Safety and portability
+No live order, account query, transfer, wallet signature, deposit, withdrawal or chain submission occurred. No private key, seed phrase or secret API credential was requested or stored. The CI runner was Linux/Ubuntu with Python 3.11.17; Android/Termux hardware remains untested.

@@ -460,3 +460,15 @@ Strategy state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. There is no OOS tr
 - The strategy constructs 5m/15m aggregates only from complete contiguous 1m buckets. It maps higher-timeframe features using close_time <= the decision candle close; an incomplete later 5m/15m bar is not used. Current-bar relative volume uses the preceding 20 volumes, breakout threshold uses preceding 20 highs, and a signal at bar close is only entered at the next 1m bar open.
 - OHLC exit handling explicitly assumes stop-first if stop and target are both touched in one candle; open positions at end-of-data are force-closed at the last close. No look-ahead defect was identified in the inspected signal/split path.
 - Residual limits: indicators/warmup are rebuilt separately inside each split, discarding the initial warmup observations; OHLC bars do not disclose exact intrabar path; spread/slippage and maker/queue assumptions are not calibrated. This is a code-path review, not a formal proof.
+
+## Follow-up engineering checkpoint — public INDODAX depth collector (2026-10-30)
+
+- Feature implementation: commit `708fef5d043113e68a9d0b2d43e21e1586167a92`, PR #178 (draft/open/unmerged).
+- CI #40999102295 and #40999106258 both succeeded on this exact SHA. Entire offline suite: 168 tests, 0 failures. Termux doctor smoke: 6 PASS, 1 WARN because the runner is Ubuntu, 0 FAIL; network probe skipped.
+- Added `indodax_microstructure.py`: standard-library-only, read-only `GET https://indodax.com/api/depth/solidr`, ordered multi-level bid/ask validation, spread bps, midpoint-band depth notional, SQLite observation/level/attempt journal, idempotency, finite collection, bounded retries and SQL-based distribution summary.
+- New collector tests locally: 22 passed. The suite uses mocked payloads and SQLite temporary files.
+- No live order book was successfully captured in this session. Consequently there is no empirical spread/depth time series yet and no market microstructure statistics to report. The first run needs to happen on a real network/device.
+- Latest OHLC research remains unchanged: workflow #40994685989, 43,200 native SOL/IDR one-minute bars, SHA `d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c`, all latest reported scenarios zero trades through OOS.
+- Execution limitations unchanged: top-of-book-only partial fill in the previous simulator; no multi-level depth walk/residual order management yet. Forward-paper orchestration is incomplete.
+- Android Termux is still not device-validated. The CI doctor's 1 WARN explicitly records non-Termux Linux runner and must not be described as handset evidence.
+- Readiness remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`.
