@@ -38,6 +38,7 @@ CORE_MODULES = (
     "jupiter_quote_probe.py",
     "indodax_microstructure.py",
     "depth_execution.py",
+    "forward_paper.py",
 )
 
 
