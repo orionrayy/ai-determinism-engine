@@ -442,3 +442,15 @@ PR #178 remains draft/open/unmerged. Current compare to `main` is diverged, 246 
 ### Status and outstanding limitations
 
 Strategy state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. There is no OOS trade. No live orders, signers, deposits, withdrawals or transfers occurred. No private keys/API secrets were handled. The scanner JSONL watch process is a read-only observation loop rather than a completed persistent forward-paper account and risk monitor. Next gates are repeated depth sampling, calibrated slippage/depth walk, account-specific mode fee verification, Jupiter schema validation, both-side network route evidence, actual Termux handset diagnostics, and a persistent forward-paper sample without parameter changes.
+
+## Latest repeated native SOL/IDR rolling window — workflow #40994685989
+
+- Successful current-run native INDODAX capture and fee-separated evaluation: [workflow #40994685989](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40994685989), artifact #12951295388, code commit 50c0c00dc4bc5a78ab212dc20bd4894fb99783e6.
+- Dataset SHA-256 d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c; 43,200 contiguous 1m SOL/IDR bars from 2026-09-30T03:01:00Z through 2026-10-30T03:00:59.999Z; no FX conversion.
+- Depth quote at 2026-10-30T03:02:06.143046Z: bid Rp1,737,289 / ask Rp1,739,906; spread 15.0523626084 bps. Public filters: tick Rp1, quantity step 1e-8 SOL, API min notional Rp10,000, minimum quantity 0.00576894 SOL.
+- Modeled friction: Pro taker/current snapshot 87.162363 bps; Pro taker/stress 107.7769 bps; Pro maker/current snapshot 67.162363 bps. Sparse snapshots and assumed slippage (5/10 bps per side) remain uncalibrated.
+- All scenarios now report zero candidates, order attempts/fills, positions and closed trades in development, validation and OOS. P&L zero is only no-trade accounting; expectancy/win rate/profit factor are undefined.
+- Overlapping taker-current filter reason counts: 1m breakout 40,506; 1m relative volume 35,873; 5m momentum 28,306; 15m trend 25,981; 5m RSI 23,415; 1m momentum exhaustion/missing 3,135; cost edge 143.
+- The prior same-run window #40994319663 generated one maker-only development trade at +Rp466.818 net, without validation/OOS trades. This newest rolling window did not reproduce that trade; do not use it as an edge/profitability claim.
+- 146-test suite passed in #40994692715. Explicit offline Termux-doctor smoke succeeded in #40994852707. Device-level Android validation remains unperformed.
+- Latest status remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE; no live orders, signer, purchase, transfer, deposit or withdrawal occurred.
