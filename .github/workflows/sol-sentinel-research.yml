@@ -147,17 +147,17 @@ jobs:
           run_scenario() {
             local label="$1" entry_fee="$2" exit_fee="$3" spread="$4" slippage="$5"
             local source="INDODAX official Pro all-in fee table checked 2026-10-30; scenario assumes Pro mode; exact account fee display not verified"
-            python projects/sol-sentinel/paper_engine.py \\
-              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \\
-              --fee-model indodax-custom --fee-source "$source" \\
-              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \\
-              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \\
+            python projects/sol-sentinel/paper_engine.py \
+              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \
+              --fee-model indodax-custom --fee-source "$source" \
+              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \
+              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \
               --minimum-order-notional-idr 25000 --report-path "$OUT/$label.backtest.json" --db-path ""
-            python projects/sol-sentinel/evaluate_splits.py \\
-              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \\
-              --fee-model indodax-custom --fee-source "$source" \\
-              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \\
-              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \\
+            python projects/sol-sentinel/evaluate_splits.py \
+              --csv "$OUT/INDODAX_SOLIDR_1m.csv" --input-venue INDODAX --input-symbol SOL/IDR --input-price-currency IDR \
+              --fee-model indodax-custom --fee-source "$source" \
+              --entry-fee-bps "$entry_fee" --exit-fee-bps "$exit_fee" \
+              --spread-bps-round-trip "$spread" --slippage-bps-per-side "$slippage" \
               --minimum-order-notional-idr 25000 --output "$OUT/$label.evaluation.json"
           }
           # Official INDODAX Pro all-in rates: maker buy 10.555 bps, taker buy 20.555 bps,
