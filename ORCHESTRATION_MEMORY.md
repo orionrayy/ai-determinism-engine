@@ -1764,3 +1764,45 @@ No live order, authenticated account action, signing, wallet, deposit, withdrawa
 - The paper-state branch persisted a new SQLite checkpoint at `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. The database branch remains intentionally separate from source code and must not be merged into `main`.
 - Main push verification: [Orchestrator Tests #41007000945](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41007000945) succeeded on merge commit `58ec3df095c60ccc6868bf0cbccb3c18384419eb`.
 - Research remains `INSUFFICIENT_EVIDENCE`: no positive OOS expectancy has been established; the current forward signal is NO_TRADE. The 5-minute schedule can continue sampling with no 30-day activation delay. Actual physical Android/Termux validation, account-specific fee-tier verification and market-microstructure calibration remain outstanding. Live order execution, wallet signing and fund movement remain disabled and unauthorized.
+
+
+## SOL_SENTINEL_V1_4_SCHEDULER_AND_PERSISTENCE_HARDENING_2026_10_30
+
+Checkpoint time: 2026-10-30. Current source main before this memory entry: `e5d12cfd1671d52cb926d156a81dd749d1645bee`.
+
+### Repository and integration
+- PR #181 is merged as `58ec3df095c60ccc6868bf0cbccb3c18384419eb`.
+- Follow-up reliability PR [#182](https://github.com/orionrayy/ai-determinism-engine/pull/182) is also merged as `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`.
+- PR #178 and #180 remain closed/unmerged historical drafts. Do not merge them.
+- Main push runs triggered by the reliability fix and documentation updates succeeded: [#41010295827](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010295827) on `8c8e0c...` and [#41010619804](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010619804) on `cfdbaa...`; the latest audit-document push run [#41010670822](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010670822) also completed successfully. Each Sentinel test run reports 216 tests passing, 0 failures, and Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL. The activation job was skipped, intentionally, so these runs did not create duplicate paper cycles.
+- The run triggered by #182 on PR event, [#41010214471](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010214471), also passed 216 tests; activation skipped.
+
+### Scheduler status
+- Forward-paper workflow exists on the default branch and retains a one-cycle five-minute cadence, now offset to `2-57/5 * * * *` UTC. State-changing operations are guarded to `refs/heads/main`; only the activation job in the test workflow gets contents write permission. Unit tests use contents read. Step Summary contains run/event/ref/commit/cycle/strategy/risk/portfolio/reconciliation details.
+- GitHub guidance confirms scheduled events run from the default branch, use UTC unless timezone is set, have a five-minute minimum interval, and can be delayed or dropped during load spikes near the top of an hour. The cron was moved off minute zero accordingly.
+- Last actual `event=schedule` audit (through 2026-10-30T05:50:44Z) found only unrelated `AI Orchestrator` scheduled runs; no `SOL Sentinel Forward Paper` schedule event after #181/#182. Do not mark the acceptance gate as passed. Status remains `FIRST_CRON_PENDING`. No manual dispatch evidence is claimed.
+- The GitHub Action history must be checked again after this checkpoint. A real scheduled run must match workflow name `SOL Sentinel Forward Paper`, event `schedule`, branch `main`, and the actual merged SHA; inspect its artifact/Step Summary and state branch commit before changing the status.
+
+### Persistent state and recovery
+- Persistence architecture: SQLite `state/forward-paper.sqlite3` is committed to a separate dedicated Git branch `sol-sentinel-paper-state` at the end of each bounded invocation, after a WAL checkpoint and `PRAGMA integrity_check`. The next runner checks out that branch before opening the DB. This is Git-versioned durable checkpointing, not a managed external database or runner-local file survival.
+- Last verified state branch head: `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. Its linear history showed at least 12 checkpoint commits corresponding to distinct Actions run IDs (#41005882837 through #41006890361), with increasing timestamps and parent links. This supports cross-run persistence of the saved database.
+- Actual portfolio is still flat in the last paper artifact: IDR 300,000 cash, 0 SOL, no position, no open orders, no fills, no residual quantity, zero fees and zero P&L. Ledger/portfolio reconcile and restart recovery are consistent. A real non-flat fill/residual recovery path has not occurred in operation because no simulated trade has been produced; unit tests exercise synthetic pending-intent, order recovery, duplicate suppression, and daily loss breaker persistence.
+- Do not reset this state branch or merge its DB into source main.
+
+### Latest paper result and market observations
+- Latest recorded paper cycle remains from activation run [#41006890361](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890361), artifact [#12955034631](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890361/artifacts/12955034631), code source SHA `5bf6c2cc9598d49c4ecec4458373538b3afa18f5`. Cycle `7e08efadca684497f5341b3bdb760ad18cb62857`; native INDODAX SOL/IDR; 610 completed 1m candles; 2026-10-30T05:10:22.869190Z through 05:10:23.853315Z.
+- Output `FORWARD_PAPER_ACTIVE`, signal `NO_TRADE` (15m trend not confirmed; 1m momentum exhaustion/missing), risk `NORMAL`, new entries allowed, equity/cash Rp300,000, SOL 0, no orders/fills/fees/P&L, consistent ledger/portfolio, duplicate signal suppressed.
+- Collector: 17 public depth observations, 17 success/0 errors, mean spread 9.634764 bps, median 11.105374 bps, P95 16.071871 bps. This short sample is descriptive, not calibrated slippage/queue evidence. Mean/median/P95 visible bid quote notional: about Rp179.9m/Rp57.9m/Rp617.2m; ask: about Rp44.8m/Rp49.7m/Rp57.0m.
+- Slippage budget 10 bps per side remains a conservative assumption, not empirical execution slippage. Book-walk impact is modeled against displayed levels. Maker queue probability is unvalidated.
+
+### Strategy research and fees
+- The newest native 30-day INDODAX SOL/IDR rolling dataset recorded in the research audit contains 43,200 contiguous 1m bars (dataset SHA `d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c`, no FX conversion). The latest Pro taker/maker cost scenarios produced zero trades in development, validation and OOS. Expectancy, win rate and profit factor remain undefined.
+- The recorded overlapping reason counters were: 40,506 1m breakout failures; 35,873 relative-volume failures; 28,306 5m momentum failures; 25,981 15m trend failures; 23,415 5m RSI failures; 3,135 1m momentum exhaustion/missing; 143 cost-edge failures. They overlap and are not unique candle counts. Technical/timeframe/volume filters dominate observed rejection counts; cost gate alone does not explain NO_TRADE.
+- Earlier one-off maker-only development trade (+Rp466.818) was not repeated and had no validation/OOS trade; no edge claim. Baseline thresholds unchanged.
+- Official INDODAX Pro IDR all-in fee schedule effective 2026-10-01: maker BUY 10.555 bps / SELL 31.555 bps; taker BUY 20.555 bps / SELL 41.555 bps. CFX component alone is 0.555 bps; direct Pro minimum is Rp25,000; Rp10,000–24,999 orders route through Lite. Account-level fee display still needs confirmation in Profile → Settings → Trading Fees. A crossing limit order can be charged as taker. Official sources are documented in `RESEARCH_AUDIT_2026-10-30.md` and `FORWARD_PAPER_OPERATIONS.md`.
+
+### Termux, security and current status
+- Android/Termux physical handset test is not available in this run. Ubuntu CI 6 PASS / 1 WARN / 0 FAIL is not device compatibility evidence. The operations guide now has a one-command JSON report procedure with offline tests and bounded public GET.
+- All market requests are unauthenticated public GETs; no private key, secret, wallet signer, exchange order, deposit, withdrawal or transfer was used. Live remains disabled.
+- Current classification: `ENGINEERING_VALIDATED` for the tested main commits; `FORWARD_PAPER_ACTIVE`; `FIRST_CRON_PENDING`; persistence checkpointing works cross-run for the flat portfolio; research `NO_TRADE / INSUFFICIENT_EVIDENCE`; physical Termux `NOT_TESTED`; live `DISABLED`.
+- Next checkpoint: capture a true main-branch scheduled event and verify its artifact plus next state-branch commit. Then continue bounded monitoring; test non-flat ledger/residual recovery in a synthetic persistence integration harness without mutating the active portfolio. Keep collecting independently timestamped depth and trade-print data before calibrating slippage/maker probability.
