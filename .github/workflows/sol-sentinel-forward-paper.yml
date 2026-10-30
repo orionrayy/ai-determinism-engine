@@ -27,6 +27,7 @@ permissions:
 concurrency:
   group: sol-sentinel-forward-paper-state
   cancel-in-progress: false
+  queue: max
 
 jobs:
   forward-paper:
@@ -87,6 +88,7 @@ jobs:
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           exit "$rc"
       - name: Checkpoint and verify SQLite state
+        id: state_integrity
         if: always()
         run: |
           if [ ! -f .paper-state/state/forward-paper.sqlite3 ]; then
@@ -108,7 +110,8 @@ jobs:
               db.close()
           PY
       - name: Persist paper state
-        if: always()
+        id: persist_state
+        if: always() && steps.state_integrity.outcome == 'success'
         run: |
           git -C .paper-state config user.name "github-actions[bot]"
           git -C .paper-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -116,6 +119,32 @@ jobs:
           if ! git -C .paper-state diff --cached --quiet; then
             git -C .paper-state commit -m "checkpoint: forward-paper ${{ inputs.operation || 'run' }} ${{ github.run_id }} attempt ${{ github.run_attempt }}"
             git -C .paper-state push origin HEAD:refs/heads/sol-sentinel-paper-state
+          fi
+      - name: Fail when operation was unsuccessful
+        if: steps.operation.outputs.exit_code != '0'
+        run: exit 1
+      - name: Capture durable operational status
+        id: capture_status
+        if: always()
+        env:
+          STATE_INTEGRITY: ${{ steps.state_integrity.outcome }}
+          STATE_PERSISTENCE: ${{ steps.persist_state.outcome }}
+        run: |
+          if [ "$STATE_INTEGRITY" = "success" ] && [ -f .paper-state/state/forward-paper.sqlite3 ]; then
+            python projects/sol-sentinel/forward_paper.py \
+              --db-path .paper-state/state/forward-paper.sqlite3 \
+              --status --json > forward-output/status.json
+          else
+            python - <<'PY' > forward-output/status.json
+          import json, os
+          print(json.dumps({
+              "system_status": "STATE_INTEGRITY_FAILED",
+              "state_integrity": {"outcome": os.environ.get("STATE_INTEGRITY", "unknown")},
+              "state_persistence": {"outcome": os.environ.get("STATE_PERSISTENCE", "unknown")},
+              "ledger": {"consistent": False},
+              "warning": "SQLite checkpoint/integrity validation did not pass; the state database was not persisted. Inspect this run before any further state transition."
+          }, sort_keys=True))
+          PY
           fi
       - name: Upload forward-paper evidence
         if: always()
@@ -125,19 +154,6 @@ jobs:
           path: forward-output/
           if-no-files-found: warn
           retention-days: 30
-      - name: Fail when operation was unsuccessful
-        if: steps.operation.outputs.exit_code != '0'
-        run: exit 1
-      - name: Capture durable operational status
-        if: always()
-        run: |
-          if [ -f .paper-state/state/forward-paper.sqlite3 ]; then
-            python projects/sol-sentinel/forward_paper.py \
-              --db-path .paper-state/state/forward-paper.sqlite3 \
-              --status --json > forward-output/status.json
-          else
-            echo '{}' > forward-output/status.json
-          fi
       - name: Publish operational summary
         if: always()
         env:
@@ -145,6 +161,9 @@ jobs:
           PAPER_STATUS: forward-output/status.json
           PAPER_EXIT_CODE: forward-output/exit-code.txt
           PAPER_STDERR: forward-output/stderr.txt
+          STATE_INTEGRITY: ${{ steps.state_integrity.outcome }}
+          STATE_PERSISTENCE: ${{ steps.persist_state.outcome }}
+          STATUS_CAPTURE: ${{ steps.capture_status.outcome }}
         run: |
           python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import json, os
@@ -190,6 +209,7 @@ jobs:
           print(f"- Event / run: `{os.environ.get('GITHUB_EVENT_NAME', 'unknown')}` / `{os.environ.get('GITHUB_RUN_ID', 'unknown')}`")
           print(f"- Ref / main commit: `{os.environ.get('GITHUB_REF', 'unknown')}` / `{os.environ.get('GITHUB_SHA', 'unknown')}`")
           print(f"- Operation exit: `{exit_code}`; system: `{run_status}`; last error: `{last_error}`")
+          print(f"- State integrity / persistence / status capture: `{os.environ.get('STATE_INTEGRITY', 'unknown')}` / `{os.environ.get('STATE_PERSISTENCE', 'unknown')}` / `{os.environ.get('STATUS_CAPTURE', 'unknown')}`")
           print(f"- Cycle: `{result.get('cycle_id', cycle.get('cycle_id', 'n/a'))}`; last completion: `{cycle.get('completed_at', 'n/a')}`; last cycle status: `{cycle.get('status', 'n/a')}`")
           print(f"- Last depth observation: `{micro.get('last_observed_at_utc', 'n/a')}`; snapshots: `{micro.get('observation_count', 'n/a')}`")
           print(f"- Strategy: `{signal.get('decision', 'n/a')}`; reasons: {', '.join(signal.get('reasons', [])) or 'none'}")
@@ -198,6 +218,10 @@ jobs:
           print(f"- Position: `{json.dumps(position, ensure_ascii=False, default=str) if position else 'flat / none'}`")
           print(f"- Open simulated orders: `{len(orders)}`; remaining quantities: `{', '.join(str(x.get('remaining_qty', 'n/a')) for x in orders) or 'none'}`")
           print(f"- Ledger: consistent `{ledger.get('consistent', 'n/a')}`; events/fills/orders `{ledger.get('event_count', 'n/a')}/{ledger.get('fill_count', 'n/a')}/{ledger.get('order_count', 'n/a')}`; recovery consistent `{result.get('recovery', {}).get('consistent', ledger.get('consistent', 'n/a')) if isinstance(result.get('recovery'), dict) else ledger.get('consistent', 'n/a')}`")
-          if exit_code != "0" or run_status in ("MANUAL_REVIEW_REQUIRED", "HALTED") or ledger.get("consistent") is False:
+          if (exit_code != "0" or run_status in ("MANUAL_REVIEW_REQUIRED", "HALTED")
+              or ledger.get("consistent") is False
+              or os.environ.get("STATE_INTEGRITY") != "success"
+              or os.environ.get("STATE_PERSISTENCE") != "success"
+              or os.environ.get("STATUS_CAPTURE") != "success"):
               print("- **ACTION REQUIRED:** inspect this run's result.json, status.json and job logs before allowing further state transitions.")
           PY
