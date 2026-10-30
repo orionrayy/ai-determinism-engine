@@ -204,3 +204,86 @@ jobs:
               if any(not x["requested_equals_filled_plus_remaining"] or not x["filled_matches_fill_rows"] for x in p["order_invariants"]):
                   raise SystemExit("order quantity invariant failed")
           PY
+
+      - name: Read-only visible depth band and timestamp audit
+        run: |
+          python - .paper-state/state/forward-paper.sqlite3 <<'PY'
+          import json
+          import math
+          import sqlite3
+          import statistics
+          import sys
+          from collections import Counter
+          from decimal import Decimal
+          from pathlib import Path
+
+          path = Path(sys.argv[1]).resolve()
+          db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=5)
+          db.row_factory = sqlite3.Row
+          db.execute("PRAGMA query_only=ON")
+          try:
+              observations = [dict(r) for r in db.execute(
+                  "SELECT id, observed_at, exchange_ts_ms, midpoint, book_hash FROM observations ORDER BY observed_at"
+              )]
+              level_rows = db.execute(
+                  "SELECT observation_id, side, price, quantity FROM levels ORDER BY observation_id, side, level_index"
+              ).fetchall()
+          finally:
+              db.close()
+
+          grouped = {}
+          for row in level_rows:
+              grouped.setdefault(row["observation_id"], {"bid": [], "ask": []})[row["side"]].append(row)
+          samples = {"bid_quote_depth_idr": [], "ask_quote_depth_idr": []}
+          for obs in observations:
+              mid = Decimal(obs["midpoint"])
+              bands = grouped.get(obs["id"], {"bid": [], "ask": []})
+              bid_notional = sum(
+                  (Decimal(x["price"]) * Decimal(x["quantity"]) for x in bands["bid"]
+                   if Decimal(x["price"]) >= mid * Decimal("0.9975")),
+                  Decimal("0"),
+              )
+              ask_notional = sum(
+                  (Decimal(x["price"]) * Decimal(x["quantity"]) for x in bands["ask"]
+                   if Decimal(x["price"]) <= mid * Decimal("1.0025")),
+                  Decimal("0"),
+              )
+              samples["bid_quote_depth_idr"].append(float(bid_notional))
+              samples["ask_quote_depth_idr"].append(float(ask_notional))
+
+          def distribution(values):
+              ordered = sorted(values)
+              if not ordered:
+                  return {"count": 0, "mean": None, "median": None, "p90_nearest_rank": None,
+                          "p95_nearest_rank": None, "population_stddev": None}
+              return {
+                  "count": len(ordered),
+                  "mean": statistics.fmean(ordered),
+                  "median": statistics.median(ordered),
+                  "p90_nearest_rank": ordered[math.ceil(.90 * len(ordered)) - 1],
+                  "p95_nearest_rank": ordered[math.ceil(.95 * len(ordered)) - 1],
+                  "population_stddev": statistics.pstdev(ordered),
+              }
+
+          hours = Counter(x["observed_at"][11:13] for x in observations)
+          payload = {
+              "band": "25 bps either side of each snapshot midpoint; visible quote notional only",
+              "observation_count": len(observations),
+              "level_rows": len(level_rows),
+              "exchange_timestamp_present": sum(x["exchange_ts_ms"] is not None for x in observations),
+              "utc_hour_distribution": dict(sorted(hours.items())),
+              "bid_quote_depth_idr": distribution(samples["bid_quote_depth_idr"]),
+              "ask_quote_depth_idr": distribution(samples["ask_quote_depth_idr"]),
+              "queue_position_or_trade_flow_available": False,
+              "execution_slippage_measured": False,
+              "limitations": [
+                  "Static order-book levels do not reveal the trader's queue position.",
+                  "The database has no trade-print or queue-depletion linkage in this audit.",
+                  "Displayed notional is not a guaranteed executable fill and excludes later book changes.",
+              ],
+              "read_only": db_is_read_only = True,
+          }
+          print(json.dumps(payload, sort_keys=True, indent=2))
+          if len(observations) != 17 or len(level_rows) != 5100:
+              raise SystemExit("unexpected depth observation or level count")
+          PY
