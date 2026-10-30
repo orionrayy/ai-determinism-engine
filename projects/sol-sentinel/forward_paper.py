@@ -309,6 +309,19 @@ class ForwardState:
                 row = db.execute("SELECT * FROM fp_signals WHERE signal_id=?", (signal_id,)).fetchone()
                 if row is None:
                     raise ForwardPaperError("signal record failed to persist")
+                expected_intent = canonical_json(intent) if intent is not None else None
+                persisted = (
+                    int(row["candle_close_ms"]), row["side"], row["decision"],
+                    row["reason_json"], row["intent_json"],
+                )
+                expected = (
+                    int(candle_close_ms), side, decision,
+                    canonical_json(list(reasons)), expected_intent,
+                )
+                if persisted != expected:
+                    raise ForwardPaperError(
+                        "signal_id reused with different candle, side, decision, reasons, or order intent"
+                    )
                 db.execute("COMMIT")
                 return dict(row)
             except Exception:
