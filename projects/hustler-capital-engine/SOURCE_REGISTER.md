@@ -4,7 +4,8 @@ Checked 2026-10-31 (Asia/Jakarta). Revalidate endpoint behavior, Binance filters
 
 | Source | Use | Access/cost | Limitation |
 |---|---|---|---|
-| Binance USDⓈ-M `exchangeInfo` | Active contract, price tick, lot sizes and min/max notional | Public | Fetched every scan; never hard-code per-contract filters |
+| Binance USDⓈ-M `exchangeInfo` | Active contract, price tick, lot sizes and min/max notional | Public | Fetched every scan; never hard-code per-contract filters. Public schema sample shows MIN_NOTIONAL 5 USDT; live MAGIC filter must be queried. |
+| Binance MAGICUSDT leverage-tier announcement (2026-03-07) | Public leverage bracket | Public | Lists 21–50x for 0–5,000 USDT and 11–20x for 5,000–10,000 USDT; current UI/account eligibility still needs verification. |
 | Binance USDⓈ-M `/fapi/v1/time` | Exchange clock / freshness reference | Public | Local clock offset >10 seconds blocks analysis |
 | Binance USDⓈ-M `/fapi/v1/klines` | 5m/15m/1h/4h OHLCV | Public | Completed, continuous candles only |
 | Binance ticker/24hr and ticker/price | Last price and 24h context | Public | Indicative reference, not a guaranteed execution price |
@@ -41,6 +42,7 @@ No private account, signed order or transaction endpoint exists in this implemen
 
 ## References
 
+- [MAGICUSDT leverage and margin tier update (2026-03-07)](https://www.binance.com/en/support/announcement/detail/a46249effc4645c89db2c18a198119d4)
 - [Binance USDⓈ-M Futures market-data catalogue](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data)
 - [Kline/Candlestick endpoint](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Kline-Candlestick-Data)
 - [Exchange information and filters](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api/Exchange-Information)
