@@ -281,3 +281,25 @@ Model limitations: no maker queue or post-only fill probability, no exchange mat
 Depth consumption is pooled by the exact observed side-book fingerprint `venue + symbol + side + ordered price/quantity levels`, independently for bid and ask. A later timestamp with an unchanged ask side does not make that ask liquidity new; a bid-side change does not reset ask-side consumption. A changed side-book fingerprint creates a new observed pool. This is deliberately conservative because trade-flow data are not yet available to distinguish replenished size from an unchanged displayed queue. It is not an exchange matching-engine rule.
 
 The ledger backfills pool-consumption mappings when it opens a database created by the first depth-engine schema, aggregating prior consumption across identical side books. If the aggregate exceeds observed depth, migration fails closed and requires manual audit.
+
+ 
+## Persistent forward-paper on Android / Termux
+
+The integrated worker uses Python standard library modules and the existing project files:
+
+```sh
+python -m py_compile projects/sol-sentinel/forward_paper.py
+python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
+python projects/sol-sentinel/termux_doctor.py --json
+python projects/sol-sentinel/forward_paper.py --db-path ~/.sol-sentinel/forward-paper.sqlite3 --cycles 1 --json
+```
+
+Use a bounded run for repeated observations:
+
+```sh
+python projects/sol-sentinel/forward_paper.py --db-path ~/.sol-sentinel/forward-paper.sqlite3 --cycles 12 --interval-seconds 300 --json
+```
+
+The worker stores state in the selected file-backed SQLite database. Keep this file between restarts. It includes the simulated account, orders, fills, market-depth snapshots, risk lock, signals and execution cycles. Do not delete it to clear a halt or reset the portfolio.
+
+Operator halt/resume commands and recovery limitations are documented in `FORWARD_PAPER_OPERATIONS.md`. This runbook does not claim that the user's handset has been tested; CI runs on Ubuntu. Forward-paper has no live exchange order, wallet-signing, transfer, deposit or withdrawal capability.
