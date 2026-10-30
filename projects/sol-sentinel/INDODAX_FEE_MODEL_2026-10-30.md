@@ -74,3 +74,32 @@ No real purchase, deposit, withdrawal, transfer, wallet signing, or order was pe
 ## Current decision
 
 The official Pro fee schedule is adequate to run clearly labelled Pro-only offline sensitivity cases. It is not sufficient to certify user-account costs, Lite mode economics, executable spread/slippage, transfer routes, or order fills. Keep the mode at RESEARCH_ONLY / INSUFFICIENT_EVIDENCE.
+
+
+## Follow-up same-run native replay — workflow #40994319663
+
+A recurring workflow revision now evaluates the native INDODAX CSV captured during the same workflow run. It no longer downloads the short-retention artifact #12931446637 by hardcoded run ID. The current-run capture was verified with:
+
+- Dataset SHA-256: 909b24977537110d2bd0ca114d5715d29646eb36b6ed9a268bf9470b64a05c59
+- 43,200 contiguous 1m bars; 2026-09-30T02:54:00Z through 2026-10-30T02:53:59.999Z
+- Venue/pair/currency: INDODAX / SOL/IDR / IDR
+- FX conversion: false
+- Fresh public depth snapshot at 2026-10-30T02:55:48.533456Z: bid Rp1,729,198 / ask Rp1,729,703; spread 2.920003 bps
+- API pair filters: price tick Rp1, quantity step 1e-8 SOL, API notional Rp10,000, minimum base quantity 0.00578134 SOL
+
+The same fixed strategy and chronology split were evaluated without retuning:
+
+| Scenario | Fee total | Spread input | Slippage assumption | Total modeled friction |
+|---|---:|---:|---:|---:|
+| Pro taker, current-run snapshot | 62.110 bps | 2.920003 bps | 5 bps/side | 75.030003 bps |
+| Pro taker, stress | 62.110 bps | 25.6669 bps | 10 bps/side | 107.7769 bps |
+| Pro maker, current-run snapshot | 42.110 bps | 2.920003 bps | 5 bps/side | 55.030003 bps |
+
+Results:
+- Taker current-snapshot and taker stress: zero candidates, fills and closed trades in development, validation and out-of-sample.
+- Maker sensitivity: one development-only candidate/fill/trade, zero in validation and zero in out-of-sample.
+- The single development trade (2026-10-15 14:57:00Z to 15:05:59.999Z, 9 one-minute bars) reported net P&L +Rp466.818, all-in exchange fees Rp574.698, and execution friction Rp175.991. The segment had one winning trade, so its 100% win rate and infinite profit factor are not statistically informative.
+- The maker fee sensitivity does not establish maker execution. The simulation has no queue priority, post-only rejection, fill probability, or maker-vs-taker classification from actual orders. It applies one point spread snapshot across historical bars; that is a sensitivity, not a historically measured cost curve.
+- No scenario produced an out-of-sample trade. Expectancy, win rate and profit factor remain undefined for OOS.
+
+This does not satisfy strategy acceptance criteria. Preserve RESEARCH_ONLY / INSUFFICIENT_EVIDENCE.
