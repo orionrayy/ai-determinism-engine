@@ -43,3 +43,164 @@ jobs:
         run: python -m unittest discover -s projects/sol-sentinel -p 'test_*.py' -v
       - name: Termux doctor local smoke (no network)
         run: python projects/sol-sentinel/termux_doctor.py --skip-network --json
+
+  active-state-read-only-audit:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 185
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout paper state without write credentials
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: sol-sentinel-paper-state
+          path: .paper-state
+          persist-credentials: false
+      - name: Read-only SQLite provenance, ledger and depth audit
+        run: |
+          python - .paper-state/state/forward-paper.sqlite3 <<'PY'
+          import collections
+          import hashlib
+          import json
+          import math
+          import sqlite3
+          import statistics
+          import sys
+          from decimal import Decimal
+          from pathlib import Path
+
+          path = Path(sys.argv[1]).resolve()
+          payload = {
+              "database": str(path.relative_to(Path.cwd())),
+              "file_size_bytes": path.stat().st_size,
+              "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+          }
+          uri = path.as_uri() + "?mode=ro"
+          db = sqlite3.connect(uri, uri=True, timeout=5)
+          db.row_factory = sqlite3.Row
+          db.execute("PRAGMA query_only=ON")
+          try:
+              payload["integrity_check"] = db.execute("PRAGMA integrity_check").fetchone()[0]
+              payload["foreign_key_violations"] = len(db.execute("PRAGMA foreign_key_check").fetchall())
+              table_names = [r[0] for r in db.execute(
+                  "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+              ).fetchall()]
+              payload["tables"] = {
+                  name: db.execute('SELECT COUNT(*) FROM "' + name.replace('"', '""') + '"').fetchone()[0]
+                  for name in table_names
+              }
+              def table_rows(name):
+                  if name not in table_names:
+                      return []
+                  return [dict(row) for row in db.execute(
+                      'SELECT * FROM "' + name.replace('"', '""') + '"'
+                  ).fetchall()]
+
+              metadata = {r["key"]: r["value"] for r in table_rows("metadata")} if "metadata" in table_names else {}
+              payload["schema"] = {
+                  "ledger_schema_version": metadata.get("schema_version"),
+                  "journal_mode": db.execute("PRAGMA journal_mode").fetchone()[0],
+                  "user_version": db.execute("PRAGMA user_version").fetchone()[0],
+              }
+
+              observations = table_rows("observations")
+              spreads = [float(r["spread_bps"]) for r in observations]
+              sorted_spreads = sorted(spreads)
+              payload["depth_observations"] = {
+                  "count": len(observations),
+                  "first_observed_at_utc": min((r["observed_at"] for r in observations), default=None),
+                  "last_observed_at_utc": max((r["observed_at"] for r in observations), default=None),
+                  "collector_versions": sorted({r["collector_version"] for r in observations}),
+                  "endpoints": sorted({r["endpoint"] for r in observations}),
+                  "unique_observation_ids": len({r["id"] for r in observations}),
+                  "unique_book_hashes": len({r["book_hash"] for r in observations}),
+                  "duplicate_book_hash_count": len(observations) - len({r["book_hash"] for r in observations}),
+                  "spread_bps": {
+                      "mean": statistics.fmean(spreads) if spreads else None,
+                      "median": statistics.median(spreads) if spreads else None,
+                      "p90_nearest_rank": sorted_spreads[math.ceil(.90 * len(spreads)) - 1] if spreads else None,
+                      "p95_nearest_rank": sorted_spreads[math.ceil(.95 * len(spreads)) - 1] if spreads else None,
+                      "population_stddev": statistics.pstdev(spreads) if spreads else None,
+                  },
+                  "observations": [
+                      {k: r[k] for k in ("observed_at", "exchange_ts_ms", "book_hash", "collector_version", "spread_bps", "bid_levels", "ask_levels")}
+                      for r in sorted(observations, key=lambda x: x["observed_at"])
+                  ],
+              }
+              attempts = table_rows("attempts")
+              payload["depth_attempts"] = {
+                  "count": len(attempts),
+                  "by_status": dict(collections.Counter(r["status"] for r in attempts)),
+                  "error_classes": dict(collections.Counter(r["error_class"] for r in attempts if r["error_class"])),
+                  "mean_duration_ms": statistics.fmean(r["duration_ms"] for r in attempts) if attempts else None,
+              }
+
+              accounts = table_rows("paper_accounts")
+              if len(accounts) == 1:
+                  a = accounts[0]
+                  fills = table_rows("fills")
+                  orders = table_rows("orders")
+                  buy_qty = sum((Decimal(r["quantity"]) for r in fills if r["side"] == "BUY"), Decimal("0"))
+                  sell_qty = sum((Decimal(r["quantity"]) for r in fills if r["side"] == "SELL"), Decimal("0"))
+                  buy_cash = sum((Decimal(r["gross_idr"]) + Decimal(r["fee_idr"]) for r in fills if r["side"] == "BUY"), Decimal("0"))
+                  sell_cash = sum((Decimal(r["gross_idr"]) - Decimal(r["fee_idr"]) for r in fills if r["side"] == "SELL"), Decimal("0"))
+                  expected_cash = Decimal(a["initial_cash_idr"]) - buy_cash + sell_cash
+                  expected_sol = Decimal(a["initial_sol"]) + buy_qty - sell_qty
+                  order_checks = []
+                  for o in orders:
+                      requested = Decimal(o["requested_qty"])
+                      filled = Decimal(o["filled_qty"])
+                      remaining = Decimal(o["remaining_qty"])
+                      fill_total = sum((Decimal(f["quantity"]) for f in fills if f["order_id"] == o["order_id"]), Decimal("0"))
+                      order_checks.append({
+                          "order_id": o["order_id"],
+                          "requested_equals_filled_plus_remaining": requested == filled + remaining,
+                          "filled_matches_fill_rows": filled == fill_total,
+                      })
+                  payload["portfolio"] = {
+                      "initial_cash_idr": a["initial_cash_idr"],
+                      "cash_idr": a["cash_idr"],
+                      "initial_sol": a["initial_sol"],
+                      "sol_quantity": a["sol_quantity"],
+                      "avg_entry_cost_idr": a["avg_entry_cost_idr"],
+                      "realized_pnl_idr": a["realized_pnl_idr"],
+                      "fees_paid_idr": a["fees_paid_idr"],
+                      "cash_reconciles_to_fills": Decimal(a["cash_idr"]) == expected_cash,
+                      "sol_reconciles_to_fills": Decimal(a["sol_quantity"]) == expected_sol,
+                      "open_orders": sum(1 for o in orders if o["state"] in ("OPEN_SIMULATED", "PARTIALLY_FILLED_SIMULATED", "RECOVERY_REQUIRED")),
+                      "orders": len(orders),
+                      "fills": len(fills),
+                      "order_invariants": order_checks,
+                  }
+              else:
+                  payload["portfolio"] = {"account_rows": len(accounts), "error": "expected exactly one paper account"}
+
+              events = table_rows("events")
+              payload["event_journal"] = {
+                  "count": len(events),
+                  "max_sequence": max((r["seq"] for r in events), default=0),
+                  "event_types": dict(collections.Counter(r["event_type"] for r in events)),
+                  "unique_event_ids": len({r["event_id"] for r in events}),
+              }
+              payload["read_only_assertions"] = {
+                  "query_only": db.execute("PRAGMA query_only").fetchone()[0] == 1,
+                  "database_opened_mode": "ro",
+                  "no_active_state_write_performed": True,
+              }
+          finally:
+              db.close()
+
+          print(json.dumps(payload, sort_keys=True, indent=2, default=str))
+          if payload["integrity_check"] != "ok" or payload["foreign_key_violations"] != 0:
+              raise SystemExit("paper-state database integrity or foreign-key check failed")
+          if payload["depth_observations"]["unique_observation_ids"] != payload["depth_observations"]["count"]:
+              raise SystemExit("duplicate observation identifiers detected")
+          if payload["portfolio"].get("account_rows") == 1:
+              p = payload["portfolio"]
+              if not p["cash_reconciles_to_fills"] or not p["sol_reconciles_to_fills"]:
+                  raise SystemExit("paper portfolio does not reconcile to execution fills")
+              if any(not x["requested_equals_filled_plus_remaining"] or not x["filled_matches_fill_rows"] for x in p["order_invariants"]):
+                  raise SystemExit("order quantity invariant failed")
+          PY
