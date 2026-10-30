@@ -8,6 +8,8 @@ from paper_engine import Bar, ONE_MINUTE_MS
 from strategy_research import (
     audit_dataset,
     block_bootstrap_ci,
+    initial_stop_price,
+    simulate_segment,
     run_research,
     round_quantity_down,
     signal_at,
@@ -108,6 +110,53 @@ class StrategyResearchTests(unittest.TestCase):
             features["times15"][bisect_right(features["times15"], bars[index].close_time_ms) - 1],
             bars[index].close_time_ms,
         )
+
+    def test_initial_stop_is_below_market_reference_even_when_costs_exceed_atr(self):
+        reference = 1_700_000.0
+        adverse_entry_cost = reference * 22.5 / 10_000
+        fill = reference + adverse_entry_cost
+        stop = initial_stop_price(reference, 10.0)
+        self.assertGreater(fill, reference)
+        self.assertLess(stop, reference)
+        self.assertLess(stop, fill)
+
+    def test_entry_bar_does_not_hit_stop_created_above_reference_by_cost_inflated_fill(self):
+        bars = fixture_bars(3000)
+        features = prepare_features(bars)
+        start = 600
+        signal = {
+            "accepted": True,
+            "reasons": [],
+            "regime": "UPTREND",
+            "atr": 10.0,
+            "target_price": None,
+            "stop_atr": 1.0,
+            "target_atr": 1.6,
+            "max_hold": 2,
+            "target_mode": "atr",
+            "selected_substrategy": "trend_breakout",
+        }
+        def one_signal(_name, _features, index):
+            return signal if index == start else {"accepted": False, "reasons": ["test_no_repeat"], "regime": "UPTREND"}
+
+        from unittest.mock import patch
+        with patch("strategy_research.signal_at", side_effect=one_signal):
+            result = simulate_segment(
+                "trend_breakout",
+                bars,
+                features,
+                start,
+                start + 5,
+                entry_fee_bps=20.555,
+                exit_fee_bps=41.555,
+                spread_bps_round_trip=25.6669,
+                slippage_bps_per_side=10.0,
+                min_notional_idr=25_000.0,
+            )
+        trade = result["closed_trade_details"][0]
+        self.assertEqual(trade["exit_reason"], "time_stop")
+        self.assertEqual(trade["bars_held"], 2)
+        self.assertGreater(trade["entry_notional_idr"], 25_000.0)
 
     def test_quantity_rounding_never_exceeds_computed_risk_size(self):
         self.assertAlmostEqual(round_quantity_down(0.0123456789, "0.0001"), 0.0123)
