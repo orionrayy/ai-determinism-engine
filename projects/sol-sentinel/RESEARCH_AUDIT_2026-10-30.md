@@ -750,3 +750,43 @@ The run also passed the three-process non-flat synthetic recovery test in the sa
 2. If disabled, enable only this workflow. If enabled, investigate its actor/schedule registration using the actual visible configuration and GitHub's documented recovery path; do not alter the cron interval without evidence.
 3. Wait for and verify a genuine schedule run on main, with result.json, status.json, cycle ID, matching state checkpoint and hash; then update this checkpoint.
 4. Execute the on-device Termux Doctor command in RUNBOOK_TERMUX.md; keep Android status unverified until device output is captured.
+
+
+## v1.7 authenticated scheduler audit — 2026-10-30 15:38 WIB
+
+### Scheduler and workflow identity
+
+An authenticated, read-only GitHub Actions inspection established that `SOL Sentinel Forward Paper` is **enabled** at the time of inspection: the workflow overflow menu exposed `Disable workflow` and did not expose `Enable workflow`; no disabled/suspended banner was present. Its Actions page showed zero workflow runs. Repository Actions settings showed all actions/reusable workflows allowed, default GITHUB_TOKEN contents/packages permission read-only, and no schedule-specific setting or warning. Repository metadata verifies the default branch is `main`; the current workflow file is present there with cron `2-57/5 * * * *` UTC.
+
+The last commit that changed the cron expression to the staggered form is PR #182 merge commit `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`, author login `orionrayy`. The same account is the repository owner/admin and has recent successful scheduled runs for the separate `AI Orchestrator` workflow. No Sentinel run exists from which a Sentinel-specific `actor` field can be inspected. Thus the scheduler actor is identified by the cron-change commit provenance and appears active; the Sentinel actor itself has no run-level evidence.
+
+The repository's two pages of Actions history filtered by `event=schedule` and `branch=main` returned 153 runs, all `AI Orchestrator` at `.github/workflows/orchestrator.yml`. There are zero `SOL Sentinel Forward Paper` schedule events. Latest returned unrelated run #41019077386 was created at `2026-10-30T07:16:28Z`, actor `orionrayy`, conclusion success. Therefore `FIRST_CRON_PENDING` remains. The evidence rules out a manually disabled workflow and incorrect default branch, but does not isolate the underlying scheduler dispatch/registration failure. Do not label this a confirmed platform outage, actor suspension, or disabled workflow.
+
+No workflow toggle, schedule edit, manual dispatch, rerun, or paper cycle was performed. A same-cadence schedule registration refresh remains a possible controlled remediation only after explicit approval; do not change the cadence or simulate cron with manual dispatch.
+
+### Actionlint compatibility finding
+
+The first PR #187 Orchestrator Tests failure was isolated to pinned `actionlint v1.7.12`, which emitted `unexpected key "queue" for "concurrency" section` at the Sentinel workflow's documented `queue: max` key. GitHub Actions documentation supports `queue: max` for up to 100 pending runs. Existing `.github/actionlint.yaml` already held path-scoped exceptions for two orchestrator workflows; the Sentinel workflow path was missing. PR #187 now adds the same exact-diagnostic suppression only for `.github/workflows/sol-sentinel-forward-paper.yml`. The actual runtime YAML queue configuration remains intact, and the Sentinel test contract continues to assert both `queue: max` and `cancel-in-progress: false`.
+
+Updated PR head `f1de2a142a8530489677fe47d9cbb8e8c6810734` has successful exact-head checks: SOL Sentinel Tests #41027680475 and Orchestrator Tests #41027680469. PR #187 remains open and unmerged; this report does not authorize merging it.
+
+### Persistent state provenance
+
+The state branch remains `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. A fresh recursive Git tree read confirms `state/forward-paper.sqlite3` is still blob `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, size 1,323,008 bytes. This is the same Git blob inspected by the last SQL audit. Its recorded raw SHA-256 remains `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`.
+
+The last full read-only SQL evidence is run #41018963015: SQLite integrity `ok`, 0 foreign-key violations, WAL mode, schema 1, 17 cycles, 17 depth observations / 5,100 levels, 17 attempts, zero orders/fills/events/execution cycles/position rows/residuals, and flat reconciled portfolio Rp300,000 cash / 0 SOL / zero fees / zero realized P&L. This checkpoint verified the same database Git object and size, but did not retrieve the binary for a new SQL execution. Preserve this distinction.
+
+### Recovery, Android and research classification
+
+- Three-process synthetic recovery remains `NON_FLAT_SYNTHETIC_RECOVERY_VERIFIED`: isolated temporary DB, partial BUY and SELL, two residuals, later completion, four unique fills, SOL inventory 3, replay deduplication, integrity/FK checks. No non-flat production account is recorded; `NON_FLAT_OPERATIONAL_RECOVERY_VERIFIED` remains unproven.
+- Termux Doctor source has read-only diagnostics and optional `--json`, `--skip-network`, `--run-tests`, dataset SHA verification and bounded public pair metadata GET. The prior Ubuntu CI report is 6 PASS / 1 WARN / 0 FAIL with network omitted. Physical Android/Termux remains `NOT_TESTED`.
+- The 17-book microstructure sample still covers only 13m42s, with 0 exchange-side timestamps, no trade-print linkage and no queue-depletion evidence. Spread mean 9.634764 bps; median 11.105374 bps; P90 16.066237 bps; P95 16.071871 bps. ±25 bps depth summary remains descriptive, heavily skewed sample evidence. The separate unsaved snapshot is not part of the persisted dataset. 10 bps per-side slippage remains an unvalidated assumption.
+- Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; known reasons include `15m_trend_not_confirmed` and `1m_momentum_exhaustion_or_missing`. No new signal evaluation or OOS tuning occurred in this read-only audit. Do not compute trade performance metrics from zero trades.
+- `LIVE_TRADING=DISABLED`; no live endpoint, account credential, wallet, signer, order or transfer operation was used.
+
+### Remaining acceptance gates
+
+1. Keep `FIRST_CRON_PENDING` until a genuine `schedule` event on `main` runs the dedicated workflow.
+2. Before changing the schedule registration, obtain explicit approval and use a reviewable, same-cadence change. Do not toggle the enabled workflow based on unsupported assumptions.
+3. After the first actual schedule run, reconcile its `result.json`, `status.json`, cycle ID, run commit, state branch commit, DB hash, SQLite integrity and ledger/portfolio before promoting scheduler or persistence status.
+4. Capture the user's on-device Termux Doctor JSON before changing Android status from `NOT_TESTED`.
