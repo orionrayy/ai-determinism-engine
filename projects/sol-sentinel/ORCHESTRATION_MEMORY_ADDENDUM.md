@@ -1,0 +1,173 @@
+# SOL Sentinel — Orchestration Memory Addendum
+
+Date: 2026-10-29, Asia/Jakarta.
+
+This file supplements, but does not replace, the canonical `ORCHESTRATION_MEMORY.md`. It is deliberately stored as a separate, small project-specific addendum so SOL Sentinel's operational context can be versioned without rewriting the entire large control-plane memory file.
+
+## Project identity
+
+- Repository: https://github.com/orionrayy/ai-determinism-engine
+- Development branch: `feat/sol-sentinel-paper-trader-v1`
+- Draft PR: https://github.com/orionrayy/ai-determinism-engine/pull/178
+- Project directory: `projects/sol-sentinel/`
+- Runtime mode: read-only research/scanner; paper trading is a later phase.
+- Live transaction execution: disabled and unimplemented in Phase 0.
+
+## User goal and capital context
+
+The user reports IDR 300,000 deposited in their KYC-verified Reku account and expresses an aspirational portfolio target of IDR 3,500,000. The target implies approximately 11.67x equity and +1,066.7% net return. Do not promise, imply, or optimize as if this outcome were guaranteed or owed by a deadline.
+
+A Reku screenshot showed a point-in-time limit-buy form at IDR 1,820,000 with IDR 150,000 selected, an estimated 0.08241759 SOL, IDR 300,000 available, and zero open orders. It does not prove any order was submitted or filled.
+
+## Implementation state
+
+The branch contains:
+- `README.md`
+- `SPEC.md`
+- `RISK_POLICY.md`
+- `SOURCES.md`
+- `SESSION_LOG.md`
+- `CONVERSATION_CONTEXT.md`
+- `RUNBOOK_TERMUX.md`
+- `sol_sentinel.py`
+- `test_sol_sentinel.py`
+- `.github/workflows/sol-sentinel-tests.yml`
+- this addendum
+
+CI run `40899451163` succeeded for branch head `39ef55b1f8c7da160f901894524318184cffa13d`. Subsequent documentation-only commits should be checked against the latest CI run before claiming current head is green.
+
+## Execution and safety policy
+
+1. The scanner uses Binance public SOLUSDT 1m/5m/15m candles only as a reference feed; it does not represent Reku SOL/IDR executable prices.
+2. Scanner uses Python standard library and has no order-placement, withdrawal, wallet creation, key handling, or transaction-signing capability.
+3. Actual Reku fee schedules, minimum order size, withdrawal costs and limits, supported API operations, and terms for automation must be verified from current official sources before live use.
+4. Never use undocumented/private endpoints to bypass platform controls.
+5. Do not place secrets, wallet private keys, seed phrases, API tokens, personal identifiers, raw account screenshots, or private transaction details in this public repository.
+6. A live execution phase requires explicit user approval tied to exact action/parameters, a dedicated wallet or credential boundary, a durable idempotency identity, safe uncertain-outcome reconciliation, order limits, cost/slippage gates, emergency stop, and independent validation.
+7. No leverage, martingale, loss-chasing, or automatic risk escalation to force the target.
+8. If data is stale/inconsistent, costs exceed modeled edge, or transaction state is unknown, fail closed and do not trade.
+
+## Next work
+
+1. Have the user run the scanner on Termux and report only non-sensitive output.
+2. Add historical data capture/replay and a durable, cost-aware paper ledger.
+3. Obtain realistic venue-specific fee/spread/slippage assumptions.
+4. Run chronological out-of-sample evaluation and report expectancy, profit factor, maximum drawdown, sample size, and cost sensitivity.
+5. Review the official Reku API/terms and feasible execution path.
+6. Only then consider a live adapter after an explicit approval gate.
+
+## Conversation continuity
+
+The user requested persistence of context, source links, tools, decisions, and session progress. The structured user-facing summary is `CONVERSATION_CONTEXT.md`; detailed technical choices are `SPEC.md`; current verified milestones are `SESSION_LOG.md`; source and tool URLs are in `SOURCES.md`.
+
+A direct update of the full root `ORCHESTRATION_MEMORY.md` was attempted but blocked by a tool safety check; no specific cause was returned. This separate addendum is the safe, small-file workaround. Do not state that the canonical memory itself was modified.
+
+## Update — 2026-10-29, paper research pipeline
+
+The feature branch now includes bounded public-candle capture, a cost-aware offline backtest/SQLite ledger, and fixed-parameter chronological 60/20/20 evaluation with a distinct out-of-sample segment. Associated offline tests are included in the project's CI.
+
+Latest verified CI: run `40906164183`, commit `41f60c53ff7801d3b3729c27f5bd338854538386`, success. No user-device testing, live market order, account connection, or financial side effect has occurred. Keep all downloaded candles and reports with account-specific values on-device; never commit private data into this public repository.
+
+
+## Cost model and workflow update — 2026-10-29
+
+The scanner and offline paper engine separate fee, spread, and slippage assumptions. The new `.github/workflows/sol-sentinel-research.yml` is a free-first research workflow for bounded public candle capture, offline backtesting, chronological evaluation, and short-retention artifacts. It is not a live trading workflow. Its first manual dispatch is still required to validate actual GitHub Actions public-data reachability and report generation.
+
+
+## Continuity archive update — 2026-10-29
+
+The detailed conversational decision timeline, APIs/repositories, GitHub tool inventory, known rejections, CI debugging evidence and continuation plan are recorded in `EXECUTION_LOG.md` and indexed from `README.md`. Before any further writes, reread the current PR head and latest CI. The last fully inspected green run before the journal commits was `40910240121` (commit `e20c3ce0b49969cbaa08706a44fc765e47e01db9`, 32 tests passed). This needs to be refreshed after the current commit sequence.
+
+
+## Latest checkpoint — 2026-10-29
+
+- Full user-facing decisions, source/API inventory, GitHub connector tools, debugging/rejection history, CI runs and continuation steps: `projects/sol-sentinel/EXECUTION_LOG.md`.
+- Project README indexes the journal; the context and session log have current status entries.
+- Last verified green head before these final handoff notes: `8d8c91738b5f237e715206f662db417bbb509b63`; CI run `40911083700` passed compilation and 32 offline tests.
+- PR #178 is still a draft and unmerged. The PR's recorded base SHA differs from the currently observed `main` SHA; inspect and reconcile before merge.
+- No live trading or wallet operation was performed. End-to-end network research, Termux runtime, and historical profitability remain unverified.
+
+
+## Historical data and cost-model checkpoint — 2026-10-29
+
+Successful 30-day research run `40914239047` captured 43,200 public Binance SOLUSDT 1m candles with a dated USD/IDR reference. Baseline/60-20-20 segments had no trades. Initial sensitivity run `40915191550` found no trades with the Reku Pro fee reference even at the Pro fee-only floor. A theoretical Lightning fee-only floor (zero spread/slippage) made 10 simulated trades but lost about IDR 3,893 (-1.30%). This theoretical floor omits quote friction and is not a live scenario.
+
+The later expanded-statistics run `40915499872` failed closed because Frankfurter timed out. The FX reference fetcher now has bounded retries and passing offline tests; retry-enabled full pipeline run `40916209196` was in progress at the last read. Recheck the final result before updating status. No live trade, wallet operation or actual target attainment has occurred.
+
+
+## Latest checkpoint — 2026-10-30 WIB
+
+SOL Sentinel's public-only research pipeline now has verified current Reku market-data handling:
+- Latest CI [40921862301](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921862301) passed 63 offline tests.
+- Research run [40921592237](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237) completed successfully with a 30-day, 43,200-candle Binance SOLUSDT pipeline and artifact [12918995790](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40921592237/artifacts/12918995790).
+- Reku order book now uses the verified public query `symbol=SOL_IDR`; the snapshot probe returned 40 levels per side and 27.210884 bps spread. Public chart uses 5m first because f=1 returned HTTP 500.
+- The legacy Reku `/activitytrans` route returned HTTP 404. Collector fails fast and marks it unavailable; do not use incomplete chart data as a substitute for 30 days of native history.
+- No strategy edge has been demonstrated: baseline and chronological segments still yield zero trades. Live mode remains disabled. PR #178 is draft/unmerged and requires base-SHA reconciliation.
+
+## 2026-10-30 implementation checkpoint — spread and diagnostics
+
+- Verified patch head: `7d74015ecb99c0f1768baddd40b1643399c5bea2`, based on previous branch head `29488b5ecc55fe080980a38bd900753c7d70a135`.
+- CI runs [40928032367](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032367) and PR run [40928041385](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385) passed compile + 70 offline tests.
+- Spread formula remains midpoint convention. Historical `198.0198` vs `200` bps discrepancy for bid 99/ask 101 comes from ask-price denominator versus midpoint, respectively. Current code already used midpoint; the patch adds robust type/numeric validation and regression tests rather than changing the expected value.
+- New diagnostics report multi-label rejection reasons, exact rejection combinations, order attempts/fills, minimum-order rejections, gross/average win/loss and net expectancy. Zero-trade win rate and expectancy are null to represent undefined statistics.
+- Simulated minimum order is explicitly configured: Reku Pro Rp30,000 and theoretical Lightning floor Rp5,000, from Reku's public help page. The current research run [40928032346](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346) was in progress when recorded; append its final artifact/metrics only after inspection.
+- No live trade, cancellation, money transfer, withdrawal, or credential use. Termux remains untested. PR #178 remains draft and unmerged; do not merge until current main/PR state is reconciled.
+
+
+## Verified end-of-session checkpoint — 2026-10-30 (SOL_SENTINEL_SESSION_2026-10-30_VERIFIED_FINAL)
+
+### Execution identity and reproducible evidence
+- Candidate source commit: \`7d74015ecb99c0f1768baddd40b1643399c5bea2\`; a later documentation-only commit on this branch records the checkpoint. PR #178 remains draft/open/unmerged: https://github.com/orionrayy/ai-determinism-engine/pull/178.
+- SOL Sentinel Tests run #268: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928041385 — succeeded on candidate code SHA; job log reports 70 tests passed.
+- SOL Sentinel Research run #25: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40928032346 — succeeded on same candidate code SHA; artifact #12921441578, 1,223,457 bytes at inspection and seven-day retention.
+- Data hash: \`ccc89cec753644f11248bc75ac8b7b13fd9042ef4eb1d5a72074a75cdb9e8b26\`, 43,200 one-minute Binance SOLUSDT bars spanning 2026-09-29 18:08 UTC to 2026-10-29 18:07:59.999 UTC.
+- FX metadata: USD/IDR 18,158.0 dated 2026-10-29, Frankfurter reference; the simulator treats this as a USDT denomination proxy, not a live conversion quote or executable Reku price.
+
+### Backtest and signal diagnostics
+- Chronological split was fixed at 60/20/20: development 25,920 bars, validation 8,640 bars, OOS 8,640 bars. Every segment returned zero candidates, zero entry attempts/fills, zero trades and IDR 0 net P&L. Expectancy, win rate and profit factor are null/undefined at zero trades; do not interpret drawdown 0 as evidence of safety.
+- Full-window overlapping filter counters: 1m breakout not confirmed 40,141; 1m relative-volume confirmation missing 34,800; 5m momentum not confirmed 28,248; 15m trend not confirmed 25,313; 5m RSI outside entry range 23,648; 1m momentum exhaustion/missing 1,787; cost-gate rejections 198. Counts are multi-label events, not mutually-exclusive candle counts.
+- Most common combined failure of 15m trend + 5m momentum + 5m RSI + 1m breakout + 1m volume was 11,543 development / 6,959 validation / 2,079 OOS observations. Evidence shows a stacked-filter bottleneck but does not prove one threshold alone is the root cause. No threshold was loosened as part of this checkpoint.
+- Split cost-gate counts were 119 development / 43 validation / 34 OOS. Full-window count is 198; difference arises from split-specific warm-up/boundaries and must not be interpreted as an independent signal count.
+- Cost sensitivity is predeclared, not auto-selected. Reku Pro fee components total 42.11 bps. Baseline assumptions add 10 bps round-trip spread and 20 bps round-trip slippage, giving 72.11 bps modeled cost and 97.11 bps minimum gross move with the configured 25 bps net-edge buffer. One timestamped Reku snapshot measured 27.359781 bps midpoint spread; its sensitivity with the same fees/slippage totals 89.469781 bps (114.469781 bps including the buffer). The snapshot is not a historical spread series.
+- The theoretical Lightning fee-only floor (zero spread/slippage, non-executable assumption) generated 10 trades but lost IDR 3,893.219 net (-1.29774%), PF 0.2760, max drawdown 1.62433%. This is not evidence of a tradable edge.
+
+### Spread root-cause finding and implemented guard
+- Midpoint spread is \`((ask-bid)/((ask+bid)/2))*10000\`. Bid 100 / ask 102 gives 198.01980198 bps; bid 99 / ask 101 gives 200 bps. The historical ~198.0198 vs expected 200 discrepancy is mathematically consistent with fixture/expectation mismatch, not necessarily a calculation defect. The exact historical pre-fix fixture was not re-run independently during this session.
+- Commit \`7d74015\` contains robust price type/finite/positive/crossed-quote validation, boolean rejection, half-sum midpoint overflow guard, and tests for missing, invalid, extreme, tiny, zero-spread and numeric-string inputs.
+- Simulator diagnostic counters now expose multi-reason combinations, order attempts, simulated fills, order-size rejections, daily-loss-lock blocked bars and trade-quality metrics. Zero-trade win-rate/expectancy/PF are null rather than fabricated zero.
+
+### Venue, operational mode and blockers
+- The public Reku snapshot for this research run reported bid IDR 1,825,000, ask IDR 1,830,000, spread 27.359781 bps, orderbook OK, chart probe OK. These are historical-to-capture-time observations.
+- Native Reku transaction history is still unavailable/unverified: the legacy public \`/v2/activitytrans\` route returned HTTP 404 and is recorded as \`endpoint_not_found\`. No missing candles or fills were invented.
+- Official sources checked 2026-10-30: Reku fees https://reku.id/fees/crypto; CFX update https://reku.id/information/informasi-penyesuaian-biaya-cfx; Binance REST https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md; Binance public market data https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md; Frankfurter FX https://api.frankfurter.dev/v2/rate/USD/IDR. Binance SOLUSDT plus USD/IDR proxy is not native Reku SOL/IDR execution history.
+- Operational status remains \`RESEARCH_ONLY\`; final research disposition is \`INSUFFICIENT_EVIDENCE\`, not \`PAPER_READY\`. No real orders, cancellation, transfer, deposit, withdrawal, credential or account-security operation was performed. Real execution remains disabled.
+- Termux/Android has not been accessed or tested. Local clone/test rerun was blocked because this session's container could not resolve \`github.com\`; CI logs are the verified test evidence.
+- A full audit and additive canonical-memory checkpoint are proposed in docs-only PR #180: https://github.com/orionrayy/ai-determinism-engine/pull/180; report path \`projects/sol-sentinel/RESEARCH_AUDIT_2026-10-30.md\`.
+- Continuation gates: reconcile PR #178 with current main without force-push; verify native Reku data/venue semantics; preserve frozen OOS until a new independent evaluation is defined; investigate filter interactions one factor at a time on development/validation; show positive net expectancy after realistic costs with adequate sample; validate restart/SQLite invariants; execute the Termux runbook on the actual device.
+
+
+## Verified ledger and data-integrity follow-up — 2026-10-30 (SOL_SENTINEL_SESSION_2026-10-30_POST_AUDIT_FOLLOWUP)
+
+- Code commit \`2cac2368e2a6fa992335a07926a4994770be1e7f\`: SQLite ledger retries are no-ops only for identical run payloads and trade rows. Conflicting report content, duplicate/blank trade IDs, non-finite values or a damaged trade row set fail closed. Foreign-key enforcement is enabled. New regression tests cover same-run replay with one trade, same run ID with altered P&L, and a pre-existing run whose trade row was deleted.
+- Code commit \`833e57a13022c3efe6ff5115df2b2e0697072817\`: CSV input and direct backtest inputs validate that close time equals open time + 59,999 ms for a 1m candle, and direct bars reject non-finite/invalid OHLCV. The capture collector already excludes candles whose close time is at or after capture time, so the researched source rejects unfinished candles.
+- Test-only commit \`8fb11f7081a355958add549052b1ecec90464423\`: hand-calculated EMA, RSI and ATR fixtures; 79 tests succeeded in [workflow #278](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930666859), 0 failures.
+- [Research workflow #27](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930361106) succeeded on engine SHA \`833e57a...\`; artifact [12922686248](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930361106/artifacts/12922686248) (1,223,413 bytes). The test-only commit followed this code SHA, so do not attribute research run #27 to test-only SHA #8fb11.
+- Current dataset hash \`6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14\`, 43,200 Binance SOLUSDT 1m candles from 2026-09-29 18:23:00 UTC to 2026-10-29 18:22:59.999 UTC. Full baseline 43,199 signal evaluations; 154,149 overlapping rejection events; zero signal candidates, entry attempts/fills and trades; IDR 300,000 initial/final equity; P&L and return zero from no positions; win rate/expectancy/PF undefined. Split rejection events are 92,282 development, 29,263 validation, 29,513 OOS; all three splits zero trades.
+- Current main observed at \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`; PR #178 remains draft/unmerged and records older base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`. Do not merge automatically; reconcile first.
+- Root memory and full research audit with this latest follow-up are submitted in docs PR #180: https://github.com/orionrayy/ai-determinism-engine/pull/180. See \`projects/sol-sentinel/RESEARCH_AUDIT_2026-10-30.md\`.
+- Status is still \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. No real order or account action was used, native Reku history still returns HTTP 404, and Termux/Android is not validated.
+
+
+## Final branch-reconciliation checkpoint — 2026-10-30 (SOL_SENTINEL_SESSION_2026-10-30_FINAL_RECONCILIATION)
+
+- Latest source/branch head after reviewable documentation commits: \`5f18753d4f5f059195b9b2e815627652e6564ca8\`. The latest implementation code changes are ledger hardening \`2cac2368e2a6fa992335a07926a4994770be1e7f\` and candle integrity \`833e57a13022c3efe6ff5115df2b2e0697072817\`; hand-calculated EMA/RSI/ATR tests are \`8fb11f7081a355958add549052b1ecec90464423\`.
+- Verified branch-head tests: [run #280](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40931067383), 79 tests / 0 failures. Duplicate trigger #279 also succeeded. [Research run #27](https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930361106) succeeded on source code SHA \`833e57a...\`, artifact #12922686248, dataset SHA \`6e140e14be2e05d30819b96e90e37372ee13df55bb7d4f31fc9c9382bef86c14\`, and still zero trades across all splits.
+- Current \`main\` is \`d5672c84a0ae184c3a95d3f925925887ece71aa4\`. PR #178 records older base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`; compare endpoint reports merge base \`eaa864...\`, status \`diverged\`, \`ahead_by=167\`, \`behind_by=2\`, and 27 changed files. API also returns \`mergeable=true\`, but that does not mean its commit history or scope is safe to merge. Do not merge, rebase, force-push or change branch protection without a separate human review of the whole PR.
+- Canonical memory/audit checkpoint PR #180 now has source branch head \`84b1e90dad322d505457b9ddee7b0adc7969be6d\`, based on main \`d5672c84...\`; its Orchestrator Tests run #2250 succeeded: https://github.com/orionrayy/ai-determinism-engine/actions/runs/40930987014.
+- Persistence validation note: the first attempted memory checkpoint tree accidentally referenced the prior blob because the idempotence check inspected a string after appending the marker. A read-after-write verification caught it; the canonical memory was rewritten with a new blob and re-read successfully, then extended with the latest follow-up. Final verified memory blob SHA \`ae6dc4ef1ca14cb1417910b7b325fa53ca279747\`; audit report blob SHA \`c7c934ea6f83b4e0661ef299cc596350a69a0481\`. No duplicate checkpoint was appended.
+- Readiness remains \`RESEARCH_ONLY\` / \`INSUFFICIENT_EVIDENCE\`. Termux not tested; native Reku transaction-history route unavailable via HTTP 404; no live orders or account operations were used.
+
+
+## Final compare refresh — 2026-10-30
+
+The last fresh GitHub compare, performed after all current documentation commits were pushed, reports current \`main\` \`d5672c84a0ae184c3a95d3f925925887ece71aa4\` versus feature head \`3d2054da51ebb34f98380c50257e61735e650475\`: \`status=diverged\`, merge base \`eaa864a554c2c995ce73bd9f6b4d07206ecc56c5\`, \`ahead_by=168\`, \`behind_by=2\`, 27 files in PR #178. This supersedes the earlier point-in-time count of 167 commits ahead recorded in previous notes. \`mergeable=true\` is only API metadata and does not authorize merge; keep PR #178 draft and obtain review of the full history delta before integration. No rebase, force-push, merge, or change to main was performed.

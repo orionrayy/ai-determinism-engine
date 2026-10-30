@@ -1,0 +1,969 @@
+#!/usr/bin/env python3
+"""Venue-neutral SOL Sentinel adapter contracts and deterministic paper execution.
+
+This module deliberately contains no exchange order client, wallet signer, transfer
+sender, credential loader, or live execution implementation. All amounts are Decimal.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+from enum import Enum
+from typing import Any, Protocol, runtime_checkable
+
+
+class AdapterContractError(ValueError):
+    """A platform contract or safety precondition failed."""
+
+
+def _decimal(value: Any, field: str, *, allow_zero: bool = False) -> Decimal:
+    if isinstance(value, bool):
+        raise AdapterContractError(f"{field} must be a finite decimal")
+    try:
+        out = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        raise AdapterContractError(f"{field} must be a finite decimal") from None
+    if not out.is_finite() or (out < 0 if allow_zero else out <= 0):
+        qualifier = "non-negative" if allow_zero else "positive"
+        raise AdapterContractError(f"{field} must be finite and {qualifier}")
+    return out
+
+
+def _aware_utc(value: datetime, field: str) -> datetime:
+    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+        raise AdapterContractError(f"{field} must be timezone-aware")
+    return value.astimezone(timezone.utc)
+
+
+def _is_multiple(value: Decimal, step: Decimal) -> bool:
+    return value % step == 0
+
+
+@dataclass(frozen=True)
+class MarketSpec:
+    """Canonical market contract; venue-specific ticker symbols stay separate."""
+
+    venue: str
+    symbol: str
+    venue_symbol: str
+    base_asset: str
+    quote_asset: str
+    price_tick: Decimal
+    quantity_step: Decimal
+    min_notional_quote: Decimal
+    base_decimals: int
+    quote_decimals: int
+    min_quantity_base: Decimal = Decimal("0")
+
+    def __post_init__(self) -> None:
+        for field in ("venue", "symbol", "venue_symbol", "base_asset", "quote_asset"):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not value.strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+            object.__setattr__(self, field, value.strip())
+        if self.base_asset.upper() == self.quote_asset.upper():
+            raise AdapterContractError("base_asset and quote_asset must differ")
+        object.__setattr__(self, "base_asset", self.base_asset.upper())
+        object.__setattr__(self, "quote_asset", self.quote_asset.upper())
+        object.__setattr__(self, "price_tick", _decimal(self.price_tick, "price_tick"))
+        object.__setattr__(self, "quantity_step", _decimal(self.quantity_step, "quantity_step"))
+        object.__setattr__(self, "min_notional_quote", _decimal(self.min_notional_quote, "min_notional_quote", allow_zero=True))
+        object.__setattr__(self, "min_quantity_base", _decimal(self.min_quantity_base, "min_quantity_base", allow_zero=True))
+        for field in ("base_decimals", "quote_decimals"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 18:
+                raise AdapterContractError(f"{field} must be an integer in 0..18")
+
+
+@dataclass(frozen=True)
+class MarketQuote:
+    venue: str
+    symbol: str
+    bid: Decimal
+    ask: Decimal
+    observed_at: datetime
+    source: str = "mock"
+    bid_quantity_base: Decimal | None = None
+    ask_quantity_base: Decimal | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "bid", _decimal(self.bid, "bid"))
+        object.__setattr__(self, "ask", _decimal(self.ask, "ask"))
+        for field in ("bid_quantity_base", "ask_quantity_base"):
+            value = getattr(self, field)
+            if value is not None:
+                object.__setattr__(self, field, _decimal(value, field, allow_zero=True))
+        object.__setattr__(self, "observed_at", _aware_utc(self.observed_at, "observed_at"))
+        if self.ask < self.bid:
+            raise AdapterContractError("crossed quote (ask < bid)")
+        for field in ("venue", "symbol", "source"):
+            if not isinstance(getattr(self, field), str) or not getattr(self, field).strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+
+    @property
+    def midpoint(self) -> Decimal:
+        return (self.bid + self.ask) / Decimal("2")
+
+    @property
+    def spread_bps(self) -> Decimal:
+        return (self.ask - self.bid) / self.midpoint * Decimal("10000")
+
+
+class Side(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+@dataclass(frozen=True)
+class OrderIntent:
+    idempotency_key: str
+    venue: str
+    symbol: str
+    side: Side
+    quantity_base: Decimal
+    limit_price_quote: Decimal
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.idempotency_key, str) or not self.idempotency_key.strip():
+            raise AdapterContractError("idempotency_key must be a non-empty string")
+        if len(self.idempotency_key) > 200:
+            raise AdapterContractError("idempotency_key is too long")
+        if not isinstance(self.side, Side):
+            try:
+                object.__setattr__(self, "side", Side(str(self.side).upper()))
+            except ValueError:
+                raise AdapterContractError("side must be BUY or SELL") from None
+        object.__setattr__(self, "quantity_base", _decimal(self.quantity_base, "quantity_base"))
+        object.__setattr__(self, "limit_price_quote", _decimal(self.limit_price_quote, "limit_price_quote"))
+        object.__setattr__(self, "created_at", _aware_utc(self.created_at, "created_at"))
+        for field in ("venue", "symbol"):
+            if not isinstance(getattr(self, field), str) or not getattr(self, field).strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+
+    @property
+    def notional_quote(self) -> Decimal:
+        return self.quantity_base * self.limit_price_quote
+
+    def fingerprint(self) -> str:
+        canonical = {
+            "venue": self.venue,
+            "symbol": self.symbol,
+            "side": self.side.value,
+            "quantity_base": str(self.quantity_base),
+            "limit_price_quote": str(self.limit_price_quote),
+            "created_at": self.created_at.isoformat(),
+        }
+        return hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class OrderCheck:
+    accepted: bool
+    reasons: tuple[str, ...]
+    reference_price: Decimal | None
+    quote_age_seconds: Decimal | None
+    spread_bps: Decimal | None
+
+
+def validate_order(
+    intent: OrderIntent,
+    market: MarketSpec,
+    quote: MarketQuote,
+    *,
+    now: datetime | None = None,
+    max_quote_age_seconds: Decimal = Decimal("30"),
+    max_spread_bps: Decimal = Decimal("100"),
+    future_clock_skew_seconds: Decimal = Decimal("5"),
+) -> OrderCheck:
+    """Validate venue identity, lot/tick/minimum, and quote integrity before paper fill."""
+    current = _aware_utc(now or datetime.now(timezone.utc), "now")
+    reasons: list[str] = []
+    if intent.venue != market.venue or intent.symbol != market.symbol:
+        reasons.append("market_identity_mismatch")
+    if quote.venue != market.venue or quote.symbol != market.symbol:
+        reasons.append("quote_identity_mismatch")
+    if not _is_multiple(intent.quantity_base, market.quantity_step):
+        reasons.append("quantity_step_mismatch")
+    if not _is_multiple(intent.limit_price_quote, market.price_tick):
+        reasons.append("price_tick_mismatch")
+    if intent.notional_quote < market.min_notional_quote:
+        reasons.append("minimum_notional_not_met")
+    if intent.quantity_base < market.min_quantity_base:
+        reasons.append("minimum_base_quantity_not_met")
+
+    age = Decimal(str((current - quote.observed_at).total_seconds()))
+    spread = quote.spread_bps
+    if age < -_decimal(future_clock_skew_seconds, "future_clock_skew_seconds", allow_zero=True):
+        reasons.append("quote_from_future")
+    elif age > _decimal(max_quote_age_seconds, "max_quote_age_seconds", allow_zero=True):
+        reasons.append("quote_stale")
+    if spread > _decimal(max_spread_bps, "max_spread_bps", allow_zero=True):
+        reasons.append("spread_above_limit")
+
+    reference = quote.ask if intent.side is Side.BUY else quote.bid
+    return OrderCheck(not reasons, tuple(reasons), reference, age, spread)
+
+
+class ReceiptStatus(str, Enum):
+    FILLED_SIMULATED = "FILLED_SIMULATED"
+    PARTIALLY_FILLED_SIMULATED = "PARTIALLY_FILLED_SIMULATED"
+    NO_FILL = "NO_FILL"
+    REJECTED = "REJECTED"
+
+
+@dataclass(frozen=True)
+class ExecutionReceipt:
+    order_id: str
+    idempotency_key: str
+    status: ReceiptStatus
+    venue: str
+    symbol: str
+    side: Side
+    requested_quantity_base: Decimal
+    filled_quantity_base: Decimal
+    fill_price_quote: Decimal | None
+    fee_quote: Decimal
+    quote_observed_at: datetime
+    reasons: tuple[str, ...]
+    execution_enabled: bool = False
+    live_order_submitted: bool = False
+
+
+@runtime_checkable
+class MarketDataAdapter(Protocol):
+    def get_quote(self, market: MarketSpec) -> MarketQuote: ...
+
+@runtime_checkable
+class CapitalSourceAdapter(Protocol):
+    def source_id(self) -> str: ...
+
+
+@runtime_checkable
+class CustodyAdapter(Protocol):
+    def get_balance(self, asset: str, network: str) -> Decimal: ...
+
+
+@runtime_checkable
+class TransferPlanner(Protocol):
+    def plan(self, route: "TransferRoute", amount: Decimal) -> "TransferDecision": ...
+
+
+@runtime_checkable
+class TransactionSigner(Protocol):
+    def sign(self, unsigned_transaction: bytes) -> bytes: ...
+
+
+@runtime_checkable
+class ChainTransactionSubmitter(Protocol):
+    def submit(self, signed_transaction: bytes) -> str: ...
+
+
+@runtime_checkable
+class ExecutionAdapter(Protocol):
+    def execute(self, intent: OrderIntent, market: MarketSpec, quote: MarketQuote, **kwargs: Any) -> ExecutionReceipt: ...
+
+
+@runtime_checkable
+class LedgerAdapter(Protocol):
+    def record(self, receipt: ExecutionReceipt) -> None: ...
+
+
+@dataclass(frozen=True)
+class TransferRoute:
+    source: str
+    destination: str
+    asset: str
+    source_network: str
+    destination_network: str
+    minimum_withdrawal: Decimal | None
+    withdrawal_fee: Decimal | None
+    minimum_deposit: Decimal | None
+    source_network_verified: bool = False
+    destination_network_verified: bool = False
+    cost_verified_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        for field in ("source", "destination", "asset", "source_network", "destination_network"):
+            value = getattr(self, field)
+            if not isinstance(value, str) or not value.strip():
+                raise AdapterContractError(f"{field} must be a non-empty string")
+            object.__setattr__(self, field, value.strip())
+        for field in ("minimum_withdrawal", "withdrawal_fee", "minimum_deposit"):
+            value = getattr(self, field)
+            if value is not None:
+                object.__setattr__(self, field, _decimal(value, field, allow_zero=True))
+        for field in ("source_network_verified", "destination_network_verified"):
+            if not isinstance(getattr(self, field), bool):
+                raise AdapterContractError(f"{field} must be a boolean verified-state flag")
+        if self.cost_verified_at is not None:
+            object.__setattr__(self, "cost_verified_at", _aware_utc(self.cost_verified_at, "cost_verified_at"))
+
+
+@dataclass(frozen=True)
+class TransferDecision:
+    approved_for_planning: bool
+    reasons: tuple[str, ...]
+    amount_requested: Decimal
+    estimated_fee: Decimal | None
+    estimated_amount_received: Decimal | None
+    transfer_sent: bool = False
+
+
+def assess_transfer_route(
+    route: TransferRoute,
+    amount: Decimal,
+    *,
+    now: datetime | None = None,
+    max_cost_age_seconds: Decimal = Decimal("86400"),
+) -> TransferDecision:
+    """Validate metadata only. This function can never send or sign a transfer."""
+    requested = _decimal(amount, "amount")
+    current = _aware_utc(now or datetime.now(timezone.utc), "now")
+    reasons: list[str] = []
+    if route.source.lower() == route.destination.lower():
+        reasons.append("source_and_destination_match")
+    if route.source_network.upper() != route.destination_network.upper():
+        reasons.append("network_mismatch")
+    if not route.source_network_verified:
+        reasons.append("source_network_not_verified")
+    if not route.destination_network_verified:
+        reasons.append("destination_network_not_verified")
+    if route.minimum_withdrawal is None:
+        reasons.append("minimum_withdrawal_unknown")
+    elif requested < route.minimum_withdrawal:
+        reasons.append("below_minimum_withdrawal")
+    if route.withdrawal_fee is None:
+        reasons.append("withdrawal_fee_unknown")
+    if route.minimum_deposit is None:
+        reasons.append("minimum_deposit_unknown")
+    if route.cost_verified_at is None:
+        reasons.append("route_cost_verification_missing")
+    else:
+        cost_age = Decimal(str((current - route.cost_verified_at).total_seconds()))
+        max_age = _decimal(max_cost_age_seconds, "max_cost_age_seconds", allow_zero=True)
+        if cost_age < Decimal("-5") or cost_age > max_age:
+            reasons.append("route_cost_verification_stale")
+    received: Decimal | None = None
+    if route.withdrawal_fee is not None:
+        if route.withdrawal_fee > requested:
+            reasons.append("withdrawal_fee_exceeds_amount")
+        else:
+            received = requested - route.withdrawal_fee
+            if received <= 0:
+                reasons.append("no_transfer_value_remaining")
+            if route.minimum_deposit is not None and received < route.minimum_deposit:
+                reasons.append("net_amount_below_minimum_deposit")
+    return TransferDecision(
+        approved_for_planning=not reasons,
+        reasons=tuple(reasons),
+        amount_requested=requested,
+        estimated_fee=route.withdrawal_fee,
+        estimated_amount_received=received,
+        transfer_sent=False,
+    )
+
+
+class ExecutionMode(str, Enum):
+    READ_ONLY = "READ_ONLY"
+    PAPER = "PAPER"
+    LIVE = "LIVE"
+
+
+@dataclass(frozen=True)
+class ExecutionPolicy:
+    mode: ExecutionMode = ExecutionMode.PAPER
+    explicit_live_approval: bool = False
+    readiness_gates_passed: bool = False
+    approval_reference: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.mode, ExecutionMode):
+            try:
+                object.__setattr__(self, "mode", ExecutionMode(str(self.mode).upper()))
+            except ValueError:
+                raise AdapterContractError("mode must be READ_ONLY, PAPER, or LIVE") from None
+
+    def validate(self) -> None:
+        if self.mode is not ExecutionMode.LIVE:
+            return
+        if not self.explicit_live_approval:
+            raise AdapterContractError("live mode requires separate explicit user approval")
+        if not self.readiness_gates_passed:
+            raise AdapterContractError("live mode is blocked until every readiness gate passes")
+        if not self.approval_reference.strip():
+            raise AdapterContractError("live mode requires a traceable approval reference")
+        raise AdapterContractError("no live execution adapter is implemented in SOL Sentinel")
+
+
+
+class VenueDataError(RuntimeError):
+    """Public venue market data could not be safely retrieved or parsed."""
+
+
+
+@dataclass(frozen=True)
+class MarketCandle:
+    """Venue-native OHLCV candle with explicit quote denomination and close time."""
+
+    open_time_ms: int
+    close_time_ms: int
+    interval_minutes: int
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+    quote_currency: str = "IDR"
+    source: str = "INDODAX public OHLC history"
+
+    def __post_init__(self) -> None:
+        for field in ("open_time_ms", "close_time_ms", "interval_minutes"):
+            value = getattr(self, field)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise AdapterContractError(f"{field} must be a non-negative integer")
+        if self.interval_minutes not in (1, 15, 30, 60, 240):
+            raise AdapterContractError("interval_minutes is not supported by the public history adapter")
+        expected_close = self.open_time_ms + self.interval_minutes * 60_000 - 1
+        if self.close_time_ms != expected_close:
+            raise AdapterContractError("candle close timestamp does not match its interval")
+        for field in ("open", "high", "low", "close"):
+            object.__setattr__(self, field, _decimal(getattr(self, field), field))
+        object.__setattr__(self, "volume", _decimal(self.volume, "volume", allow_zero=True))
+        if self.high < max(self.open, self.close, self.low):
+            raise AdapterContractError("candle high is below an OHLC value")
+        if self.low > min(self.open, self.close, self.high):
+            raise AdapterContractError("candle low is above an OHLC value")
+        if not isinstance(self.quote_currency, str) or not self.quote_currency.strip():
+            raise AdapterContractError("quote_currency must be non-empty")
+        if not isinstance(self.source, str) or not self.source.strip():
+            raise AdapterContractError("source must be non-empty")
+
+
+class IndodaxPublicMarketDataAdapter:
+    """Read-only INDODAX public depth adapter; never accesses balances or places orders.
+
+    Official public REST docs list https://indodax.com/api/depth/$pair_id and
+    specify that public endpoints need no API key. The caller must provide the
+    pair id from the current /api/pairs catalogue, e.g. "solidr".
+    """
+
+    BASE_URL = "https://indodax.com/api/"
+    PAIRS_URL = "https://indodax.com/api/pairs"
+    HISTORY_URL = "https://indodax.com/tradingview/history_v2"
+    HISTORY_INTERVALS_MINUTES = frozenset({1, 15, 30, 60, 240})
+    HISTORY_CHUNK_MS = 86_400_000
+    HISTORY_MAX_SPAN_MS = 30 * 86_400_000
+    MAX_RESPONSE_BYTES = 1_000_000
+    RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+    def __init__(
+        self,
+        *,
+        timeout: float = 5.0,
+        attempts: int = 2,
+        pause_seconds: float = 0.25,
+        min_request_interval_seconds: float = 0.35,
+        transport: Any = None,
+    ) -> None:
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not 0.1 <= timeout <= 20:
+            raise AdapterContractError("timeout must be between 0.1 and 20 seconds")
+        if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 3:
+            raise AdapterContractError("attempts must be an integer in 1..3")
+        if isinstance(pause_seconds, bool) or not isinstance(pause_seconds, (int, float)) or not 0 <= pause_seconds <= 2:
+            raise AdapterContractError("pause_seconds must be between 0 and 2 seconds")
+        if (
+            isinstance(min_request_interval_seconds, bool)
+            or not isinstance(min_request_interval_seconds, (int, float))
+            or not 0 <= min_request_interval_seconds <= 2
+        ):
+            raise AdapterContractError("min_request_interval_seconds must be between 0 and 2 seconds")
+        self._timeout = float(timeout)
+        self._attempts = attempts
+        self._pause_seconds = float(pause_seconds)
+        self._min_request_interval_seconds = float(min_request_interval_seconds)
+        self._last_request_at: float | None = None
+        self._request_lock = threading.Lock()
+        self._transport = transport or self._http_get_json
+
+    @classmethod
+    def _http_get_json(cls, url: str, timeout: float) -> Any:
+        request = urllib.request.Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": "SOL-Sentinel-ReadOnly/1.0"},
+            method="GET",
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            if response.status != 200:
+                raise VenueDataError(f"INDODAX public API HTTP {response.status}")
+            raw = response.read(cls.MAX_RESPONSE_BYTES + 1)
+        if len(raw) > cls.MAX_RESPONSE_BYTES:
+            raise VenueDataError("INDODAX public API response exceeded 1 MB safety limit")
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise VenueDataError("INDODAX public API returned invalid JSON") from None
+
+    def _pace_request(self) -> None:
+        """Serialize requests and stay below the documented 180/min public limit."""
+        with self._request_lock:
+            now = time.monotonic()
+            if self._last_request_at is not None and self._min_request_interval_seconds > 0:
+                remaining = self._min_request_interval_seconds - (now - self._last_request_at)
+                if remaining > 0:
+                    time.sleep(remaining)
+                    now = time.monotonic()
+            self._last_request_at = now
+
+    def _get_public_json(self, url: str) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(self._attempts):
+            try:
+                self._pace_request()
+                return self._transport(url, self._timeout)
+            except urllib.error.HTTPError as exc:
+                last_error = exc
+                if exc.code not in self.RETRYABLE_HTTP_CODES:
+                    raise VenueDataError(f"INDODAX public API HTTP {exc.code}") from None
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                last_error = exc
+            except VenueDataError:
+                raise
+            if attempt + 1 < self._attempts:
+                time.sleep(min(2.0, self._pause_seconds * (2 ** attempt)))
+        raise VenueDataError(
+            f"INDODAX public API request failed after {self._attempts} attempt(s): "
+            f"{type(last_error).__name__ if last_error else 'unknown error'}"
+        ) from None
+
+    def get_market_spec(
+        self,
+        symbol: str = "SOL/IDR",
+        *,
+        mode_minimum_notional_quote: Decimal | None = None,
+    ) -> MarketSpec:
+        """Load public pair filters and optionally enforce an explicit venue-mode floor.
+
+        Official help distinguishes the IDR 25,000 direct-Pro minimum from the
+        IDR 10,000 Lite minimum. Supply a floor only when the research config
+        explicitly selects a mode; market metadata alone is not that mode rule.
+        """
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise AdapterContractError("symbol must be a non-empty canonical pair such as SOL/IDR")
+        canonical = symbol.replace("/", "").replace("-", "").strip().upper()
+        if not canonical.isalnum() or len(canonical) > 30:
+            raise AdapterContractError("symbol must contain only asset codes and an optional separator")
+        mode_floor = (
+            _decimal(mode_minimum_notional_quote, "mode_minimum_notional_quote")
+            if mode_minimum_notional_quote is not None else None
+        )
+        payload = self._get_public_json(self.PAIRS_URL)
+        if not isinstance(payload, list):
+            raise VenueDataError("INDODAX public /api/pairs response must be an array")
+        matches = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            pair_symbol = str(item.get("symbol", "")).replace("/", "").upper()
+            pair_id = str(item.get("id", "")).lower()
+            description = str(item.get("description", "")).replace("/", "").upper()
+            if canonical in (pair_symbol, description) or canonical.lower() == pair_id:
+                matches.append(item)
+        if len(matches) != 1:
+            raise VenueDataError(f"INDODAX pair catalogue matched {len(matches)} rows for {canonical}; refusing ambiguity")
+        pair = matches[0]
+        base_asset = str(pair.get("traded_currency_unit") or pair.get("traded_currency") or "").upper()
+        quote_asset = str(pair.get("base_currency") or "").upper()
+        pair_id = str(pair.get("id") or "").lower()
+        price_tick = pair.get("price_precision")
+        if price_tick is None or str(price_tick).strip() in ("", "0", "0.0"):
+            price_tick = pair.get("pricescale")
+        quantity_step = pair.get("quantity_increment")
+        min_notional = pair.get("trade_min_base_currency")
+        min_quantity = pair.get("trade_min_traded_currency")
+        if not all((base_asset, quote_asset, pair_id)) or any(
+            value is None or str(value).strip() == "" for value in
+            (price_tick, quantity_step, min_notional, min_quantity)
+        ):
+            raise VenueDataError("INDODAX pair metadata omitted a required tick, step, or order minimum")
+        try:
+            step_decimal = _decimal(quantity_step, "quantity_increment")
+            api_minimum = _decimal(min_notional, "trade_min_base_currency", allow_zero=True)
+            if mode_floor is not None:
+                api_minimum = max(api_minimum, mode_floor)
+            base_decimals = max(0, -step_decimal.normalize().as_tuple().exponent)
+            return MarketSpec(
+                venue="INDODAX",
+                symbol=f"{base_asset}/{quote_asset}",
+                venue_symbol=pair_id,
+                base_asset=base_asset,
+                quote_asset=quote_asset,
+                price_tick=_decimal(price_tick, "price_tick"),
+                quantity_step=step_decimal,
+                min_notional_quote=api_minimum,
+                base_decimals=base_decimals,
+                quote_decimals=0 if quote_asset == "IDR" else 6,
+                min_quantity_base=_decimal(min_quantity, "trade_min_traded_currency", allow_zero=True),
+            )
+        except AdapterContractError as exc:
+            raise VenueDataError(f"INDODAX pair metadata invalid: {exc}") from None
+
+    @staticmethod
+    def _best_level_details(levels: Any, *, side: str) -> tuple[Decimal, Decimal]:
+        if side not in ("buy", "sell"):
+            raise VenueDataError("INDODAX depth side must be buy or sell")
+        if not isinstance(levels, list) or not levels:
+            raise VenueDataError(f"INDODAX depth {side} must be a non-empty array")
+        best_price: Decimal | None = None
+        best_quantity = Decimal("0")
+        for index, level in enumerate(levels):
+            if not isinstance(level, (list, tuple)) or len(level) < 2:
+                raise VenueDataError(f"INDODAX depth has malformed {side} level {index}")
+            try:
+                price = _decimal(level[0], f"{side} price")
+                quantity = _decimal(level[1], f"{side} quantity")
+            except AdapterContractError as exc:
+                raise VenueDataError(f"INDODAX depth has invalid {side} level {index}: {exc}") from None
+            is_better = best_price is None or (price > best_price if side == "buy" else price < best_price)
+            if is_better:
+                best_price, best_quantity = price, quantity
+            elif price == best_price:
+                best_quantity += quantity
+        if best_price is None:
+            raise VenueDataError(f"INDODAX depth {side} has no valid levels")
+        return best_price, best_quantity
+
+    @staticmethod
+    def _best_level(levels: Any, *, side: str) -> Decimal:
+        return IndodaxPublicMarketDataAdapter._best_level_details(levels, side=side)[0]
+
+    @staticmethod
+    def _parse_history_rows(
+        rows: Any,
+        *,
+        start_ms: int,
+        end_ms: int,
+        interval_minutes: int,
+        now_ms: int,
+    ) -> dict[int, MarketCandle]:
+        if not isinstance(rows, list):
+            raise VenueDataError("INDODAX OHLC history response must be an array")
+        interval_ms = interval_minutes * 60_000
+        parsed: dict[int, MarketCandle] = {}
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            try:
+                raw_time = float(row.get("Time"))
+                if not raw_time.is_integer():
+                    raise ValueError("Time must be an integral Unix timestamp")
+                timestamp_ms = int(raw_time if abs(raw_time) >= 100_000_000_000 else raw_time * 1000)
+                opened = _decimal(row.get("Open"), "Open")
+                high = _decimal(row.get("High"), "High")
+                low = _decimal(row.get("Low"), "Low")
+                close = _decimal(row.get("Close"), "Close")
+                volume = _decimal(row.get("Volume"), "Volume", allow_zero=True)
+            except (AdapterContractError, TypeError, ValueError, OverflowError):
+                raise VenueDataError("INDODAX OHLC history contains malformed time or OHLCV fields") from None
+            if timestamp_ms < start_ms or timestamp_ms >= end_ms:
+                continue
+            if timestamp_ms % interval_ms:
+                raise VenueDataError("INDODAX OHLC candle timestamp is not aligned to the requested interval")
+            close_time = timestamp_ms + interval_ms - 1
+            if close_time >= now_ms:
+                continue
+            try:
+                candle = MarketCandle(
+                    open_time_ms=timestamp_ms,
+                    close_time_ms=close_time,
+                    interval_minutes=interval_minutes,
+                    open=opened, high=high, low=low, close=close, volume=volume,
+                    quote_currency="IDR",
+                )
+            except AdapterContractError as exc:
+                raise VenueDataError(f"INDODAX OHLC candle failed integrity checks: {exc}") from None
+            previous = parsed.get(timestamp_ms)
+            if previous is not None and previous != candle:
+                raise VenueDataError(f"conflicting duplicate INDODAX candle at {timestamp_ms}")
+            parsed[timestamp_ms] = candle
+        return parsed
+
+    def get_history(
+        self,
+        market: MarketSpec,
+        start_ms: int,
+        end_ms: int,
+        *,
+        interval_minutes: int = 1,
+        now_ms: int | None = None,
+    ) -> list[MarketCandle]:
+        """Fetch complete, contiguous venue-native OHLCV in a half-open [start, end) range.
+
+        Uses the official public TradingView history endpoint. Requests are split
+        into at most one-day chunks; gaps, conflicting duplicates and incomplete
+        output fail closed. No FX conversion is applied to native IDR prices.
+        """
+        if market.venue.upper() != "INDODAX":
+            raise AdapterContractError("Indodax adapter requires venue=INDODAX")
+        if market.quote_asset.upper() != "IDR":
+            raise AdapterContractError("native OHLC history currently supports IDR-quoted pairs only")
+        if isinstance(start_ms, bool) or not isinstance(start_ms, int) or start_ms <= 0:
+            raise AdapterContractError("start_ms must be a positive integer timestamp in milliseconds")
+        if isinstance(end_ms, bool) or not isinstance(end_ms, int) or end_ms <= start_ms:
+            raise AdapterContractError("end_ms must be an integer greater than start_ms")
+        if isinstance(interval_minutes, bool) or not isinstance(interval_minutes, int) or interval_minutes not in self.HISTORY_INTERVALS_MINUTES:
+            raise AdapterContractError("interval_minutes must be one of 1, 15, 30, 60, 240")
+        interval_ms = interval_minutes * 60_000
+        if start_ms % interval_ms or end_ms % interval_ms:
+            raise AdapterContractError("history range boundaries must align to the requested candle interval")
+        if end_ms - start_ms > self.HISTORY_MAX_SPAN_MS:
+            raise AdapterContractError("history range exceeds the 30-day safety limit")
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if isinstance(now, bool) or not isinstance(now, int) or now < 0:
+            raise AdapterContractError("now_ms must be a non-negative integer timestamp")
+        if end_ms > now:
+            raise AdapterContractError("history end_ms cannot be in the future")
+        pair_symbol = market.venue_symbol.lower()
+        if not pair_symbol.isalnum() or len(pair_symbol) > 40:
+            raise AdapterContractError("venue_symbol must be the alphanumeric pair ID returned by /api/pairs")
+
+        by_open: dict[int, MarketCandle] = {}
+        cursor = start_ms
+        while cursor < end_ms:
+            chunk_end = min(end_ms, cursor + self.HISTORY_CHUNK_MS)
+            params = urllib.parse.urlencode({
+                "from": str(cursor // 1000),
+                "symbol": pair_symbol,
+                "tf": str(interval_minutes),
+                "to": str((chunk_end // 1000) - 1),
+            })
+            payload = self._get_public_json(self.HISTORY_URL + "?" + params)
+            chunk_rows = self._parse_history_rows(
+                payload,
+                start_ms=cursor,
+                end_ms=chunk_end,
+                interval_minutes=interval_minutes,
+                now_ms=now,
+            )
+            for timestamp_ms, candle in chunk_rows.items():
+                previous = by_open.get(timestamp_ms)
+                if previous is not None and previous != candle:
+                    raise VenueDataError(f"conflicting duplicate INDODAX candle across chunks at {timestamp_ms}")
+                by_open[timestamp_ms] = candle
+            cursor = chunk_end
+
+        ordered = [by_open[key] for key in sorted(by_open)]
+        expected_count = (end_ms - start_ms) // interval_ms
+        if len(ordered) != expected_count:
+            raise VenueDataError(
+                f"INDODAX OHLC history incomplete: expected {expected_count} candles, received {len(ordered)}"
+            )
+        for index, candle in enumerate(ordered):
+            expected_open = start_ms + index * interval_ms
+            if candle.open_time_ms != expected_open:
+                raise VenueDataError(f"INDODAX OHLC history has a gap at {expected_open}")
+        return ordered
+
+    def get_quote(self, market: MarketSpec) -> MarketQuote:
+        if market.venue.upper() != "INDODAX":
+            raise AdapterContractError("Indodax adapter requires venue=INDODAX")
+        if market.quote_asset.upper() != "IDR":
+            raise AdapterContractError("This public depth adapter currently supports IDR-quoted pairs only")
+        pair_id = market.venue_symbol.lower()
+        expected_pair_id = f"{market.base_asset}{market.quote_asset}".lower()
+        if not pair_id or len(pair_id) > 40 or not pair_id.isalnum():
+            raise AdapterContractError("venue_symbol must be the alphanumeric pair id returned by /api/pairs")
+        if pair_id != expected_pair_id:
+            raise AdapterContractError("venue_symbol does not match the market base/quote assets")
+        request_started_at = datetime.now(timezone.utc)
+        payload = self._get_public_json(self.BASE_URL + "depth/" + pair_id)
+        if not isinstance(payload, dict) or ("error" in payload and payload["error"]):
+            raise VenueDataError("INDODAX depth response is not a valid order-book object")
+        bid, bid_quantity = self._best_level_details(payload.get("buy"), side="buy")
+        ask, ask_quantity = self._best_level_details(payload.get("sell"), side="sell")
+        if ask < bid:
+            raise VenueDataError("INDODAX order book is crossed (best ask < best bid)")
+        return MarketQuote(
+            venue="INDODAX",
+            symbol=market.symbol,
+            bid=bid,
+            ask=ask,
+            observed_at=request_started_at,
+            source="INDODAX public /api/depth (request-start timestamp; conservative age)",
+            bid_quantity_base=bid_quantity,
+            ask_quantity_base=ask_quantity,
+        )
+
+
+class StaticMockMarketDataAdapter:
+    """Fixture-only read adapter. It never makes network requests."""
+
+    def __init__(self, quotes: list[MarketQuote]) -> None:
+        self._quotes = {(item.venue, item.symbol): item for item in quotes}
+
+    def get_quote(self, market: MarketSpec) -> MarketQuote:
+        try:
+            return self._quotes[(market.venue, market.symbol)]
+        except KeyError:
+            raise AdapterContractError(f"no mock quote for {market.venue}:{market.symbol}") from None
+
+
+class MockCapitalSourceAdapter:
+    """Metadata-only source label; does not connect to an exchange account."""
+
+    def __init__(self, identifier: str = "reku-onramp-reference") -> None:
+        if not isinstance(identifier, str) or not identifier.strip():
+            raise AdapterContractError("capital source identifier must be non-empty")
+        self._identifier = identifier.strip()
+
+    def source_id(self) -> str:
+        return self._identifier
+
+
+class MockCustodyAdapter:
+    """Fixture-only balance provider; balances are not account or chain observations."""
+
+    def __init__(self, balances: dict[tuple[str, str], Decimal]) -> None:
+        self._balances = {
+            (asset.upper(), network.upper()): _decimal(amount, "mock balance", allow_zero=True)
+            for (asset, network), amount in balances.items()
+        }
+
+    def get_balance(self, asset: str, network: str) -> Decimal:
+        key = (asset.upper(), network.upper())
+        if key not in self._balances:
+            raise AdapterContractError(f"mock balance not configured for {key[0]} on {key[1]}")
+        return self._balances[key]
+
+
+class PlanningOnlyTransferAdapter:
+    """Transfer planner only. No withdrawal or blockchain-send method exists."""
+
+    def plan(self, route: TransferRoute, amount: Decimal) -> TransferDecision:
+        return assess_transfer_route(route, amount)
+
+
+class InMemoryIdempotentLedger:
+    """Test-only paper journal; duplicate identical receipts are idempotent."""
+
+    def __init__(self) -> None:
+        self._receipts: dict[str, str] = {}
+
+    def record(self, receipt: ExecutionReceipt) -> None:
+        canonical = json.dumps({
+            "order_id": receipt.order_id,
+            "idempotency_key": receipt.idempotency_key,
+            "status": receipt.status.value,
+            "venue": receipt.venue,
+            "symbol": receipt.symbol,
+            "side": receipt.side.value,
+            "requested_quantity_base": str(receipt.requested_quantity_base),
+            "filled_quantity_base": str(receipt.filled_quantity_base),
+            "fill_price_quote": str(receipt.fill_price_quote) if receipt.fill_price_quote is not None else None,
+            "fee_quote": str(receipt.fee_quote),
+            "quote_observed_at": receipt.quote_observed_at.isoformat(),
+            "reasons": list(receipt.reasons),
+        }, sort_keys=True, separators=(",", ":"))
+        fingerprint = hashlib.sha256(canonical.encode()).hexdigest()
+        previous = self._receipts.get(receipt.order_id)
+        if previous is not None and previous != fingerprint:
+            raise AdapterContractError("ledger idempotency conflict for existing order_id")
+        self._receipts[receipt.order_id] = fingerprint
+
+    @property
+    def count(self) -> int:
+        return len(self._receipts)
+
+
+class PaperExecutionAdapter:
+    """Deterministic quote-crossing simulator. It has no network or signing code."""
+
+    def __init__(self, ledger: LedgerAdapter, *, fee_bps: Decimal = Decimal("0")) -> None:
+        self._ledger = ledger
+        self._fee_bps = _decimal(fee_bps, "fee_bps", allow_zero=True)
+        self._seen: dict[str, tuple[str, ExecutionReceipt]] = {}
+
+    def execute(
+        self,
+        intent: OrderIntent,
+        market: MarketSpec,
+        quote: MarketQuote,
+        *,
+        now: datetime | None = None,
+        max_quote_age_seconds: Decimal = Decimal("30"),
+        max_spread_bps: Decimal = Decimal("100"),
+    ) -> ExecutionReceipt:
+        fingerprint = intent.fingerprint()
+        seen = self._seen.get(intent.idempotency_key)
+        if seen is not None:
+            if seen[0] != fingerprint:
+                raise AdapterContractError("idempotency key reused for a different order intent")
+            return seen[1]
+
+        check = validate_order(
+            intent, market, quote, now=now,
+            max_quote_age_seconds=max_quote_age_seconds,
+            max_spread_bps=max_spread_bps,
+        )
+        order_id = hashlib.sha256((intent.idempotency_key + ":" + fingerprint).encode()).hexdigest()[:24]
+        status = ReceiptStatus.REJECTED
+        reasons = list(check.reasons)
+        filled = Decimal("0")
+        fill_price: Decimal | None = None
+        fee = Decimal("0")
+        if check.accepted:
+            marketable = (
+                intent.limit_price_quote >= quote.ask
+                if intent.side is Side.BUY
+                else intent.limit_price_quote <= quote.bid
+            )
+            if marketable:
+                available = quote.ask_quantity_base if intent.side is Side.BUY else quote.bid_quantity_base
+                if available is None:
+                    # Backward-compatible fixture path; absence of depth must be explicit in the receipt.
+                    filled = intent.quantity_base
+                    status = ReceiptStatus.FILLED_SIMULATED
+                    reasons.append("fill_assumed_without_top_of_book_quantity")
+                elif available <= 0:
+                    status = ReceiptStatus.NO_FILL
+                    reasons.append("no_quantity_at_best_price")
+                else:
+                    filled = min(intent.quantity_base, available)
+                    status = (
+                        ReceiptStatus.PARTIALLY_FILLED_SIMULATED
+                        if filled < intent.quantity_base
+                        else ReceiptStatus.FILLED_SIMULATED
+                    )
+                    if filled < intent.quantity_base:
+                        reasons.append("partial_fill_limited_to_best_level_quantity")
+                if filled > 0:
+                    fill_price = check.reference_price
+                    fee = filled * fill_price * self._fee_bps / Decimal("10000")
+            else:
+                status = ReceiptStatus.NO_FILL
+                reasons.append("limit_not_marketable_at_observed_quote")
+        receipt = ExecutionReceipt(
+            order_id=order_id,
+            idempotency_key=intent.idempotency_key,
+            status=status,
+            venue=market.venue,
+            symbol=market.symbol,
+            side=intent.side,
+            requested_quantity_base=intent.quantity_base,
+            filled_quantity_base=filled,
+            fill_price_quote=fill_price,
+            fee_quote=fee,
+            quote_observed_at=quote.observed_at,
+            reasons=tuple(reasons),
+        )
+        self._ledger.record(receipt)
+        self._seen[intent.idempotency_key] = (fingerprint, receipt)
+        return receipt
