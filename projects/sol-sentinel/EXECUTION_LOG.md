@@ -392,3 +392,40 @@ The last fresh GitHub compare, performed after all current documentation commits
 - The run also reports current public market filters: price tick Rp1, quantity step 1e-8 SOL, market minimum notional Rp10,000, minimum base quantity 0.00563136 SOL. The current account/mode minimum may be higher (official help lists Rp25,000 direct Pro / Rp10,000 Lite); current account all-in fees remain unverified here.
 - Strategy output continues to show zero candidates/trades on the Binance SOLUSDT baseline and each fixed 60/20/20 split; expectancy, win rate and profit factor remain undefined. The fee-only hypothetical Reku Lightning floor simulates 10 trades at net about -Rp3,893.22 with zero spread/slippage, so it is not executable evidence. Reku history route `/v2/activitytrans` still returns HTTP 404; the failure is isolated as an optional non-fatal collector result, while separate public market data is OK.
 - All probes use unauthenticated public market data. No account API, transfers, orders, wallet signing or secrets were used. Current release state remains `RESEARCH_ONLY / INSUFFICIENT_EVIDENCE`; Termux is still untested.
+
+## Session continuation — 2026-10-30: native INDODAX replay, Termux diagnostics, and partial-fill simulation
+
+### Verified native INDODAX evaluation
+
+- Research workflow #40993486012 failed at the first newly-added replay command because shell line continuations were doubled; the command therefore received no --csv. Compile/tests and preceding capture stages ran. This defect was corrected and successful replay #40993527618 completed on commit b1ff4fe57bfb3118e31bc5314b21c5baa91732da; artifact #12949927917.
+- The locked CSV from artifact #12931446637 was re-downloaded and checked. SHA-256 c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30; 43,200 contiguous one-minute candles; native INDODAX SOL/IDR, IDR denomination, no FX conversion. Timestamp continuity, close-time boundaries, finite OHLCV and OHLC ordering passed.
+- The original artifact's backtest.json and evaluation.json were Binance SOLUSDT with Reku assumptions. They were not a native INDODAX result. The newly-added native replay is the first valid fee-separated INDODAX replay.
+- Frozen replay #40993527618, direct Pro min order Rp25,000: taker snapshot cost = 20.555 + 41.555 + 15.799671 + 2×5 = 87.909671 bps; taker stress = 20.555 + 41.555 + 25.6669 + 2×10 = 107.7769 bps; maker sensitivity = 10.555 + 31.555 + 15.799671 + 2×5 = 67.909671 bps. All three had zero candidates, attempts, fills and trades on dev/validation/OOS. P&L zero reflects no positions; expectancy/win-rate/profit-factor undefined.
+- Correct the earlier UI summary arithmetic: 82.11 and 72.11 bps were incorrect totals. The correct frozen-data totals are 87.909671 and 67.909671 bps respectively. Stress 107.7769 bps was correct.
+
+### Same-run replay and new dataset
+
+- Research workflow #40994319663 succeeded on commit 92810145ac60487a87730c977f3b26c6bb3a4ecb; artifact #12950538188. The workflow no longer downloads historical artifact #12931446637 by fixed ID, avoiding the seven-day artifact-retention dependency. It evaluates the native CSV captured within the same run.
+- New dataset SHA-256 909b24977537110d2bd0ca114d5715d29646eb36b6ed9a268bf9470b64a05c59; 43,200 one-minute bars from 2026-09-30T02:54:00Z to 2026-10-30T02:53:59.999Z. Native INDODAX SOL/IDR; no FX conversion.
+- Current snapshot at 2026-10-30T02:55:48.533456Z: bid Rp1,729,198, ask Rp1,729,703, spread 2.920003 bps. It is one point-in-time quote, not a historical spread distribution.
+- Same-run current spread taker = 20.555 + 41.555 + 2.920003 + 2×5 = 75.030003 bps. Taker stress = 107.7769 bps. Maker sensitivity = 10.555 + 31.555 + 2.920003 + 2×5 = 55.030003 bps.
+- Taker-current and taker-stress: zero candidates/trades in all three splits. Maker sensitivity: one development candidate/fill/closed trade only; validation and OOS zero. It ran 9 one-minute bars (entry 2026-10-15T14:57:00Z; exit 15:05:59.999Z), quantity 0.07239403390849532 SOL, net +Rp466.818, exchange fees Rp574.698, modeled execution friction Rp175.991. One development trade cannot substantiate an edge; its 100% win-rate and infinite profit factor are non-informative. Maker queue, post-only, and actual maker fills are not modeled; the one snapshot spread was held constant across historical rows.
+- Current-run overlapping filter-rejection events (taker-current): breakout 40,510; relative volume 35,882; 5m momentum 28,299; 15m trend 25,989; 5m RSI 23,415; 1m exhaustion/missing 3,142; net-cost edge gate 143. Counts overlap and are not unique rejected bars. No strategy parameters were relaxed.
+
+### Execution/tooling changes
+
+- Added projects/sol-sentinel/INDODAX_FEE_MODEL_2026-10-30.md with official Pro all-in fee schedule, mode minimums, tick/quantity metadata, cost decomposition, timestamped quote observations, and explicit Lite/account/withdrawal uncertainty. Official Pro IDR rates used: maker buy 10.555 bps; taker buy 20.555; maker sell 31.555; taker sell 41.555; direct Pro minimum Rp25,000. All-in values include CFX/sell tax, so do not add them twice.
+- Added standard-library-only projects/sol-sentinel/termux_doctor.py and tests. It checks Python/Termux detection, stdlib, memory/disk, core project compile, SQLite close/reopen/idempotent replay, optional public INDODAX pair catalogue GET, and optional streaming native dataset/hash/sidecar validation. Runbook has commands. No user's Android handset was accessed.
+- Tests at commit 50c0c00dc4bc5a78ab212dc20bd4894fb99783e6 passed 146 tests in #40994692715. The later Termux-doctor smoke step without network (python projects/sol-sentinel/termux_doctor.py --skip-network --json) passed in #40994852707 on commit 8ceeb6a2feb96691d9d323ced053c3a294869174.
+- Added top-of-book bid/ask quantities to MarketQuote, best-level quantity aggregation to the INDODAX depth adapter, PARTIALLY_FILLED_SIMULATED state, and paper fills capped to visible best-level quantity. Tests cover partial size, zero size and negative size. It does not sweep deeper levels, resume remaining quantity, or model maker queue/partial-fill timing.
+- The current-run public Reku snapshot was OK with bid Rp1,725,000, ask Rp1,730,000, spread 28.9436 bps and 40 levels each side. Its legacy activity-history endpoint still returned HTTP 404. This does not prove a Reku account purchase API. Reku stays an on-ramp architecture candidate, not the required bot trading venue.
+- Jupiter remains a public quote-only probe. It does not send taker, sign or submit; it still lacks comprehensive expiry, slippageBps, route/liquidity and priority-fee validation. A quote is not a fill.
+- The scanner JSONL/watch loop is read-only observation, not a complete forward-paper portfolio monitor with persistent balances, venue-aware order lifecycle, partial remainder, risk-state recovery and reconciled P&L.
+
+### Safety, repository and handoff
+
+- No real orders, purchases, transfers, deposits, withdrawals, signatures, signers, private keys, seed phrases, passwords or API secrets were used or saved.
+- INDODAX spread and slippage are not statistically validated. The spread references are a small number of single quotes; slippage 5/10 bps per side are declared assumptions. Lite-specific all-in fees, the user's account fee display, network-specific SOL withdrawal fees/minimums and both-side destination acceptance remain unverified.
+- PR #178 remains draft/open/unmerged. At the following compare snapshot it was diverged from main; do not merge/rebase/reset blindly. PR #180 also remains draft/open/unmerged. The root canonical memory in main is not updated.
+- Current status remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. No OOS trade exists for any scenario.
+- Next gates: build repeated read-only INDODAX depth sampling; model depth walk and remaining partial orders; verify account mode fee preview; complete Jupiter V2 field/expiry validation; validate supported network & deposit/withdrawal conditions without moving funds; test Termux on actual handset; run forward-paper ledger/monitor for a meaningful sample; then re-evaluate OOS evidence without retuning.
