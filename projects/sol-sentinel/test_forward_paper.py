@@ -116,7 +116,7 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
         self.assertEqual(result["venue"], "INDODAX")
         self.assertEqual(result["quote_currency"], "IDR")
         self.assertGreaterEqual(result["candle_count"], self.config.history_minutes)
-        self.assertEqual(result["candle_count"] % 15, 0)
+        self.assertEqual(result["candle_count"], self.config.history_minutes + 9)
         self.assertIsNotNone(result["collector_observation_id"])
         self.assertIsNotNone(result["execution_snapshot_id"])
         self.assertEqual(result["signal"]["decision"], "NO_TRADE")
@@ -190,7 +190,7 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
 
         reopened = ForwardState(self.db_path, self.config)
         self.assertEqual(reopened.control()["operating_state"], "HALTED")
-        self.assertEqual(reopened.control()["halt_reason"], "daily_loss_limit_reached")
+        self.assertEqual(reopened.control()["halt_reason"], "daily_loss_limit_reached+maximum_drawdown_reached")
 
     def test_config_has_no_calendar_wait_gate(self):
         self.assertEqual(self.config.history_minutes, 600)
