@@ -103,3 +103,13 @@ Results:
 - No scenario produced an out-of-sample trade. Expectancy, win rate and profit factor remain undefined for OOS.
 
 This does not satisfy strategy acceptance criteria. Preserve RESEARCH_ONLY / INSUFFICIENT_EVIDENCE.
+
+## Newest rolling-window replay — workflow #40994685989
+
+- Research run #40994685989 completed successfully on 2026-10-30, artifact #12951295388. Native dataset SHA-256 d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c; 43,200 contiguous 1m SOL/IDR candles from 2026-09-30T03:01:00Z to 2026-10-30T03:00:59.999Z, no FX conversion.
+- Public quote snapshot 2026-10-30T03:02:06.143046Z: bid Rp1,737,289; ask Rp1,739,906; mid Rp1,738,597.5; spread 15.0523626084 bps. Public metadata: price tick Rp1, quantity step 1e-8 SOL, API notional floor Rp10,000, minimum base quantity 0.00576894 SOL.
+- Replayed friction totals using this capture: Pro taker current snapshot 87.162363 bps; Pro taker stress 107.7769 bps; Pro maker current snapshot 67.162363 bps. This is modeled round-trip cost, not observed realized cost.
+- All three scenarios had zero signal candidates, order attempts, fills and closed trades across development, validation and out-of-sample. P&L zero is due to no positions. Expectancy, win rate and profit factor remain undefined.
+- The prior run #40994319663 had a single development-only maker-sensitivity trade with +Rp466.818 net, but the newest rolling window did not reproduce it. This variability reinforces that no edge has been demonstrated.
+- Current-window overlapping signal-rejection reason events on taker baseline: breakout 40,506; volume confirmation 35,873; 5m momentum 28,306; 15m trend 25,981; 5m RSI 23,415; 1m exhaustion/missing 3,135; cost gate 143. These counts are not distinct bars.
+- Current decision: the Pro fee schedule remains an explicit research input only. Spread is represented by isolated point quotes; slippage remains assumed. Maker execution, queue priority, actual account-specific fee mode and OOS strategy edge remain unvalidated.
