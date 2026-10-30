@@ -86,47 +86,6 @@ jobs:
           echo "$rc" > forward-output/exit-code.txt
           echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
           exit "$rc"
-      - name: Publish operational summary
-        if: always()
-        env:
-          PAPER_RESULT: forward-output/result.json
-          PAPER_EXIT_CODE: forward-output/exit-code.txt
-        run: |
-          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json, os
-          from pathlib import Path
-
-          result_path = Path(os.environ["PAPER_RESULT"])
-          exit_path = Path(os.environ["PAPER_EXIT_CODE"])
-          try:
-              exit_code = exit_path.read_text(encoding="utf-8").strip()
-          except OSError:
-              exit_code = "missing"
-          try:
-              payload = json.loads(result_path.read_text(encoding="utf-8"))
-              if isinstance(payload, list):
-                  payload = payload[-1] if payload else {}
-              if not isinstance(payload, dict):
-                  payload = {}
-          except (OSError, json.JSONDecodeError):
-              payload = {}
-          signal = payload.get("signal") if isinstance(payload.get("signal"), dict) else {}
-          risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
-          portfolio = payload.get("portfolio") if isinstance(payload.get("portfolio"), dict) else {}
-          reconciliation = payload.get("reconciliation") if isinstance(payload.get("reconciliation"), dict) else {}
-          print("## SOL Sentinel Forward Paper")
-          print(f"- Event: `{os.environ.get('GITHUB_EVENT_NAME', 'unknown')}`")
-          print(f"- Run: `{os.environ.get('GITHUB_RUN_ID', 'unknown')}`")
-          print(f"- Ref: `{os.environ.get('GITHUB_REF', 'unknown')}`")
-          print(f"- Commit: `{os.environ.get('GITHUB_SHA', 'unknown')}`")
-          print(f"- Operation exit code: `{exit_code}`")
-          print(f"- System: `{payload.get('system_status', 'NO_RESULT')}`")
-          print(f"- Cycle: `{payload.get('cycle_id', 'n/a')}`")
-          print(f"- Strategy: `{signal.get('decision', 'n/a')}` — {', '.join(signal.get('reasons', []))}")
-          print(f"- Risk: `{risk.get('state', 'n/a')}`; new entries allowed: `{risk.get('allow_new_entries', 'n/a')}`")
-          print(f"- Portfolio: cash IDR `{portfolio.get('cash_idr', 'n/a')}`; SOL `{portfolio.get('sol_quantity', 'n/a')}`")
-          print(f"- Ledger reconciliation: `{reconciliation.get('consistent', 'n/a')}`; issues: `{len(reconciliation.get('issues', []))}`")
-          PY
       - name: Checkpoint and verify SQLite state
         if: always()
         run: |
@@ -169,3 +128,76 @@ jobs:
       - name: Fail when operation was unsuccessful
         if: steps.operation.outputs.exit_code != '0'
         run: exit 1
+      - name: Capture durable operational status
+        if: always()
+        run: |
+          if [ -f .paper-state/state/forward-paper.sqlite3 ]; then
+            python projects/sol-sentinel/forward_paper.py \
+              --db-path .paper-state/state/forward-paper.sqlite3 \
+              --status --json > forward-output/status.json
+          else
+            echo '{}' > forward-output/status.json
+          fi
+      - name: Publish operational summary
+        if: always()
+        env:
+          PAPER_RESULT: forward-output/result.json
+          PAPER_STATUS: forward-output/status.json
+          PAPER_EXIT_CODE: forward-output/exit-code.txt
+          PAPER_STDERR: forward-output/stderr.txt
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, os
+          from pathlib import Path
+
+          def read_json(name):
+              try:
+                  value = json.loads(Path(os.environ[name]).read_text(encoding="utf-8"))
+                  if isinstance(value, list):
+                      value = value[-1] if value else {}
+                  return value if isinstance(value, dict) else {}
+              except (OSError, json.JSONDecodeError):
+                  return {}
+
+          try:
+              exit_code = Path(os.environ["PAPER_EXIT_CODE"]).read_text(encoding="utf-8").strip()
+          except OSError:
+              exit_code = "missing"
+          try:
+              stderr_lines = Path(os.environ["PAPER_STDERR"]).read_text(encoding="utf-8").splitlines()
+              stderr_tail = stderr_lines[-1][-500:] if stderr_lines else ""
+          except OSError:
+              stderr_tail = ""
+
+          result = read_json("PAPER_RESULT")
+          status = read_json("PAPER_STATUS")
+          signal = result.get("signal") if isinstance(result.get("signal"), dict) else {}
+          risk = result.get("risk") if isinstance(result.get("risk"), dict) else {}
+          portfolio = status.get("portfolio") if isinstance(status.get("portfolio"), dict) else result.get("portfolio", {})
+          control = status.get("control") if isinstance(status.get("control"), dict) else {}
+          fw = status.get("forward_state") if isinstance(status.get("forward_state"), dict) else {}
+          cycle = fw.get("last_cycle") if isinstance(fw.get("last_cycle"), dict) else {}
+          daily = fw.get("latest_daily_risk") if isinstance(fw.get("latest_daily_risk"), dict) else {}
+          ledger = status.get("ledger") if isinstance(status.get("ledger"), dict) else result.get("reconciliation", {})
+          orders = status.get("open_orders") if isinstance(status.get("open_orders"), list) else []
+          position = status.get("position")
+          micro = status.get("microstructure") if isinstance(status.get("microstructure"), dict) else result.get("microstructure_summary", {})
+          last_error = cycle.get("error") or result.get("error") or stderr_tail or "none"
+          run_status = status.get("system_status", result.get("system_status", "NO_RESULT"))
+          circuit = daily.get("risk_state") or control.get("operating_state") or risk.get("state", "unknown")
+
+          print("## SOL Sentinel Forward Paper")
+          print(f"- Event / run: `{os.environ.get('GITHUB_EVENT_NAME', 'unknown')}` / `{os.environ.get('GITHUB_RUN_ID', 'unknown')}`")
+          print(f"- Ref / main commit: `{os.environ.get('GITHUB_REF', 'unknown')}` / `{os.environ.get('GITHUB_SHA', 'unknown')}`")
+          print(f"- Operation exit: `{exit_code}`; system: `{run_status}`; last error: `{last_error}`")
+          print(f"- Cycle: `{result.get('cycle_id', cycle.get('cycle_id', 'n/a'))}`; last completion: `{cycle.get('completed_at', 'n/a')}`; last cycle status: `{cycle.get('status', 'n/a')}`")
+          print(f"- Last depth observation: `{micro.get('last_observed_at_utc', 'n/a')}`; snapshots: `{micro.get('observation_count', 'n/a')}`")
+          print(f"- Strategy: `{signal.get('decision', 'n/a')}`; reasons: {', '.join(signal.get('reasons', [])) or 'none'}")
+          print(f"- Circuit breaker / entries: `{circuit}` / `{risk.get('allow_new_entries', 'n/a')}`; daily loss fraction: `{daily.get('daily_loss_fraction', risk.get('daily_loss_fraction', 'n/a'))}`; drawdown: `{daily.get('drawdown_fraction', risk.get('drawdown_fraction', 'n/a'))}`")
+          print(f"- Portfolio: cash IDR `{portfolio.get('cash_idr', 'n/a')}`; SOL `{portfolio.get('sol_quantity', 'n/a')}`; realized P&L IDR `{portfolio.get('realized_pnl_idr', 'n/a')}`; fees IDR `{portfolio.get('fees_paid_idr', 'n/a')}`")
+          print(f"- Position: `{json.dumps(position, ensure_ascii=False, default=str) if position else 'flat / none'}`")
+          print(f"- Open simulated orders: `{len(orders)}`; remaining quantities: `{', '.join(str(x.get('remaining_qty', 'n/a')) for x in orders) or 'none'}`")
+          print(f"- Ledger: consistent `{ledger.get('consistent', 'n/a')}`; events/fills/orders `{ledger.get('event_count', 'n/a')}/{ledger.get('fill_count', 'n/a')}/{ledger.get('order_count', 'n/a')}`; recovery consistent `{result.get('recovery', {}).get('consistent', ledger.get('consistent', 'n/a')) if isinstance(result.get('recovery'), dict) else ledger.get('consistent', 'n/a')}`")
+          if exit_code != "0" or run_status in ("MANUAL_REVIEW_REQUIRED", "HALTED") or ledger.get("consistent") is False:
+              print("- **ACTION REQUIRED:** inspect this run's result.json, status.json and job logs before allowing further state transitions.")
+          PY
