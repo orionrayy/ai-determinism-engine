@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "source": "user_uploaded_binance_app_screenshots",
+  "captured_at_local": "2026-10-31T01:22:00+07:00",
+  "instrument": "MAGICUSDT",
+  "market": "USDⓈ-M perpetual",
+  "observation_only_not_live_api": true,
+  "price": {
+    "last_usdt": 0.08251,
+    "mark_usdt": 0.08252,
+    "change_24h_ui_a_pct": 1.12,
+    "change_24h_ui_b_pct": 1.10,
+    "high_24h_usdt": 0.08611,
+    "low_24h_usdt": 0.07598,
+    "volume_24h_magic_ui_a": 126870000,
+    "volume_24h_usdt_ui_a": 10320000
+  },
+  "chart_1h": {
+    "ma7": 0.08276,
+    "ma25": 0.09504,
+    "ma99": 0.05794,
+    "post_spike_high": 0.16369,
+    "visual_structure": "lower_highs_after_spike; price near MA7, below MA25, above MA99"
+  },
+  "derivatives": {
+    "funding_rate_percent_per_interval": 0.005,
+    "funding_rate_decimal": 0.00005,
+    "funding_interval_hours_ui": 4,
+    "funding_countdown_at_capture": "01:37:58"
+  },
+  "order_book_snapshots": [
+    {"bid_share_pct": 57.40, "ask_share_pct": 42.60},
+    {"bid_share_pct": 56.09, "ask_share_pct": 43.91}
+  ],
+  "account_ui_observation": {
+    "available_futures_balance_usdt": 7.94,
+    "margin_mode": "CROSS",
+    "leverage_selected": 20,
+    "displayed_max_position_usdt": 152.01,
+    "positions_open": 0,
+    "open_orders": 0,
+    "order_form_type": "LIMIT",
+    "limit_price_entered_but_not_submitted_usdt": 0.08272
+  },
+  "interpretation": {
+    "directional_read": "No entry confirmation from the 1h screenshot alone; post-spike structure is corrective below MA25, while book imbalance is a transient snapshot.",
+    "blocking_data": ["5m/15m/4h candles", "current exchangeInfo filters", "fresh order book and mark/index", "current funding schedule", "user-specific taker fee", "measured slippage"],
+    "recommended_engine_action": "NO_TRADE"
+  }
+}
