@@ -2212,3 +2212,23 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Target 5 raw UDP probe + three-pair aggregator supports 60Hz (18,000 samples / five minutes) and 30Hz (9,000 / five minutes) with host/client FPS consistency. Latest matrix now traces the 30Hz host sample-floor test. Host/client physical hotspot runs were not performed.
 - Target 6 runbook defines 21 scenarios and 3 repeats; actual remote gameplay is blocked by unproven simulation barrier, no real state probes, and no local P2 device acceptance. No gameplay test is claimed passed.
 - Test caveat: native CTest repeat-five and acceptance tests passed at previous head #41093663872 before recent save tracer and quality probe changes; latest head requires a fresh green CI before APK can be distributed. All gameplay/release interlocks remain false.
+
+
+### Shaolin Monks LAN Co-op — calibration report-integrity hardening checkpoint 2026-10-31
+
+- Implementation repository: `orionrayy/project-memory-and-database`; PR #6 remains OPEN / DRAFT / UNMERGED. Latest branch head after the current hardening commits: `8a3be2c9aa6464c1a219864a76a072b2edd4a556`.
+- Target 5 raw UDP probe hardened:
+  - `acceptance/lan_quality_probe.py` now emits a 32-hex SHA-256 session fingerprint in both host and client reports, derived from the session token. The raw token is never written to reports.
+  - Host and client report duration is derived from monotonic elapsed time; both emit `duration_pass` rather than echoing requested duration.
+  - Recommended physical test duration is 305 seconds per run to leave margin above the 300-second / 18,000-at-60Hz / 9,000-at-30Hz floors, while keeping the 0.5% sender-schedule skip gate meaningful.
+- Aggregator `acceptance/aggregate_lan_quality.py` upgraded to schema v2:
+  - requires matching host/client session fingerprints and three unique fingerprints across three repetitions;
+  - recomputes round-trip loss from sent/unique-received counters and sender skip percentage from raw counters;
+  - validates finite non-negative RTT p50/p95/p99/max, percentile ordering, and p95/p99 against selected FPS budget;
+  - requires measured client and host duration >=300 seconds, FPS-specific sample floors, matching FPS and host receive-order/count checks;
+  - retains `gameplay_sync_accepted=false`. Session fingerprint is a pairing aid only, not a signature or proof of device identity.
+- Regression tests added for cross-session mismatch, reuse of one session across repetitions, inconsistent raw counters/latency, non-finite metrics, measured duration, and safe shared session fingerprint. Acceptance matrix `NETWORK-01` traces these tests and declares both 60Hz and 30Hz sample floors; runbook docs updated.
+- PR #6 description updated with this hardening. Latest head's CI run is not yet confirmed and no APK artifact is available for commit `8a3be2c...`. Workflow #41102474352 was associated with an earlier commit `36f7547...` and must not be represented as validation of the latest head.
+- Known code-test review correction: the worst-tail-latency fixture now raises p95, p99 and max together so it respects percentile ordering.
+- Physical Android acceptance is still NOT DONE: save identity requires on-device trace/snapshot review; shadow exchange requires two devices; network calibration needs 3 x 305-second runs at 60Hz and 30Hz; remote gameplay needs local P2 baseline, proven simulation barrier, guest-thread mapping and real state probes.
+- All release interlocks remain closed: `gameplay_input_injection_enabled=false`, `simulation_barrier_verified=false`, `multiplayer_playable=false`, `external_acceptance_gates_complete=false`, `trusted_private_lan_only=true`, `wan_or_public_wifi_enabled=false`. Do not merge or claim playable based on source-level tests, a shadow PASS, or raw UDP PASS.
