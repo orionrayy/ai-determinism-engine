@@ -765,6 +765,37 @@ class SQLitePaperExecutionLedger:
             result["state"]=OrderState(result["state"])
             return result
 
+    def find_order_by_client_order_id(self, client_order_id: str) -> dict[str, Any] | None:
+        """Return a durable order by its caller-supplied idempotency key."""
+        if not isinstance(client_order_id, str) or not client_order_id.strip():
+            raise ExecutionError("client_order_id must be a non-empty string")
+        with closing(self._connect()) as db:
+            row = db.execute("SELECT * FROM orders WHERE client_order_id=?", (client_order_id,)).fetchone()
+            if row is None:
+                return None
+            result = dict(row)
+            result["state"] = OrderState(result["state"])
+            return result
+
+    def list_open_orders(self) -> list[dict[str, Any]]:
+        """Return every recoverable simulated residual in deterministic FIFO order."""
+        open_states = (
+            OrderState.OPEN_SIMULATED.value,
+            OrderState.PARTIALLY_FILLED_SIMULATED.value,
+            OrderState.RECOVERY_REQUIRED.value,
+        )
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT * FROM orders WHERE state IN (?,?,?) ORDER BY created_at,order_id",
+                open_states,
+            ).fetchall()
+            results = []
+            for row in rows:
+                item = dict(row)
+                item["state"] = OrderState(item["state"])
+                results.append(item)
+            return results
+
     def get_fills(self, order_id: str | None = None) -> list[dict[str, Any]]:
         with closing(self._connect()) as db:
             if order_id:
