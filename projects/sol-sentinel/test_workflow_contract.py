@@ -13,6 +13,10 @@ class ForwardPaperWorkflowContractTests(unittest.TestCase):
             / "sol-sentinel-forward-paper.yml"
         ).read_text(encoding="utf-8")
 
+    def test_schedule_refresh_preserves_five_minute_cadence(self):
+        expected = 'cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"'
+        self.assertIn(expected, self.workflow)
+
     def test_concurrency_preserves_pending_scheduled_invocations(self):
         concurrency = self.workflow.index("concurrency:")
         jobs = self.workflow.index("jobs:")
