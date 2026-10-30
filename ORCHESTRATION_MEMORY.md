@@ -1625,3 +1625,9 @@ This later completed run supersedes the prior one-trade maker-development sensit
 - The newest completed native rolling-window research remains #40994685989, artifact #12951295388, dataset SHA-256 d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c. All Pro scenarios are zero-trade across 60/20/20; this supersedes the single development-only maker trade in #40994319663.
 - The local diagnostic archive is /mnt/data/sol-sentinel-research-40994685989.zip. It was downloaded and inspected; its per-scenario JSON confirms the zero-trade result above.
 - Main was unchanged. PR #178 and #180 remain unmerged. The status remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE; no device-level Termux run or real financial action occurred.
+## Final handoff correction — feature head 40c00977 (2026-10-30)
+
+- PR #178's exact latest head is 40c00977c74baa619ac7c32f25e2d2ad07c17766. Latest compare to main d5672c84a0ae184c3a95d3f925925887ece71aa4: diverged, 266 commits ahead / 2 behind, 37 changed files. CI #40995563402 and duplicate #40995568088 both passed the offline suite and the no-network Termux doctor smoke step. The unit-test log reported 146 tests, 0 failures.
+- PR #180's previous verified head is 030a55e69848be8b1d53335275f13c72d51d5226, 39 commits ahead / 0 behind main, 3 files. Root memory and research audit are in this branch, not merged to main.
+- Current native rolling-window research evidence remains #40994685989 (dataset d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c), zero candidates/trades in every split and all three Pro sensitivities. See preceding latest-window section and project EXECUTION_LOG.md.
+- Current readiness remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE; no real order, signer, transfer, deposit, withdrawal, or device-level Termux execution occurred.
