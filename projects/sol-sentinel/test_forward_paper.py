@@ -115,7 +115,8 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
         self.assertEqual(result["mode"], "PAPER")
         self.assertEqual(result["venue"], "INDODAX")
         self.assertEqual(result["quote_currency"], "IDR")
-        self.assertEqual(result["candle_count"], self.config.history_minutes + (result["candle_count"] - self.config.history_minutes))
+        self.assertGreaterEqual(result["candle_count"], self.config.history_minutes)
+        self.assertEqual(result["candle_count"] % 15, 0)
         self.assertIsNotNone(result["collector_observation_id"])
         self.assertIsNotNone(result["execution_snapshot_id"])
         self.assertEqual(result["signal"]["decision"], "NO_TRADE")
@@ -209,6 +210,11 @@ class ForwardPaperIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(saved["signal_id"], duplicate["signal_id"])
         self.assertEqual(state.summary()["signals"]["no_trade"], 1)
+        with self.assertRaisesRegex(Exception, "signal_id reused"):
+            state.record_signal(
+                "signal-1", 1_800_000_060_000, "BUY", "ORDER_INTENT", ("different_decision",),
+                {"client_order_id": "different"},
+            )
 
 
 class DepthLedgerRecoveryApiTests(unittest.TestCase):
