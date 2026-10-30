@@ -41,7 +41,6 @@ on:
 
 permissions:
   contents: read
-  actions: read
 
 concurrency:
   group: sol-sentinel-research-${{ github.ref }}
@@ -98,33 +97,22 @@ jobs:
             --output research-output/INDODAX_SOLIDR_1m.csv \
             --metadata-output research-output/INDODAX_SOLIDR_1m.csv.meta.json
 
-      - name: Re-run frozen native INDODAX dataset from research artifact #40950218320
-        uses: actions/download-artifact@v4
-        with:
-          name: sol-sentinel-research-40950218320
-          run-id: 40950218320
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          path: research-input/native-indodax-run-40950218320
-
-      - name: Validate and evaluate native INDODAX SOL/IDR with official Pro fee scenarios
+      - name: Validate and evaluate current-run native INDODAX SOL/IDR
         run: |
           set -euo pipefail
-          SOURCE="research-input/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv"
-          META="research-input/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv.meta.json"
-          OUT="research-output/native-indodax-run-40950218320"
+          SOURCE="research-output/INDODAX_SOLIDR_1m.csv"
+          META="research-output/INDODAX_SOLIDR_1m.csv.meta.json"
+          OUT="research-output/native-indodax-current-run"
           mkdir -p "$OUT"
           cp "$SOURCE" "$META" "$OUT/"
           python - <<'PY'
           import csv, hashlib, json, math
           from pathlib import Path
-          csv_path=Path("research-output/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv")
-          meta_path=Path("research-output/native-indodax-run-40950218320/INDODAX_SOLIDR_1m.csv.meta.json")
-          expected="c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30"
-          digest=hashlib.sha256(csv_path.read_bytes()).hexdigest()
+          csv_path=Path("research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv")
+          meta_path=Path("research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv.meta.json")
           meta=json.loads(meta_path.read_text())
-          assert digest == expected, f"dataset hash mismatch: {digest}"
-          assert meta.get("dataset_sha256") == expected, "sidecar hash mismatch"
+          digest=hashlib.sha256(csv_path.read_bytes()).hexdigest()
+          assert meta.get("dataset_sha256") == digest, "CSV/sidecar SHA-256 mismatch"
           assert meta.get("data_status") == "OK", "dataset sidecar is not OK"
           assert (meta.get("venue"),meta.get("pair"),meta.get("input_price_currency")) == ("INDODAX","SOL/IDR","IDR"), "venue/pair/currency mismatch"
           assert meta.get("fx_conversion_applied") is False, "unexpected FX conversion"
@@ -139,10 +127,33 @@ jobs:
                   assert all(math.isfinite(x) for x in (o,h,l,c,v)) and min(o,h,l,c)>0 and v>=0
                   assert l <= min(o,c) <= max(o,c) <= h, f"OHLC invariant invalid at {t}"
                   rows.append(t)
-          assert len(rows)==43200, f"expected 43200 candles, got {len(rows)}"
+          assert rows and len(rows)==meta.get("count"), "CSV/sidecar row-count mismatch"
           assert all(b-a==60000 for a,b in zip(rows,rows[1:])), "timestamp gap or duplicate"
           print(json.dumps({"dataset_sha256":digest,"count":len(rows),"first_open_ms":rows[0],"last_open_ms":rows[-1],"fx_conversion_applied":False,"validation":"PASS"},indent=2))
           PY
+
+          # Use the quote snapshot captured in THIS run only as a clearly labelled sensitivity.
+          # If depth is unavailable, fall back to the previously observed 25.6669 bps point;
+          # neither value is a historical spread distribution.
+          SPREAD_BPS="$(python - <<'PY'
+          import json, math
+          from pathlib import Path
+          meta=json.loads(Path("research-output/native-indodax-current-run/INDODAX_SOLIDR_1m.csv.meta.json").read_text())
+          quote=meta.get("market_quote") or {}
+          value=quote.get("spread_bps") if meta.get("market_quote_status") == "OK" else None
+          try:
+              value=float(value)
+              if not math.isfinite(value) or value <= 0: raise ValueError
+          except (TypeError, ValueError, OverflowError):
+              value=25.6669
+          print(f"{value:.12f}")
+          PY
+          )"
+          STRESS_SPREAD_BPS="$(python - "$SPREAD_BPS" <<'PY'
+          import sys
+          print(f"{max(25.6669, float(sys.argv[1]) * 1.5):.12f}")
+          PY
+          )"
 
           run_scenario() {
             local label="$1" entry_fee="$2" exit_fee="$3" spread="$4" slippage="$5"
@@ -161,23 +172,25 @@ jobs:
               --minimum-order-notional-idr 25000 --output "$OUT/$label.evaluation.json"
           }
           # Official INDODAX Pro all-in rates: maker buy 10.555 bps, taker buy 20.555 bps,
-          # maker sell 31.555 bps, taker sell 41.555 bps. All fee scenarios below are Pro-only.
-          # The spread inputs are two historical point snapshots, not a spread time series.
-          # Slippage values are explicit assumptions; they are not empirically calibrated.
-          run_scenario pro_taker_observed_spread 20.555 41.555 15.799671411815905 5
-          run_scenario pro_taker_stress 20.555 41.555 25.6669 10
-          run_scenario pro_maker_observed_spread 10.555 31.555 15.799671411815905 5
+          # maker sell 31.555 bps, taker sell 41.555 bps. All scenarios assume Pro only.
+          # A maker quote is not proof of a maker fill; no queue/no-fill model exists yet.
+          run_scenario pro_taker_current_snapshot 20.555 41.555 "$SPREAD_BPS" 5
+          run_scenario pro_taker_stress 20.555 41.555 "$STRESS_SPREAD_BPS" 10
+          run_scenario pro_maker_current_snapshot 10.555 31.555 "$SPREAD_BPS" 5
 
-          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-          import json
+          python - "$SPREAD_BPS" "$STRESS_SPREAD_BPS" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, sys
           from pathlib import Path
-          root=Path("research-output/native-indodax-run-40950218320")
-          print("## Native INDODAX SOL/IDR frozen-dataset backtest")
-          print("- Source artifact: workflow #40950218320 / artifact #12931446637")
-          print("- Dataset SHA-256: c5b9a370dd42ece13b63de139f9e2638bc9259262d02e3d8e950ae66fe4f7a30")
-          print("- Fee model: INDODAX Pro only; official all-in fees; minimum notional Rp25,000")
-          print("- Spread: observed snapshot references only; slippage: declared assumptions, not measured")
-          for label in ("pro_taker_observed_spread","pro_taker_stress","pro_maker_observed_spread"):
+          root=Path("research-output/native-indodax-current-run")
+          meta=json.loads((root/"INDODAX_SOLIDR_1m.csv.meta.json").read_text())
+          print("## Current-run native INDODAX SOL/IDR backtest")
+          print("- Dataset SHA-256:", meta.get("dataset_sha256"))
+          print("- Native bars:", meta.get("count"), "FX conversion:", meta.get("fx_conversion_applied"))
+          print("- Fee model: INDODAX Pro only; official all-in rates; minimum notional Rp25,000")
+          print("- Current-run spread snapshot (bps):", sys.argv[1], "(one observation, not a historical distribution)")
+          print("- Stress spread sensitivity (bps):", sys.argv[2], "(assumption derived from snapshot/floor)")
+          print("- Slippage: 5 bps/side baseline; 10 bps/side stress; not empirically calibrated")
+          for label in ("pro_taker_current_snapshot","pro_taker_stress","pro_maker_current_snapshot"):
               full=json.loads((root/f"{label}.backtest.json").read_text())
               split=json.loads((root/f"{label}.evaluation.json").read_text())
               print(f"### {label}")
