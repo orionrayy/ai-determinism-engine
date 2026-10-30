@@ -1602,3 +1602,18 @@ Checkpoint verified during the 2026-10-30 continuation session. This entry suppl
 - Decision: RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. No OOS trades; single development-only maker trade is not validation. Rp3,500,000 target remains aspirational, not a return forecast.
 - Next: inspect latest PR head and workflow states; run repeated time-stamped INDODAX depth capture; model multi-level depth walk and residual partial orders; validate account-specific mode fees and current pair filters; finish Jupiter V2 response validation; verify both-side Solana network/deposit/withdrawal constraints without moving funds; run doctor on actual Termux; implement persistent forward-paper account/ledger/monitor and gather a meaningful sample; rerun OOS only against frozen parameters.
 - All new reports/commits and workflow links are recorded in projects/sol-sentinel/EXECUTION_LOG.md and INDODAX_FEE_MODEL_2026-10-30.md on the feature branch. Start the next room by reading this entry and verifying branch heads/workflows rather than repeating old capture/replay work.
+
+## SOL SENTINEL FOLLOW-UP — latest repeated native INDODAX window #40994685989 (2026-10-30)
+
+This later completed run supersedes the prior one-trade maker-development sensitivity as the latest rolling-window result. It is an important stability check: the one trade in workflow #40994319663 did not recur in the following 30-day window.
+
+- Research workflow #40994685989 succeeded on feature code commit 50c0c00dc4bc5a78ab212dc20bd4894fb99783e6; artifact #12951295388.
+- Dataset SHA-256 d76434d4c9019249e924e72c5b05d0b200c0dfe3c4709c02a6d821fa0b22327c; 43,200 contiguous 1m native INDODAX SOL/IDR candles from 2026-09-30T03:01:00Z to 2026-10-30T03:00:59.999Z; no FX conversion.
+- Public depth snapshot at 2026-10-30T03:02:06.143046Z: bid Rp1,737,289, ask Rp1,739,906, mid Rp1,738,597.5, spread 15.0523626084 bps. Public filters: tick Rp1, quantity step 1e-8 SOL, API min notional Rp10,000, minimum base quantity 0.00576894 SOL.
+- Pro taker snapshot total modeled friction 87.162363 bps; taker stress 107.7769 bps; maker snapshot 67.162363 bps. Formula remains entry fee + exit fee + spread + twice per-side slippage. Spread still a single point and slippage is an assumed 5/10 bps per side.
+- All three scenarios (taker current snapshot, taker stress, maker current snapshot) produced zero candidates, zero attempts/fills, zero positions/trades in development, validation and OOS. No estimable expectancy, win rate or profit factor. P&L zero solely reflects no trades.
+- Overlapping taker-current rejection reasons: breakout 40,506; volume confirmation 35,873; 5m momentum 28,306; 15m trend 25,981; 5m RSI 23,415; 1m exhaustion/missing 3,135; net-edge cost gate 143.
+- In #40994319663 the maker sensitivity had one development-only simulated trade (+Rp466.818 net) and none in validation/OOS. It was not reproduced on the newest rolling window, reinforcing that this isolated n=1 result was unstable, not evidence of a reproducible edge.
+- Latest public Reku snapshot: bid Rp1,725,000 / ask Rp1,730,000, spread 28.94356 bps, 40 book levels each side. Five-minute chart probe returned 75 points; interval/timestamp interpretation remains unverified. Legacy activity-history route remained HTTP 404.
+- Latest CI suite #40994692715 passed 146 offline tests. Termux doctor smoke step #40994852707 passed with network disabled. Both ran on GitHub-hosted CI, not the user's Android handset.
+- Project implementation log has the same latest update. Strategy state remains RESEARCH_ONLY / INSUFFICIENT_EVIDENCE. The single earlier dev trade is superseded; no OOS trade exists. No real order, purchase, signer, transfer, deposit or withdrawal occurred.
