@@ -2248,3 +2248,24 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Latest workflow associated with current head is #41103768982, queued at checkpoint, no completed checks/artifacts confirmed. Do not use earlier workflow runs or old artifacts as validation of this head.
 - Target 3 active save/profile allowlist remains unverified on device; target 4 two-phone paired shadow remains not run; target 5 no physical hotspot calibration yet; target 6 actual gameplay remains blocked by missing local-P2 baseline, verified simulation boundary, guest-thread mapping and canonical state probes.
 - All safety interlocks remain false/closed: gameplay injection off, simulation barrier unverified, multiplayer not playable, external acceptance incomplete, WAN/public Wi-Fi off, trusted private LAN only. No PR merge or playable claim.
+
+
+
+### Shaolin Monks LAN Co-op — NtOpenFile patcher CI failure and correction checkpoint 2026-10-31
+
+- Implementation repo: `orionrayy/project-memory-and-database`; PR #6 remains OPEN / DRAFT / UNMERGED. Exact verified head after the current correction: `77e511e5c1c35a46fc0ba20b3d1c3734e407dc3c`; branch `feat/shaolin-coop-shadow-input-experiment`.
+- CI run #41103768982 on prior head `7ee17c15e7029e24e97bb843f3e5acd4ebeebb4a` failed in the APK build job before Android compilation. Evidence from the job log:
+  - private preflight passed;
+  - overlay Python tests 27/27 passed;
+  - native CMake build passed and CTest repeated 5 times: 5/5 tests passed each repetition;
+  - fail-closed overlay, UI patching and idempotence steps passed;
+  - save-I/O tracer refused to patch `sdk/runtime/kernel/files.cpp`: `NtOpenFile trace: expected exactly one anchor, found 0`.
+- Root cause confirmed by comparing pinned upstream `RanggaCasper/ShaolinMonks-Android@359f3a9051e96a3ed1251920a55aa1df0a3e473c`: the real `NtOpenFile` function declares `std::error_code ec;` between `const std::string& host = t.host;` and the `if (host.empty() || !fs::exists(host, ec))` condition. The prior anchor omitted that line. It was a patch anchor defect, not a C++ compile failure.
+- Corrected `scripts/patch_save_io_trace.py` to include the exact upstream declaration and preserve it when inserting the trace. New patch Git blob: `e96af55f0747b46eb6ec95fc9943561eba49d39a`. Added `test_openfile_anchor_matches_pinned_upstream_source_shape` to `tests/test_patch_save_io_trace.py`. Updated workflow blob pin to the corrected patch. Commits: patch `0f05b12c05a3e433bbe335f37c80ab26d18825e5`, regression test `ebc1fe5cee9db86d54f392bcef4a4711b938aa38`, workflow `77e511e5c1c35a46fc0ba20b3d1c3734e407dc3c`.
+- Latest workflow triggered for head `77e511e5c1c35a46fc0ba20b3d1c3734e407dc3c`: run #41108542168, currently QUEUED when checked; no jobs and no artifacts yet. Do not claim the save tracer or Android APK build passed until this exact-head workflow completes. Old artifacts/runs do not validate this head.
+- Target 5 hardening remains present: host/client share a non-secret 32-hex SHA-256 session fingerprint; reports distinguish active measurement duration from drain-inclusive completion duration; aggregator validates session pairing and uniqueness, recomputes loss and scheduler skips from raw counters, validates finite ordered RTT percentiles and 30/60Hz budgets, duration, FPS and sample floors. Three distinct sessions are required per batch. Fingerprint is not a signed report/device identity.
+- Acceptance matrix NETWORK-01 references session, raw-counter, non-finite, and drain-time regression tests; 60Hz and 30Hz sample floors are 18,000 and 9,000 respectively. Physical hotspot calibration remains NOT RUN.
+- Target 3: save I/O tracing is source-patched but has not yet produced a successful APK after the corrected anchor; active profile allowlist remains unverified until device logs and stable before/after save snapshots are reviewed.
+- Target 4: paired shadow UI/source exists; two-physical-device shadow test remains NOT RUN.
+- Target 6: 21-scenario gameplay runbook exists; no remote gameplay acceptance. Local P2 baseline, simulation barrier/guest-thread proof and stable read-only gameplay state probes remain outstanding.
+- All release interlocks remain closed: `gameplay_input_injection_enabled=false`, `simulation_barrier_verified=false`, `multiplayer_playable=false`, `external_acceptance_gates_complete=false`, `trusted_private_lan_only=true`, `wan_or_public_wifi_enabled=false`. Keep PR draft; no merge or playable claim.
