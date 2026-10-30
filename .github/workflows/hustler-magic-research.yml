@@ -1,0 +1,33 @@
+name: Hustler MAGIC Read-only Research
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hustler-magic-public-research
+  cancel-in-progress: true
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Public read-only scan
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/magic-output"
+          python projects/hustler-capital-engine/magic_engine.py scan             --config projects/hustler-capital-engine/config.example.json             --db "$RUNNER_TEMP/magic-output/magic.sqlite3" --json             > "$RUNNER_TEMP/magic-output/report.json"
+      - name: Upload research evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hustler-magic-research-${{ github.run_id }}
+          path: ${{ runner.temp }}/magic-output/
+          if-no-files-found: warn
+          retention-days: 1
