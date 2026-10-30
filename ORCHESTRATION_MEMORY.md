@@ -2201,3 +2201,14 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Acceptance matrix has 21 gates, 10 mandatory pre-playable gates; fault matrix has 31 unique cases and 22 unique referenced test functions. Save gate still explicitly active-profile allowlist unverified; fault/security/device/performance gates not promoted without evidence.
 - Workflow changes pin current UI/save patches, run patcher idempotency, Python tests, native CTest repeat=5, matrix validator, APK build/signing/provenance and compiled markers. CI previously passed #41093663872 on earlier head; that APK is stale for targets3–6. Current latest-head run #41099158372 queued; check before saying passed, download only an artifact tied to latest branch SHA.
 - All release interlocks remain false: gameplay input injection disabled, simulation barrier unverified, multiplayer not playable, external acceptance incomplete, trusted private LAN only, WAN/public Wi-Fi disabled. PR #6 updated with target3–6 details and remains draft.
+
+
+### Shaolin Monks LAN Co-op — target 3–6 scope refinement 2026-10-30 final checkpoint
+
+- Latest implementation branch head remains `2c9d9e006128e75f529ff59bae7358d7982aa56b`; PR #6 remains draft/unmerged and its description was updated to cover targets 3–6.
+- Current latest-head workflow #41099158372 is still `pending` with no jobs and no artifacts at last query; do not treat as a successful build. The prior successful APK #12996437964 belongs to old head `6a6364a...` and is stale for targets 3–6.
+- Target 3 source work is complete for an *instrumented evidence build*: Android E: path tracer plus analyzer and tests are in the PR. Active save/profile is not yet identified because no phone has produced gameplay save/load logs. The APK can emit path/write metadata only; it does not log save contents.
+- Target 4 UI rendezvous improved to 2.5s submit / 5s wait, both players asked to tap within four seconds, native per-peer PASS/FAIL log added. Real two-phone shadow exchange not run; this runtime has no ADB/device connection.
+- Target 5 raw UDP probe + three-pair aggregator supports 60Hz (18,000 samples / five minutes) and 30Hz (9,000 / five minutes) with host/client FPS consistency. Latest matrix now traces the 30Hz host sample-floor test. Host/client physical hotspot runs were not performed.
+- Target 6 runbook defines 21 scenarios and 3 repeats; actual remote gameplay is blocked by unproven simulation barrier, no real state probes, and no local P2 device acceptance. No gameplay test is claimed passed.
+- Test caveat: native CTest repeat-five and acceptance tests passed at previous head #41093663872 before recent save tracer and quality probe changes; latest head requires a fresh green CI before APK can be distributed. All gameplay/release interlocks remain false.
