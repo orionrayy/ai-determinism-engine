@@ -353,11 +353,27 @@ class ForwardState:
                 raise ForwardPaperError("unsubmitted intent changed while being expired")
 
     def attach_order(self, signal_id: str, order_id: str) -> None:
-        with closing(self._connect()) as db, db:
-            db.execute(
-                "UPDATE fp_signals SET order_id=?,updated_at=? WHERE signal_id=?",
-                (order_id, iso_utc(utc_now()), signal_id),
-            )
+        if not signal_id.strip() or not order_id.strip():
+            raise ForwardPaperError("signal_id and order_id must be non-empty")
+        now = iso_utc(utc_now())
+        with closing(self._connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                row = db.execute(
+                    "SELECT decision,order_id FROM fp_signals WHERE signal_id=?", (signal_id,)
+                ).fetchone()
+                if row is None or row["decision"] != "ORDER_INTENT":
+                    raise ForwardPaperError("cannot attach an order to a missing or non-intent signal")
+                if row["order_id"] is not None and row["order_id"] != order_id:
+                    raise ForwardPaperError("signal is already bound to a different execution order")
+                db.execute(
+                    "UPDATE fp_signals SET order_id=?,updated_at=? WHERE signal_id=?",
+                    (order_id, now, signal_id),
+                )
+                db.execute("COMMIT")
+            except Exception:
+                db.execute("ROLLBACK")
+                raise
 
     def count_daily_entry_intents(self, trading_date: str) -> int:
         with closing(self._connect()) as db:
@@ -422,19 +438,29 @@ class ForwardState:
         status: str,
     ) -> None:
         now = iso_utc(utc_now())
-        with closing(self._connect()) as db, db:
-            db.execute(
-                "INSERT INTO fp_position VALUES(1,?,?,?,?,?,?,?,?,?) "
-                "ON CONFLICT(position_key) DO UPDATE SET entry_signal_id=excluded.entry_signal_id,"
-                "entry_order_id=excluded.entry_order_id,entry_candle_close_ms=excluded.entry_candle_close_ms,"
-                "atr_idr=excluded.atr_idr,entry_price_idr=excluded.entry_price_idr,"
-                "stop_price_idr=excluded.stop_price_idr,target_price_idr=excluded.target_price_idr,"
-                "status=excluded.status,updated_at=excluded.updated_at",
-                (signal_id, order_id, candle_close_ms, str(atr_idr),
-                 str(entry_price) if entry_price is not None else None,
-                 str(stop_price) if stop_price is not None else None,
-                 str(target_price) if target_price is not None else None, status, now),
-            )
+        with closing(self._connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                old = db.execute("SELECT * FROM fp_position WHERE position_key=1").fetchone()
+                if old is not None and old["status"] != "CLOSED":
+                    if old["entry_signal_id"] != signal_id or old["entry_order_id"] != order_id:
+                        raise ForwardPaperError("refusing to overwrite an active paper position with another entry")
+                db.execute(
+                    "INSERT INTO fp_position VALUES(1,?,?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(position_key) DO UPDATE SET entry_signal_id=excluded.entry_signal_id,"
+                    "entry_order_id=excluded.entry_order_id,entry_candle_close_ms=excluded.entry_candle_close_ms,"
+                    "atr_idr=excluded.atr_idr,entry_price_idr=excluded.entry_price_idr,"
+                    "stop_price_idr=excluded.stop_price_idr,target_price_idr=excluded.target_price_idr,"
+                    "status=excluded.status,updated_at=excluded.updated_at",
+                    (signal_id, order_id, candle_close_ms, str(atr_idr),
+                     str(entry_price) if entry_price is not None else None,
+                     str(stop_price) if stop_price is not None else None,
+                     str(target_price) if target_price is not None else None, status, now),
+                )
+                db.execute("COMMIT")
+            except Exception:
+                db.execute("ROLLBACK")
+                raise
 
     def close_position(self) -> None:
         with closing(self._connect()) as db, db:
