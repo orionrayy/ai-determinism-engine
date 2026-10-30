@@ -27,7 +27,7 @@ BASE_URL = "https://fapi.binance.com"
 INTERVAL_MS = {"1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000}
 DEFAULT_CONFIG: Dict[str, Any] = {
     "symbol": "MAGICUSDT", "market_type": "USD_M_PERPETUAL",
-    "entry_notional_usdt": 1.0, "leverage_scenarios": [23, 25, 30],
+    "entry_sizing_mode": "MARGIN", "entry_margin_usdt": 1.0, "entry_notional_usdt": 1.0, "leverage_scenarios": [23, 25, 30],
     "analysis_margin_mode": "ISOLATED", "live_trading_enabled": False,
     "paper_execution_enabled": False, "max_open_positions": 1,
     "risk_per_trade_fraction": 0.005, "daily_loss_limit_fraction": 0.02,
@@ -488,34 +488,55 @@ def analyze_snapshot(snapshot: Dict[str, Any], config: Optional[Dict[str, Any]] 
         score=lambda checks: sum(weights.get(k,0) for k,v in checks.items() if v)
         long_score,short_score=score(long_checks),score(short_checks)
         candidate="LONG" if long_score>=90 and all(long_checks.values()) else "SHORT" if short_score>=90 and all(short_checks.values()) else "NONE"
-        size=size_order(float(cfg["entry_notional_usdt"]),last,rules)
+        sizing_mode=str(cfg.get("entry_sizing_mode","MARGIN")).upper()
+        if sizing_mode not in ("MARGIN","NOTIONAL"): raise DataIntegrityError("entry_sizing_mode must be MARGIN or NOTIONAL")
+        entry_budget=_finite(cfg.get("entry_margin_usdt" if sizing_mode=="MARGIN" else "entry_notional_usdt"),"entry budget")
+        if entry_budget<=0: raise DataIntegrityError("entry budget must be positive")
         costs=_cost_model(snapshot,cfg,book,funding,last,m5["atr14"])
         stop_bps=1.5*m5["atr14"]/last*10_000.0
         equity=cfg.get("manual_equity_snapshot_usdt")
         risk_budget=float(equity)*float(cfg["risk_per_trade_fraction"]) if equity is not None else None
-        stop_loss=float(cfg["entry_notional_usdt"])*stop_bps/10_000.0
+        leverage_scenarios=[]
+        for lev_value in cfg["leverage_scenarios"]:
+            lev=_finite(lev_value,"leverage scenario")
+            if lev<=0: raise DataIntegrityError("leverage scenarios must be positive")
+            notional=entry_budget if sizing_mode=="NOTIONAL" else entry_budget*lev
+            initial_margin=notional/lev
+            size=size_order(notional,last,rules)
+            stop_loss=notional*stop_bps/10_000.0
+            leverage_scenarios.append({
+                "leverage":lev,"requested_entry_margin_usdt":entry_budget if sizing_mode=="MARGIN" else initial_margin,
+                "initial_margin_usdt":initial_margin,"order_notional_usdt":notional,
+                "approx_base_quantity":size["rounded_quantity"],"size_check":size,
+                "gross_stop_loss_usdt_at_1_5_atr":stop_loss,
+                "risk_budget_pass":stop_loss<=risk_budget if risk_budget is not None else None,
+                "approx_margin_loss_pct_at_stop":stop_bps*lev/100.0,
+                "theoretical_margin_exhaustion_move_bps_before_maintenance":10_000.0/lev,
+                "conservative_stop_buffer_pass":stop_bps<=(10_000.0/lev)*0.40})
+        valid_scenarios=[row for row in leverage_scenarios if row["size_check"]["valid"]]
+        risk_budget_valid=[row for row in leverage_scenarios if row["risk_budget_pass"] is True]
         risk={"manual_equity_snapshot_usdt":float(equity) if equity is not None else None,
             "equity_source":cfg.get("equity_source","NOT_CONNECTED"),"risk_budget_usdt":risk_budget,
-            "stop_distance_bps_at_1_5_atr":stop_bps,"gross_stop_loss_usdt_per_entry":stop_loss,
-            "risk_budget_pass":stop_loss<=risk_budget if risk_budget is not None else None,
-            "leverage_scenarios":[{"leverage":float(lev),"initial_margin_usdt":float(cfg["entry_notional_usdt"])/float(lev),
-                "approx_margin_loss_pct_at_stop":stop_bps*float(lev)/100.0,
-                "theoretical_margin_exhaustion_move_bps":10_000.0/float(lev),
-                "conservative_stop_buffer_pass":stop_bps<=(10_000.0/float(lev))*0.40} for lev in cfg["leverage_scenarios"]]}
-        if risk["risk_budget_pass"] is False: reasons.append("STOP_LOSS_ESTIMATE_EXCEEDS_RISK_BUDGET")
-        if any(not x["conservative_stop_buffer_pass"] for x in risk["leverage_scenarios"]):
-            reasons.append("ATR_STOP_TOO_WIDE_FOR_ONE_OR_MORE_LEVERAGE_SCENARIOS")
-        if not size["valid"]: reasons.extend(size["reasons"])
+            "stop_distance_bps_at_1_5_atr":stop_bps,
+            "risk_budget_pass_for_any_scenario":bool(risk_budget_valid) if risk_budget is not None else None,
+            "leverage_scenarios":leverage_scenarios,
+            "leverage_availability":"ACCOUNT_AND_CURRENT_CONTRACT_TIER_NOT_AUTHENTICATED",
+            "leverage_note":"Binance public notice dated 2026-03-07 lists MAGICUSDT at 21-50x for the 0-5,000 USDT notional tier; current account/contract setting must be checked in the Binance UI."}
+        if risk_budget is not None and not risk_budget_valid: reasons.append("NO_LEVERAGE_SCENARIO_WITHIN_RISK_BUDGET")
+        if leverage_scenarios and all(not row["conservative_stop_buffer_pass"] for row in leverage_scenarios):
+            reasons.append("ATR_STOP_TOO_WIDE_FOR_ALL_LEVERAGE_SCENARIOS")
+        if not valid_scenarios: reasons.append("ALL_LEVERAGE_SIZING_SCENARIOS_FAIL_EXCHANGE_FILTERS")
         if not cfg.get("fees_verified") or cfg.get("fee_taker_bps") is None: reasons.append("ACCOUNT_TAKER_FEE_UNVERIFIED")
         if not cfg.get("slippage_verified") or cfg.get("slippage_bps_per_side") is None: reasons.append("SLIPPAGE_MODEL_UNCALIBRATED")
         if candidate=="NONE": reasons.append("NO_MULTI_TIMEFRAME_ENTRY_TRIGGER")
         metrics={"last_price":last,"mark_price":mark,"mark_last_basis_bps":basis,"funding_rate":funding,
             "funding_interval_hours":costs["funding_interval_hours"],"book":book,"timeframes":tf,
             "long_checks":long_checks,"short_checks":short_checks,"long_score":long_score,"short_score":short_score,
-            "candidate_direction":candidate,"size_check":size,"cost_model":costs,"risk_check":risk,
+            "candidate_direction":candidate,"position_sizing":{"mode":sizing_mode,"entry_budget_usdt":entry_budget,
+                "meaning":"MARGIN budget multiplied by leverage" if sizing_mode=="MARGIN" else "fixed order notional independent of leverage",
+                "scenarios":leverage_scenarios},"cost_model":costs,"risk_check":risk,
             "ticker_24h":snapshot.get("ticker_24h"),
-            "levels_1h":{"previous_20h_high":h1["previous_20_high"],"previous_20h_low":h1["previous_20_low"]},
-            "entry_notional_usdt":float(cfg["entry_notional_usdt"])}
+            "levels_1h":{"previous_20h_high":h1["previous_20_high"],"previous_20h_low":h1["previous_20_low"]}}
     except (DataIntegrityError,KeyError,TypeError,ValueError) as exc:
         quality["valid"]=False
         quality["reasons"].append(str(exc))
@@ -525,8 +546,9 @@ def analyze_snapshot(snapshot: Dict[str, Any], config: Optional[Dict[str, Any]] 
     return {"report_version":1,"engine_version":ENGINE_VERSION,"created_at_utc":_utc_now(),
         "symbol":symbol,"status":"NO_TRADE","mode":"READ_ONLY_RESEARCH","market_data_quality":quality,
         "decision_reasons":list(dict.fromkeys(reasons)),"metrics":metrics,
-        "policy":{"entry_notional_usdt":cfg["entry_notional_usdt"],
-            "interpretation":"USDT notional per entry; not initial margin",
+        "policy":{"entry_sizing_mode":str(cfg.get("entry_sizing_mode","MARGIN")).upper(),
+            "entry_margin_usdt":cfg.get("entry_margin_usdt"),"entry_notional_usdt":cfg.get("entry_notional_usdt"),
+            "interpretation":"MARGIN: budget times leverage = order notional; NOTIONAL: fixed order notional.",
             "analysis_margin_mode":"ISOLATED target only; account settings are not changed",
             "live_trading_enabled":False,"paper_execution_enabled":False}}
 
@@ -583,13 +605,22 @@ def main(argv: Optional[Sequence[str]]=None) -> int:
     parser=argparse.ArgumentParser(description="Hustler Capital Engine MAGICUSDT read-only research")
     parser.add_argument("command",choices=["scan","analyze","status","self-test"])
     parser.add_argument("--symbol",default=DEFAULT_CONFIG["symbol"])
-    parser.add_argument("--notional",type=float,default=DEFAULT_CONFIG["entry_notional_usdt"])
+    parser.add_argument("--size-mode",choices=["margin","notional"])
+    parser.add_argument("--margin",type=float)
+    parser.add_argument("--notional",type=float)
     parser.add_argument("--config",help="optional JSON config; must not contain credentials")
     parser.add_argument("--snapshot",help="saved Binance public snapshot JSON for offline analysis")
     parser.add_argument("--db",default=os.path.join(os.path.dirname(__file__),"state","magic-research.sqlite3"))
     parser.add_argument("--json",action="store_true")
     args=parser.parse_args(argv)
-    cfg=dict(DEFAULT_CONFIG); cfg["symbol"]=args.symbol.upper(); cfg["entry_notional_usdt"]=args.notional
+    cfg=dict(DEFAULT_CONFIG); cfg["symbol"]=args.symbol.upper()
+    if args.size_mode: cfg["entry_sizing_mode"]=args.size_mode.upper()
+    if args.margin is not None:
+        cfg["entry_margin_usdt"]=args.margin
+        if not args.size_mode: cfg["entry_sizing_mode"]="MARGIN"
+    if args.notional is not None:
+        cfg["entry_notional_usdt"]=args.notional
+        if not args.size_mode: cfg["entry_sizing_mode"]="NOTIONAL"
     if args.config:
         with open(args.config,"r",encoding="utf-8") as handle: user_cfg=json.load(handle)
         forbidden=("secret","api_key","apikey","password","token")
