@@ -613,7 +613,14 @@ def main(argv: Optional[Sequence[str]]=None) -> int:
     parser.add_argument("--db",default=os.path.join(os.path.dirname(__file__),"state","magic-research.sqlite3"))
     parser.add_argument("--json",action="store_true")
     args=parser.parse_args(argv)
-    cfg=dict(DEFAULT_CONFIG); cfg["symbol"]=args.symbol.upper()
+    cfg=dict(DEFAULT_CONFIG)
+    if args.config:
+        with open(args.config,"r",encoding="utf-8") as handle: user_cfg=json.load(handle)
+        forbidden=("secret","api_key","apikey","password","token")
+        if any(any(word in str(k).lower() for word in forbidden) for k in user_cfg):
+            parser.error("credential-bearing config keys are forbidden")
+        cfg.update(user_cfg)
+    cfg["symbol"]=args.symbol.upper()
     if args.size_mode: cfg["entry_sizing_mode"]=args.size_mode.upper()
     if args.margin is not None:
         cfg["entry_margin_usdt"]=args.margin
@@ -621,12 +628,6 @@ def main(argv: Optional[Sequence[str]]=None) -> int:
     if args.notional is not None:
         cfg["entry_notional_usdt"]=args.notional
         if not args.size_mode: cfg["entry_sizing_mode"]="NOTIONAL"
-    if args.config:
-        with open(args.config,"r",encoding="utf-8") as handle: user_cfg=json.load(handle)
-        forbidden=("secret","api_key","apikey","password","token")
-        if any(any(word in str(k).lower() for word in forbidden) for k in user_cfg):
-            parser.error("credential-bearing config keys are forbidden")
-        cfg.update(user_cfg)
     if args.command=="self-test":
         import unittest
         from test_magic_engine import MagicEngineTests
