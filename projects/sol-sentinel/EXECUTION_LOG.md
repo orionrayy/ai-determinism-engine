@@ -490,3 +490,15 @@ The last fresh GitHub compare, performed after all current documentation commits
 - Added three pool tests: unchanged ask side at a later timestamp cannot be consumed twice; a bid-side-only change does not reset ask liquidity; and a changed ask-side depth creates a distinct pool. The migration test verifies previous per-snapshot fills are carried into the shared pool.
 - Local suite now reports 38 tests, OK, with `ResourceWarning` promoted to error. GitHub CI on the follow-up commit is pending; the previous commit's CI passed 202 tests.
 - This policy is intentionally conservative because the data feed does not contain trade-level queue depletion/replenishment evidence. An exact side-book fingerprint change is treated as a new observed liquidity state, not proof that the matching engine would refill the same orders.
+
+ 
+## 2026-10-30 — v1.3 integrated, activated and merged
+
+- Exact source branch `feat/sol-sentinel-v1.3-integrated` was built from current `main`, using the audited Sentinel implementation files and latest documentation/canonical memory. It had 1 commit ahead / 0 behind (48 files). The diverged historical PR #178 was not merged.
+- Clean PR #181 merged on 2026-10-30 as `58ec3df095c60ccc6868bf0cbccb3c18384419eb`. Main push Orchestrator Tests #41007000945 succeeded.
+- PR CI #41006890361: 216 tests passed, 0 failed; compile passed; Termux Doctor 6 PASS / 1 WARN / 0 FAIL on Ubuntu; immediate activation job succeeded. Orchestrator CI #41006890245 also passed.
+- Activation artifact #12955034631; source SHA `5bf6c2cc9598d49c4ecec4458373538b3afa18f5`; cycle `7e08efadca684497f5341b3bdb760ad18cb62857`; 610 native INDODAX SOL/IDR 1m bars. Result was NO_TRADE, risk NORMAL, IDR 300,000 cash, 0 SOL, 0 order/fill/fee/P&L, consistent recovery/reconciliation.
+- Actual depth collector summary at this cycle: 17 observations, 17 successes, 0 errors; mean spread 9.634764 bps / median 11.105374 / P95 16.071871. These are a newly accumulated small sample, not calibrated friction or queue data.
+- Persistent state branch checkpoint: `sol-sentinel-paper-state`, commit `c3f259242d450d64b4baeb01ae083c178fd4d8b0`.
+- Five-minute forward-paper scheduled workflow now exists on default branch; first post-merge cron invocation has not yet been separately observed. No 30-day pre-activation gate exists.
+- Research remains insufficient; no profitability claim. Physical Android/Termux validation and account-specific fee-tier verification remain outstanding. Live trading remains disabled and unimplemented.
