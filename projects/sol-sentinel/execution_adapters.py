@@ -91,10 +91,16 @@ class MarketQuote:
     ask: Decimal
     observed_at: datetime
     source: str = "mock"
+    bid_quantity_base: Decimal | None = None
+    ask_quantity_base: Decimal | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "bid", _decimal(self.bid, "bid"))
         object.__setattr__(self, "ask", _decimal(self.ask, "ask"))
+        for field in ("bid_quantity_base", "ask_quantity_base"):
+            value = getattr(self, field)
+            if value is not None:
+                object.__setattr__(self, field, _decimal(value, field, allow_zero=True))
         object.__setattr__(self, "observed_at", _aware_utc(self.observed_at, "observed_at"))
         if self.ask < self.bid:
             raise AdapterContractError("crossed quote (ask < bid)")
@@ -209,6 +215,7 @@ def validate_order(
 
 class ReceiptStatus(str, Enum):
     FILLED_SIMULATED = "FILLED_SIMULATED"
+    PARTIALLY_FILLED_SIMULATED = "PARTIALLY_FILLED_SIMULATED"
     NO_FILL = "NO_FILL"
     REJECTED = "REJECTED"
 
@@ -610,10 +617,13 @@ class IndodaxPublicMarketDataAdapter:
             raise VenueDataError(f"INDODAX pair metadata invalid: {exc}") from None
 
     @staticmethod
-    def _best_level(levels: Any, *, side: str) -> Decimal:
+    def _best_level_details(levels: Any, *, side: str) -> tuple[Decimal, Decimal]:
+        if side not in ("buy", "sell"):
+            raise VenueDataError("INDODAX depth side must be buy or sell")
         if not isinstance(levels, list) or not levels:
             raise VenueDataError(f"INDODAX depth {side} must be a non-empty array")
-        prices: list[Decimal] = []
+        best_price: Decimal | None = None
+        best_quantity = Decimal("0")
         for index, level in enumerate(levels):
             if not isinstance(level, (list, tuple)) or len(level) < 2:
                 raise VenueDataError(f"INDODAX depth has malformed {side} level {index}")
@@ -622,8 +632,18 @@ class IndodaxPublicMarketDataAdapter:
                 quantity = _decimal(level[1], f"{side} quantity")
             except AdapterContractError as exc:
                 raise VenueDataError(f"INDODAX depth has invalid {side} level {index}: {exc}") from None
-            prices.append(price)
-        return max(prices) if side == "buy" else min(prices)
+            is_better = best_price is None or (price > best_price if side == "buy" else price < best_price)
+            if is_better:
+                best_price, best_quantity = price, quantity
+            elif price == best_price:
+                best_quantity += quantity
+        if best_price is None:
+            raise VenueDataError(f"INDODAX depth {side} has no valid levels")
+        return best_price, best_quantity
+
+    @staticmethod
+    def _best_level(levels: Any, *, side: str) -> Decimal:
+        return IndodaxPublicMarketDataAdapter._best_level_details(levels, side=side)[0]
 
     @staticmethod
     def _parse_history_rows(
@@ -767,8 +787,8 @@ class IndodaxPublicMarketDataAdapter:
         payload = self._get_public_json(self.BASE_URL + "depth/" + pair_id)
         if not isinstance(payload, dict) or ("error" in payload and payload["error"]):
             raise VenueDataError("INDODAX depth response is not a valid order-book object")
-        bid = self._best_level(payload.get("buy"), side="buy")
-        ask = self._best_level(payload.get("sell"), side="sell")
+        bid, bid_quantity = self._best_level_details(payload.get("buy"), side="buy")
+        ask, ask_quantity = self._best_level_details(payload.get("sell"), side="sell")
         if ask < bid:
             raise VenueDataError("INDODAX order book is crossed (best ask < best bid)")
         return MarketQuote(
@@ -778,6 +798,8 @@ class IndodaxPublicMarketDataAdapter:
             ask=ask,
             observed_at=request_started_at,
             source="INDODAX public /api/depth (request-start timestamp; conservative age)",
+            bid_quantity_base=bid_quantity,
+            ask_quantity_base=ask_quantity,
         )
 
 
@@ -904,10 +926,27 @@ class PaperExecutionAdapter:
                 else intent.limit_price_quote <= quote.bid
             )
             if marketable:
-                status = ReceiptStatus.FILLED_SIMULATED
-                filled = intent.quantity_base
-                fill_price = check.reference_price
-                fee = filled * fill_price * self._fee_bps / Decimal("10000")
+                available = quote.ask_quantity_base if intent.side is Side.BUY else quote.bid_quantity_base
+                if available is None:
+                    # Backward-compatible fixture path; absence of depth must be explicit in the receipt.
+                    filled = intent.quantity_base
+                    status = ReceiptStatus.FILLED_SIMULATED
+                    reasons.append("fill_assumed_without_top_of_book_quantity")
+                elif available <= 0:
+                    status = ReceiptStatus.NO_FILL
+                    reasons.append("no_quantity_at_best_price")
+                else:
+                    filled = min(intent.quantity_base, available)
+                    status = (
+                        ReceiptStatus.PARTIALLY_FILLED_SIMULATED
+                        if filled < intent.quantity_base
+                        else ReceiptStatus.FILLED_SIMULATED
+                    )
+                    if filled < intent.quantity_base:
+                        reasons.append("partial_fill_limited_to_best_level_quantity")
+                if filled > 0:
+                    fill_price = check.reference_price
+                    fee = filled * fill_price * self._fee_bps / Decimal("10000")
             else:
                 status = ReceiptStatus.NO_FILL
                 reasons.append("limit_not_marketable_at_observed_quote")
