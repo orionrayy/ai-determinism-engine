@@ -281,7 +281,7 @@ jobs:
                   "The database has no trade-print or queue-depletion linkage in this audit.",
                   "Displayed notional is not a guaranteed executable fill and excludes later book changes.",
               ],
-              "read_only": db_is_read_only = True,
+              "read_only": True,
           }
           print(json.dumps(payload, sort_keys=True, indent=2))
           if len(observations) != 17 or len(level_rows) != 5100:
