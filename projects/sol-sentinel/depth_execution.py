@@ -173,6 +173,19 @@ class DepthSnapshot:
             raise ExecutionError("supplied snapshot_id does not match immutable snapshot content")
         object.__setattr__(self, "snapshot_id", digest)
 
+    @property
+    def midpoint(self) -> Decimal:
+        """Top-of-book midpoint in the snapshot's quote currency."""
+        return (self.bids[0].price + self.asks[0].price) / Decimal("2")
+
+    @property
+    def spread_bps(self) -> Decimal:
+        """Quoted top-of-book spread in basis points."""
+        midpoint = self.midpoint
+        if midpoint <= 0:
+            raise ExecutionError("snapshot midpoint must be positive")
+        return (self.asks[0].price - self.bids[0].price) / midpoint * Decimal("10000")
+
     def liquidity_pool_id(self, side: str) -> str:
         """Identify an unchanged side book independently of observation timestamp and the opposite side."""
         normalized = str(side).strip().lower()
