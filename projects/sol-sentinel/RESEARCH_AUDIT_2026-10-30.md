@@ -655,3 +655,15 @@ The PR #185 one-time audit job checked out the paper-state branch with write cre
 - The data spans only 13m42s and is highly skewed. Static snapshots without exchange timestamps, trade prints or queue depletion cannot estimate maker queue probability; book notional is not guaranteed fill liquidity. The 10 bps per-side slippage parameter remains an uncalibrated assumption.
 - An intermediate depth-audit script revision failed with a Python SyntaxError (assignment inside dict literal) before any DB writes; corrected version passed. Final evidence is #41017189745, not the failed intermediate run.
 
+## Official INDODAX Pro IDR fee reconciliation — 2026-10-30
+
+The official INDODAX Pro fee table effective 2026-10-01 confirms:
+- Taker BUY 0.20555% (20.555 bps), Taker SELL 0.41555% (41.555 bps): 62.11 bps round-trip all-in fee.
+- Maker BUY 0.10555% (10.555 bps), Maker SELL 0.31555% (31.555 bps): 42.11 bps round-trip all-in fee.
+The official CFX announcement published 2026-09-29 confirms IDR CFX 0.00555% per side from 2026-10-01. The current forward-pipeline config's 20.555 / 41.555 bps are consistent with Pro taker IDR all-in values; market orders are the taker path. Account-specific tax/all-in details should still be checked in the logged-in INDODAX Profile > Settings > Trading Fees before any future live authorization.
+
+Historical 87.162363 bps ("Pro taker current snapshot total modeled friction") includes fees + spread + assumed slippage, not fees alone:
+62.11 taker fee + 15.0523626084 bps quoted spread + 10 bps round-trip assumed slippage (5 per side). Historical maker 67.162363 = 42.11 + 15.0523626084 + 10. The shorthand "Pro taker current" was ambiguous, now clarified.
+
+Current config slippage is 10 bps per side. From new sample mean spread 9.634764 bps, implied modeled friction is ~91.744764 bps (62.11 + 9.634764 + 20). At sample P95 spread 16.071871, ~98.181871 bps. This is only a model estimate; no exchange order/fill exists, and realized slippage remains unavailable. No fee, strategy, or risk configuration was changed.
+Official sources: INDODAX Help Center fee table (effective 2026-10-01) and official CFX fee reduction notice dated 2026-09-29.
