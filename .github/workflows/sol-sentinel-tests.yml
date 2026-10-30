@@ -16,6 +16,12 @@ on:
       - ".github/workflows/sol-sentinel-tests.yml"
       - ".github/workflows/sol-sentinel-forward-paper.yml"
   workflow_dispatch:
+    inputs:
+      audit_active_paper_state:
+        description: Run the read-only SQLite audit against sol-sentinel-paper-state
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -45,7 +51,7 @@ jobs:
         run: python projects/sol-sentinel/termux_doctor.py --skip-network --json
 
   active-state-read-only-audit:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 185
+    if: (github.event_name == 'pull_request' && github.event.pull_request.number == 185) || (github.event_name == 'workflow_dispatch' && inputs.audit_active_paper_state == true)
     permissions:
       contents: read
     runs-on: ubuntu-latest
@@ -58,6 +64,12 @@ jobs:
           ref: sol-sentinel-paper-state
           path: .paper-state
           persist-credentials: false
+      - name: Record state branch and Git blob provenance
+        run: |
+          echo "state_branch_head=$(git -C .paper-state rev-parse HEAD)"
+          echo "sqlite_git_blob=$(git -C .paper-state rev-parse HEAD:state/forward-paper.sqlite3)"
+          git -C .paper-state status --short
+
       - name: Read-only SQLite provenance, ledger and depth audit
         run: |
           python - .paper-state/state/forward-paper.sqlite3 <<'PY'
