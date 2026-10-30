@@ -624,3 +624,11 @@ Next steps: review/merge PR #185 only after independent review; inspect workflow
 - Exact PR test run #41015701518, event \`pull_request\`, SHA \`49ae6fd78faf72185c0bfb331d65de5b5f6b1e5a\`: 221 tests passed, 0 failed; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL. Activation was skipped. PR #186 is open and not merged.
 - Main's scheduler still has no proven SOL Sentinel \`schedule\` run. Actions query for \`event=schedule\`, \`branch=main\` showed only AI Orchestrator. Official GitHub documentation: schedules run from latest default branch commit and default UTC, with 5-minute minimum; high load can delay/drop events; disabled workflows do not respond to triggers. The connected repository tooling did not expose enabled/disabled workflow state or schedule actor, leaving those as unverified configuration facts.
 - Next review sequence: PR #185 for safe test-state isolation and multi-process residual recovery; PR #186 for artifact ordering; only then verify a genuine scheduled main run, with result.json + status.json and a matching paper-state commit.
+
+## v1.5 follow-up — SQLite integrity-gated persistence
+
+- The main forward-paper workflow originally ran both the SQLite checkpoint/integrity step and state persistence under \`if: always()\`. Therefore the persistence step could still attempt a branch commit after WAL checkpoint or \`PRAGMA integrity_check\` failed.
+- Extended PR #186 to give validation and persistence explicit step IDs, gate persistence on successful validation, skip querying a database that failed validation, emit a structured \`STATE_INTEGRITY_FAILED\` status instead, and mark Step Summary as ACTION REQUIRED whenever integrity, persistence, or status capture is unsuccessful.
+- The evidence artifact is uploaded after status creation, so the artifact snapshot contains \`status.json\`.
+- Four workflow-contract regression tests were added. Final exact PR CI run #41016258548 on SHA \`988aea096b90d3e0e7a07960fbd547eb982e40ee\`: **223 passed, 0 failed**; Ubuntu Termux Doctor 6 PASS / 1 WARN / 0 FAIL; activation skipped. The preceding intermediate run #41016205926 had one failing assertion due a test-string escaping mistake, fixed in the final SHA.
+- PR #186 remains open and unmerged. No state branch or main SHA changed. These are proposed changes only until reviewed and merged.
