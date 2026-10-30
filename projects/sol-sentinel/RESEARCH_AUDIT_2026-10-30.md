@@ -667,3 +667,36 @@ Historical 87.162363 bps ("Pro taker current snapshot total modeled friction") i
 
 Current config slippage is 10 bps per side. From new sample mean spread 9.634764 bps, implied modeled friction is ~91.744764 bps (62.11 + 9.634764 + 20). At sample P95 spread 16.071871, ~98.181871 bps. This is only a model estimate; no exchange order/fill exists, and realized slippage remains unavailable. No fee, strategy, or risk configuration was changed.
 Official sources: INDODAX Help Center fee table (effective 2026-10-01) and official CFX fee reduction notice dated 2026-09-29.
+
+## Verified read-only state and 17-snapshot depth audit — 2026-10-30
+
+PR #185 run #41017557539 (head \`438923fb356945357b58fadbb600a2044aa804e9\`) successfully ran the dedicated \`active-state-read-only-audit\` job.
+
+### SQLite baseline
+
+- Raw database SHA-256: \`149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c\`; size 1,323,008 bytes.
+- SQLite integrity \`ok\`; foreign key violations 0; schema version 1; WAL journal; user_version 0.
+- Read-only enforcement: SQLite URI \`mode=ro\`, \`PRAGMA query_only=1\`, checkout credentials not persisted, workflow permission contents:read.
+- 17 forward cycles; 10 signals; 1 daily risk row; 2 control rows; no position row. Paper account is flat with Rp300,000 cash, 0 SOL, zero fees/P&L, no orders, no fills, no residuals. Cash and SOL reconcile to fills; execution event journal has 0 rows.
+- Table counts: observations 17; depth levels 5,100; attempts 17; fp_cycles 17; fp_signals 10; paper_accounts 1; orders/fills/events/execution_cycles/snapshots all 0.
+
+### INDODAX depth provenance
+
+- Source endpoint \`https://indodax.com/api/depth/solidr\`, collector version \`indodax-depth-collector-v1\`.
+- 17 observations over 04:56:41.272158Z to 05:10:23.793208Z on 30 October 2026; 6 in UTC hour 04 and 11 in hour 05.
+- 17 successful attempts, 0 errors, mean latency 612.176 ms; 17 unique observation IDs and book hashes; 0 duplicated book hashes.
+- 150 bid and 150 ask levels per sample (5,100 total).
+- Exchange timestamp is null on all 17 snapshots. Times are local collection timestamps, not exchange timestamps.
+
+### Spread statistics
+
+From raw values in SQLite: mean 9.634764 bps; median 11.105374 bps; P90 nearest-rank 16.066237 bps; P95 nearest-rank 16.071871 bps; population SD 3.795107 bps.
+
+### Visible order-book depth at ±25 bps around midpoint
+
+- Bid quote notional n=17: mean Rp179.924m; median Rp57.934m; P90 Rp338.854m; P95 Rp617.160m; SD Rp164.508m.
+- Ask quote notional n=17: mean Rp44.833m; median Rp49.740m; P90 Rp55.129m; P95 Rp56.952m; SD Rp15.786m.
+- The bid distribution is strongly skewed, and the window is only 13m42s. Use these figures descriptively, not as a universal order-size or market liquidity assumption.
+- Static visible depth cannot reveal queue priority, trade flow, depletion/replenishment, or realized execution slippage. 10 bps per-side slippage remains a scenario assumption, not an observed fill metric.
+
+The run also passed the three-process non-flat synthetic recovery test in the same Sentinel unit suite (220 passed, 0 failed); Termux Doctor on Ubuntu was 6 PASS / 1 WARN / 0 FAIL. Orchestrator suite #41017557515 passed. PR #185 remains open/unmerged. Main and active paper state branch remained unchanged. Cron evidence remains pending.
