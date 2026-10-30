@@ -641,3 +641,17 @@ Next steps: review/merge PR #185 only after independent review; inspect workflow
 - This latest result supersedes earlier PR #186 intermediate test totals of 221 and 223; an intermediate assertion escape issue had failed one run and was corrected before the final run. No paper cycle was launched.
 - PR #186 latest head remains open, mergeable, and unmerged. Main remains \`ba2a8d323b2231422367aea09436fcc1ab463dd2\`; state branch remains \`c3f259242d450d64b4baeb01ae083c178fd4d8b0\`.
 - No SOL Sentinel \`schedule\` run appeared in Actions history as of 2026-10-30T06:50:40Z. Workflow-specific enabled state and cron actor are still not observable from the connected GitHub Actions run methods or the signed-out public Actions page.
+
+## Read-only persistent state and depth forensics — final evidence 2026-10-30
+
+The PR #185 one-time audit job checked out the paper-state branch with write credentials disabled, opened the SQLite file via \`mode=ro\` and \`PRAGMA query_only=ON\`, and performed no state mutation.
+
+- Run #41017189745, event \`pull_request\`, exact SHA \`83d0f22d0d2b6013352e4d0c4fd052ad02b082a3\`: read-only audit and Sentinel unit-tests both succeeded; 220 tests passed / 0 failed; Termux Doctor Ubuntu 6 PASS / 1 WARN / 0 FAIL. The three-process non-flat recovery test passed. Orchestrator run #41017189742 passed on the same SHA.
+- Database file size: 1,323,008 bytes; raw SHA-256: \`149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c\`. SQLite integrity \`ok\`; FK violations 0; journal \`wal\`; ledger schema version 1; user_version 0; read-only/query_only confirmed.
+- 17 forward cycles; 10 signal records; 1 daily-risk record; 2 control rows. 17 depth observations; 5,100 individual book levels; 17 attempts. There are no simulated orders, fills, execution cycles, fills events, snapshots in the execution ledger, or open positions. The one paper account is still flat: Rp300,000 cash, 0 SOL, average entry 0, realized P&L 0, fees 0. Cash/SOL both reconcile to zero fills. The presence of 17 forward-cycle metadata rows is not evidence of order execution.
+- Depth provenance: 17/17 observation IDs unique; 17/17 book hashes unique; zero duplicate hashes; collector \`indodax-depth-collector-v1\`; endpoint \`https://indodax.com/api/depth/solidr\`; first \`04:56:41.272158Z\`, last \`05:10:23.793208Z\`; every snapshot has 150 bid and 150 ask levels. All 17 attempts were \`OK\`, no errors, mean duration 612.18 ms. No exchange timestamps were present in any observation. Hour distribution UTC: 04=6, 05=11.
+- Spread recomputed from raw DB rows: mean 9.634764 bps, median 11.105374, P90 nearest-rank 16.066237, P95 16.071871, population SD 3.795107.
+- Visible quote depth inside ±25 bps of each book midpoint (quote notional only): bid mean Rp179.924m, median Rp57.934m, P90 Rp338.854m, P95 Rp617.160m, SD Rp164.508m; ask mean Rp44.833m, median Rp49.740m, P90 Rp55.129m, P95 Rp56.951m, SD Rp15.786m.
+- The data spans only 13m42s and is highly skewed. Static snapshots without exchange timestamps, trade prints or queue depletion cannot estimate maker queue probability; book notional is not guaranteed fill liquidity. The 10 bps per-side slippage parameter remains an uncalibrated assumption.
+- An intermediate depth-audit script revision failed with a Python SyntaxError (assignment inside dict literal) before any DB writes; corrected version passed. Final evidence is #41017189745, not the failed intermediate run.
+
