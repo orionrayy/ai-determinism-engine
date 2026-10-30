@@ -123,3 +123,12 @@ The first GitHub Actions capture against `api.binance.com` returned HTTP 451 in 
 - Binance Spot REST API: https://developers.binance.com/en/docs/products/spot/rest-api — documents timestamps in milliseconds by default and separate public market-data endpoints.
 - Binance Spot trading filters: https://github.com/binance/binance-spot-api-docs/blob/master/filters.md — symbol filters include tick size, lot size/step and notional minimum. These describe Binance only and do not establish Reku order precision or rules.
 - Reku legacy public API docs: https://api.reku.id/ — runtime endpoint behavior must be rechecked. The old public `/activitytrans` route returned HTTP 404 in captured research; native historical Reku data remains unavailable/unverified.
+
+
+## INDODAX official fee and network references — checked 2026-10-30
+
+- INDODAX official spot trading-fee article: https://help.indodax.com/hc/id/articles/4416646599705-Rincian-Biaya-Transaksi-di-INDODAX . Effective 1 October 2026. Its Pro IDR all-in schedule is maker buy 10.555 bps, taker buy 20.555 bps, maker sell 31.555 bps, taker sell 41.555 bps. The article lists Lite minimum Rp10,000 and direct Pro minimum Rp25,000; Pro-interface orders from Rp10,000–Rp24,999 route via Lite. Recheck Profile → Trading Fees and the live order preview for the actual account/mode; Lite fee rates were not inferred.
+- INDODAX official CFX fee announcement: https://blog.indodax.com/ . The IDR-market CFX component is listed at 0.00555% per side; this is already included in the all-in rates above and must not be added twice.
+- INDODAX public pair metadata endpoint: https://indodax.com/api/pairs . Captured fields include price tick, quantity step, API notional floor and minimum base quantity. They are pair metadata and can change; they do not replace the authenticated app's selected-mode minimum.
+- INDODAX network/withdrawal help: https://help.indodax.com/hc/id/ . Current network availability, withdrawal minimum and fee are shown inside the wallet flow after selecting the asset/network; this repository did not access the account UI and does not certify a SOL withdrawal route.
+- Detailed dated configuration, cost decomposition, point-snapshot caveats and open uncertainties are in INDODAX_FEE_MODEL_2026-10-30.md.
