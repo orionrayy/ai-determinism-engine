@@ -3,6 +3,7 @@ name: SOL Sentinel Tests
 on:
   push:
     branches:
+      - main
       - feat/sol-sentinel-paper-trader-v1
       - feat/sol-sentinel-v1.3-integrated
     paths:
@@ -13,10 +14,11 @@ on:
     paths:
       - "projects/sol-sentinel/**"
       - ".github/workflows/sol-sentinel-tests.yml"
+      - ".github/workflows/sol-sentinel-forward-paper.yml"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sol-sentinel-tests-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -24,6 +26,8 @@ concurrency:
 
 jobs:
   unit-tests:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -42,6 +46,8 @@ jobs:
 
   forward-paper-activation:
     needs: unit-tests
+    permissions:
+      contents: write
     concurrency:
       group: sol-sentinel-forward-paper-state
       cancel-in-progress: false
