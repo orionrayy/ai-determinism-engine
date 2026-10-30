@@ -198,3 +198,18 @@ Do not invoke manual `run` to simulate cron. A future first scheduled run must b
 State branch remains `sol-sentinel-paper-state` at `c3f259242d450d64b4baeb01ae083c178fd4d8b0`. The database Git blob remains `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, size 1,323,008 bytes; its previously audited raw SHA-256 is `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`. The binary was not reopened for a new SQL pass in this checkpoint. Last SQL audit still reports flat cash Rp300,000, 0 SOL, zero fills/orders/residuals, integrity `ok`, and 0 foreign-key violations. Do not represent this as a new integrity query.
 
 Synthetic three-process recovery remains verified only on an isolated temporary database. Active operational non-flat recovery is not yet observed. Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; physical Android/Termux remains `NOT_TESTED`; live trading remains `DISABLED`.
+
+
+## v1.9 operational checkpoint — 2026-10-30
+
+### Scheduler evidence
+- Isolated schedule-only diagnostic workflow `.github/workflows/sol-sentinel-schedule-canary.yml` was added through PR #190. It has workflow ID `401581054`, API state `active`, and cron `0,30 * * * *`. It only reports run/workflow provenance, uses `actions:read`, a two-minute timeout, and does not check out or call the trading engine or paper-state branch.
+- Forward Paper remains workflow ID `401397705`, API state `active`, cron `2,7,12,17,22,27,32,37,42,47,52,57 * * * *`.
+- Read-only queries filtered to `event=schedule` and `branch=main` returned 0 runs for both workflows after the 10:00 UTC canary slot and again at about 10:06 UTC. No schedule run IDs, artifacts, or execution results exist yet. One missed canary slot is not enough to establish a repository-wide dispatch fault. Keep `FIRST_CRON_PENDING`; root cause unresolved.
+- The isolated Research workflow was run manually once for public data capture, workflow run #41037517595. This is not schedule proof and is not a paper cycle.
+
+### Active state — fresh SQL audit
+The explicit opt-in audit job was run once via workflow_dispatch audit input; see run #41035585382. It checked out `sol-sentinel-paper-state` without persisted write credentials and opened SQLite read-only/query-only. Branch HEAD `c3f259242d450d64b4baeb01ae083c178fd4d8b0`, DB blob `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`, raw SHA-256 `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`, file size1,323,008 bytes. Integrity `ok`, FK errors0, WAL, schema1. 17 cycles, 10 signals, 17 depth observations, 5,100 levels, 17 successful attempts; 0 orders/fills/events/execution cycles/positions. Cash Rp300,000, SOL0, fees/P&L0; cash and SOL reconcile to fills. This is flat-state persistence, not non-flat recovery.
+
+### Operating decision
+Keep the state branch unchanged. Do not dispatch the forward-paper workflow to simulate cron. Do not promote or activate a candidate until the research gate passes. No live route, credentials, wallet signing, orders, transfers, deposits or withdrawals are enabled. Physical Android/Termux validation still requires the user's on-device Doctor output; Ubuntu CI is not a substitute.

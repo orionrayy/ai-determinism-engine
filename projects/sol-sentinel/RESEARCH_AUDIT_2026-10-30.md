@@ -828,3 +828,58 @@ Strategy remains `NO_TRADE / INSUFFICIENT_EVIDENCE`; no new signal evaluation, b
 ### Next acceptance gate
 
 The next required evidence is a true workflow-ID `401397705` event `schedule` on `main`, with run metadata, successful or explainable job result, `result.json`, `status.json`, cycle ID, resulting state branch commit and validated database/ledger. A second distinct scheduled run is required before claiming repeated schedule execution or two-run flat-state continuity. No manual dispatch substitutes for either gate.
+
+
+## v1.9 — native 30-day multi-strategy research and scheduler canary checkpoint (2026-10-30)
+
+### Repository and workflow changes
+- Main at this checkpoint: `5dcfccf0138620328a9850c892c36327d7715d5d`.
+- PR #190 merged as `dd8764993861cd1799f7f9968a05f8430387ff8b`: isolated `.github/workflows/sol-sentinel-schedule-canary.yml`, workflow ID `401581054`, active, schedule-only twice hourly, read-only Actions token, no trading/state access.
+- PR #191 merged as `d1bd8fbc6baf9fce4ed1ed327e4e0f7a9a3e3cb3`: offline native `strategy_research.py`, five predeclared families, frozen baseline fingerprint, 60/20/20 chronology, cost sensitivities, lot-step sizing and tests; the research workflow produces `strategy_research.json`.
+- PR #192 merged as `39289436ead3ec66774e2c3c76812233d40fed89`: explicit opt-in read-only SQLite audit input with `contents:read`, state checkout `persist-credentials:false`, SQLite URI `mode=ro` and `PRAGMA query_only=ON`.
+- Latest PR #192 CI run #41035209156 passed 240 tests and the Ubuntu Termux Doctor local smoke. The runner output explicitly does not validate the user's Android handset.
+
+### Scheduler result
+- Canary: workflow ID `401581054`, state `active`, path `.github/workflows/sol-sentinel-schedule-canary.yml`, cron `0,30 * * * *`.
+- Forward Paper: workflow ID `401397705`, state `active`, cron `2,7,12,17,22,27,32,37,42,47,52,57 * * * *`.
+- Exact API checks filtered by `event=schedule`, `branch=main`, `per_page=100`, page 1 returned `total_count=0` for both workflows at 10:00:39Z and again at approximately 10:06Z. No run IDs or artifacts exist for either schedule. Both API endpoints are accessible; no auth/rate-limit error observed.
+- Only one canary slot had passed at final inspection. A missed canary slot does not establish a repository/platform root cause. Keep scheduler delivery `UNRESOLVED`, `FIRST_CRON_PENDING`; do not dispatch production forward paper to simulate cron.
+
+### Fresh read-only paper-state audit
+- Manual audit-only run #41035585382, event `workflow_dispatch`, branch `main`, head `39289436ead3ec66774e2c3c76812233d40fed89`. This was the explicit, opt-in read-only SQL job, not a forward-paper cycle.
+- State branch HEAD `c3f259242d450d64b4baeb01ae083c178fd4d8b0`; SQLite Git blob `a9bbe1ae63aa1aa496fe000f23d30d4259de1c09`; file size 1,323,008 bytes; raw SHA-256 `149ea9184abb9977cdba032820e7bc57fa33526349530633906008d49d33427c`.
+- SQLite: `integrity_check=ok`; foreign-key violations 0; journal `wal`; schema version1; opened `mode=ro`; `query_only=true`; no active state write.
+- 17 paper cycles, 10 signals, 2 controls, 1 daily risk row, 1 paper account, 17 observations, 5,100 depth levels and 17 successful depth attempts. 0 orders, 0 fills, 0 events, 0 execution cycles, 0 positions, 0 snapshots.
+- Portfolio: cash Rp300,000, SOL 0, realized P&L0, fees0, no open orders. Cash and SOL both reconcile to fill records. This proves flat-state read/persistence only; it is not non-flat operational recovery.
+- All 17 depth observations lack exchange timestamps. Spread mean9.634764 bps, median11.105374, P90 16.066237, P95 16.071871. Sample spans ~13m42s. No trade prints, queue position, queue depletion or realized slippage. Visible depth does not prove executable fills.
+
+### Native INDODAX 30-day dataset and independent validation
+- Research run #41037517595 completed successfully, event `workflow_dispatch`, branch `main`, head `5dcfccf0138620328a9850c892c36327d7715d5d`.
+- Artifact #12967394940, name `sol-sentinel-research-41037517595`, size3,113,839 bytes, ZIP SHA-256 `0f668a4a1380f5c13364d2a99061b155985966d156de05c201e87905d16944cb`, expires 2026-11-06T10:03:08Z.
+- Native INDODAX SOL/IDR 1m CSV: 43,200 bars, 2026-09-30T10:01:00Z through 2026-10-30T10:00:59.999Z, captured 2026-10-30T10:02:35Z. CSV bytes2,988,266; SHA-256 `95e95e5600df8a2a21f7de34393321cf98226ace42d485d1da12c480b667656d`. USD/IDR conversion false. Source `https://indodax.com/tradingview/history_v2`.
+- Independent local verification against the downloaded artifact confirmed 43,200 rows, zero timestamp gaps, zero adjacent duplicate timestamps, zero invalid OHLC rows, zero negative volumes. 13,789 rows have zero reported volume; retain this as source data characteristic and do not impute/synthesize. Same-run public depth quote: bid Rp1,755,348 / ask Rp1,758,068; spread15.483507 bps, a single point not a historical distribution.
+- Public pair filters in sidecar: price tickRp1, quantity step1e-8 SOL, minimum base quantity0.00568569 SOL, API quote minimumRp10,000. Pro UI direct minimum separately modeled Rp25,000.
+
+### Locked baseline and rejection funnel
+- Baseline fingerprint `757d5c049a82dca4656ab45e0bcc4e652a51043010063c7e4d391e56fa270023`; original baseline parameters were not overwritten.
+- Across 43,199 signal evaluations, baseline generated 0 candidates, 0 order attempts, 0 fills and 0 closed trades under all four fixed cost scenarios. Net P&L0 is no-position accounting; expectancy and profit factor are undefined.
+- Full-window overlapping rejection events for Pro taker base: 1m breakout40,499; relative volume35,890; 5m momentum28,311; 15m trend26,101; 5m RSI23,381; 1m RSI exhaustion/missing3,187; estimated net edge gate139. Rejection reasons overlap and are not distinct-bar counts. The three largest gates each reject a large share of the same observations; no single filter is proven to be the only cause.
+
+### Five-family chronological research (Pro taker base: 62.11 bps all-in fees + 25.6669 bps round-trip spread + 10 bps/side assumed slippage = 107.7769 bps)
+All split simulations start separately at Rp300,000, use fixed parameters, 0.5% risk/trade, 50% exposure cap, 3% daily loss lock, 10% portfolio drawdown entry lock, exchange quantity-step rounding and next-candle-open simulated entry. Stop/target OHLC collisions are resolved stop-first. Queue probability, partial-fill economics and market impact are not modeled.
+
+| Strategy | Dev trades / net P&L | Validation trades / net P&L | OOS trades / net P&L | OOS expectancy/trade | OOS PF | OOS max DD | Decision |
+|---|---:|---:|---:|---:|---:|---:|---|
+| Trend breakout | 23 / -Rp30,161.03 | 22 / -Rp30,444.09 | 18 / -Rp24,539.38 | -Rp1,363.30 | 0.00 | 8.18% | RESEARCH_ONLY |
+| Trend pullback | 22 / -Rp30,879.07 | 22 / -Rp30,439.37 | 20 / -Rp27,672.27 | -Rp1,383.61 | 0.00 | 9.38% | RESEARCH_ONLY |
+| Range mean reversion | 23 / -Rp30,921.87 | 25 / -Rp30,943.36 | 23 / -Rp30,070.00 | -Rp1,307.39 | 0.00 | 10.02% | RESEARCH_ONLY |
+| Volatility expansion | 23 / -Rp30,876.63 | 23 / -Rp30,820.38 | 16 / -Rp23,274.39 | -Rp1,454.65 | 0.00 | 7.76% | RESEARCH_ONLY |
+| Regime adaptive | 23 / -Rp30,863.09 | 24 / -Rp30,419.98 | 22 / -Rp30,238.74 | -Rp1,374.49 | 0.00 | 10.08% | RESEARCH_ONLY |
+
+Every reported trade in each family/split was a net loser under the modeled taker costs. Each OOS sample is only 16–23 trades, below the predeclared minimum30 for a bootstrap CI; all CIs are `INSUFFICIENT_SAMPLE`. Candidates also fail nonpositive net expectancy, PF>1.1, regime-diversity and/or 10% DD gates. No candidate is promoted. Baseline and five candidate results do not establish a profitable edge.
+
+### Rp300,000 to Rp3,500,000 feasibility
+- Required multiple11.6667x; +1,066.67% in 24h.
+- Required compounded net return per trade: 27.85% for10 trades;10.33% for25;5.04% for50;2.49% for100.
+- Monte Carlo/bootstrapped probability is `INSUFFICIENT_SAMPLE`, deliberately not estimated because no candidate passes OOS and trade-count gates. No probability should be invented from the losing small samples.
+- Live trading stays `DISABLED`; no candidate is registered/activated in the paper runner; active account stays flat and untouched.
