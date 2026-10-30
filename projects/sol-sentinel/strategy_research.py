@@ -67,6 +67,15 @@ def _utc(ts_ms: int) -> str:
     return datetime.fromtimestamp(ts_ms / 1000, timezone.utc).isoformat()
 
 
+def initial_stop_price(reference_price: float, stop_distance: float) -> float:
+    """Anchor a long protective stop below the next-bar market reference."""
+    if not math.isfinite(reference_price) or reference_price <= 0:
+        raise ValueError("reference_price must be finite and positive")
+    if not math.isfinite(stop_distance) or stop_distance <= 0:
+        raise ValueError("stop_distance must be finite and positive")
+    return reference_price - stop_distance
+
+
 def round_quantity_down(quantity: float, quantity_step: str) -> float:
     """Round a simulated base-asset quantity down to the venue lot step."""
     if not math.isfinite(quantity) or quantity <= 0:
@@ -428,6 +437,9 @@ def simulate_segment(
             fill = reference * (1.0 + adverse / 10_000.0)
             risk_cash = cash * risk_fraction
             stop_distance = pending["atr"] * pending["stop_atr"]
+            # The protective stop is anchored to the executable bar-open reference,
+            # not to a cost-inflated fill. This guarantees stop < market reference.
+            stop_price = initial_stop_price(reference, stop_distance)
             risk_per_unit = stop_distance + fill * friction_rate
             qty_risk = risk_cash / risk_per_unit if risk_per_unit > 0 else 0.0
             qty_exposure = cash * max_exposure_fraction / fill
@@ -450,7 +462,7 @@ def simulate_segment(
                     "entry_fee": entry_fee,
                     "entry_notional": notional,
                     "quantity": quantity,
-                    "stop": fill - stop_distance,
+                    "stop": stop_price,
                     "target": target,
                     "target_atr": pending["target_atr"],
                     "max_hold": pending["max_hold"],
