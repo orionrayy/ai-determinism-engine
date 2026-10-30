@@ -30,7 +30,7 @@ The cycle is bounded to one observation. A scheduler invokes one cycle at a time
 
 The implementation branch is `feat/sol-sentinel-v1.3-integrated`. After its test workflow passes, the push-triggered `forward-paper-activation` job attempts one bounded live-data paper cycle. The initial durable database is stored on the dedicated `sol-sentinel-paper-state` branch.
 
-The separate `.github/workflows/sol-sentinel-forward-paper.yml` workflow is configured for one cycle every five minutes and a manual `run`, `status`, `halt`, or `resume` operation. The clean integration PR #181 was merged into `main` on 2026-10-30 (merge commit `58ec3df095c60ccc6868bf0cbccb3c18384419eb`), so the workflow is now present on the default branch and eligible for GitHub's recurring schedule. The latest manual/PR activation cycle is verified; a distinct post-merge scheduled invocation is not yet confirmed. The initial push-triggered activation is independent of that recurring schedule.
+The separate `.github/workflows/sol-sentinel-forward-paper.yml` workflow is configured for one cycle every five minutes (`2-57/5 * * * *`, UTC) and a manual `run`, `status`, `halt`, or `resume` operation. The forward-paper job is guarded to execute state-changing operations only when the ref is `main`; a dispatch on a feature branch cannot write the shared paper-state branch. The workflow Step Summary reports event type, run ID, ref, commit, exit code, cycle ID, strategy, risk, portfolio and ledger reconciliation. The clean integration PR #181 was merged into `main` on 2026-10-30 (merge commit `58ec3df095c60ccc6868bf0cbccb3c18384419eb`), so the workflow is now present on the default branch and eligible for GitHub's recurring schedule. The latest manual/PR activation cycle is verified; a distinct post-merge scheduled invocation is not yet confirmed. The initial push-triggered activation is independent of that recurring schedule.
 
 Workflow concurrency is serialized under `sol-sentinel-forward-paper-state`, because both operations use the same SQLite checkpoint. Each invocation restores the last SQLite file, runs exactly one bounded cycle, verifies SQLite integrity, and commits the checkpoint back to the state branch. A failed network cycle still persists any collector-attempt diagnostics when a database exists. A successful activation record is written only after the cycle and portfolio reconciliation complete.
 
@@ -77,7 +77,7 @@ A resume requires a consistent fill/portfolio ledger and an explicit reason. Man
 - Maximum peak-to-trough drawdown: 10%; warning threshold: 2%.
 - Maximum open orders: 1; maximum daily entry intents: 10.
 - Maximum entry spread: 50 bps; maximum depth quote age: 10 seconds; maximum latest candle age: 120 seconds.
-- INDODAX Pro official fee components are encoded as 20.555 bps buy and 41.555 bps sell; the user's account-specific trading mode and exact fee display are not verified by CI.
+- INDODAX Pro IDR official **all-in** fees effective 2026-10-01: BUY maker 10.555 bps, BUY taker 20.555 bps, SELL maker 31.555 bps, SELL taker 41.555 bps. These are distinct from the CFX subcomponent (0.555 bps). The fee structure is published by INDODAX; the account-specific displayed mode/route must still be checked in Profile → Settings → Trading Fees. A limit order that immediately matches resting liquidity can be charged as taker, not maker.
 - Slippage budget is 10 bps per side for conservative risk sizing. It is an uncalibrated assumption, not an added synthetic fill or measured slippage result. Simulated fill prices come from the captured book walk, including the price impact visible in those levels.
 - Direct Pro minimum notional is modeled at IDR 25,000. Confirm current mode and order preview before interpreting a personal trading route.
 
@@ -96,9 +96,22 @@ The first cycle may correctly report `NO_TRADE`. An active forward-paper system 
 GitHub Actions tests and the Termux Doctor run on an Ubuntu runner. They do not prove compatibility on the user's Android handset. Run the Termux Doctor directly on the device before claiming physical validation:
 
 ```sh
-python projects/sol-sentinel/termux_doctor.py --json
+REPORT="$HOME/sol-sentinel-termux-report.json"; python projects/sol-sentinel/termux_doctor.py --run-tests --json --timeout 5 > "$REPORT"; RC=$?; cat "$REPORT"; echo "exit_code=$RC"; exit "$RC"
 ```
 
 The collector's spread/depth summary only describes snapshots actually captured after activation. It is not backfilled from OHLC candles. Queue position, maker fill probability, true slippage distribution, and exchange account fee tier remain uncalibrated/unverified.
 
 The current program is forward-paper only. A green software test, successful activation record, or positive simulated P&L is not permission to deploy real money.
+
+
+## v1.4 operational hardening checkpoint — 2026-10-30
+
+- PR [#182](https://github.com/orionrayy/ai-determinism-engine/pull/182) merged to `main` as `8c8e0c0362161ec6644ba44fa538d55dcb9fe18c`.
+- The recurring cron is now `2-57/5 * * * *` UTC (12 runs/hour, at minutes 02, 07, ..., 57) to avoid the start-of-hour contention window. GitHub documents that scheduled events can be delayed or dropped at high-load times and only execute from the default branch. No distinct `SOL Sentinel Forward Paper` event with `event=schedule` was found after merge when checked at 2026-10-30T05:48:56Z; keep `FIRST_CRON_PENDING` until the actual event and artifact are observed.
+- The paper job now has a main-ref guard and a run Step Summary. The shared SQLite branch cannot be changed by a manual dispatch against a non-main ref. The unit-test job uses read-only contents permission; only the activation job receives write permission in the tests workflow.
+- SOL Sentinel Tests now run on pushes to `main`, and PR path filters include the forward-paper workflow. Post-merge run [#41010295827](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010295827) on the exact main commit passed compile, **216 tests**, and Termux Doctor (Ubuntu: 6 PASS / 1 WARN / 0 FAIL); activation was skipped as designed.
+- The PR test on branch `fix/sol-sentinel-schedule-ci-hardening`, run [#41010214471](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41010214471), also passed 216 tests; activation was skipped. This was a test event, not a paper cycle or schedule proof.
+- Durable storage remains SQLite file `state/forward-paper.sqlite3` checkpointed to the dedicated Git branch `sol-sentinel-paper-state`, not a runner-local durable disk, object store, managed database or CI cache. The branch head at review was `c3f259242d450d64b4baeb01ae083c178fd4d8b0`; its linear history includes at least 12 checkpoint commits attributed to separate run IDs from 41005882837 through 41006890361. This proves repeated persisted checkpoints, while non-flat order/fill/residual reconstruction remains unexercised because the recorded account is flat.
+- Latest recorded paper artifact remains run [#41006890361](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890361), artifact [#12955034631](https://github.com/orionrayy/ai-determinism-engine/actions/runs/41006890361/artifacts/12955034631): NO_TRADE, risk NORMAL, equity/cash IDR 300,000, SOL 0, 0 orders/fills/fees, consistent ledger/portfolio, source commit `5bf6c2cc9598d49c4ecec4458373538b3afa18f5`. No post-merge scheduled paper result is claimed.
+- Official INDODAX Pro IDR fee table (effective 2026-10-01) lists all-in BUY maker 10.555 bps, BUY taker 20.555 bps, SELL maker 31.555 bps, SELL taker 41.555 bps. The CFX component alone is 0.555 bps. The Pro direct order minimum is Rp25,000; orders Rp10,000–24,999 are routed through Lite. The user's own fee display remains unverified. A maker quote is not proof of a maker fill.
+- Android/Termux must still be run on-device. The command above writes the full JSON report to `$HOME/sol-sentinel-termux-report.json` and executes the offline project tests plus a bounded public metadata GET.
