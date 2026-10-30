@@ -4,7 +4,7 @@
 **Instrument:** Binance USDⓈ-M MAGICUSDT perpetual  
 **Runtime:** Python 3.10+, standard library only; Termux-friendly  
 **Order execution:** absent by design  
-**Default size:** 1.00 USDT **notional** per candidate, not 1 USDT initial margin
+**Default size:** 1.00 USDT **initial margin budget** per candidate; order notional is margin × leverage
 
 This module is a read-only child project of `orionrayy/ai-determinism-engine`. It does not connect to private Binance account endpoints, read balances/positions, change leverage or margin mode, place/cancel orders, or transfer assets. The 7.94 USDT Futures available balance seen in the user's screenshot is a visual observation, not authenticated account state.
 
@@ -14,7 +14,7 @@ This module is a read-only child project of `orionrayy/ai-determinism-engine`. I
 - Data integrity: active USDT perpetual validation; finite OHLCV; impossible OHLC rejection; exact close times; completed candles only; strict chronology; gap/duplicate rejection; server-clock skew, quote/candle freshness, crossed-book and spread gates; bounded HTTP responses/retries.
 - Deterministic indicators: EMA20/EMA50, Wilder RSI14, ATR14, relative volume, 20-bar breakout/breakdown, multi-timeframe direction checks.
 - Explicit costs: taker commission both sides, measured book spread, slippage both sides, current funding and expected funding events, plus net-edge buffer. Unknown fees/slippage/funding interval block eligibility.
-- Exchange sizing: price tick, LOT_SIZE/MARKET_LOT_SIZE, quantity steps, min/max notional. The engine never silently increases a requested 1 USDT notional to satisfy exchange filters.
+- Exchange sizing: price tick, LOT_SIZE/MARKET_LOT_SIZE, quantity steps, min/max notional. Both fixed-margin and fixed-notional sizing are evaluated separately; the engine never silently increases a requested size to satisfy exchange filters.
 - 23x/25x/30x isolated-margin arithmetic and stop-distance stress. These are read-only scenarios; account settings are not changed.
 - SQLite WAL evidence ledger. Identical report replay is a no-op; inconsistent same-identity payload fails closed.
 - Offline unit tests and an optional free GitHub Actions read-only scan workflow. No Binance key or GitHub secret required.
