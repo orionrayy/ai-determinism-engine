@@ -522,10 +522,6 @@ class RiskSupervisor:
             reasons.append("maximum_drawdown_reached")
         if exposure > self.config.max_exposure_fraction:
             reasons.append("portfolio_exposure_above_limit")
-        if spread > self.config.max_spread_bps:
-            reasons.append("spread_above_limit")
-        if age < 0 or age > self.config.max_depth_age_seconds:
-            reasons.append("depth_snapshot_stale")
         control = self.state.control()
         operating = control.get("operating_state", "ACTIVE")
         if operating == "MANUAL_REVIEW_REQUIRED":
@@ -872,8 +868,12 @@ class ForwardPaperOrchestrator:
         position = self.state.position()
         if qty <= 0:
             if position and position["status"] == "PENDING":
-                pending_order = self.ledger.find_order_by_client_order_id(position["entry_order_id"])
-                if pending_order and pending_order["state"].value in (
+                try:
+                    pending_order = self.ledger.get_order(position["entry_order_id"])
+                except ExecutionError:
+                    self.state.set_control("MANUAL_REVIEW_REQUIRED", "pending strategy position references a missing execution order")
+                    raise ForwardPaperError("pending strategy position references a missing execution order") from None
+                if pending_order["state"].value in (
                     "OPEN_SIMULATED", "PARTIALLY_FILLED_SIMULATED", "RECOVERY_REQUIRED"
                 ):
                     return position
