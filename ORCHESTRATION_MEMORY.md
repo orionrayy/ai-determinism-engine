@@ -4,6 +4,16 @@
 
 This file is the durable, version-controlled memory of the AI orchestration control plane. Before modifying the orchestrator, treat this document and the current source tree as the source of truth. Do not assume older conversation state is still accurate without checking the repository.
 
+
+## GitHub–Cloudflare paired-platform policy — 2026-11-01
+
+- GitHub (`orionrayy`) remains canonical for repository history, branches, PRs, issues, and code review. Cloudflare account `bedf587d0956d6b4a622b3aa5511c396` is the runtime/infrastructure plane where applicable.
+- For every repository task, consult `AGENTS.md` and `CLOUDFLARE_GITHUB_INTEGRATION.md`; inspect current Cloudflare state alongside GitHub state whenever the project has or may have Cloudflare runtime dependencies.
+- Do not treat GitHub CI success as proof of a Cloudflare deployment. Verify build, deployment, resource bindings, health, and logs independently.
+- Cloudflare inventory, repo mapping, provider authorization blocker, safety rules, and workload placement are recorded in `CLOUDFLARE_GITHUB_INTEGRATION.md`.
+- Cloudflare GitHub App authorization is not yet completed. Workers Builds config/triggers were absent; a repo-connection API attempt returned Cloudflare error 8000008 (project disconnected from Git account). Do not retry or create build triggers until the user completes the OAuth/install step and exact source mappings are verified.
+- No production auto-deployment, paid feature activation, secret changes, DNS changes, or resource deletion is authorized by this policy setup.
+
 ## Current baseline
 
 Repository: `orionrayy/ai-determinism-engine`
