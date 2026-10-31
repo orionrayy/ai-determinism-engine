@@ -54,7 +54,7 @@ Other resources:
 - Pages projects: none observed.
 - Queues: none observed.
 - R2: API reports it must first be enabled in the Cloudflare dashboard; do not assume R2 is provisioned.
-- Workers Builds: no build configurations or triggers were found for the five listed Workers.
+- Workers Builds: no build configurations, triggers, or build tokens were found for the five listed Workers.
 - All five Workers reported `last_deployed_from: api`, not a connected Git repository.
 
 ### Repository mapping state
