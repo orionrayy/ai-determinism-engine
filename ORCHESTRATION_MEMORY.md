@@ -11,7 +11,7 @@ This file is the durable, version-controlled memory of the AI orchestration cont
 - For every repository task, consult `AGENTS.md` and `CLOUDFLARE_GITHUB_INTEGRATION.md`; inspect current Cloudflare state alongside GitHub state whenever the project has or may have Cloudflare runtime dependencies.
 - Do not treat GitHub CI success as proof of a Cloudflare deployment. Verify build, deployment, resource bindings, health, and logs independently.
 - Cloudflare inventory, repo mapping, provider authorization blocker, safety rules, and workload placement are recorded in `CLOUDFLARE_GITHUB_INTEGRATION.md`.
-- Cloudflare GitHub App authorization is not yet completed. Workers Builds config/triggers were absent; a repo-connection API attempt returned Cloudflare error 8000008 (project disconnected from Git account). Do not retry or create build triggers until the user completes the OAuth/install step and exact source mappings are verified.
+- Cloudflare GitHub App authorization is not yet completed. Workers Builds config/triggers/build tokens were absent; a repo-connection API attempt returned Cloudflare error 8000008 (project disconnected from Git account). Do not retry or create build triggers until the user completes the OAuth/install step and exact source mappings are verified.
 - No production auto-deployment, paid feature activation, secret changes, DNS changes, or resource deletion is authorized by this policy setup.
 
 ## Current baseline
