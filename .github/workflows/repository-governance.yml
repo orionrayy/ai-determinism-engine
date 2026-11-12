@@ -1,0 +1,48 @@
+name: Repository Governance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: repository-governance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy-gate:
+    name: policy-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Python compile and governance tests
+        run: |
+          set -euo pipefail
+          python -m compileall -q orchestrator
+          python -m unittest orchestrator.test_repository_governance -v
+
+      - name: Encrypted state adapter checks
+        run: |
+          set -euo pipefail
+          node --check orchestrator/state_branch.mjs
+          node --test orchestrator/test_state_branch.mjs
+
+      - name: Contract schema syntax
+        run: |
+          set -euo pipefail
+          for schema in contracts/*.schema.json; do
+            python -m json.tool "$schema" >/dev/null
+          done

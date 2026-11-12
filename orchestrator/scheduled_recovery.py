@@ -270,6 +270,7 @@ def run() -> tuple[int, int, list[str]]:
             DEFAULT_TERMINAL_COMPACTION_DAYS,
             compact_terminal_workflows,
             load_state,
+            save_state,
             workflow_authority_mode,
         )
         from .control_plane import ControlPlaneClient, ControlPlaneError
@@ -279,6 +280,7 @@ def run() -> tuple[int, int, list[str]]:
             DEFAULT_TERMINAL_COMPACTION_DAYS,
             compact_terminal_workflows,
             load_state,
+            save_state,
             workflow_authority_mode,
         )
         from control_plane import ControlPlaneClient, ControlPlaneError
@@ -432,6 +434,11 @@ def run() -> tuple[int, int, list[str]]:
         now=now,
         retention_days=retention_days,
     )
+    # Persist compaction before the workflow commits encrypted runtime state.
+    # Without this write, the returned compacted count would describe only an
+    # in-memory mutation and the next recovery would reload the old shards.
+    if compacted:
+        save_state(state)
     return dispatched, len(compacted), failures
 
 

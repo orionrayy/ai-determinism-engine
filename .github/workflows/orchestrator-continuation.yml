@@ -22,6 +22,13 @@ jobs:
         with:
           ref: main
 
+      - name: Restore encrypted orchestrator state
+        id: state_restore
+        env:
+          ORCHESTRATOR_STATE_ENCRYPTION_KEY: ${{ secrets.ORCHESTRATOR_STATE_ENCRYPTION_KEY }}
+          ORCHESTRATOR_STATE_BRANCH: orchestrator-state
+        run: node orchestrator/state_branch.mjs restore
+
       - name: Decide continuation
         id: decision
         shell: bash

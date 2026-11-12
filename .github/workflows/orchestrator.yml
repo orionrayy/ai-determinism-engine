@@ -58,6 +58,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Restore encrypted orchestrator state
+        id: state_restore
+        env:
+          ORCHESTRATOR_STATE_ENCRYPTION_KEY: ${{ secrets.ORCHESTRATOR_STATE_ENCRYPTION_KEY }}
+          ORCHESTRATOR_STATE_BRANCH: orchestrator-state
+        run: node orchestrator/state_branch.mjs restore
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
@@ -220,39 +227,12 @@ jobs:
           if [ "$ORCHESTRATOR_APPROVE_HIGH_RISK" = "true" ]; then args+=(--approve-high-risk); fi
           python3 orchestrator/orchestrator.py "${args[@]}"
 
-      - name: Persist state
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .orchestrator
-          if git diff --cached --quiet; then
-            exit 0
-          fi
-          git commit -m "chore(orchestrator): persist workflow state"
-
-          # A human merge or another non-orchestrator writer may advance main while
-          # this runner is executing. Rebase the state commit onto fresh main and
-          # retry the fast-forward push a bounded number of times. Conflicts fail
-          # closed instead of overwriting a concurrent state writer.
-          for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
-              exit 0
-            fi
-
-            git fetch origin main
-            if ! git rebase origin/main; then
-              git rebase --abort || true
-              echo "State persistence rebase conflict; refusing to overwrite concurrent main state."
-              exit 1
-            fi
-            sleep $((attempt * 2))
-          done
-
-          echo "State persistence push failed after bounded retries."
-          exit 1
+      - name: Persist encrypted orchestrator state
+        if: always() && steps.state_restore.outcome == 'success'
+        env:
+          ORCHESTRATOR_STATE_ENCRYPTION_KEY: ${{ secrets.ORCHESTRATOR_STATE_ENCRYPTION_KEY }}
+          ORCHESTRATOR_STATE_BRANCH: orchestrator-state
+        run: node orchestrator/state_branch.mjs persist
 
       - name: Job summary
         if: always()
@@ -302,7 +282,15 @@ jobs:
           ref: main
           fetch-depth: 1
 
+      - name: Restore encrypted orchestrator state
+        id: state_restore
+        env:
+          ORCHESTRATOR_STATE_ENCRYPTION_KEY: ${{ secrets.ORCHESTRATOR_STATE_ENCRYPTION_KEY }}
+          ORCHESTRATOR_STATE_BRANCH: orchestrator-state
+        run: node orchestrator/state_branch.mjs restore
+
       - name: Dispatch stale workflows
+        id: dispatch_recovery
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -315,40 +303,27 @@ jobs:
           set -euo pipefail
           python3 -m orchestrator.scheduled_recovery
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Persist encrypted state after recovery
+        if: always() && steps.state_restore.outcome == 'success'
+        env:
+          ORCHESTRATOR_STATE_ENCRYPTION_KEY: ${{ secrets.ORCHESTRATOR_STATE_ENCRYPTION_KEY }}
+          ORCHESTRATOR_STATE_BRANCH: orchestrator-state
+        run: node orchestrator/state_branch.mjs persist
 
-          if [ -d ".orchestrator/workflows" ]; then
-            git add .orchestrator/workflows
-          fi
-
-          if git diff --cached --quiet; then
-            if [ "$(cat /tmp/orchestrator_recovery_failures.json)" = "[]" ]; then
-              exit 0
-            fi
-            echo "Recovery completed with one or more dispatch failures."
+      - name: Validate scheduled recovery outcome
+        if: always() && steps.state_restore.outcome == 'success'
+        shell: bash
+        env:
+          DISPATCH_OUTCOME: ${{ steps.dispatch_recovery.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$DISPATCH_OUTCOME" != "success" ]; then
+            echo "Scheduled recovery dispatch step did not complete successfully."
             exit 1
           fi
-
-          git commit -m "chore(orchestrator): compact terminal workflow state"
-
-          for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
-              if [ "$(cat /tmp/orchestrator_recovery_failures.json)" = "[]" ]; then
-                exit 0
-              fi
-              echo "Recovery completed with one or more dispatch failures."
-              exit 1
-            fi
-
-            git fetch origin main
-            if ! git rebase origin/main; then
-              git rebase --abort || true
-              echo "Terminal-state compaction rebase conflict; refusing to overwrite concurrent state."
-              exit 1
-            fi
-            sleep $((attempt * 2))
-          done
-
-          echo "Terminal-state compaction push failed after bounded retries."
-          exit 1
+          marker=/tmp/orchestrator_recovery_failures.json
+          if [ -f "$marker" ] && [ "$(cat "$marker")" != "[]" ]; then
+            echo "Recovery completed with one or more dispatch failures."
+            cat "$marker"
+            exit 1
+          fi

@@ -176,7 +176,9 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('def run()', runtime)
         self.assertIn('def main()', runtime)
         self.assertIn('subprocess.run(', runtime)
-        self.assertIn('git add .orchestrator/workflows', self.orchestrator)
+        self.assertIn('node orchestrator/state_branch.mjs persist', recovery)
+        self.assertIn('save_state(state)', runtime)
+        self.assertNotIn('git push origin HEAD:main', self.orchestrator)
 
     def test_scheduled_recovery_runtime_preserves_dispatch_semantics(self):
         runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
@@ -188,9 +190,12 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn('status == "waiting_approval"', runtime)
         self.assertIn('recovery_event_id(candidate_workflow)', runtime)
 
-    def test_scheduled_recovery_compaction_tolerates_missing_shard_directory(self):
+    def test_scheduled_recovery_compaction_persists_through_state_adapter(self):
         workflow = read_workflow_text()
-        self.assertIn('if [ -d ".orchestrator/workflows" ]', workflow)
+        runtime = (ROOT / 'orchestrator' / 'scheduled_recovery.py').read_text()
+        self.assertIn('save_state(state)', runtime)
+        self.assertIn('node orchestrator/state_branch.mjs persist', workflow)
+        self.assertNotIn('git add .orchestrator/workflows', workflow)
 
     def test_scheduled_recovery_only_dispatches_per_workflow(self):
         self.assertIn("schedule-recovery:", self.orchestrator)
@@ -311,13 +316,17 @@ class ActionsConfigTests(unittest.TestCase):
     def test_worker_enables_durability_barrier(self):
         self.assertIn('ORCHESTRATOR_DURABILITY_BARRIER: "true"', self.orchestrator)
 
-    def test_state_persistence_retries_after_main_advances(self):
-        self.assertIn("git fetch origin main", self.orchestrator)
-        self.assertIn("git rebase origin/main", self.orchestrator)
-        self.assertIn("for attempt in 1 2 3", self.orchestrator)
-        self.assertIn("git push origin HEAD:main", self.orchestrator)
-        self.assertIn("State persistence rebase conflict; refusing to overwrite concurrent main state.", self.orchestrator)
-        self.assertIn("State persistence push failed after bounded retries.", self.orchestrator)
+    def test_state_persistence_uses_encrypted_branch_and_conflict_aware_merge(self):
+        self.assertIn("node orchestrator/state_branch.mjs restore", self.orchestrator)
+        self.assertIn("node orchestrator/state_branch.mjs persist", self.orchestrator)
+        self.assertNotIn("git push origin HEAD:main", self.orchestrator)
+        adapter = (ROOT / "orchestrator" / "state_branch_persist.mjs").read_text()
+        self.assertIn("mergeSnapshots(base.snapshot, local, remote.snapshot)", adapter)
+        self.assertIn("STATE_WRITE_CONFLICT", adapter)
+        self.assertIn("runGit(root, ['push', 'origin'", adapter)
+        self.assertIn("retries = 5", adapter)
+        self.assertNotIn("['push', '--force", adapter)
+        self.assertNotIn("push --force", adapter)
 
 if __name__ == '__main__':
     unittest.main()
