@@ -15,6 +15,10 @@ on:
       - main
     paths:
       - "orchestrator/**"
+      - "orchestrator/state_branch.mjs"
+      - "orchestrator/test_state_branch.mjs"
+      - "orchestrator/test_repository_governance.py"
+      - ".github/workflows/repository-governance.yml"
       - "control-plane/**"
       - "render.yaml"
       - "bridge_server.py"
@@ -86,6 +90,9 @@ jobs:
         run: python -m json.tool contracts/task-envelope.schema.json >/dev/null && python -m json.tool contracts/skill-manifest.schema.json >/dev/null && python -m json.tool contracts/checkpoint-manifest.schema.json >/dev/null && python -m json.tool contracts/worker-registration.schema.json >/dev/null
       - name: Control-plane Worker syntax
         run: node --check control-plane/cloudflare/src/worker.js
+
+      - name: Encrypted state branch syntax and tests
+        run: node --check orchestrator/state_branch.mjs && node --test orchestrator/test_state_branch.mjs
       - name: Import smoke
         run: python -c "import orchestrator.orchestrator" && python orchestrator/orchestrator.py --help >/dev/null
 
