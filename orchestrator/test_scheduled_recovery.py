@@ -389,10 +389,10 @@ class ScheduledRecoveryTests(unittest.TestCase):
         from unittest.mock import patch
 
         state = {"workflows": {}}
-        with patch("scheduled_recovery.load_state", return_value=state), patch(
-            "scheduled_recovery.compact_terminal_workflows",
+        with patch("orchestrator.load_state", return_value=state), patch(
+            "orchestrator.compact_terminal_workflows",
             return_value=["wf-terminal"],
-        ), patch("scheduled_recovery.save_state") as save_state, patch.dict(
+        ), patch("orchestrator.save_state") as save_state, patch.dict(
             os.environ,
             {"REPOSITORY": "owner/repo", "SCHEDULE_RUN_ID": "run-1"},
             clear=False,
