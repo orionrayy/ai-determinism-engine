@@ -385,5 +385,23 @@ class ScheduledRecoveryTests(unittest.TestCase):
         self.assertEqual(_normalize_stderr(" \r\n\t "), "")
 
 
+    def test_terminal_compaction_is_persisted_to_workflow_shards(self):
+        from unittest.mock import patch
+
+        state = {"workflows": {}}
+        with patch("scheduled_recovery.load_state", return_value=state), patch(
+            "scheduled_recovery.compact_terminal_workflows",
+            return_value=["wf-terminal"],
+        ), patch("scheduled_recovery.save_state") as save_state, patch.dict(
+            os.environ,
+            {"REPOSITORY": "owner/repo", "SCHEDULE_RUN_ID": "run-1"},
+            clear=False,
+        ):
+            dispatched, compacted, failures = __import__(
+                "scheduled_recovery"
+            ).run()
+        self.assertEqual((dispatched, compacted, failures), (0, 1, []))
+        save_state.assert_called_once_with(state)
+
 if __name__ == "__main__":
     unittest.main()
