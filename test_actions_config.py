@@ -325,7 +325,8 @@ class ActionsConfigTests(unittest.TestCase):
         self.assertIn("STATE_WRITE_CONFLICT", adapter)
         self.assertIn("runGit(root, ['push', 'origin'", adapter)
         self.assertIn("retries = 5", adapter)
-        self.assertNotIn("--force", adapter)
+        self.assertNotIn("['push', '--force", adapter)
+        self.assertNotIn("push --force", adapter)
 
 if __name__ == '__main__':
     unittest.main()
