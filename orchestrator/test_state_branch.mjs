@@ -112,6 +112,28 @@ test('remote lookup errors cannot masquerade as a missing state branch', () => {
   }
 });
 
+test('an existing but empty state branch fails closed without clearing local state', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ade-state-empty-remote-'));
+  const env = runtimeEnv(root);
+  let bare;
+  try {
+    bare = setupRemote(root);
+    git(root, 'checkout', '--orphan', 'empty-state');
+    git(root, 'commit', '--allow-empty', '-m', 'create empty state branch');
+    git(root, 'push', 'origin', 'HEAD:refs/heads/orchestrator-state');
+    git(root, 'checkout', 'main');
+    const legacy = fs.readFileSync(path.join(root, '.orchestrator', 'state.json'), 'utf8');
+    assert.throws(
+      () => restoreState({ root, env }),
+      error => error.code === 'STATE_BRANCH_EMPTY',
+    );
+    assert.equal(fs.readFileSync(path.join(root, '.orchestrator', 'state.json'), 'utf8'), legacy);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    if (bare) fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
 test('missing state key fails closed', () => {
   assert.throws(() => restoreState({ root: process.cwd(), env: { GITHUB_REPOSITORY: 'owner/repo' } }), error => error.code === 'STATE_KEY_MISSING_OR_INVALID');
 });
