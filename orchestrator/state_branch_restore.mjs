@@ -57,6 +57,12 @@ export function readRemoteSnapshot(root, commit, keys, ctx) {
   const objects = new Map();
   if (!commit) return { snapshot: result, objects };
   const names = runGit(root, ['ls-tree', '-r', '--name-only', commit]).split('\n').filter(Boolean);
+  if (names.length === 0) {
+    throw new StateBranchError(
+      'Encrypted state branch exists but contains no state objects; refusing to clear checked-out state.',
+      'STATE_BRANCH_EMPTY',
+    );
+  }
   if (names.length > MAX_STATE_FILES) throw new StateBranchError('Remote state branch exceeds object-count limit.', 'STATE_FILE_COUNT_LIMIT');
   let totalBytes = 0;
   for (const objectPath of names) {
