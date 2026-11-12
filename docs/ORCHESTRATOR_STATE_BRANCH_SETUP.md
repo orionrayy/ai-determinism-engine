@@ -11,7 +11,7 @@ Runtime files in .orchestrator are serialized as independent objects. Logical pa
 The dedicated branch must contain only encrypted objects at:
 .orchestrator-state/v1/<opaque-token>.enc
 
-Unexpected paths, invalid envelopes, authentication failures, symlinks, unsupported filesystem objects, size-limit violations and missing keys fail closed. The research cache is ephemeral and excluded from persistence. Git history still reveals commit timing, object count and approximate ciphertext sizes; it does not reveal logical paths or plaintext payloads.
+Unexpected paths, invalid envelopes, authentication failures, symlinks, unsupported filesystem objects, size-limit violations, missing keys and an existing but empty state branch fail closed. An empty/malformed remote is never treated as a first-time bootstrap, so checked-out legacy state is not cleared by an incomplete state branch. The research cache is ephemeral and excluded from persistence. Git history still reveals commit timing, object count and approximate ciphertext sizes; it does not reveal logical paths or plaintext payloads.
 
 This protects state confidentiality at rest in a public repository. It does not replace access control. The state branch remains publicly readable and can be deleted or corrupted by a repository writer. Restrict repository write access and keep the master key outside the repository.
 
