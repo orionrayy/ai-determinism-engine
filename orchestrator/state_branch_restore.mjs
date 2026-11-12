@@ -41,7 +41,10 @@ export function readBaseCheckpoint(filePath) {
 
 export function remoteBranchCommit(root, branch) {
   const ref = `refs/heads/${branch}`;
-  const remote = runGit(root, ['ls-remote', '--heads', 'origin', ref], { allowFailure: true });
+  // A successful ls-remote with empty stdout means the branch is absent.
+  // Authentication/network/remote failures must throw; they must never trigger
+  // the one-time legacy bootstrap path.
+  const remote = runGit(root, ['ls-remote', '--heads', 'origin', ref]);
   if (!remote.trim()) return null;
   runGit(root, ['fetch', '--no-tags', 'origin', `+${ref}:refs/remotes/origin/${branch}`]);
   const commit = runGit(root, ['rev-parse', `refs/remotes/origin/${branch}`]).trim();
