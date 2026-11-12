@@ -8,7 +8,7 @@ import { persistState } from './state_branch_persist.mjs';
 export { DEFAULT_STATE_BRANCH, OBJECT_ROOT, MAX_STATE_FILES, MAX_STATE_FILE_BYTES, MAX_STATE_TOTAL_BYTES, VERSION, StateBranchError, runGit, resolveContext, resolveKeys, normalizeStatePath, pathToken, aad } from './state_branch_core.mjs';
 export { encryptStateObject, decryptStateObject } from './state_branch_crypto.mjs';
 export { snapshotDirectory, mergeSnapshots } from './state_branch_snapshot.mjs';
-export { restoreState } from './state_branch_restore.mjs';
+export { restoreState, baseCheckpointPath, writeBaseCheckpoint, readBaseCheckpoint, remoteBranchCommit, readRemoteSnapshot } from './state_branch_restore.mjs';
 export { persistState } from './state_branch_persist.mjs';
 
 function main() {
