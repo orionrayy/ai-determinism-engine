@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { StateBranchError, decryptStateObject, encryptStateObject, mergeSnapshots, normalizeStatePath, persistState, restoreState, snapshotDirectory } from './state_branch.mjs';
+import { StateBranchError, decryptStateObject, encryptStateObject, mergeSnapshots, normalizeStatePath, persistState, remoteBranchCommit, restoreState, snapshotDirectory } from './state_branch.mjs';
 
 function makeKeys() {
   const master = crypto.randomBytes(32);
@@ -95,6 +95,20 @@ test('git integration persists ciphertext only and restores state', () => {
     fs.rmSync(root, { recursive: true, force: true });
     if (bare) fs.rmSync(bare, { recursive: true, force: true });
     fs.rmSync(inspect, { recursive: true, force: true });
+  }
+});
+
+test('remote lookup errors cannot masquerade as a missing state branch', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ade-state-remote-error-'));
+  try {
+    git(root, 'init');
+    git(root, 'remote', 'add', 'origin', path.join(root, 'missing-origin.git'));
+    assert.throws(
+      () => remoteBranchCommit(root, 'orchestrator-state'),
+      error => error.code === 'GIT_COMMAND_FAILED',
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
