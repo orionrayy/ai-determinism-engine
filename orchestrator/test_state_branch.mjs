@@ -118,10 +118,13 @@ test('an existing but empty state branch fails closed without clearing local sta
   let bare;
   try {
     bare = setupRemote(root);
-    git(root, 'checkout', '--orphan', 'empty-state');
-    git(root, 'commit', '--allow-empty', '-m', 'create empty state branch');
-    git(root, 'push', 'origin', 'HEAD:refs/heads/orchestrator-state');
-    git(root, 'checkout', 'main');
+    const emptyTree = execFileSync('git', ['mktree'], {
+      cwd: root, input: '', encoding: 'utf8',
+    }).trim();
+    const emptyCommit = execFileSync('git', ['commit-tree', emptyTree, '-m', 'create empty state branch'], {
+      cwd: root, encoding: 'utf8',
+    }).trim();
+    git(root, 'push', 'origin', `${emptyCommit}:refs/heads/orchestrator-state`);
     const legacy = fs.readFileSync(path.join(root, '.orchestrator', 'state.json'), 'utf8');
     assert.throws(
       () => restoreState({ root, env }),
