@@ -2355,3 +2355,9 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Added Windows PowerShell and POSIX MCP client configuration examples; the bootstrap script keeps the local stdio server isolated from the MCP client working directory.
 - Added the official browser_find action to the task policy and JSON schema.
 - These changes refine Phase 1 only. Live MCP-to-orchestrator policy enforcement remains pending.
+
+## Playwright unit-test import correction — 2026-11-20
+
+- PR #199 CI run 44671106891 passed Python compile, browser runtime doctor, both browser JSON schema syntax checks, control-plane Worker syntax, import smoke, Actionlint, and embedded workflow Python syntax.
+- The Unit tests step then ran 464 tests but errored importing the new test_browser_policy because repository CI uses unittest discover -s orchestrator, causing the discovered test module to be imported top-level while the test used a package-qualified orchestrator.browser_policy import.
+- Updated test imports to support both package-relative execution and unittest's top-level discovery mode. A new CI run on the corrected head is required; the test suite has not yet passed.

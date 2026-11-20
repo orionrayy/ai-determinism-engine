@@ -1,14 +1,25 @@
 import unittest
 
-from orchestrator.browser_policy import (
-    BrowserPolicyError,
-    BrowserTask,
-    browser_task_digest,
-    build_browser_evidence,
-    evaluate_browser_task,
-    target_origin,
-    validate_target_url,
-)
+try:
+    from .browser_policy import (
+        BrowserPolicyError,
+        BrowserTask,
+        browser_task_digest,
+        build_browser_evidence,
+        evaluate_browser_task,
+        target_origin,
+        validate_target_url,
+    )
+except ImportError:  # unittest discover -s orchestrator imports this as a top-level module.
+    from browser_policy import (
+        BrowserPolicyError,
+        BrowserTask,
+        browser_task_digest,
+        build_browser_evidence,
+        evaluate_browser_task,
+        target_origin,
+        validate_target_url,
+    )
 
 
 def make_task(**overrides):
