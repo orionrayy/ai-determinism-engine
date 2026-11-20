@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orionrayy.github.io/ai-determinism-engine/contracts/browser-task.schema.json",
+  "title": "Browser Task",
+  "description": "Trusted supervisor task contract for a Playwright MCP action. Input is transient and must not be persisted without redaction.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["workflow_id", "node_id", "action", "effect"],
+  "properties": {
+    "protocol": { "type": "string", "const": "ai-orchestrator.browser/v1" },
+    "workflow_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" },
+    "node_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" },
+    "action": {
+      "type": "string",
+      "enum": [
+        "navigate", "navigate_back", "navigate_forward", "snapshot", "find",
+        "take_screenshot", "wait_for", "tabs", "click", "hover", "drag",
+        "type", "fill_form", "select_option", "check", "uncheck", "press_key",
+        "handle_dialog", "file_upload", "close", "browser_navigate",
+        "browser_navigate_back", "browser_navigate_forward", "browser_snapshot",
+        "browser_find", "browser_click", "browser_hover", "browser_drag",
+        "browser_type", "browser_fill_form", "browser_select_option",
+        "browser_check", "browser_uncheck", "browser_press_key",
+        "browser_take_screenshot", "browser_wait_for", "browser_tabs",
+        "browser_handle_dialog", "browser_file_upload", "browser_close"
+      ]
+    },
+    "effect": {
+      "type": "string",
+      "enum": ["read_only", "reversible", "external_write", "financial", "destructive", "account_admin", "unknown"]
+    },
+    "target_url": { "type": "string", "format": "uri", "maxLength": 4096 },
+    "input": { "type": "object", "maxProperties": 128 }
+  }
+}

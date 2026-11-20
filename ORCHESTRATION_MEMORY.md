@@ -2338,3 +2338,34 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Automatic logs: `/storage/emulated/0/ShaolinMonks/co-op-session.jsonl` and `co-op-android.jsonl`; each rotates at 8 MiB, keeping active + four archives. Requires Android shared/all-files storage permission. Logs contain diagnostic/network metadata and local/private IPs, not save/ISO contents, SSID/password, session tokens or public IP.
 - The APK is now distributable as the diagnostic/shadow experiment build. It is NOT a playable multiplayer release: `gameplay_input_injection_enabled=false`, `simulation_barrier_verified=false`, `multiplayer_playable=false`, external acceptance gates incomplete, WAN/public Wi-Fi disabled, trusted private LAN only.
 - Next device work: install the exact same APK on two Android ARM64 phones; request shared storage permission; validate log creation; host/join on the same trusted private hotspot; run paired synthetic shadow exchange within the four-second prompt; repeat across three fresh sessions; STOP/RESET; collect both devices' logs. Then raw RTT/loss calibration via Termux probe. Do not promote to gameplay until simulation barrier, local P2 baseline, real game-state probes, save identity and physical 21-scenario acceptance are complete.
+
+## Playwright browser automation foundation — 2026-11-20
+
+- Implementation branch: feat/playwright-browser-foundation, based on main head d2ce29e3b1c80fc9b77634d613b75ca5ab098670.
+- Added the official Microsoft Playwright MCP runtime configuration, pinned to @playwright/mcp 0.0.86 (Apache-2.0); Node.js 20+ is required. The launcher uses npx --yes with an exact package version; no project-level npm install is required.
+- Added local stdio launch scripts for PowerShell and POSIX, persistent per-workspace and ephemeral session profiles, an opt-in extended capability profile, ignored local browser state/artifact paths, and a Node-based configuration doctor.
+- Added orchestrator/browser_policy.py with strict task shape/action validation, HTTPS + loopback HTTP URL checks, high-risk effect classes, exact semantic SHA-256 approval binding, and minimal evidence metadata that stores only target origin (not path/query/fragment or page content).
+- Added browser task/evidence JSON Schemas and stdlib regression tests. CI is extended to validate the runtime configuration, schemas, and Python suite.
+- Architecture checkpoint: Phase 1 local runtime foundation only. The Python policy module is not yet invoked by a live MCP action adapter; do not mark browser execution integrated with the orchestrator, hosted ChatGPT runtime, or GitHub Actions. No remote browser service, paid API, Cloudflare resource, deployment, or production side effect was introduced.
+- Validation at checkpoint creation: CI result must be checked for this exact feature branch head before any PASS claim. Real browser launch and login/profile verification still require a Node.js 20+ local machine and a compatible MCP client.
+
+## Playwright foundation correction — 2026-11-20
+
+- Browser launchers now set the process working directory to browser/playwright so persistent userDataDir, outputDir, and ephemeral artifacts resolve inside the nested .state directory covered by browser/playwright/.gitignore.
+- Added Windows PowerShell and POSIX MCP client configuration examples; the bootstrap script keeps the local stdio server isolated from the MCP client working directory.
+- Added the official browser_find action to the task policy and JSON schema.
+- These changes refine Phase 1 only. Live MCP-to-orchestrator policy enforcement remains pending.
+
+## Playwright unit-test import correction — 2026-11-20
+
+- PR #199 CI run 44671106891 passed Python compile, browser runtime doctor, both browser JSON schema syntax checks, control-plane Worker syntax, import smoke, Actionlint, and embedded workflow Python syntax.
+- The Unit tests step then ran 464 tests but errored importing the new test_browser_policy because repository CI uses unittest discover -s orchestrator, causing the discovered test module to be imported top-level while the test used a package-qualified orchestrator.browser_policy import.
+- Updated test imports to support both package-relative execution and unittest's top-level discovery mode. A new CI run on the corrected head is required; the test suite has not yet passed.
+
+## Playwright foundation CI acceptance — 2026-11-20
+
+- Latest checked feature branch head before this memory-only checkpoint: 88f09ba3639cbafa274b14e78ca8a01f7ad9aa60.
+- PR #199 CI run 44671263769 / run number 2453 completed successfully. The workflow's source/config, browser runtime doctor, browser JSON Schemas, control-plane worker syntax, import smoke, Actionlint, and embedded workflow Python checks passed.
+- Unit test execution passed: 483 tests from orchestrator discovery plus 86 additional gateway/bridge/action-config tests. The control-plane evaluation harness also passed.
+- This validates the repository code/config at that head. It does not validate an interactive browser launch on a user machine, persistent login behavior, or a live MCP connection to the ChatGPT hosted runtime.
+- PR #199 remains a draft; do not merge automatically. Phase 2 remains the typed MCP stdio execution adapter that calls policy preflight before every browser action and reconciles uncertain side effects.

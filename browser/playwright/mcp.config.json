@@ -1,0 +1,17 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "isolated": false,
+    "userDataDir": "./.state/profile",
+    "launchOptions": { "headless": false },
+    "contextOptions": { "viewport": { "width": 1440, "height": 900 } }
+  },
+  "capabilities": ["core", "core-navigation", "core-tabs", "core-input", "testing"],
+  "saveSession": true,
+  "sharedBrowserContext": false,
+  "snapshot": { "mode": "full" },
+  "timeouts": { "action": 10000, "navigation": 60000, "expect": 10000 },
+  "allowUnrestrictedFileAccess": false,
+  "outputDir": "./.state/artifacts",
+  "console": { "level": "warning" }
+}

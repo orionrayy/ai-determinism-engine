@@ -1,0 +1,9 @@
+.state/
+node_modules/
+playwright-report/
+test-results/
+*.har
+*.webm
+*.zip
+storage-state*.json
+auth*.json

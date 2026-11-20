@@ -1,0 +1,13 @@
+{
+  "name": "ai-determinism-engine-playwright-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pinned Microsoft Playwright MCP runtime configuration for ai-determinism-engine",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "browser:mcp": "npx --yes @playwright/mcp@0.0.86 --config ./mcp.config.json",
+    "browser:mcp:ephemeral": "npx --yes @playwright/mcp@0.0.86 --config ./mcp.config.ephemeral.json",
+    "browser:doctor": "node ./doctor.mjs"
+  }
+}

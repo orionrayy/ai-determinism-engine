@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "playwright-ai-determinism-engine": {
+      "command": "bash",
+      "args": [
+        "/ABSOLUTE/PATH/TO/ai-determinism-engine/browser/playwright/start.sh"
+      ]
+    }
+  }
+}

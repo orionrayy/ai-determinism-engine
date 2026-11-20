@@ -48,3 +48,9 @@ The planner adds deterministic intent hints from `.agents/skills/catalog.json`. 
 The router verifies the prompt file against a pinned Git blob SHA, creates a `SkillManifest`, registers and authorizes it through `enterprise_runtime.SkillRegistry`, then injects its text only into matching LLM nodes. Context is guidance, not executable code. Routing is local and free-first; it does not invoke an external API. Mixed writing/UI tasks are routed by node role, capability and instruction so unrelated guidance is not applied indiscriminately.
 
 "Humanized" means readable, non-formulaic, evidence-grounded writing; it does not mean fabricating experiences or evading AI-detection systems. Missing practicum observations, measurements, quotes and citations must be identified rather than invented.
+
+## Playwright browser foundation
+
+The local browser runtime is documented in browser/README.md. The first release uses the official Microsoft Playwright MCP server over stdio, with a pinned package version and local persistent/ephemeral profiles.
+
+orchestrator/browser_policy.py provides stdlib-only task validation, URL checks, effect classification, exact-intent approval digests, and minimal evidence records. It is a preflight contract, not yet a live MCP execution adapter. Do not add browser capabilities to orchestrator/tools.json or claim browser execution from GitHub Actions until the MCP transport, approval enforcement, evidence reconciliation, and integration tests are implemented.
