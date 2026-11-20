@@ -12,5 +12,5 @@
   "sharedBrowserContext": false,
   "allowUnrestrictedFileAccess": false,
   "timeouts": { "action": 10000, "navigation": 60000, "expect": 10000 },
-  "outputDir": "./browser/playwright/.state/advanced-artifacts"
+  "outputDir": "./.state/advanced-artifacts"
 }
