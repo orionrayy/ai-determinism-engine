@@ -13,12 +13,11 @@ if ($nodeMajor -lt 20) {
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$rootDir = (Resolve-Path (Join-Path $scriptDir "../..")).Path
 $config = Join-Path $scriptDir "mcp.config.json"
 
-Push-Location $rootDir
+Push-Location $scriptDir
 try {
-    & npx --yes @playwright/mcp@0.0.86 --config $config @args
+    & npx --yes @playwright/mcp@0.0.86 --config $config
     exit $LASTEXITCODE
 }
 finally {

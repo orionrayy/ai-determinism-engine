@@ -2,7 +2,6 @@
 set -eu
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 
 if ! command -v node >/dev/null 2>&1; then
   echo "Node.js 20+ is required. Install Node.js and retry." >&2
@@ -15,5 +14,5 @@ if [ "$NODE_MAJOR" -lt 20 ]; then
   exit 2
 fi
 
-cd "$ROOT_DIR"
+cd "$SCRIPT_DIR"
 exec npx --yes @playwright/mcp@0.0.86 --config "$SCRIPT_DIR/mcp.config.json" "$@"

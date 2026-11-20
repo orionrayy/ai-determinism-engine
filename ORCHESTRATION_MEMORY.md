@@ -2348,3 +2348,10 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - Added browser task/evidence JSON Schemas and stdlib regression tests. CI is extended to validate the runtime configuration, schemas, and Python suite.
 - Architecture checkpoint: Phase 1 local runtime foundation only. The Python policy module is not yet invoked by a live MCP action adapter; do not mark browser execution integrated with the orchestrator, hosted ChatGPT runtime, or GitHub Actions. No remote browser service, paid API, Cloudflare resource, deployment, or production side effect was introduced.
 - Validation at checkpoint creation: CI result must be checked for this exact feature branch head before any PASS claim. Real browser launch and login/profile verification still require a Node.js 20+ local machine and a compatible MCP client.
+
+## Playwright foundation correction — 2026-11-20
+
+- Browser launchers now set the process working directory to browser/playwright so persistent userDataDir, outputDir, and ephemeral artifacts resolve inside the nested .state directory covered by browser/playwright/.gitignore.
+- Added Windows PowerShell and POSIX MCP client configuration examples; the bootstrap script keeps the local stdio server isolated from the MCP client working directory.
+- Added the official browser_find action to the task policy and JSON schema.
+- These changes refine Phase 1 only. Live MCP-to-orchestrator policy enforcement remains pending.

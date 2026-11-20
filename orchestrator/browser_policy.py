@@ -22,7 +22,7 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
 READ_ONLY_ACTIONS = frozenset({
-    "navigate", "navigate_back", "navigate_forward", "snapshot",
+    "navigate", "navigate_back", "navigate_forward", "snapshot", "find",
     "take_screenshot", "wait_for", "tabs",
 })
 INTERACTIVE_ACTIONS = frozenset({

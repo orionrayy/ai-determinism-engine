@@ -13,14 +13,16 @@
     "action": {
       "type": "string",
       "enum": [
-        "navigate", "navigate_back", "navigate_forward", "reload", "snapshot", "find",
-        "take_screenshot", "wait_for", "tabs", "click", "hover", "drag", "type",
-        "fill_form", "select_option", "check", "uncheck", "press_key", "handle_dialog",
-        "file_upload", "close", "browser_navigate", "browser_snapshot", "browser_click",
-        "browser_type", "browser_fill_form", "browser_select_option", "browser_check",
-        "browser_uncheck", "browser_press_key", "browser_take_screenshot", "browser_wait_for",
-        "browser_tabs", "browser_handle_dialog", "browser_file_upload", "browser_drag",
-        "browser_hover", "browser_navigate_back", "browser_navigate_forward", "browser_reload"
+        "navigate", "navigate_back", "navigate_forward", "snapshot", "find",
+        "take_screenshot", "wait_for", "tabs", "click", "hover", "drag",
+        "type", "fill_form", "select_option", "check", "uncheck", "press_key",
+        "handle_dialog", "file_upload", "close", "browser_navigate",
+        "browser_navigate_back", "browser_navigate_forward", "browser_snapshot",
+        "browser_find", "browser_click", "browser_hover", "browser_drag",
+        "browser_type", "browser_fill_form", "browser_select_option",
+        "browser_check", "browser_uncheck", "browser_press_key",
+        "browser_take_screenshot", "browser_wait_for", "browser_tabs",
+        "browser_handle_dialog", "browser_file_upload", "browser_close"
       ]
     },
     "effect": {

@@ -11,6 +11,6 @@
   "snapshot": { "mode": "full" },
   "timeouts": { "action": 10000, "navigation": 60000, "expect": 10000 },
   "allowUnrestrictedFileAccess": false,
-  "outputDir": "./browser/playwright/.state/ephemeral-artifacts",
+  "outputDir": "./.state/ephemeral-artifacts",
   "console": { "level": "warning" }
 }

@@ -27,6 +27,7 @@ def make_task(**overrides):
 class BrowserPolicyTests(unittest.TestCase):
     def test_normalizes_official_tool_names(self):
         self.assertEqual(make_task(action="browser_snapshot").action, "snapshot")
+        self.assertEqual(make_task(action="browser_find").action, "find")
 
     def test_navigate_requires_target(self):
         with self.assertRaises(BrowserPolicyError):

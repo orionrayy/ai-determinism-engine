@@ -1,12 +1,14 @@
 {
   "mcpServers": {
     "playwright-ai-determinism-engine": {
-      "command": "npx",
+      "command": "powershell.exe",
       "args": [
-        "--yes",
-        "@playwright/mcp@0.0.86",
-        "--config",
-        "/ABSOLUTE/PATH/TO/ai-determinism-engine/browser/playwright/mcp.config.json"
+        "-NoLogo",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "C:/ABSOLUTE/PATH/TO/ai-determinism-engine/browser/playwright/start.ps1"
       ]
     }
   }

@@ -9,7 +9,7 @@ This directory owns the browser automation boundary. The first runtime is the of
 - Chromium is downloaded automatically on first browser use.
 - Stdio is the default transport; no public HTTP listener is started.
 - A persistent per-workspace browser profile and an isolated ephemeral profile are provided.
-- Browser state, downloads, screenshots, traces, and storage-state files are kept under ignored local paths.
+- Browser state, downloads, screenshots, traces, and storage-state files are kept under browser/playwright/.state/.
 
 ## Start
 
@@ -19,17 +19,20 @@ Windows PowerShell:
 Linux / macOS:
     bash browser/playwright/start.sh
 
-Alternatively, run the package script from its directory:
-    cd browser/playwright
-    npm run browser:mcp
+Package scripts:
+    npm --prefix browser/playwright run browser:mcp
+    npm --prefix browser/playwright run browser:mcp:ephemeral
 
-There is no project-level npm install requirement. The launcher uses npx --yes with an exact package version. The first invocation fetches the pinned MCP package; the browser binary is downloaded on first browser use.
+There is no project-level npm install requirement. The launchers use npx --yes with an exact package version and set the working directory to browser/playwright so profile and artifact paths stay inside its ignored .state directory.
 
-For an MCP client, copy browser/playwright/mcp-client.example.json and replace its absolute config path with the actual repository path. The client must support local stdio MCP servers.
+The MCP client examples use the same launchers:
+- mcp-client.example.json is for Windows PowerShell.
+- mcp-client.posix.example.json is for Linux/macOS.
+Replace the example absolute path with the actual repository location. The client must support local stdio MCP servers.
 
 ## Session modes
 
-- mcp.config.json: persistent per-workspace profile stored under browser/playwright/.state/profile. Sign in manually in the browser. Do not use this profile for untrusted tasks or share it across unrelated users.
+- mcp.config.json: persistent profile stored under browser/playwright/.state/profile. Sign in manually in the browser. Do not use this profile for untrusted tasks or share it across unrelated users.
 - mcp.config.ephemeral.json: in-memory isolated context for public, credential-free automation and CI smoke checks.
 - mcp.config.full.example.json: opt-in extended capabilities (network, storage, devtools, PDF, vision). Review permissions before enabling them.
 
