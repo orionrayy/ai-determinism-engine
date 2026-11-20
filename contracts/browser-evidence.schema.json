@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orionrayy.github.io/ai-determinism-engine/contracts/browser-evidence.schema.json",
+  "title": "Browser Evidence Record",
+  "description": "Minimal browser evidence metadata. Full URLs, page contents, cookies, headers, and browser profile data are intentionally excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "record_id", "protocol", "workflow_id", "node_id", "action",
+    "target_origin", "observed_at", "outcome", "semantic_sha256"
+  ],
+  "properties": {
+    "record_id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "protocol": { "type": "string", "const": "ai-orchestrator.browser/v1" },
+    "workflow_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" },
+    "node_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" },
+    "action": { "type": "string" },
+    "target_origin": { "type": ["string", "null"], "pattern": "^https?://[^/]+$" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "outcome": { "type": "string", "enum": ["succeeded", "failed", "uncertain"] },
+    "semantic_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "output_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "screenshot_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" }
+  }
+}

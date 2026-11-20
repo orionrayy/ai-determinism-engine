@@ -1,0 +1,16 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "isolated": true,
+    "launchOptions": { "headless": true }
+  },
+  "capabilities": [
+    "core", "core-navigation", "core-tabs", "core-input",
+    "network", "storage", "testing", "devtools", "pdf", "vision"
+  ],
+  "saveSession": false,
+  "sharedBrowserContext": false,
+  "allowUnrestrictedFileAccess": false,
+  "timeouts": { "action": 10000, "navigation": 60000, "expect": 10000 },
+  "outputDir": "./browser/playwright/.state/advanced-artifacts"
+}

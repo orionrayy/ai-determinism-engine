@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "playwright-ai-determinism-engine": {
+      "command": "npx",
+      "args": [
+        "--yes",
+        "@playwright/mcp@0.0.86",
+        "--config",
+        "/ABSOLUTE/PATH/TO/ai-determinism-engine/browser/playwright/mcp.config.json"
+      ]
+    }
+  }
+}

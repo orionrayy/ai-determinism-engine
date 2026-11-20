@@ -248,3 +248,7 @@ These primitives are side-effect-free and do not replace the supervisor. Existin
 Free-first, read-only SOL market scanner and paper-trading research. Phase 0 has no live order capability. Context, runbook, source inventory, risk policy, and session handoff are in [projects/sol-sentinel](projects/sol-sentinel/README.md). See [the conversation context](projects/sol-sentinel/CONVERSATION_CONTEXT.md) and [the project session log](projects/sol-sentinel/SESSION_LOG.md).
 
 Current development branch: `feat/sol-sentinel-paper-trader-v1`. Its CI workflow checks Python compilation and offline unit tests. The IDR 3,500,000 target is an aspiration, not a forecast or guarantee.
+
+## Browser automation foundation
+
+A free-first local Playwright MCP foundation is available in [browser setup](browser/README.md) and the [browser architecture](docs/BROWSER_AUTOMATION_ARCHITECTURE.md). The initial runtime is pinned to the official Microsoft @playwright/mcp 0.0.86 package. No project-level npm install is required.
