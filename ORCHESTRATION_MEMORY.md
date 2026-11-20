@@ -2361,3 +2361,11 @@ Bid observations are highly skewed relative to median; do not size orders from t
 - PR #199 CI run 44671106891 passed Python compile, browser runtime doctor, both browser JSON schema syntax checks, control-plane Worker syntax, import smoke, Actionlint, and embedded workflow Python syntax.
 - The Unit tests step then ran 464 tests but errored importing the new test_browser_policy because repository CI uses unittest discover -s orchestrator, causing the discovered test module to be imported top-level while the test used a package-qualified orchestrator.browser_policy import.
 - Updated test imports to support both package-relative execution and unittest's top-level discovery mode. A new CI run on the corrected head is required; the test suite has not yet passed.
+
+## Playwright foundation CI acceptance — 2026-11-20
+
+- Latest checked feature branch head before this memory-only checkpoint: 88f09ba3639cbafa274b14e78ca8a01f7ad9aa60.
+- PR #199 CI run 44671263769 / run number 2453 completed successfully. The workflow's source/config, browser runtime doctor, browser JSON Schemas, control-plane worker syntax, import smoke, Actionlint, and embedded workflow Python checks passed.
+- Unit test execution passed: 483 tests from orchestrator discovery plus 86 additional gateway/bridge/action-config tests. The control-plane evaluation harness also passed.
+- This validates the repository code/config at that head. It does not validate an interactive browser launch on a user machine, persistent login behavior, or a live MCP connection to the ChatGPT hosted runtime.
+- PR #199 remains a draft; do not merge automatically. Phase 2 remains the typed MCP stdio execution adapter that calls policy preflight before every browser action and reconciles uncertain side effects.
