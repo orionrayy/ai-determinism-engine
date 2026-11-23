@@ -26,6 +26,7 @@ except ImportError:
         RobinMCPError,
         build_docker_command,
         validate_investigation_input,
+        _sanitize_report,
     )
 
 
