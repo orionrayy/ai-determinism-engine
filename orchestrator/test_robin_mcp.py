@@ -31,7 +31,7 @@ except ImportError:
 ROOT = Path(__file__).resolve().parents[1]
 ROBIN_COMMIT = "b5d4f5f509fac39d65d3a28fd1d78b56efbeeaf4"
 VALID_GOAL = (
-    "Use Robin preset threat_intel to investigate "
+    "I explicitly selected Robin preset threat_intel. Use it to investigate "
     "APT example indicators for defensive incident response. "
     "Authorization basis: authorized SOC incident response for our organization's "
     "publicly disclosed incident."
@@ -129,6 +129,23 @@ class RobinInputValidationTests(unittest.TestCase):
         payload["authorization_basis"] = "authorized testing for a different company and purpose"
         with self.assertRaisesRegex(RobinMCPError, "authorization"):
             validate_investigation_input(payload, VALID_GOAL)
+
+    def test_rejects_preset_mentioned_without_explicit_user_selection(self):
+        goal = (
+            "Use Robin preset threat_intel to investigate APT example indicators. "
+            "Authorization basis: authorized SOC incident response for our organization's "
+            "publicly disclosed incident."
+        )
+        with self.assertRaisesRegex(RobinMCPError, "explicit.*select|user.*select"):
+            validate_investigation_input(valid_payload(), goal)
+
+    def test_rejects_authorization_basis_without_explicit_label(self):
+        goal = (
+            "I explicitly selected Robin preset threat_intel. "
+            "APT example indicators are within authorized SOC incident response."
+        )
+        with self.assertRaisesRegex(RobinMCPError, "Authorization basis"):
+            validate_investigation_input(valid_payload(), goal)
 
     def test_rejects_personal_identity_and_corporate_espionage_presets(self):
         for preset in ("personal_identity", "corporate_espionage"):
