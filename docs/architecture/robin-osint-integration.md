@@ -33,7 +33,7 @@ The engine invokes Robin's stateful `robin_investigate` one-call pipeline throug
 ## Authorization and safety boundary
 
 - The tool is available only when `ROBIN_ENABLE_TOKEN=true`; the workflow maps this from the repository variable above. Default is disabled.
-- Live mode and the engine's existing high-risk approval gate are required.
+- Live mode and the engine's existing high-risk approval gate are required. The registry marks `external_request`, which forces `required_risk()` to `high` even if the planner submits `risk=low`; the `osint` capability maps to a dedicated non-parallel `investigator` agent role.
 - The caller must supply an explicit supported preset, set `user_chose=true`, and provide an authorization basis that is present verbatim in the original goal. The planner must not invent user consent or authorization.
 - Supported presets are limited to `threat_intel` and `ransomware_malware`. The `personal_identity` and `corporate_espionage` presets are excluded from the engine adapter.
 - Query, instruction, scrape depth, thread count, and response size are bounded. The adapter adds instructions to exclude credentials and personal identifiers from the report.
