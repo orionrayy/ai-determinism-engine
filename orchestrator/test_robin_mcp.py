@@ -80,13 +80,6 @@ for line in sys.stdin:
     elif method == "notifications/initialized":
         continue
     elif method == "tools/list":
-        if mode == "rpc_error":
-            print(json.dumps({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "error": {"code": -32000, "message": "api_key=sk-123456789012345678901234 owner jane.doe@example.com"}
-            }), flush=True)
-            continue
         if mode == "mismatched":
             print(json.dumps({
                 "jsonrpc": "2.0",
@@ -117,6 +110,13 @@ for line in sys.stdin:
             "result": {"tools": [{"name": "robin_investigate"}]}
         }), flush=True)
     elif method == "tools/call":
+        if mode == "call_error":
+            print(json.dumps({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "error": {"code": -32000, "message": "api_key=sk-123456789012345678901234 owner jane.doe@example.com"}
+            }), flush=True)
+            continue
         if mode == "hang":
             continue
         print(json.dumps({
@@ -284,11 +284,13 @@ class RobinMCPProtocolTests(unittest.TestCase):
             result = client.call_tool("robin_investigate", {"query": "APT example"})
             self.assertIn("grounded result", result["content"][0]["text"])
 
-    def test_redacts_secrets_in_jsonrpc_error_messages(self):
-        with self.make_client("rpc_error") as client:
+    def test_redacts_secrets_and_marks_jsonrpc_investigation_errors_uncertain(self):
+        with self.make_client("call_error") as client:
             client.initialize()
+            client.list_tools()
             with self.assertRaises(RobinMCPError) as caught:
-                client.list_tools()
+                client.call_tool("robin_investigate", {"query": "APT example"})
+        self.assertTrue(caught.exception.uncertain)
         self.assertNotIn("sk-123456789012345678901234", str(caught.exception))
         self.assertNotIn("jane.doe@example.com", str(caught.exception))
         self.assertIn("[REDACTED", str(caught.exception))

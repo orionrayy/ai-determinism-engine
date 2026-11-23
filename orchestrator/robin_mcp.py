@@ -387,7 +387,10 @@ class MCPStdioClient:
                 message_text = _sanitize_report(
                     str(error.get("message") or "MCP request failed")
                 )
-                raise RobinMCPError("Robin MCP " + method + " failed: " + message_text)
+                raise RobinMCPError(
+                    "Robin MCP " + method + " failed: " + message_text,
+                    uncertain=uncertain_on_timeout,
+                )
             result = message.get("result")
             if not isinstance(result, dict):
                 raise RobinMCPError("Robin MCP " + method + " returned no result object")
