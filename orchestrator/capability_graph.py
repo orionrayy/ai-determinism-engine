@@ -53,9 +53,13 @@ def _requires_env(tool: str, registry: dict[str, dict[str, Any]]) -> bool:
 
 
 def _env_available(tool: str, registry: dict[str, dict[str, Any]], live: bool) -> bool:
+    spec = registry.get(tool, {})
+    enabled_env = spec.get("enabled_env")
+    if enabled_env and os.environ.get(str(enabled_env)) != "true":
+        return False
     if not live:
         return True
-    env_name = registry.get(tool, {}).get("required_env")
+    env_name = spec.get("required_env")
     return not env_name or bool(os.environ.get(env_name))
 
 
