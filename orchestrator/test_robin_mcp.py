@@ -17,6 +17,7 @@ try:
         build_docker_command,
         validate_investigation_input,
         _sanitize_report,
+        cleanup_robin_volume,
     )
 except ImportError:
     import orchestrator as engine_module
@@ -192,6 +193,27 @@ class RobinReportSanitizationTests(unittest.TestCase):
         ):
             self.assertNotIn(secret, sanitized)
         self.assertIn("[REDACTED", sanitized)
+
+
+class RobinVolumeCleanupTests(unittest.TestCase):
+    def test_rejects_untrusted_volume_names_without_invoking_docker(self):
+        with patch("robin_mcp.shutil.which") as which, patch("robin_mcp._run_docker_check") as run:
+            self.assertFalse(cleanup_robin_volume("random-volume"))
+            self.assertFalse(cleanup_robin_volume("robin-../../etc/passwd"))
+            which.assert_not_called()
+            run.assert_not_called()
+
+    def test_removes_only_a_validated_robin_volume(self):
+        from unittest.mock import Mock
+        completed = Mock(returncode=0)
+        with patch("robin_mcp.shutil.which", return_value="/usr/bin/docker"), patch(
+            "robin_mcp._run_docker_check", return_value=completed
+        ) as run:
+            self.assertTrue(cleanup_robin_volume("robin-" + "a" * 24))
+        run.assert_called_once_with(
+            ["docker", "volume", "rm", "--force", "robin-" + "a" * 24],
+            timeout=15.0,
+        )
 
 
 class RobinDockerCommandTests(unittest.TestCase):
