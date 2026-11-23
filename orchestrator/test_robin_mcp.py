@@ -80,6 +80,18 @@ for line in sys.stdin:
     elif method == "notifications/initialized":
         continue
     elif method == "tools/list":
+        if mode == "mismatched":
+            print(json.dumps({
+                "jsonrpc": "2.0",
+                "id": request_id + 99,
+                "result": {"tools": [{"name": "not-the-response"}]}
+            }), flush=True)
+            print(json.dumps({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"tools": [{"name": "robin_investigate"}]}
+            }), flush=True)
+            continue
         if mode == "malformed":
             print("{not-json", flush=True)
             break
@@ -265,6 +277,12 @@ class RobinMCPProtocolTests(unittest.TestCase):
             result = client.call_tool("robin_investigate", {"query": "APT example"})
             self.assertIn("grounded result", result["content"][0]["text"])
 
+    def test_ignores_mismatched_response_ids_until_matching_response_arrives(self):
+        with self.make_client("mismatched") as client:
+            client.initialize()
+            tools = client.list_tools()
+            self.assertEqual([item["name"] for item in tools], ["robin_investigate"])
+
     def test_rejects_malformed_jsonrpc_message(self):
         with self.make_client("malformed") as client:
             client.initialize()
@@ -346,6 +364,49 @@ class RobinEngineIntegrationTests(unittest.TestCase):
         with patch.object(engine_module, "cleanup_robin_volume", return_value=True) as cleanup:
             engine_module.cleanup_persisted_robin_volumes(workflow)
         cleanup.assert_called_once_with("robin-" + "d" * 24)
+
+    def test_live_robin_execution_fails_closed_for_non_allowlisted_gemini_model(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        node = engine_module.Node(
+            id="robin-node",
+            capability="osint",
+            tool="robin_mcp",
+            risk="high",
+            input={"action": "investigate"},
+        )
+        with patch.dict(os.environ, {"ORCHESTRATOR_FREE_ONLY": "true"}, clear=False), patch.object(
+            engine_module, "load_registry", return_value=registry
+        ), patch.object(
+            engine_module, "require_live_effect_contract"
+        ), patch.object(
+            engine_module, "configured_gemini_model", return_value="gemini-paid-model"
+        ), patch.object(
+            engine_module, "gemini_model_allowed", return_value=False
+        ), patch.object(engine_module, "execute_robin_mcp") as adapter:
+            with self.assertRaisesRegex(RuntimeError, "free-model allowlist"):
+                engine_module.execute_node(node, "authorized user goal", dry_run=False)
+        adapter.assert_not_called()
+
+    def test_uncertain_robin_effect_failure_blocks_retry_and_replan(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        node = engine_module.Node(
+            id="robin-node",
+            capability="osint",
+            tool="robin_mcp",
+            risk="high",
+            input={"action": "investigate"},
+        )
+        failure_class, retry_allowed, uncertain = engine_module.execution_failure_policy(
+            node,
+            RobinMCPError("MCP call timed out", uncertain=True),
+            registry,
+            dry_run=False,
+        )
+        self.assertFalse(retry_allowed)
+        self.assertTrue(uncertain)
+        self.assertEqual(node.error["retry_reason"], "effect_contract_retry_blocked")
+        self.assertTrue(node.error["retry_blocked_after_side_effect_start"])
+        self.assertTrue(node.error["replan_blocked_after_side_effect_start"])
 
     def test_registry_exposes_high_risk_non_retryable_osint_capability(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
