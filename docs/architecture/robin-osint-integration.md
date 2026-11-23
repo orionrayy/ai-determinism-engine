@@ -17,6 +17,10 @@ A small standard-library Python adapter speaks MCP JSON-RPC over Docker stdio. I
 
 The engine exposes one stateful Robin action: `robin_investigate`. The other Robin tools are session-scoped; splitting search, filtering, scraping, and synthesis across separately spawned MCP servers would lose Robin's session state. The one-call action already runs those stages and persists the completed report.
 
+## Integration surface
+
+The engine invokes Robin's stateful `robin_investigate` one-call pipeline through MCP stdio. Robin executes query refinement, search, filter, scrape, synthesis, and save within the same server session. This is the supported end-to-end research capability. The Streamlit UI and individual low-level MCP tools are not exposed as separate engine nodes because Robin's session state would be lost when each engine node starts a new MCP process. Robin's saved file is temporary; the sanitized investigation report is retained in the engine's durable node output.
+
 ## Runtime and cost policy
 
 - Runtime is opt-in. The GitHub Actions runner only initializes the Robin submodule and builds the image when the repository variable `ORCHESTRATOR_ROBIN_ENABLED=true` is set.
