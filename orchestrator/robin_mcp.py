@@ -211,6 +211,9 @@ def build_docker_command(image: str, volume_name: str) -> list[str]:
         raise RobinMCPError("invalid Robin investigation volume name")
     return [
         "docker", "run", "--rm", "-i",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges:true",
+        "--pids-limit=256",
         "--mount",
         "type=volume,source=" + volume_name + ",target=/app/investigations",
         "-e", "GOOGLE_API_KEY",
