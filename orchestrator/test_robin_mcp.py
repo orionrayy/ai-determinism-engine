@@ -5,9 +5,11 @@ import os
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 try:
+    from . import orchestrator as engine_module
     from .robin_mcp import (
         MAX_MCP_MESSAGE_BYTES,
         MCPStdioClient,
@@ -16,6 +18,7 @@ try:
         validate_investigation_input,
     )
 except ImportError:
+    import orchestrator as engine_module
     from robin_mcp import (
         MAX_MCP_MESSAGE_BYTES,
         MCPStdioClient,
@@ -218,7 +221,8 @@ class RobinEngineIntegrationTests(unittest.TestCase):
             "robin_mcp",
         )
         spec = registry["robin_mcp"]
-        self.assertEqual(spec["required_env"], "ROBIN_ENABLE_TOKEN")
+        self.assertEqual(spec["required_env"], "GEMINI_API_KEY")
+        self.assertEqual(spec["enabled_env"], "ROBIN_ENABLE_TOKEN")
         self.assertEqual(spec["allowed_actions"], ["investigate"])
         self.assertEqual(spec["risk"], "high")
         effect = spec["effect_contracts"]["investigate"]
@@ -226,6 +230,36 @@ class RobinEngineIntegrationTests(unittest.TestCase):
         self.assertEqual(effect["retry"], "blocked")
         self.assertEqual(effect["reconciliation"], "none")
         self.assertEqual(effect["fencing"], "engine")
+
+    def test_robin_is_unavailable_without_exact_enable_token(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_API_KEY": "configured",
+            "ROBIN_ENABLE_TOKEN": "false",
+        }, clear=False):
+            self.assertFalse(engine_module.tool_available("robin_mcp", registry))
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_API_KEY": "configured",
+        }, clear=False):
+            os.environ.pop("ROBIN_ENABLE_TOKEN", None)
+            self.assertFalse(engine_module.tool_available("robin_mcp", registry))
+
+    def test_robin_is_available_only_when_enabled_and_gemini_key_exists(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "GEMINI_API_KEY": "configured",
+            "ROBIN_ENABLE_TOKEN": "true",
+        }, clear=False):
+            self.assertTrue(engine_module.tool_available("robin_mcp", registry))
+        with patch.dict(os.environ, {
+            "ORCHESTRATOR_FREE_ONLY": "true",
+            "ROBIN_ENABLE_TOKEN": "true",
+        }, clear=False):
+            os.environ.pop("GEMINI_API_KEY", None)
+            self.assertFalse(engine_module.tool_available("robin_mcp", registry))
 
     def test_upstream_submodule_is_pinned_to_audited_commit(self):
         gitmodules = (ROOT / ".gitmodules").read_text()
