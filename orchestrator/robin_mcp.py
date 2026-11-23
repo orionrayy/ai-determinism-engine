@@ -528,6 +528,21 @@ def _run_docker_check(command: Sequence[str], *, timeout: float = 30.0) -> subpr
         raise RobinMCPError("Docker command could not be started: " + str(exc)) from exc
 
 
+def cleanup_robin_volume(volume_name: Any) -> bool:
+    """Remove only a validated Robin volume after its result is durably checkpointed."""
+    if not isinstance(volume_name, str) or not re.fullmatch(
+        r"robin-[a-f0-9]{24}", volume_name
+    ):
+        return False
+    if shutil.which("docker") is None:
+        return False
+    result = _run_docker_check(
+        ["docker", "volume", "rm", "--force", volume_name],
+        timeout=15.0,
+    )
+    return result.returncode == 0
+
+
 def execute_robin_mcp(node: Any, goal: str, model: str) -> dict[str, Any]:
     """Run one explicitly authorized Robin investigation through its MCP server."""
     if os.environ.get("ROBIN_ENABLE_TOKEN") != "true":
@@ -672,9 +687,8 @@ def execute_robin_mcp(node: Any, goal: str, model: str) -> dict[str, Any]:
                 },
             }
     finally:
-        # A confirmed report is now captured by the engine's durable node output.
-        # For pre-investigation failures the volume is empty. Keep it only when
-        # the investigation result is uncertain so the operator can inspect it
-        # on a persistent self-hosted runner; never retry that effect blindly.
-        if volume_created and (completed or not investigation_started):
+        # Keep every volume once a non-idempotent investigation has started.
+        # The orchestrator removes it only after persist_workflow() confirms the
+        # node output is durable. On uncertainty, leave it for operator review.
+        if volume_created and not investigation_started:
             _run_docker_check(["docker", "volume", "rm", "--force", volume_name], timeout=15.0)
