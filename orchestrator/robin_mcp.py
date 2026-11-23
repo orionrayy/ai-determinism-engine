@@ -384,7 +384,9 @@ class MCPStdioClient:
                 continue
             error = message.get("error")
             if isinstance(error, dict):
-                message_text = str(error.get("message") or "MCP request failed")
+                message_text = _sanitize_report(
+                    str(error.get("message") or "MCP request failed")
+                )
                 raise RobinMCPError("Robin MCP " + method + " failed: " + message_text)
             result = message.get("result")
             if not isinstance(result, dict):
@@ -586,7 +588,6 @@ def execute_robin_mcp(node: Any, goal: str, model: str) -> dict[str, Any]:
         )
     volume_created = False
     investigation_started = False
-    completed = False
     try:
         created = _run_docker_check(["docker", "volume", "create", volume_name])
         if created.returncode != 0:
@@ -668,7 +669,6 @@ def execute_robin_mcp(node: Any, goal: str, model: str) -> dict[str, Any]:
                 )
             if not status and report.lower().startswith(("error:", "failed:")):
                 raise RobinMCPError("Robin investigation failed: " + report[:1500], uncertain=True)
-            completed = True
             return {
                 "ok": True,
                 "status": status or "completed",
