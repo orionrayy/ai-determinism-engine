@@ -49,8 +49,9 @@
 - [ ] **Step 2: Run** `python -m unittest discover -s orchestrator -p "test_robin_mcp.py" -v`; expected: failures because the adapter module/functions do not exist.
 - [ ] **Step 3: Write failing MCP protocol tests** using a real local Python child process that implements initialize, tools/list, and tools/call; cover notifications, malformed responses, and oversized messages.
 - [ ] **Step 4: Implement the minimal stdlib JSON-RPC stdio client** with bounded messages, request deadlines, process cleanup, and no sampling capability.
-- [ ] **Step 5: Implement the Robin Docker invocation** with the pinned image name, workflow/node-derived temporary volume, only `GOOGLE_API_KEY` and `ROBIN_MODEL` forwarded, health polling, and untrusted-result metadata.
-- [ ] **Step 6: Verify** the adapter tests pass and inspect the subprocess argv to prove no secret value or untrusted argument is interpolated into a shell command.
+- [ ] **Step 5: Implement the Robin Docker invocation** with the pinned image name, workflow/node-derived volume, only `GOOGLE_API_KEY` and `ROBIN_MODEL` forwarded, Tor health polling, UTF-8 bounded report output, untrusted-result metadata, and best-effort report redaction.
+- [ ] **Step 6: Preserve the named volume after the non-idempotent tool starts; remove it only after `persist_workflow()` succeeds. Keep it on uncertain failures or persistence errors; do not delete results before the durable checkpoint exists.
+- [ ] **Step 7: Verify** the adapter tests pass and inspect the subprocess argv to prove no secret value or untrusted argument is interpolated into a shell command.
 
 ### Task 2: Engine routing, policy, and effect admission
 

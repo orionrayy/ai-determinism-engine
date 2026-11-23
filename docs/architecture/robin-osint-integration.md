@@ -40,7 +40,7 @@ The engine exposes one stateful Robin action: `robin_investigate`. The other Rob
 
 Robin's investigation makes external network requests through Tor and saves the result inside Robin's investigations directory. It is therefore high-risk and side-effecting. Its effect contract uses engine identity and fencing, with retry blocked and no automatic reconciliation. An uncertain result must not be run again automatically.
 
-The investigation volume is scoped to the workflow/node identity. On a confirmed successful response, the engine's normal durable workflow output/checkpoint becomes the durable result and the temporary Docker volume is removed. On an uncertain failure, automatic retry and replan remain blocked. Runner-local Robin files are not promised to survive destruction of a GitHub-hosted runner.
+The investigation volume is scoped to the workflow/node identity. On a confirmed successful response, the adapter retains the named Docker volume and returns its ID with the report. The engine removes that volume only after `persist_workflow()` has successfully committed the completed node output to its authoritative durable state (Git shard or distributed control plane). A failed persistence leaves the volume intact. On an uncertain failure, automatic retry and replan remain blocked and the volume is retained for operator inspection. GitHub-hosted runner disks and Docker volumes remain ephemeral when that runner is destroyed. The adapter enforces a 240 KiB UTF-8 report budget to fit the engine's bounded durable workflow-state envelope.
 
 ## Cloudflare boundary
 
