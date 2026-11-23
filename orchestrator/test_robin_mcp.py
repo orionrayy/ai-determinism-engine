@@ -16,6 +16,7 @@ try:
         RobinMCPError,
         build_docker_command,
         validate_investigation_input,
+        _sanitize_report,
     )
 except ImportError:
     import orchestrator as engine_module
@@ -173,6 +174,23 @@ class RobinInputValidationTests(unittest.TestCase):
         long_goal = VALID_GOAL + " " + ("x" * 3100)
         with self.assertRaisesRegex(RobinMCPError, "instructions"):
             validate_investigation_input(payload, long_goal)
+
+
+class RobinReportSanitizationTests(unittest.TestCase):
+    def test_redacts_credential_fields_api_tokens_and_personal_emails(self):
+        report = (
+            "password: hunter2 api_key=sk-123456789012345678901234 "
+            "owner jane.doe@example.com access token ghp_abcdefghijklmnopqrstuvwx"
+        )
+        sanitized = _sanitize_report(report)
+        for secret in (
+            "hunter2",
+            "sk-123456789012345678901234",
+            "jane.doe@example.com",
+            "ghp_abcdefghijklmnopqrstuvwx",
+        ):
+            self.assertNotIn(secret, sanitized)
+        self.assertIn("[REDACTED", sanitized)
 
 
 class RobinDockerCommandTests(unittest.TestCase):
