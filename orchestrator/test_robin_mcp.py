@@ -273,6 +273,66 @@ class RobinMCPProtocolTests(unittest.TestCase):
 
 
 class RobinEngineIntegrationTests(unittest.TestCase):
+    def test_persist_workflow_cleans_robin_volume_only_after_durable_write(self):
+        calls = []
+        workflow = {
+            "id": "wf-robin-checkpoint",
+            "status": "running",
+            "nodes": [{
+                "id": "investigate",
+                "tool": "robin_mcp",
+                "status": "completed",
+                "output": {
+                    "runtime": {"temporary_volume": "robin-" + "b" * 24}
+                },
+            }],
+        }
+        with patch.object(
+            engine_module, "_write_workflow_shard",
+            side_effect=lambda _workflow: calls.append("durable-write"),
+        ), patch.object(
+            engine_module, "cleanup_persisted_robin_volumes",
+            side_effect=lambda _workflow: calls.append("cleanup"),
+        ):
+            engine_module.persist_workflow(workflow)
+        self.assertEqual(calls, ["durable-write", "cleanup"])
+
+    def test_persist_workflow_does_not_cleanup_when_durable_write_fails(self):
+        workflow = {
+            "id": "wf-robin-checkpoint-failure",
+            "status": "running",
+            "nodes": [{
+                "id": "investigate",
+                "tool": "robin_mcp",
+                "status": "completed",
+                "output": {
+                    "runtime": {"temporary_volume": "robin-" + "c" * 24}
+                },
+            }],
+        }
+        with patch.object(
+            engine_module, "_write_workflow_shard",
+            side_effect=OSError("simulated durable write failure"),
+        ), patch.object(engine_module, "cleanup_persisted_robin_volumes") as cleanup:
+            with self.assertRaisesRegex(OSError, "durable write failure"):
+                engine_module.persist_workflow(workflow)
+        cleanup.assert_not_called()
+
+    def test_cleanup_persisted_robin_volumes_only_selects_completed_robin_nodes(self):
+        workflow = {
+            "nodes": [
+                {"tool": "robin_mcp", "status": "completed",
+                 "output": {"runtime": {"temporary_volume": "robin-" + "d" * 24}}},
+                {"tool": "robin_mcp", "status": "failed",
+                 "output": {"runtime": {"temporary_volume": "robin-" + "e" * 24}}},
+                {"tool": "github", "status": "completed",
+                 "output": {"runtime": {"temporary_volume": "robin-" + "f" * 24}}},
+            ]
+        }
+        with patch.object(engine_module, "cleanup_robin_volume", return_value=True) as cleanup:
+            engine_module.cleanup_persisted_robin_volumes(workflow)
+        cleanup.assert_called_once_with("robin-" + "d" * 24)
+
     def test_registry_exposes_high_risk_non_retryable_osint_capability(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
         self.assertEqual(
