@@ -383,6 +383,25 @@ class RobinEngineIntegrationTests(unittest.TestCase):
             engine_module.cleanup_persisted_robin_volumes(workflow)
         cleanup.assert_called_once_with("robin-" + "d" * 24)
 
+    def test_enforce_node_policy_promotes_robin_to_high_risk_before_approval(self):
+        registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
+        node = engine_module.Node(
+            id="robin-node",
+            capability="osint",
+            tool="robin_mcp",
+            risk="low",
+            input={"action": "investigate"},
+        )
+        with patch.dict(os.environ, {
+            "ROBIN_ENABLE_TOKEN": "true",
+            "GEMINI_API_KEY": "configured",
+            "ORCHESTRATOR_FREE_ONLY": "true",
+        }, clear=False):
+            engine_module.enforce_node_policy([node], registry, live=True)
+        self.assertEqual(node.tool, "robin_mcp")
+        self.assertEqual(node.risk, "high")
+        self.assertEqual(engine_module.required_risk(node, registry), "high")
+
     def test_live_robin_execution_fails_closed_for_non_allowlisted_gemini_model(self):
         registry = json.loads((ROOT / "orchestrator" / "tools.json").read_text())
         node = engine_module.Node(

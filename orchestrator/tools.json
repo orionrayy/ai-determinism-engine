@@ -262,6 +262,7 @@
     "required_env": "GEMINI_API_KEY",
     "enabled_env": "ROBIN_ENABLE_TOKEN",
     "side_effects": [
+      "external_request",
       "tor_network_request",
       "investigation_artifact_write"
     ],
