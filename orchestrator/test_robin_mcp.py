@@ -17,6 +17,7 @@ try:
         build_docker_command,
         validate_investigation_input,
         _sanitize_report,
+        _tool_text,
         cleanup_robin_volume,
     )
 except ImportError:
@@ -179,6 +180,13 @@ class RobinInputValidationTests(unittest.TestCase):
 
 
 class RobinReportSanitizationTests(unittest.TestCase):
+    def test_rejects_utf8_report_that_exceeds_durable_byte_budget(self):
+        report = "é" * 130_000
+        with self.assertRaisesRegex(RobinMCPError, "UTF-8 byte budget"):
+            _tool_text({
+                "content": [{"type": "text", "text": report}],
+            })
+
     def test_redacts_credential_fields_api_tokens_and_personal_emails(self):
         report = (
             "password: hunter2 api_key=sk-123456789012345678901234 "
