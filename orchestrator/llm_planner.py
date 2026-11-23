@@ -115,6 +115,13 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         ]
     else:
         tools = all_tools
+    tools = [
+        key for key in tools
+        if (
+            not registry.get(key, {}).get('enabled_env')
+            or os.environ.get(str(registry.get(key, {}).get('enabled_env'))) == 'true'
+        )
+    ]
     bridge_inventory = {}
     if live:
         bridge_url = os.environ.get('ORCHESTRATOR_CONNECTOR_BRIDGE_URL', '').strip()
@@ -140,6 +147,10 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
         'Maximum 24 nodes. Dependencies must reference node ids. Build a true DAG: maximize independent nodes that can run in parallel when dependencies allow. For complex goals, prefer scatter-gather or parallel deliberation with distinct roles (researcher, skeptic, analyst, architect, implementer, tester, critic, publisher, communicator). Converge through a synthesis or critic node and avoid fake duplication. '
         'Use only these capabilities: ' + ', '.join(capabilities) + '. '
         'Use only these tools: ' + ', '.join(tools) + '. '
+        'Only select a capability when at least one of its registered tools appears in the allowed tools list. '
+        'For robin_mcp, use only when it appears in the allowed tools list. Create Robin nodes with action="investigate" and a payload object containing query, preset, user_chose, authorization_basis, and optional custom_instructions. '
+        'Do not invent consent or authorization: user_chose may be true only when the original Goal explicitly states that the user chose the preset, and authorization_basis must be copied verbatim from the original Goal. The exact query and supported preset must also be present in the original Goal. '
+        'Robin presets are restricted to threat_intel and ransomware_malware. Never choose personal_identity or corporate_espionage. '
         'Use low/medium/high/critical risk and mark external side effects high or critical. '
         'Prefer tools that require no credentials. Include a final validate node whose dependencies cover the outputs it must verify. For validation nodes, define contract.required_fields and/or contract.min_sources when deterministically checkable; declare artifacts as a list of expected deliverables. '
         'Live connector inventory (sanitized; empty means unavailable): ' + inventory_text + '. '
@@ -219,6 +230,15 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
             raise ValueError('artifacts must be an array')
         if not isinstance(payload, dict):
             raise ValueError('payload must be an object')
+        if tool == 'robin_mcp':
+            if capability != 'osint' or action != 'investigate':
+                raise ValueError('robin_mcp nodes require capability=osint and action=investigate')
+            if not isinstance(payload, dict):
+                raise ValueError('robin_mcp payload must be an object')
+            if set(payload) - {
+                'query', 'preset', 'user_chose', 'authorization_basis', 'custom_instructions'
+            }:
+                raise ValueError('robin_mcp payload contains unsupported fields')
         if tool == 'connector_bridge':
             if not connector or not action:
                 raise ValueError('connector_bridge nodes require connector and action')
@@ -246,6 +266,8 @@ def plan_goal(goal: str, registry: dict, Node, validate_dag, live: bool = False)
                 'artifacts': artifacts,
                 **({'connector': connector, 'action': action, 'payload': payload}
                    if tool == 'connector_bridge' else {}),
+                **({'action': action, **payload}
+                   if tool == 'robin_mcp' else {}),
             },
             'contract': contract,
         }

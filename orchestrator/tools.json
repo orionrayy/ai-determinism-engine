@@ -252,5 +252,34 @@
       "compile"
     ],
     "description": "Side-effect-free structured blueprint compiler"
+  },
+  "capability:osint": {
+    "default_tool": "robin_mcp",
+    "fallback_tools": [],
+    "description": "Authorized defensive dark-web threat intelligence through the pinned Robin MCP runtime."
+  },
+  "robin_mcp": {
+    "required_env": "GEMINI_API_KEY",
+    "enabled_env": "ROBIN_ENABLE_TOKEN",
+    "side_effects": [
+      "external_request",
+      "tor_network_request",
+      "investigation_artifact_write"
+    ],
+    "free_tier": true,
+    "risk": "high",
+    "allowed_actions": [
+      "investigate"
+    ],
+    "effect_contracts": {
+      "investigate": {
+        "identity": "engine",
+        "retry": "blocked",
+        "reconciliation": "none",
+        "fencing": "engine",
+        "notes": "Robin performs non-idempotent Tor research and saves an investigation; uncertain invocations must never be replayed automatically."
+      }
+    },
+    "description": "Runs one bounded, user-authorized Robin OSINT investigation via Docker MCP stdio. High-risk and non-retryable."
   }
 }

@@ -38,6 +38,18 @@ Workflow dispatch accepts a `max_parallel` input (1–8). The default is 4. Dry-
 - `.github/workflows/orchestrator.yml`: execution worker and scheduled resume.
 - `.github/workflows/orchestrator-tests.yml`: compile + unit-test gate.
 
+## Optional Robin OSINT capability
+
+The engine can route explicitly authorized defensive threat-intelligence workflows to the upstream [Robin](https://github.com/apurvsinghgautam/robin) MCP server. Robin remains a pinned MIT-licensed Git submodule at `vendor/robin`; its Docker image runs the Tor daemon and MCP stdio server in an isolated container. The engine retains DAG execution, approvals, checkpointing, policy, and evidence ownership.
+
+The runtime is **disabled by default**. Robin is assigned a dedicated non-parallel `investigator` role, and the `external_request` risk floor upgrades its node to `high` even if a planner proposes a lower risk. The normal approval gate therefore applies. Enable the repository variable `ORCHESTRATOR_ROBIN_ENABLED=true` to make the runner initialize the pinned submodule and build its image. A live investigation additionally requires the normal high-risk approval path, the existing `GEMINI_API_KEY`, and a Gemini model allowed by the active free-model registry. No additional Robin provider key is required or forwarded.
+
+Only `threat_intel` and `ransomware_malware` presets are allowed by the engine adapter. The original goal must explicitly contain the query, an explicit user preset selection, and an authorization basis under an `Authorization basis:` label; the planner is not permitted to invent those values. Example goal: `I explicitly selected Robin preset threat_intel to investigate APT example indicators. Authorization basis: the SOC team is investigating a documented incident in our own environment.`
+
+The engine invokes Robin's high-level `robin_investigate` pipeline as one MCP action; Robin performs its search, filtering, scraping, synthesis, and internal save within that call. The returned report becomes the engine's durable node output. Robin's interactive Streamlit UI and each low-level session-scoped MCP tool are not independently exposed as engine nodes. The temporary investigation volume is removed only after `persist_workflow()` confirms durable workflow-state storage; uncertain outcomes and failed persistence retain it for inspection. The adapter redacts common credential/token/email patterns and private-key blocks and caps report content at 240 KiB UTF-8. Redaction is best-effort, not comprehensive DLP.
+
+Investigations are networked, high-risk, and non-idempotent: an uncertain execution is blocked from retry/replan. Scraped pages and Robin reports remain untrusted data. Docker/Tor consume runner time and network; free-first policy does not guarantee zero infrastructure quota consumption. This integration is a GitHub Actions/container workload, not a Cloudflare Worker deployment.
+
 ## Repository-local agent skills
 
 This repository includes the project-scoped **Hallmark v2.0.0** design skill at [`.agents/skills/hallmark/SKILL.md`](.agents/skills/hallmark/SKILL.md). It provides design guidance, theme references, and a zero-dependency static UI linter for avoiding generic generated-looking interfaces.

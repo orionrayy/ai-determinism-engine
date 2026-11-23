@@ -29,6 +29,13 @@ AGENTS = {
         "Find evidence, sources, requirements, and external facts.",
         frozenset({"research"}),
     ),
+    "investigator": AgentProfile(
+        "investigator",
+        "Run explicitly authorized defensive OSINT investigations through the isolated Robin runtime.",
+        frozenset({"osint"}),
+        parallel_safe=False,
+        risk_ceiling="high",
+    ),
     "skeptic": AgentProfile(
         "skeptic",
         "Look for counterevidence, missing assumptions, contradictions, and edge cases.",
@@ -88,6 +95,7 @@ AGENTS = {
 
 ROLE_BY_CAPABILITY = {
     "research": "researcher",
+    "osint": "investigator",
     "analyze": "analyst",
     "draft": "analyst",
     "spec": "architect",

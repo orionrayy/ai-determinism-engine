@@ -4,6 +4,18 @@
 
 This file is the durable, version-controlled memory of the AI orchestration control plane. Before modifying the orchestrator, treat this document and the current source tree as the source of truth. Do not assume older conversation state is still accurate without checking the repository.
 
+## Robin OSINT integration — 2026-11-23
+
+- Integration branch: `feat/robin-osint-mcp-adapter`; draft PR #200 targets `main`. No merge, production activation, GitHub variable/secret mutation, or Cloudflare deployment has been performed.
+- Upstream Robin repository: `apurvsinghgautam/robin`, pinned to audited upstream commit `b5d4f5f509fac39d65d3a28fd1d78b56efbeeaf4`. Keep it as a Git submodule at `vendor/robin`, preserving MIT license and upstream attribution; do not copy/fork its source into engine core.
+- Runtime architecture: a standard-library JSON-RPC/MCP stdio client invokes Robin's own Docker image. Robin starts Tor in its container; no HTTP port, Cloudflare Worker, extra Python dependency, or paid provider is introduced.
+- The engine exposes `capability:osint` through `robin_mcp`, mapped to a dedicated non-parallel `investigator` agent role. `external_request` forces `required_risk()` to `high` even when planner input claims `risk=low`, so the normal live high-risk approval gate is mandatory. Runtime enablement is exact-token gated by `ROBIN_ENABLE_TOKEN=true`, sourced from repository variable `ORCHESTRATOR_ROBIN_ENABLED=true`; the default remains disabled. The tool requires the existing `GEMINI_API_KEY`, reuses the engine's configured Gemini model, and must pass `gemini_model_allowed` under hard free-only policy.
+- The adapter allows only `threat_intel` and `ransomware_malware`; it excludes `personal_identity` and `corporate_espionage`. The original goal must contain the exact query, an explicit preset choice, and user-provided authorization basis. Planner output cannot manufacture consent.
+- Robin investigations perform external Tor requests and save artifacts. The action is high risk and side-effecting, uses engine identity/fencing, and declares retry blocked with no automatic reconciliation. Uncertain invocation outcomes are never replayed or replanned. Scraped pages and report output remain untrusted; common credential/token/email patterns and private-key blocks are redacted, with a 240 KiB UTF-8 report ceiling. Successful Docker volumes are retained until `persist_workflow()` confirms durable node-state storage, then removed; failed/uncertain investigations or failed persistence keep the volume for inspection.
+- GitHub Actions should build the pinned image only when `ORCHESTRATOR_ROBIN_ENABLED=true`; do not enable that variable globally by default. CI evidence and further integration state are recorded in PR #200 and its commit history.
+- Latest validated integration code commit: `33b6becb83a2619186e7de6910e04ad9729243d5` (adds the dedicated `investigator` role and the regression test for `osint` risk-floor enforcement). Latest validated documentation/branch head: `6b4fbbfa399837f0a4b7e7fd3be2e328512182f8`. GitHub Actions run `45125680877` passed all steps: 494 unit tests, 86 secondary tests, Actionlint, compile/import/contract checks, and the control-plane evaluation harness. The run did not build the Docker image or execute a live Tor investigation because runtime remains disabled by default.
+- Cloudflare inventory read operations returned 401/403 authentication errors during the audit. Exact Cloudflare runtime inventory remains unverified; no Cloudflare resource was changed. The workload belongs on GitHub Actions or a container host, not Workers.
+
 
 ## GitHub–Cloudflare paired-platform policy — 2026-11-01
 
