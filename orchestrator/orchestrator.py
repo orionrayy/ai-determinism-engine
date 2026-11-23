@@ -74,7 +74,7 @@ try:
     from .claim_integrity import validate_truth_lock
     from .deterministic_codec import canonical_json, digest
     from .private_input import PrivateInputError, fetch_private_input
-    from .robin_mcp import execute_robin_mcp
+    from .robin_mcp import cleanup_robin_volume, execute_robin_mcp
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .context_budget import ContextBudgetError, pack_node_context
@@ -129,7 +129,7 @@ except ImportError:
     from claim_integrity import validate_truth_lock
     from deterministic_codec import canonical_json, digest
     from private_input import PrivateInputError, fetch_private_input
-    from robin_mcp import execute_robin_mcp
+    from robin_mcp import cleanup_robin_volume, execute_robin_mcp
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from context_budget import ContextBudgetError, pack_node_context
@@ -1817,6 +1817,25 @@ def hot_state_digest(workflow: dict[str, Any]) -> str:
     return hashlib.sha256(raw).hexdigest()
 
 
+def cleanup_persisted_robin_volumes(workflow: dict[str, Any]) -> None:
+    """Release successful Robin volumes only after workflow state is durable."""
+    for node in workflow.get("nodes", []):
+        if not isinstance(node, dict):
+            continue
+        if node.get("tool") != "robin_mcp" or node.get("status") != "completed":
+            continue
+        output = node.get("output")
+        runtime = output.get("runtime") if isinstance(output, dict) else None
+        volume = runtime.get("temporary_volume") if isinstance(runtime, dict) else None
+        if volume:
+            # Cleanup is best effort. A failed Docker removal must not turn an
+            # already durable workflow result into an execution failure.
+            try:
+                cleanup_robin_volume(volume)
+            except Exception:
+                pass
+
+
 def persist_workflow(workflow: dict[str, Any]) -> None:
     current_run_id = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ID", "").strip()
     raw_attempt = os.environ.get("ORCHESTRATOR_GITHUB_RUN_ATTEMPT", "").strip()
@@ -1854,6 +1873,7 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
         digest = hot_state_digest(workflow)
         previous_digest = ACTIVE_HOT_STATE_DIGEST.get()
         if previous_digest == digest:
+            cleanup_persisted_robin_volumes(workflow)
             return
         remote_state = sanitize_for_durable(workflow)
         expected = max(0, int(workflow.get("control_plane_state_version", 0)))
@@ -1905,6 +1925,7 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             workflow.pop("state_replica_error", None)
 
         ACTIVE_HOT_STATE_DIGEST.set(digest)
+        cleanup_persisted_robin_volumes(workflow)
         return
 
     authority = workflow_authority_mode(workflow)
@@ -1917,12 +1938,14 @@ def persist_workflow(workflow: dict[str, Any]) -> None:
             "ready",
         }:
             _write_workflow_shard(workflow)
+            cleanup_persisted_robin_volumes(workflow)
             return
         raise ControlPlaneError(
             "distributed workflow persistence requires an active control-plane lease"
         )
 
     _write_workflow_shard(workflow)
+    cleanup_persisted_robin_volumes(workflow)
 
 def new_id(prefix: str) -> str:
     """Generate a collision-resistant local identifier.
