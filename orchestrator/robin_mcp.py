@@ -17,6 +17,7 @@ ROBIN_DOCKER_IMAGE = "ai-orchestrator-robin:" + ROBIN_UPSTREAM_COMMIT[:12]
 MCP_PROTOCOL_VERSION = "2024-11-05"
 MAX_MCP_MESSAGE_BYTES = 512 * 1024
 MAX_REPORT_CHARS = 450_000
+MAX_REPORT_BYTES = 240 * 1024
 DEFAULT_INVESTIGATION_TIMEOUT = 600
 TOR_BOOTSTRAP_TIMEOUT = 120
 TOR_POLL_SECONDS = 5
@@ -493,6 +494,11 @@ def _tool_text(result: Mapping[str, Any]) -> str:
         raise RobinMCPError("Robin MCP returned an empty investigation result", uncertain=True)
     if len(text) > MAX_REPORT_CHARS:
         raise RobinMCPError("Robin report exceeds the durable output limit", uncertain=True)
+    if len(text.encode("utf-8")) > MAX_REPORT_BYTES:
+        raise RobinMCPError(
+            "Robin report exceeds the UTF-8 byte budget for durable workflow state",
+            uncertain=True,
+        )
     return text
 
 
