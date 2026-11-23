@@ -400,6 +400,7 @@ class RobinEngineIntegrationTests(unittest.TestCase):
             engine_module.enforce_node_policy([node], registry, live=True)
         self.assertEqual(node.tool, "robin_mcp")
         self.assertEqual(node.risk, "high")
+        self.assertEqual(node.agent_role, "investigator")
         self.assertEqual(engine_module.required_risk(node, registry), "high")
 
     def test_live_robin_execution_fails_closed_for_non_allowlisted_gemini_model(self):
