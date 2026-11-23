@@ -33,7 +33,7 @@ _PRESET_GOAL_ALIASES = {
 }
 _DEFENSIVE_INSTRUCTIONS = (
     "This is authorized defensive threat-intelligence research only. "
-    "Do not reproduce passwords, access tokens, session cookies, private keys, "
+    "Exclude credentials and personal data from reports. Do not reproduce passwords, access tokens, session cookies, private keys, "
     "government identity numbers, passport numbers, private residential addresses, "
     "or personal contact details. Redact personal data and credentials. "
     "Do not provide instructions to compromise accounts or systems, purchase or "

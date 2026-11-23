@@ -62,7 +62,7 @@
 
 **Interfaces:**
 - Registry declares `capability:osint` with `robin_mcp` as its only/default adapter.
-- `robin_mcp.required_env` is `ROBIN_ENABLE_TOKEN`; `allowed_actions` contains only `investigate`.
+- `robin_mcp.required_env` is `GEMINI_API_KEY`; `enabled_env` is `ROBIN_ENABLE_TOKEN`; `allowed_actions` contains only `investigate`.
 - `execute_node` delegates to `execute_robin_mcp(node, goal, model)` after the existing live effect-contract and free-only gates.
 - Planner omits `robin_mcp` unless `ROBIN_ENABLE_TOKEN == "true"`.
 
