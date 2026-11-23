@@ -91,11 +91,34 @@ def validate_investigation_input(
         )
     if payload.get("user_chose") is not True:
         raise RobinMCPError("user_chose must be explicitly true")
-    if not any(
-        _contains_goal_phrase(goal, alias)
-        for alias in _PRESET_GOAL_ALIASES[preset]
-    ):
+    preset_aliases = _PRESET_GOAL_ALIASES[preset]
+    if not any(_contains_goal_phrase(goal, alias) for alias in preset_aliases):
         raise RobinMCPError("preset must be explicitly present in the original user goal")
+    choice_phrases = tuple(
+        phrase
+        for alias in preset_aliases
+        for phrase in (
+            "i explicitly selected robin preset " + alias,
+            "i explicitly chose robin preset " + alias,
+            "i explicitly selected the " + alias + " preset",
+            "i explicitly chose the " + alias + " preset",
+            "i selected the " + alias + " preset",
+            "i chose the " + alias + " preset",
+            "the user explicitly selected the " + alias + " preset",
+            "the user explicitly chose the " + alias + " preset",
+        )
+    )
+    explicit_choice = (
+        any(_contains_goal_phrase(goal, phrase) for phrase in choice_phrases)
+        or (
+            _contains_goal_phrase(goal, "user_chose=true")
+            and any(_contains_goal_phrase(goal, "preset=" + alias) for alias in preset_aliases)
+        )
+    )
+    if not explicit_choice:
+        raise RobinMCPError(
+            "user must explicitly select the Robin preset in the original goal"
+        )
 
     authorization_basis = payload.get("authorization_basis")
     if not isinstance(authorization_basis, str):
@@ -108,6 +131,17 @@ def validate_investigation_input(
     if not _contains_goal_phrase(goal, authorization_basis):
         raise RobinMCPError(
             "authorization basis must be present in the original user goal"
+        )
+    normalized_goal = _normalise_text(goal)
+    authorization_label_index = normalized_goal.find("authorization basis:")
+    basis_index = normalized_goal.find(
+        _normalise_text(authorization_basis),
+        authorization_label_index + len("authorization basis:")
+        if authorization_label_index >= 0 else 0,
+    )
+    if authorization_label_index < 0 or basis_index < 0:
+        raise RobinMCPError(
+            "Authorization basis must appear under an explicit 'Authorization basis:' label in the original goal"
         )
 
     custom_instructions = payload.get("custom_instructions") or ""
