@@ -142,7 +142,8 @@ class RobinInputValidationTests(unittest.TestCase):
     def test_rejects_authorization_basis_without_explicit_label(self):
         goal = (
             "I explicitly selected Robin preset threat_intel. "
-            "APT example indicators are within authorized SOC incident response."
+            "APT example indicators are within defensive SOC incident response. "
+            + valid_payload()["authorization_basis"]
         )
         with self.assertRaisesRegex(RobinMCPError, "Authorization basis"):
             validate_investigation_input(valid_payload(), goal)
