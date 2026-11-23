@@ -74,6 +74,7 @@ try:
     from .claim_integrity import validate_truth_lock
     from .deterministic_codec import canonical_json, digest
     from .private_input import PrivateInputError, fetch_private_input
+    from .robin_mcp import execute_robin_mcp
     from .agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from .blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from .context_budget import ContextBudgetError, pack_node_context
@@ -128,6 +129,7 @@ except ImportError:
     from claim_integrity import validate_truth_lock
     from deterministic_codec import canonical_json, digest
     from private_input import PrivateInputError, fetch_private_input
+    from robin_mcp import execute_robin_mcp
     from agent_fabric import assign_role, agent_id, role_instruction, team_manifest
     from blueprint_compiler import BlueprintError, build_compilation_manifest, load_blueprint_file
     from context_budget import ContextBudgetError, pack_node_context
@@ -2054,6 +2056,9 @@ def tool_available(
             return False
         if tool_name == "gemini" and not gemini_model_allowed(registry, model=model):
             return False
+    enabled_env = spec.get("enabled_env")
+    if enabled_env and os.environ.get(str(enabled_env)) != "true":
+        return False
     if not require_env:
         return True
     env_var = spec.get("required_env")
@@ -3951,6 +3956,14 @@ def execute_node(node: Node, goal: str, dry_run: bool) -> dict[str, Any]:
         return execute_webhook(node, goal)
     if node.tool == "github":
         return execute_github(node)
+    if node.tool == "robin_mcp":
+        model = configured_gemini_model(registry=registry)
+        if not gemini_model_allowed(registry, model=model):
+            raise RuntimeError(
+                "Robin is disabled because the selected Gemini model is not on "
+                "the active free-model allowlist"
+            )
+        return execute_robin_mcp(node, goal, model)
     if node.tool == "connector_bridge":
         private_ref = str(node.input.get("private_input_ref") or "").strip()
         if private_ref and not dry_run:
